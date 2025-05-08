@@ -7,6 +7,7 @@ from binance.um_futures import UMFutures
 from binance.error import ClientError
 import pandas as pd
 import time
+import os # Import the os module
 
 # Importamos nuestra configuración y logger
 from .config_loader import load_config
@@ -36,15 +37,16 @@ def get_futures_client():
         return None
 
     try:
-        api_key = config.get('BINANCE', 'API_KEY')
-        api_secret = config.get('BINANCE', 'API_SECRET')
+        # Leer API keys desde variables de entorno
+        api_key = os.getenv('BINANCE_API_KEY')
+        api_secret = os.getenv('BINANCE_API_SECRET')
+        
         mode = config.get('BINANCE', 'MODE', fallback='paper').lower()
         futures_base_url = config.get('BINANCE', 'FUTURES_BASE_URL') # Live URL: https://fapi.binance.com
         futures_testnet_url = config.get('BINANCE', 'FUTURES_TESTNET_BASE_URL') # Testnet URL: https://testnet.binancefuture.com
 
-        if not api_key or api_key == 'TU_API_KEY_AQUI' or \
-           not api_secret or api_secret == 'TU_API_SECRET_AQUI':
-            logger.critical("API Key o API Secret no configuradas en config.ini. Por favor, añádelas.")
+        if not api_key or not api_secret:
+            logger.critical("BINANCE_API_KEY o BINANCE_API_SECRET no están definidas como variables de entorno. Por favor, configúralas.")
             return None
 
         base_url_to_use = ""

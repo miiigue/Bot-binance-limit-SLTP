@@ -115,8 +115,8 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
     """ Mapea claves de [TRADING] y [BINANCE] (y ahora volumen) """
     mapping = {
         # BINANCE
-        'apiKey': ('BINANCE', 'api_key'), 
-        'apiSecret': ('BINANCE', 'api_secret'),
+        # 'apiKey': ('BINANCE', 'api_key'), # No longer managed via frontend/config.ini
+        # 'apiSecret': ('BINANCE', 'api_secret'), # No longer managed via frontend/config.ini
         'mode': ('BINANCE', 'mode'),
         # TRADING
         'rsiInterval': ('TRADING', 'rsi_interval'),
@@ -290,15 +290,32 @@ def get_config_endpoint():
         if not os.path.exists(CONFIG_FILE_PATH):
             logger.error(f"Archivo de configuración no encontrado en {CONFIG_FILE_PATH}")
             # Devolver estructura vacía o valores por defecto si el archivo no existe
-            return jsonify({
-                "BINANCE": {},
+            default_empty_config = {
+                "BINANCE": {"mode": "paper"}, # Provide default for mode
                 "TRADING": {},
-                "SYMBOLS": {"symbols_to_trade": ""} # Asegurar que SYMBOLS existe
-            })
+                "SYMBOLS": {"symbols_to_trade": ""}
+            }
+            # Explicitly remove API keys if they were part of a default template
+            if "api_key" in default_empty_config["BINANCE"]:
+                del default_empty_config["BINANCE"]["api_key"]
+            if "api_secret" in default_empty_config["BINANCE"]:
+                del default_empty_config["BINANCE"]["api_secret"]
+            return jsonify(default_empty_config)
         
         config.read(CONFIG_FILE_PATH, encoding='utf-8')
         config_dict = config_to_dict(config)
         
+        # Ensure API keys are NOT sent to frontend, even if they are placeholders in config.ini
+        if 'BINANCE' in config_dict:
+            if 'api_key' in config_dict['BINANCE']:
+                del config_dict['BINANCE']['api_key']
+            if 'api_secret' in config_dict['BINANCE']:
+                del config_dict['BINANCE']['api_secret']
+            # Ensure 'mode' is present, defaulting to 'paper' if somehow missing after reading
+            if 'mode' not in config_dict['BINANCE']:
+                 config_dict['BINANCE']['mode'] = 'paper'
+
+
         # Asegurarse de que la sección SYMBOLS y la clave existen en la respuesta
         if 'SYMBOLS' not in config_dict:
             config_dict['SYMBOLS'] = {'symbols_to_trade': ''}
@@ -337,6 +354,7 @@ def update_config_endpoint():
     logger.debug(f"Símbolos procesados para guardar: {symbols_to_save}")
 
     # 2. Mapear los otros parámetros (BINANCE, TRADING)
+    #    apiKey y apiSecret ya no serán procesados por map_frontend_trading_binance
     ini_other_data = map_frontend_trading_binance(frontend_data)
 
     config = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(';', '#'))

@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 
 // Valores iniciales o por defecto para el formulario
 const initialConfig = {
-  apiKey: '',
-  apiSecret: '',
   symbolsToTrade: '',
   rsiInterval: '5m',
   rsiPeriod: 14,
@@ -72,8 +70,6 @@ function ConfigForm() {
 
         // Mapear la estructura del backend al estado plano del frontend
         const frontendState = {
-          apiKey: backendConfig.BINANCE?.api_key || '',
-          apiSecret: backendConfig.BINANCE?.api_secret || '',
           mode: backendConfig.BINANCE?.mode || 'paper',
           symbolsToTrade: backendConfig.SYMBOLS?.symbols_to_trade || '',
           rsiInterval: backendConfig.TRADING?.rsi_interval || '5m',
@@ -169,8 +165,6 @@ function ConfigForm() {
 
     // Crear el objeto a enviar, asegurando tipos correctos usando parseValue
     const configToSend = {
-      apiKey: config.apiKey,
-      apiSecret: config.apiSecret,
       mode: config.mode,
       symbolsToTrade: cleanSymbolsString,
       rsiInterval: config.rsiInterval,
@@ -246,42 +240,10 @@ function ConfigForm() {
       {/* Contenedor del formulario principal (deshabilitar si está cargando) */}
       <form onSubmit={handleSubmit} className={`space-y-6 p-6 bg-white dark:bg-gray-800 shadow-lg rounded-lg border border-gray-200 dark:border-gray-700 ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}>
 
-        {/* Sección API Keys */}
-        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
-            <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Credenciales API</legend>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-              <div>
-                <label htmlFor="apiKey" className={labelClass}>
-                  API Key <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="password"
-                  name="apiKey"
-                  id="apiKey"
-                  value={config.apiKey}
-                  onChange={handleChange}
-                  className={inputClass}
-                  required
-                  autoComplete="new-password"
-                />
-              </div>
-              <div>
-                <label htmlFor="apiSecret" className={labelClass}>
-                  API Secret <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="password"
-                  name="apiSecret"
-                  id="apiSecret"
-                  value={config.apiSecret}
-                  onChange={handleChange}
-                  className={inputClass}
-                  required
-                  autoComplete="new-password"
-                />
-              </div>
-            </div>
-        </fieldset>
+        {/* Mensaje informativo sobre gestión de API Keys */}
+        <div className="p-4 mb-6 text-sm text-blue-700 bg-blue-100 rounded-lg dark:bg-gray-800 dark:text-blue-300 border border-blue-300 dark:border-blue-600" role="alert">
+          <span className="font-medium">Nota Importante:</span> Las credenciales API (API Key y API Secret) ahora deben configurarse como variables de entorno directamente en el servidor donde se ejecuta el bot (por ejemplo, <code>BINANCE_API_KEY</code> y <code>BINANCE_API_SECRET</code>). Ya no se gestionan a través de esta interfaz.
+        </div>
 
         {/* Sección Configuración Trading */}
         <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">

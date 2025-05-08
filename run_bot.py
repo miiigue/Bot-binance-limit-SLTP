@@ -9,6 +9,9 @@ import threading # <--- Importar threading
 import signal # <--- Para manejar señales de terminación
 import os
 
+from dotenv import load_dotenv # Import dotenv
+load_dotenv() # Load environment variables from .env file
+
 # Añadir el directorio raíz al sys.path para importar desde src
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # sys.path.append(current_dir) # No es ideal, mejor usar imports relativos o estructura de paquete
