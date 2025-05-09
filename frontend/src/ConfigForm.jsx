@@ -62,7 +62,7 @@ function ConfigForm() {
       setMessage('Cargando configuración...');
       setIsLoading(true);
       try {
-        const response = await fetch('http://localhost:5001/api/config');
+        const response = await fetch('http://localhost:5002/api/config');
         if (!response.ok) {
           throw new Error(`Error HTTP ${response.status}: ${response.statusText}`);
         }
@@ -190,7 +190,7 @@ function ConfigForm() {
     }));
 
     try {
-      const response = await fetch('http://localhost:5001/api/config', {
+      const response = await fetch('http://localhost:5002/api/config', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

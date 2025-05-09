@@ -218,7 +218,7 @@ def main():
         # Nota: run_flask_app ahora debe ejecutarse desde dentro de api_server o importarse
         # Asumiendo que Flask se ejecuta al iniciar el script si api_server.py se importa
         # O mejor, iniciar explícitamente como antes:
-        api_thread = threading.Thread(target=lambda: flask_api_app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False), 
+        api_thread = threading.Thread(target=lambda: flask_api_app.run(host='0.0.0.0', port=5002, debug=False, use_reloader=False), 
                                       name="FlaskAPIServerThread", daemon=True)
         api_thread.start()
         logger.info("Hilo del servidor API Flask iniciado.")
