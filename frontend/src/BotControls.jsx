@@ -49,7 +49,7 @@ function BotControls({ botsRunning, onStart, onShutdown }) {
           className={`px-5 py-2 font-semibold rounded-md text-white transition-colors duration-150 ease-in-out 
             ${startDisabled 
               ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' 
-              : 'bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2'}
+              : 'bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2'}
           `}
         >
           {isActionPending && !botsRunning ? 'Iniciando...' : 'Iniciar Todos los Bots'}

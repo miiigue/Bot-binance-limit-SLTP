@@ -141,10 +141,13 @@ function App() {
   // ------------------------------------------
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
+      <div className="bg-primary-600 text-white p-2 text-center font-bold shadow-md">
+        BOT BINANCE LIMIT-SLTP
+      </div>
       <div className="container mx-auto p-4 md:p-8 max-w-5xl">
         <header className="mb-8">
-          <h1 className="text-3xl font-bold text-blue-600 dark:text-blue-400 text-center">Trading Bot Dashboard</h1>
+          <h1 className="text-3xl font-bold text-primary-600 dark:text-primary-400 text-center">Trading Bot Dashboard</h1>
         </header>
 
         {/* Mostrar error de carga inicial si existe */} 

@@ -518,7 +518,7 @@ function ConfigForm() {
                     type="checkbox"
                     checked={config.active}
                     onChange={handleChange}
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded mr-2"
+                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mr-2"
                   />
                   <label htmlFor="active" className={labelClass + " mb-0"}>
                     Activar Bot (Experimental)
@@ -533,7 +533,7 @@ function ConfigForm() {
             type="submit"
             // Deshabilitar botón mientras se guarda
             disabled={isLoading || message.includes('Guardando...')}
-            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {message.includes('Guardando...') ? 'Guardando...' : 'Guardar Configuración'} {/* Cambiar texto del botón */}
           </button>

@@ -103,7 +103,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
-.venv-py312 # From your project structure
+.venv-py312/
 env/
 venv/
 ENV/

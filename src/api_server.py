@@ -248,6 +248,10 @@ def start_bot_workers():
             logger.warning("start_bot_workers fue llamado pero los workers ya están iniciados.")
             return False # Indicar que no se hizo nada
 
+        worker_statuses.clear() # Clear previous statuses before starting new ones
+        threads.clear() # Limpiar lista de hilos anterior
+        stop_event.clear() # Asegurarse que el evento de parada no esté activo
+
         if not loaded_symbols_to_trade:
             logger.error("No hay símbolos configurados para iniciar los workers.")
             return False
@@ -257,10 +261,6 @@ def start_bot_workers():
             return False
 
         logger.info("Iniciando workers de bot...")
-        # Limpiar lista de hilos anterior por si acaso (aunque no debería haber)
-        threads.clear() 
-        stop_event.clear() # Asegurarse que el evento de parada no esté activo
-
         for symbol_idx, symbol in enumerate(loaded_symbols_to_trade):
             logger.info(f"-> Preparando worker para {symbol}...")
             # Usar loaded_trading_params
@@ -472,9 +472,9 @@ def shutdown_bot():
 
     workers_started = False # Marcar como detenidos
     threads.clear() # Limpiar la lista de hilos
-    # Limpiar estados individuales (opcional, podrían quedarse en STOPPED)
-    # with status_lock:
-    #     worker_statuses.clear()
+    # Limpiar estados individuales
+    with status_lock:
+        worker_statuses.clear()
 
     return jsonify({"message": "Señal de apagado enviada y workers detenidos."}), 200
 
