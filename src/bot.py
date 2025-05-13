@@ -70,6 +70,7 @@ class TradingBot:
         self.rsi_target = float(self.params.get('rsi_target', 50.0)) # Nuevo campo para RSI objetivo
         self.rsi_objetivo_activado = False  # <-- MOVIDO AQUÍ: Indica si el objetivo ya fue alcanzado
         self.rsi_objetivo_alcanzado_en = None  # <-- MOVIDO AQUÍ: Guarda el valor de RSI cuando se alcanzó el objetivo
+        self.previous_rsi_value = None # <-- NUEVO: Para guardar el RSI de la vela anterior
         # ---------------------
 
         # Cliente Binance (se inicializa una vez por bot)
@@ -165,7 +166,6 @@ class TradingBot:
         # --- FIN DE LÓGICA MODIFICADA ---
 
         self.logger.info(f"[{self.symbol}] Worker inicializado exitosamente (Timeout Órdenes: {self.order_timeout_seconds}s).")
-        # Las inicializaciones de rsi_objetivo_activado/alcanzado_en se quitaron de aquí porque se movieron arriba.
 
     def _check_initial_position(self):
         """Consulta a Binance si ya existe una posición para self.symbol."""
@@ -493,6 +493,7 @@ class TradingBot:
         self.current_exit_reason = None # <-- Asegurar que se resetea aquí también
         self.rsi_at_entry = None # <-- NUEVO: Resetear RSI de entrada
         self.last_known_pnl = None # <-- ASEGURAR QUE EL PNL SE RESETEA
+        self.previous_rsi_value = None # <-- NUEVO: Resetear el RSI anterior
         # ---------------------------------------------------
         # self.last_rsi_value = None # Podríamos mantenerlo o resetearlo
         self.rsi_objetivo_activado = False
@@ -653,12 +654,30 @@ class TradingBot:
 
             if rsi_values is None or rsi_values.empty:
                 self.logger.warning(f"[{self.symbol}] No se pudieron calcular los valores RSI.")
+                # Asegurar que previous_rsi_value no se quede desactualizado si el cálculo actual falla
+                # y antes sí teníamos un valor. No lo ponemos a None aquí directamente,
+                # sino que no lo actualizamos con un valor inválido.
                 self._update_state(BotState.IDLE) 
                 return
+
+            # self.last_rsi_value se actualiza aquí
             self.last_rsi_value = rsi_values.iloc[-1]
             # Calcular la precisión del precio para el log de forma segura
             price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
             self.logger.info(f"[{self.symbol}] Precio actual: {current_price:.{price_precision_log}f}, RSI({self.rsi_period}, {self.rsi_interval}): {self.last_rsi_value:.2f}")
+
+            # --- NUEVA LÓGICA PARA EL DELTA DEL RSI ---
+            rsi_delta = None
+            if self.previous_rsi_value is not None and self.last_rsi_value is not None:
+                # Asegurarse que ambos son números antes de restar
+                if isinstance(self.previous_rsi_value, (int, float)) and isinstance(self.last_rsi_value, (int, float)):
+                    rsi_delta = self.last_rsi_value - self.previous_rsi_value
+                    self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: Actual={self.last_rsi_value:.2f}, Anterior={self.previous_rsi_value:.2f}, Delta={rsi_delta:.2f}")
+                else:
+                    self.logger.warning(f"[{self.symbol}] Chequeo Delta RSI: RSI actual o anterior no son numéricos (Actual: {self.last_rsi_value}, Anterior: {self.previous_rsi_value}).")
+            else:
+                self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: No hay RSI anterior o actual para calcular delta (Actual={self.last_rsi_value}, Anterior={self.previous_rsi_value})")
+            # --- FIN NUEVA LÓGICA DELTA RSI ---
 
             # --- Lógica de Volumen ---
             volume_check_passed = False
@@ -684,19 +703,42 @@ class TradingBot:
             self.entry_reason = ""
 
             condition_rsi_in_range = (self.rsi_entry_level_low <= self.last_rsi_value <= self.rsi_entry_level_high)
-            condition_rsi_above_thresh_up = (self.last_rsi_value >= self.rsi_threshold_up)
+            
+            # --- NUEVA CONDICIÓN BASADA EN DELTA --- 
+            condition_rsi_change_meets_thresh_up = False
+            # Solo evaluar si rsi_delta se pudo calcular (no es None) y rsi_threshold_up tiene un valor significativo para un delta positivo
+            if rsi_delta is not None and self.rsi_threshold_up > 0: 
+                if rsi_delta >= self.rsi_threshold_up:
+                    condition_rsi_change_meets_thresh_up = True
+            # ------------------------------------
 
             self.logger.info(f"[{self.symbol}] Chequeo Entrada: RSI en rango [{self.rsi_entry_level_low}, {self.rsi_entry_level_high}]? {'Sí' if condition_rsi_in_range else 'No'} (RSI={self.last_rsi_value:.2f})")
-            self.logger.info(f"[{self.symbol}] Chequeo Entrada: RSI >= umbral_up ({self.rsi_threshold_up})? {'Sí' if condition_rsi_above_thresh_up else 'No'} (RSI={self.last_rsi_value:.2f})")
+            # self.logger.info(f"[{self.symbol}] Chequeo Entrada: RSI >= umbral_up ({self.rsi_threshold_up})? {'Sí' if condition_rsi_above_thresh_up else 'No'} (RSI={self.last_rsi_value:.2f})")
+            
+            # --- CORRECCIÓN DE LOGGING PARA rsi_delta ---
+            rsi_delta_str = f'{rsi_delta:.2f}' if rsi_delta is not None else 'N/A'
+            self.logger.info(f"[{self.symbol}] Chequeo Entrada: Incremento RSI ({rsi_delta_str}) >= umbral_incremento ({self.rsi_threshold_up})? {'Sí' if condition_rsi_change_meets_thresh_up else 'No'}")
+            # --- FIN CORRECCIÓN ---
+
             self.logger.info(f"[{self.symbol}] Chequeo Entrada: Volumen OK? {'Sí' if volume_check_passed else 'No'}")
 
-            if condition_rsi_in_range and condition_rsi_above_thresh_up and volume_check_passed:
-                self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA DETECTADA: RSI en rango y >= umbral_up. Volumen OK.")
+            if condition_rsi_in_range and condition_rsi_change_meets_thresh_up and volume_check_passed:
+                self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA DETECTADA: RSI en rango, Incremento RSI OK ({rsi_delta:.2f}>={self.rsi_threshold_up}), Volumen OK.")
                 entry_signal = True
-                self.entry_reason = f"RSI_range ({self.rsi_entry_level_low}<={self.last_rsi_value:.2f}<={self.rsi_entry_level_high}) AND RSI_thresh_up (RSI={self.last_rsi_value:.2f}>={self.rsi_threshold_up}) & Vol_OK"
+                self.entry_reason = f"RSI_range ({self.rsi_entry_level_low}<={self.last_rsi_value:.2f}<={self.rsi_entry_level_high}) AND RSI_delta (Delta={rsi_delta:.2f}>={self.rsi_threshold_up}) & Vol_OK"
             else:
                 self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA NO CUMPLIDA.")
 
+            # --- Actualizar el RSI anterior para el próximo ciclo ---
+            # Es importante hacer esto aquí, después de todos los cálculos y logs que usan self.last_rsi_value y self.previous_rsi_value de ESTE ciclo.
+            # Solo actualizar si self.last_rsi_value es un número válido.
+            if isinstance(self.last_rsi_value, (int, float)):
+                self.previous_rsi_value = self.last_rsi_value
+            elif self.last_rsi_value is None: # Si el cálculo de RSI falló y es None
+                # No actualizamos previous_rsi_value para no perder el último valor válido si lo teníamos.
+                # O podríamos decidir ponerlo a None también. Por ahora, no lo actualizamos.
+                self.logger.debug(f"[{self.symbol}] No se actualiza previous_rsi_value porque last_rsi_value es None.")
+            # ----------------------------------------------------
 
             if entry_signal:
                  # Calcular precio y cantidad para la orden LIMIT BUY
