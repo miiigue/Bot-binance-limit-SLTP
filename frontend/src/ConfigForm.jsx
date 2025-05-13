@@ -8,8 +8,11 @@ const initialConfig = {
   rsiThresholdUp: 8,
   rsiThresholdDown: -8,
   rsiEntryLevelLow: 25,
+  rsiEntryLevelHigh: 75,
+  rsiTarget: 50,
   volumeSmaPeriod: 20,
-  volumeFactor: 1.5,
+  volumeFactor: 1,
+  downtrendCheckCandles: 3,
   positionSizeUSDT: 50,
   stopLossUSDT: 20,
   takeProfitUSDT: 30,
@@ -25,6 +28,13 @@ const parseValue = (value, defaultValue, name = '') => {
   // Allow '-' as a valid starting character for relevant fields
   if ((name === 'stopLossUSDT' || name === 'rsiThresholdDown') && value === '-') {
       return '-'; // Keep it as a string for now, will be parsed later or on blur
+  }
+  // Allow any valid number string for rsiTarget temporarily
+  if (name === 'rsiTarget') {
+     if (value === '') return defaultValue; // Or maybe null/empty string?
+     const num = Number(value);
+     if (!isNaN(num)) return num; // Allow float for now
+     return defaultValue; // Revert if invalid number
   }
   const num = Number(value);
 
@@ -77,8 +87,11 @@ function ConfigForm() {
           rsiThresholdUp: parseValue(backendConfig.TRADING?.rsi_threshold_up, initialConfig.rsiThresholdUp, 'rsiThresholdUp'),
           rsiThresholdDown: parseValue(backendConfig.TRADING?.rsi_threshold_down, initialConfig.rsiThresholdDown, 'rsiThresholdDown'),
           rsiEntryLevelLow: parseValue(backendConfig.TRADING?.rsi_entry_level_low, initialConfig.rsiEntryLevelLow, 'rsiEntryLevelLow'),
+          rsiEntryLevelHigh: parseValue(backendConfig.TRADING?.rsi_entry_level_high, initialConfig.rsiEntryLevelHigh, 'rsiEntryLevelHigh'),
+          rsiTarget: parseValue(backendConfig.TRADING?.rsi_target, initialConfig.rsiTarget, 'rsiTarget'),
           volumeSmaPeriod: parseValue(backendConfig.TRADING?.volume_sma_period, initialConfig.volumeSmaPeriod, 'volumeSmaPeriod'),
           volumeFactor: parseValue(backendConfig.TRADING?.volume_factor, initialConfig.volumeFactor, 'volumeFactor'),
+          downtrendCheckCandles: parseValue(backendConfig.TRADING?.downtrend_check_candles, initialConfig.downtrendCheckCandles, 'downtrendCheckCandles'),
           positionSizeUSDT: parseValue(backendConfig.TRADING?.position_size_usdt, initialConfig.positionSizeUSDT, 'positionSizeUSDT'),
           stopLossUSDT: parseValue(backendConfig.TRADING?.stop_loss_usdt, initialConfig.stopLossUSDT, 'stopLossUSDT'),
           takeProfitUSDT: parseValue(backendConfig.TRADING?.take_profit_usdt, initialConfig.takeProfitUSDT, 'takeProfitUSDT'),
@@ -110,11 +123,13 @@ function ConfigForm() {
     let processedValue = value;
 
     const numericTextFields = [
-      'rsiThresholdUp', 'rsiThresholdDown', 'rsiEntryLevelLow', 'volumeFactor',
+      'rsiThresholdUp', 'rsiThresholdDown', 'rsiEntryLevelLow', 'rsiEntryLevelHigh',
+      'rsiTarget',
+      'volumeFactor',
       'positionSizeUSDT', 'stopLossUSDT', 'takeProfitUSDT'
     ];
     const integerNumberFields = [
-      'rsiPeriod', 'volumeSmaPeriod', 'cycleSleepSeconds', 'orderTimeoutSeconds'
+      'rsiPeriod', 'volumeSmaPeriod', 'cycleSleepSeconds', 'orderTimeoutSeconds', 'downtrendCheckCandles'
     ];
 
     if (type === 'checkbox') {
@@ -124,6 +139,8 @@ function ConfigForm() {
         if (val === '') return true;
         // Allow just a minus sign for fields that can be negative
         if ((name === 'rsiThresholdDown' || name === 'stopLossUSDT') && val === '-') return true;
+        // Permitir números positivos y decimales para rsiTarget
+        if (name === 'rsiTarget') return /^[+]?\d*\.?\d*$/.test(val) && (val.match(/\./g) || []).length <= 1;
         // Regex to allow optional leading minus, digits, optional single decimal point, and more digits
         return /^-?\d*\.?\d*$/.test(val) && (val.match(/\./g) || []).length <= 1 && (val.match(/-/g) || []).length <= (val.startsWith('-') ? 1: 0) ;
       };
@@ -143,6 +160,9 @@ function ConfigForm() {
         processedValue = Number.isInteger(num) ? num : config[name]; 
         if (name === 'cycleSleepSeconds' && num !== 0 && num < 5 && value !== '') {
              processedValue = num;
+        }
+        if (name === 'downtrendCheckCandles' && value !== '' && num < 0) {
+            processedValue = 0;
         }
       }
     }
@@ -172,8 +192,11 @@ function ConfigForm() {
       rsiThresholdUp: parseValue(config.rsiThresholdUp, initialConfig.rsiThresholdUp, 'rsiThresholdUp'),
       rsiThresholdDown: parseValue(config.rsiThresholdDown, initialConfig.rsiThresholdDown, 'rsiThresholdDown'),
       rsiEntryLevelLow: parseValue(config.rsiEntryLevelLow, initialConfig.rsiEntryLevelLow, 'rsiEntryLevelLow'),
+      rsiEntryLevelHigh: parseValue(config.rsiEntryLevelHigh, initialConfig.rsiEntryLevelHigh, 'rsiEntryLevelHigh'),
+      rsiTarget: parseValue(config.rsiTarget, initialConfig.rsiTarget, 'rsiTarget'),
       volumeSmaPeriod: parseValue(config.volumeSmaPeriod, initialConfig.volumeSmaPeriod, 'volumeSmaPeriod'),
       volumeFactor: parseValue(config.volumeFactor, initialConfig.volumeFactor, 'volumeFactor'),
+      downtrendCheckCandles: parseValue(config.downtrendCheckCandles, initialConfig.downtrendCheckCandles, 'downtrendCheckCandles'),
       positionSizeUSDT: parseValue(config.positionSizeUSDT, initialConfig.positionSizeUSDT, 'positionSizeUSDT'),
       stopLossUSDT: parseValue(config.stopLossUSDT, initialConfig.stopLossUSDT, 'stopLossUSDT'),
       takeProfitUSDT: parseValue(config.takeProfitUSDT, initialConfig.takeProfitUSDT, 'takeProfitUSDT'),
@@ -245,7 +268,7 @@ function ConfigForm() {
           <span className="font-medium">Nota Importante:</span> Las credenciales API (API Key y API Secret) ahora deben configurarse como variables de entorno directamente en el servidor donde se ejecuta el bot (por ejemplo, <code>BINANCE_API_KEY</code> y <code>BINANCE_API_SECRET</code>). Ya no se gestionan a través de esta interfaz.
         </div>
 
-        {/* Sección Configuración Trading */}
+        {/* Sección Configuración General Trading */}
         <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
             <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Configuración General Trading</legend>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
@@ -285,9 +308,9 @@ function ConfigForm() {
             </div>
         </fieldset>
 
-        {/* Sección Parámetros RSI */}
-        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
-            <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Parámetros RSI y Volumen (Compartidos)</legend>
+        {/* Sección Parámetros de ENTRADA */}
+        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600 bg-blue-50 dark:bg-primary-900">
+            <legend className="text-base font-medium text-primary-700 dark:text-primary-300 px-2">Parámetros de ENTRADA</legend>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4"> 
               <div>
                 <label htmlFor="rsiPeriod" className={labelClass}>
@@ -309,7 +332,7 @@ function ConfigForm() {
               </div>
               <div>
                 <label htmlFor="rsiThresholdUp" className={labelClass}>
-                  RSI Subida <span className="text-red-500">*</span>
+                  RSI Cambio Positivo <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -321,27 +344,11 @@ function ConfigForm() {
                   className={inputClass}
                   required
                 />
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Cambio positivo de RSI para entrar.</p>
-              </div>
-              <div>
-                <label htmlFor="rsiThresholdDown" className={labelClass}>
-                  RSI Bajada <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="rsiThresholdDown"
-                  id="rsiThresholdDown"
-                  value={config.rsiThresholdDown}
-                  onChange={handleChange}
-                  className={inputClass}
-                  required
-                />
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Cambio negativo de RSI para salir.</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Cambio positivo de RSI necesario para entrar.</p>
               </div>
               <div>
                 <label htmlFor="rsiEntryLevelLow" className={labelClass}>
-                  RSI Entry
+                  RSI Límite Inferior
                 </label>
                 <input
                   type="text"
@@ -354,7 +361,24 @@ function ConfigForm() {
                   step="0.1"
                   placeholder="e.g., 25"
                 />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Entrar si RSI está bajo este valor (y cambio RSI OK).</p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">El RSI debe estar por encima de este valor para considerar entrar.</p>
+              </div>
+              <div>
+                <label htmlFor="rsiEntryLevelHigh" className={labelClass}>
+                  RSI Límite Superior
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  name="rsiEntryLevelHigh"
+                  id="rsiEntryLevelHigh"
+                  value={config.rsiEntryLevelHigh}
+                  onChange={handleChange}
+                  className={inputClass}
+                  step="0.1"
+                  placeholder="e.g., 75"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">El RSI debe estar por debajo de este valor para considerar entrar.</p>
               </div>
               <div>
                 <label htmlFor="volumeSmaPeriod" className={labelClass}>
@@ -391,13 +415,64 @@ function ConfigForm() {
                 />
                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Volumen actual {'>'} SMA * Factor (Ej: 1.5 = +50%).</p>
               </div>
+              <div>
+                <label htmlFor="downtrendCheckCandles" className={labelClass}>
+                  Velas Tendencia Bajista
+                </label>
+                <input
+                  type="number"
+                  name="downtrendCheckCandles"
+                  id="downtrendCheckCandles"
+                  value={config.downtrendCheckCandles}
+                  onChange={handleChange}
+                  className={inputNumberClass}
+                  min="0"
+                  step="1"
+                  placeholder="Ej: 3 (0 para desactivar)"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Nº velas previas para chequear tendencia bajista (0-1 desactiva, mín 2 para operar).</p>
+              </div>
             </div>
         </fieldset>
 
-        {/* Sección Gestión de Riesgo */}
-        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
-            <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Gestión de Riesgo (Compartida)</legend>
+        {/* Sección Parámetros de SALIDA y Gestión de Riesgo */}
+        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600 bg-green-50 dark:bg-green-900/20">
+            <legend className="text-base font-medium text-green-700 dark:text-green-300 px-2">Parámetros de SALIDA y Gestión de Riesgo</legend>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+              <div>
+                <label htmlFor="rsiThresholdDown" className={labelClass}>
+                  RSI Drop Salida (Negativo) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  name="rsiThresholdDown"
+                  id="rsiThresholdDown"
+                  value={config.rsiThresholdDown}
+                  onChange={handleChange}
+                  className={inputClass}
+                  required
+                  placeholder="Ej: -10"
+                />
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Caída de RSI desde el objetivo para salir (debe ser negativo).</p>
+              </div>
+              <div>
+                <label htmlFor="rsiTarget" className={labelClass}>
+                  RSI Objetivo Activación <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  name="rsiTarget"
+                  id="rsiTarget"
+                  value={config.rsiTarget}
+                  onChange={handleChange}
+                  className={inputClass}
+                  required
+                  placeholder="Ej: 80"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Valor RSI que activa la vigilancia de salida por caída.</p>
+              </div>
               <div>
                 <label htmlFor="positionSizeUSDT" className={labelClass}>
                   Tamaño Posición (USDT) <span className="text-red-500">*</span>

@@ -112,38 +112,43 @@ def config_to_dict(config: configparser.ConfigParser) -> dict:
     return the_dict
 
 def map_frontend_trading_binance(frontend_data: dict) -> dict:
-    """ Mapea claves de [TRADING] y [BINANCE] (y ahora volumen) """
-    mapping = {
-        # BINANCE
-        # 'apiKey': ('BINANCE', 'api_key'), # No longer managed via frontend/config.ini
-        # 'apiSecret': ('BINANCE', 'api_secret'), # No longer managed via frontend/config.ini
-        'mode': ('BINANCE', 'mode'),
-        # TRADING
-        'rsiInterval': ('TRADING', 'rsi_interval'),
-        'rsiPeriod': ('TRADING', 'rsi_period'),
-        'rsiThresholdUp': ('TRADING', 'rsi_threshold_up'),
-        'rsiThresholdDown': ('TRADING', 'rsi_threshold_down'),
-        'rsiEntryLevelLow': ('TRADING', 'rsi_entry_level_low'),
-        'positionSizeUSDT': ('TRADING', 'position_size_usdt'),
-        'stopLossUSDT': ('TRADING', 'stop_loss_usdt'),
-        'takeProfitUSDT': ('TRADING', 'take_profit_usdt'),
-        'cycleSleepSeconds': ('TRADING', 'cycle_sleep_seconds'),
-        # --- Añadir mapeo de volumen --- 
-        'volumeSmaPeriod': ('TRADING', 'volume_sma_period'),
-        'volumeFactor': ('TRADING', 'volume_factor'),
-        # --- Añadir mapeo para timeout --- 
-        'orderTimeoutSeconds': ('TRADING', 'order_timeout_seconds'),
-        # --------------------------------
+    """Mapea los datos del frontend a la estructura esperada por configparser para [TRADING] y [BINANCE]."""
+    # logger.debug(f"Mapping frontend data: {frontend_data}")
+    config_output = {
+        'BINANCE': {
+            'mode': frontend_data.get('mode', 'paper'),
+            # Las claves API ya no se manejan aquí
+        },
+        'TRADING': {
+            'rsi_interval': frontend_data.get('rsiInterval', '5m'),
+            'rsi_period': str(frontend_data.get('rsiPeriod', 14)),
+            'rsi_threshold_up': str(frontend_data.get('rsiThresholdUp', 8)),
+            'rsi_threshold_down': str(frontend_data.get('rsiThresholdDown', -8)),
+            'rsi_entry_level_low': str(frontend_data.get('rsiEntryLevelLow', 25)),
+            'rsi_entry_level_high': str(frontend_data.get('rsiEntryLevelHigh', 75)),
+            'rsi_target': str(frontend_data.get('rsiTarget', 50)),
+            'volume_sma_period': str(frontend_data.get('volumeSmaPeriod', 20)),
+            'volume_factor': str(frontend_data.get('volumeFactor', 1.5)),
+            'downtrend_check_candles': str(frontend_data.get('downtrendCheckCandles', 3)),
+            'position_size_usdt': str(frontend_data.get('positionSizeUSDT', 50)),
+            'stop_loss_usdt': str(frontend_data.get('stopLossUSDT', 20)),
+            'take_profit_usdt': str(frontend_data.get('takeProfitUSDT', 30)),
+            'cycle_sleep_seconds': str(frontend_data.get('cycleSleepSeconds', 5)),
+            'order_timeout_seconds': str(frontend_data.get('orderTimeoutSeconds', 10)),
+        },
+        'SYMBOLS': {
+            'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
+        }
     }
-    ini_data = {}
-    for frontend_key, value in frontend_data.items():
-        if frontend_key in mapping:
-            section, ini_key = mapping[frontend_key]
-            if section not in ini_data:
-                ini_data[section] = {}
-            processed_value = str(value).lower() if isinstance(value, bool) else str(value)
-            ini_data[section][ini_key] = processed_value
-    return ini_data
+    # Asegurarse de que los valores booleanos y numéricos se manejen correctamente si es necesario aquí
+    # Por ejemplo, si sabes que un valor debe ser un entero:
+    if 'TRADING' in config_output and 'rsi_period' in config_output['TRADING']:
+        try:
+            config_output['TRADING']['rsi_period'] = int(config_output['TRADING']['rsi_period'])
+        except ValueError:
+            # Manejar el error si no es un entero válido, o dejarlo como string
+            pass 
+    return config_output
 
 # --- Función run_bot_worker (Movida desde run_bot.py) ---
 # Adaptada para usar las variables globales definidas aquí
@@ -523,8 +528,27 @@ def load_initial_config():
          logger.error("Sección [TRADING] no encontrada en config.ini.")
          return False
          
-    loaded_trading_params = dict(config['TRADING'])
-    logger.info(f"Configuración inicial cargada: {len(loaded_symbols_to_trade)} símbolos, Params: {loaded_trading_params}")
+    # Cargar todos los parámetros de TRADING como strings inicialmente
+    temp_trading_params = dict(config['TRADING'])
+    
+    # Convertir explícitamente los parámetros a sus tipos correctos
+    loaded_trading_params = {}
+    for key, value_str in temp_trading_params.items():
+        original_value = value_str # Guardar para logs en caso de error
+        try:
+            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles']:
+                loaded_trading_params[key] = int(value_str)
+            elif key in ['rsi_threshold_up', 'rsi_threshold_down', 'rsi_entry_level_low', 'rsi_entry_level_high',
+                         'rsi_target',
+                         'volume_factor', 'position_size_usdt', 'stop_loss_usdt', 'take_profit_usdt']:
+                loaded_trading_params[key] = float(value_str)
+            else:
+                loaded_trading_params[key] = value_str # Mantener como string si no es uno de los conocidos numéricos
+        except ValueError:
+            logger.error(f"Error al convertir el parámetro de TRADING '{key}' con valor '{original_value}' a su tipo numérico esperado. Usando string o fallback si aplica.")
+            loaded_trading_params[key] = original_value # Mantener el valor original como string si falla la conversión
+
+    logger.info(f"Configuración inicial cargada: {len(loaded_symbols_to_trade)} símbolos, Params procesados: {loaded_trading_params}")
     return True
 
 # La función para correr Flask en un hilo (start_flask_app) 
