@@ -218,6 +218,62 @@ def get_cumulative_pnl_by_symbol():
     return cumulative_pnl
 # ----------------------------------------
 
+# --- NUEVA FUNCIÓN ---
+def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
+    """
+    Recupera los últimos N trades cerrados para un símbolo específico desde la base de datos.
+
+    Args:
+        symbol (str): El símbolo a buscar (ej. 'BTCUSDT').
+        n (int): El número máximo de trades a devolver. Por defecto 10.
+
+    Returns:
+        list[dict]: Una lista de diccionarios, donde cada diccionario representa un trade
+                    con claves correspondientes a las columnas de la tabla 'trades'.
+                    La lista estará vacía si no hay trades para el símbolo.
+    """
+    conn = None
+    trades = []
+    try:
+        conn = sqlite3.connect(DATABASE_FILE)
+        # Asegurar que devolvemos las columnas como diccionarios
+        conn.row_factory = sqlite3.Row 
+        cursor = conn.cursor()
+
+        # Consulta SQL para obtener los últimos N trades ordenados por fecha de cierre
+        query = """
+        SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
+               open_price, close_price, quantity, position_size_usdt,
+               pnl_usdt, close_reason, parameters
+        FROM trades
+        WHERE symbol = ?
+        ORDER BY close_timestamp DESC
+        LIMIT ?
+        """
+        cursor.execute(query, (symbol.upper(), n))
+        rows = cursor.fetchall()
+
+        # Convertir las filas (sqlite3.Row) a diccionarios estándar
+        trades = [dict(row) for row in rows]
+        
+        # Opcional: Convertir parámetros JSON string de vuelta a dict si es necesario
+        # for trade in trades:
+        #     if 'parameters' in trade and isinstance(trade['parameters'], str):
+        #         try:
+        #             trade['parameters'] = json.loads(trade['parameters'])
+        #         except json.JSONDecodeError:
+        #             get_logger().warning(f"Could not decode parameters JSON for trade {trade.get('id')}")
+        #             trade['parameters'] = {} # O dejar como string?
+
+    except sqlite3.Error as e:
+        get_logger().error(f"Error al acceder a la base de datos para obtener trades de {symbol}: {e}", exc_info=True)
+    finally:
+        if conn:
+            conn.close()
+            
+    return trades
+# --- FIN NUEVA FUNCIÓN ---
+
 # Ejemplo de uso (actualizado para SQLite)
 if __name__ == '__main__':
     # Es importante llamar a setup_logging antes que a cualquier función que use get_logger

@@ -4,6 +4,23 @@ import BotControls from './BotControls';
 // Clave para guardar/leer en localStorage
 const STATUS_CACHE_KEY = 'botStatusesCache';
 
+// Helper para formatear fechas (puedes ajustar el formato)
+const formatDate = (dateString) => {
+  if (!dateString) return 'N/A';
+  try {
+    return new Date(dateString).toLocaleString(); // Formato local
+  } catch (e) {
+    return dateString; // Devolver original si falla
+  }
+};
+
+// Helper para formatear PnL
+const formatPnl = (pnl) => {
+  if (pnl === null || pnl === undefined) return 'N/A';
+  const value = parseFloat(pnl);
+  return isNaN(value) ? 'N/A' : `${value.toFixed(4)} USDT`;
+};
+
 function StatusDisplay({ botsRunning, onStart, onShutdown }) {
   // Intentar cargar el estado inicial desde localStorage, asegurando que sea un array válido
   const [statuses, setStatuses] = useState(() => {
@@ -25,7 +42,14 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
     }
     return parsedData; // Devuelve un array vacío o el array filtrado
   });
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  // --- NUEVO ESTADO PARA FILAS EXPANDIDAS E HISTORIAL ---
+  const [expandedRows, setExpandedRows] = useState({}); // { symbol: boolean }
+  const [tradeHistories, setTradeHistories] = useState({}); // { symbol: [trade] }
+  const [loadingHistories, setLoadingHistories] = useState({}); // { symbol: boolean }
+  const [historyErrors, setHistoryErrors] = useState({}); // { symbol: string | null }
+  // ------------------------------------------------------
 
   useEffect(() => {
     const fetchData = async () => {
@@ -69,6 +93,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
         // Establecer mensaje de error específico sin borrar los datos
         setError("Bot apagado o API no disponible. Mostrando últimos datos conocidos.");
         // NO HACEMOS setStatuses([]) para mantener los últimos datos visibles
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -76,6 +102,43 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
     const intervalId = setInterval(fetchData, 5000); // Refrescar cada 5s
     return () => clearInterval(intervalId); // Limpiar intervalo al desmontar
   }, []);
+
+  // --- NUEVA FUNCIÓN PARA CARGAR HISTORIAL DE TRADES ---
+  const fetchTradeHistory = async (symbol) => {
+    if (loadingHistories[symbol]) return; // Evitar cargas múltiples
+
+    setLoadingHistories(prev => ({ ...prev, [symbol]: true }));
+    setHistoryErrors(prev => ({ ...prev, [symbol]: null }));
+
+    try {
+      const response = await fetch(`/api/trades/${symbol}`);
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || `HTTP error! Status: ${response.status}`);
+      }
+      const historyData = await response.json();
+      setTradeHistories(prev => ({ ...prev, [symbol]: historyData }));
+    } catch (err) {
+      console.error(`Error fetching trade history for ${symbol}:`, err);
+      setHistoryErrors(prev => ({ ...prev, [symbol]: `Error: ${err.message}` }));
+      setTradeHistories(prev => ({ ...prev, [symbol]: [] })); // Limpiar en caso de error
+    } finally {
+      setLoadingHistories(prev => ({ ...prev, [symbol]: false }));
+    }
+  };
+  // -----------------------------------------------------
+
+  // --- NUEVA FUNCIÓN PARA EXPANDIR/COLAPSAR FILA ---
+  const toggleRow = (symbol) => {
+    const isCurrentlyExpanded = expandedRows[symbol];
+    setExpandedRows(prev => ({ ...prev, [symbol]: !isCurrentlyExpanded }));
+
+    // Si se está expandiendo y no hay historial cargado (o hubo error), cargar
+    if (!isCurrentlyExpanded && (!tradeHistories[symbol] || historyErrors[symbol])) {
+       fetchTradeHistory(symbol);
+    }
+  };
+  // -------------------------------------------------
 
   // statusArray ya no es necesario, statuses es el array directamente
   // const statusArray = Object.values(statuses);
@@ -96,25 +159,19 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
-              <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Symbol
-              </th>
-              <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                State
-              </th>
-              <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Current PnL
-              </th>
-              <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Hist. PnL
-              </th>
-               <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              {/* --- NUEVA COLUMNA VACÍA PARA EL BOTÓN DE EXPANDIR --- */}
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-12"></th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Symbol</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">State</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Current PnL</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Hist. PnL</th>
+               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Pending Entry ID
               </th>
-               <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Pending Exit ID
               </th>
-              <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Last Error
               </th>
             </tr>
@@ -122,11 +179,22 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             {statuses.length > 0 ? (
               statuses.map((status) => ( 
-                <tr key={status.symbol}>
-                  <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                    {status.symbol}
-                  </td>
-                  <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                <React.Fragment key={status.symbol}> { /* Usar Fragment para agrupar fila principal y desplegable */}
+                  <tr className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    {/* --- CELDA CON BOTÓN DE EXPANDIR --- */}
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                      <button 
+                        onClick={() => toggleRow(status.symbol)}
+                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        aria-expanded={!!expandedRows[status.symbol]}
+                        aria-controls={`history-${status.symbol}`}
+                      >
+                        {expandedRows[status.symbol] ? '▼' : '▶'} {/* Flecha abajo/derecha */}
+                      </button>
+                    </td>
+                    {/* --- Resto de las celdas (sin cambios) --- */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{status.symbol}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                          status.state === 'IN_POSITION' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                          status.state === 'ERROR' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
@@ -136,23 +204,73 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
                      }`}>
                        {status.state || 'N/A'}
                      </span>
-                  </td>
-                  <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                    {status.pnl !== null && status.pnl !== undefined ? status.pnl.toFixed(4) : '-'}
-                  </td>
-                  <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                    {status.cumulative_pnl !== null && status.cumulative_pnl !== undefined ? status.cumulative_pnl.toFixed(4) : '-'}
-                  </td>
-                   <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                    {status.pending_entry_order_id || '-'}
-                  </td>
-                   <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                    {status.pending_exit_order_id || '-'}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-300 break-words max-w-xs">
-                    {status.last_error || '-'}
-                  </td>
-                </tr>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                      {formatPnl(status.pnl)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                      {formatPnl(status.cumulative_pnl)}
+                    </td>
+                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                      {status.pending_entry_order_id || '-'}
+                    </td>
+                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                      {status.pending_exit_order_id || '-'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-red-600 dark:text-red-400 truncate" title={status.last_error || ''}>{status.last_error || '-'}</td>
+                  </tr>
+                  {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
+                  {expandedRows[status.symbol] && (
+                    <tr id={`history-${status.symbol}`}>
+                      {/* Celda que ocupa todo el ancho */}
+                      <td colSpan="7" className="px-4 py-4 bg-gray-50 dark:bg-gray-750"> {/* Color de fondo ligeramente diferente */}
+                        {loadingHistories[status.symbol] && (
+                          <p className="text-sm text-center text-gray-500 dark:text-gray-400">Loading history...</p>
+                        )}
+                        {historyErrors[status.symbol] && (
+                          <p className="text-sm text-center text-red-600 dark:text-red-400">{historyErrors[status.symbol]}</p>
+                        )}
+                        {!loadingHistories[status.symbol] && !historyErrors[status.symbol] && (
+                          tradeHistories[status.symbol]?.length > 0 ? (
+                            <div className="overflow-x-auto">
+                               <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">Last {tradeHistories[status.symbol].length} Trades for {status.symbol}:</h4>
+                              <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-600 text-xs">
+                                <thead className="bg-gray-100 dark:bg-gray-700">
+                                  <tr>
+                                    <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Close Time</th>
+                                    <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Reason</th>
+                                    <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Entry Price</th>
+                                    <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Close Price</th>
+                                    <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Quantity</th>
+                                    <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">PnL</th>
+                                    <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">ID</th> 
+                                  </tr>
+                                </thead>
+                                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                  {tradeHistories[status.symbol].map(trade => (
+                                    <tr key={trade.id} className="hover:bg-gray-50 dark:hover:bg-gray-600">
+                                      <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">{formatDate(trade.close_timestamp)}</td>
+                                      <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.close_reason || 'N/A'}</td>
+                                      <td className="px-3 py-2 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
+                                      <td className="px-3 py-2 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
+                                      <td className="px-3 py-2 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
+                                      <td className={`px-3 py-2 text-right whitespace-nowrap ${trade.pnl_usdt > 0 ? 'text-green-600 dark:text-green-400' : trade.pnl_usdt < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                        {formatPnl(trade.pnl_usdt)}
+                                      </td>
+                                      <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.id}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-center text-gray-500 dark:text-gray-400">No trade history found for {status.symbol}.</p>
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))
             ) : (
               <tr>

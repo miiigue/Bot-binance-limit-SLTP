@@ -19,7 +19,7 @@ import logging # Necesario para get_logger y calculate_sleep
 # Importar funciones y variables usando importaciones ABSOLUTAS (desde src)
 from src.config_loader import load_config, get_trading_symbols, CONFIG_FILE_PATH
 from src.logger_setup import setup_logging, get_logger
-from src.database import get_cumulative_pnl_by_symbol
+from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol
 # Importar TradingBot y BotState para run_bot_worker
 from src.bot import TradingBot, BotState 
 
@@ -550,6 +550,33 @@ def load_initial_config():
 
     logger.info(f"Configuración inicial cargada: {len(loaded_symbols_to_trade)} símbolos, Params procesados: {loaded_trading_params}")
     return True
+
+# --- NUEVO ENDPOINT PARA HISTORIAL DE TRADES POR SÍMBOLO ---
+@app.route('/api/trades/<symbol>', methods=['GET'])
+def get_symbol_trade_history(symbol: str):
+    """Endpoint para obtener los últimos N trades para un símbolo específico."""
+    logger = get_logger()
+    logger.info(f"Recibida petición GET /api/trades/{symbol}")
+    
+    # Podríamos añadir un parámetro opcional para el número de trades, ej: /api/trades/BTCUSDT?limit=20
+    # limit_param = request.args.get('limit', default=10, type=int)
+    # if not 1 <= limit_param <= 100: # Poner límites razonables
+    #     limit_param = 10
+    # Por ahora, usamos el default de la función (10)
+    
+    if not symbol:
+        logger.error("Petición a /api/trades sin especificar símbolo.")
+        return jsonify({"error": "Symbol parameter is required."}), 400
+        
+    try:
+        trades = get_last_n_trades_for_symbol(symbol)
+        logger.info(f"Devolviendo {len(trades)} trades para {symbol}")
+        # Flask jsonify manejará la conversión de la lista de dicts
+        return jsonify(trades)
+    except Exception as e:
+        logger.error(f"Error inesperado al obtener historial de trades para {symbol}: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to retrieve trade history for {symbol}"}), 500
+# --- FIN NUEVO ENDPOINT ---
 
 # La función para correr Flask en un hilo (start_flask_app) 
 # y el if __name__ == '__main__' no se necesitan aquí 
