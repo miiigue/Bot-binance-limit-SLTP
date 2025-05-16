@@ -143,6 +143,16 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
   // statusArray ya no es necesario, statuses es el array directamente
   // const statusArray = Object.values(statuses);
 
+  // --- CALCULAR EL TOTAL PNL HISTÓRICO ---
+  const totalCumulativePnl = statuses.reduce((acc, status) => {
+    const pnlValue = parseFloat(status.cumulative_pnl);
+    if (!isNaN(pnlValue)) {
+      return acc + pnlValue;
+    }
+    return acc;
+  }, 0);
+  // -------------------------------------
+
   return (
     <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 mt-6">
       <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Bot Status</h2>
@@ -153,6 +163,14 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
         onShutdown={onShutdown} 
       />
       
+      {/* --- MOSTRAR TOTAL PNL --- */}
+      <div className="my-4 text-center"> {/* Contenedor para centrar y dar margen */}
+        <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+          Total PNL (Histórico) = <span className={totalCumulativePnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>{totalCumulativePnl.toFixed(5)} USDT</span>
+        </p>
+      </div>
+      {/* ------------------------- */}
+
       {/* Mostrar el mensaje de error personalizado */}
       {error && <p className="text-yellow-600 dark:text-yellow-400 mb-4 font-medium">{error}</p>}
       <div className="overflow-x-auto">
