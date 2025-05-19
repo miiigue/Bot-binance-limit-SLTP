@@ -13,6 +13,7 @@ const initialConfig = {
   volumeSmaPeriod: 20,
   volumeFactor: 1,
   downtrendCheckCandles: 3,
+  downtrend_level_check: 5,
   positionSizeUSDT: 50,
   stopLossUSDT: 20,
   takeProfitUSDT: 30,
@@ -92,6 +93,7 @@ function ConfigForm() {
           volumeSmaPeriod: parseValue(backendConfig.TRADING?.volume_sma_period, initialConfig.volumeSmaPeriod, 'volumeSmaPeriod'),
           volumeFactor: parseValue(backendConfig.TRADING?.volume_factor, initialConfig.volumeFactor, 'volumeFactor'),
           downtrendCheckCandles: parseValue(backendConfig.TRADING?.downtrend_check_candles, initialConfig.downtrendCheckCandles, 'downtrendCheckCandles'),
+          downtrend_level_check: parseValue(backendConfig.TRADING?.downtrend_level_check, initialConfig.downtrend_level_check, 'downtrend_level_check'),
           positionSizeUSDT: parseValue(backendConfig.TRADING?.position_size_usdt, initialConfig.positionSizeUSDT, 'positionSizeUSDT'),
           stopLossUSDT: parseValue(backendConfig.TRADING?.stop_loss_usdt, initialConfig.stopLossUSDT, 'stopLossUSDT'),
           takeProfitUSDT: parseValue(backendConfig.TRADING?.take_profit_usdt, initialConfig.takeProfitUSDT, 'takeProfitUSDT'),
@@ -129,7 +131,7 @@ function ConfigForm() {
       'positionSizeUSDT', 'stopLossUSDT', 'takeProfitUSDT'
     ];
     const integerNumberFields = [
-      'rsiPeriod', 'volumeSmaPeriod', 'cycleSleepSeconds', 'orderTimeoutSeconds', 'downtrendCheckCandles'
+      'rsiPeriod', 'volumeSmaPeriod', 'cycleSleepSeconds', 'orderTimeoutSeconds', 'downtrendCheckCandles', 'downtrend_level_check'
     ];
 
     if (type === 'checkbox') {
@@ -197,11 +199,13 @@ function ConfigForm() {
       volumeSmaPeriod: parseValue(config.volumeSmaPeriod, initialConfig.volumeSmaPeriod, 'volumeSmaPeriod'),
       volumeFactor: parseValue(config.volumeFactor, initialConfig.volumeFactor, 'volumeFactor'),
       downtrendCheckCandles: parseValue(config.downtrendCheckCandles, initialConfig.downtrendCheckCandles, 'downtrendCheckCandles'),
+      downtrend_level_check: parseValue(config.downtrend_level_check, initialConfig.downtrend_level_check, 'downtrend_level_check'),
       positionSizeUSDT: parseValue(config.positionSizeUSDT, initialConfig.positionSizeUSDT, 'positionSizeUSDT'),
       stopLossUSDT: parseValue(config.stopLossUSDT, initialConfig.stopLossUSDT, 'stopLossUSDT'),
       takeProfitUSDT: parseValue(config.takeProfitUSDT, initialConfig.takeProfitUSDT, 'takeProfitUSDT'),
       cycleSleepSeconds: parseValue(config.cycleSleepSeconds, initialConfig.cycleSleepSeconds, 'cycleSleepSeconds'),
       orderTimeoutSeconds: parseValue(config.orderTimeoutSeconds, initialConfig.orderTimeoutSeconds, 'orderTimeoutSeconds'),
+      active: config.active,
     };
     
     // Actualizar el estado local con los valores limpios/parseados (bueno para UI consistency)
@@ -431,6 +435,23 @@ function ConfigForm() {
                   placeholder="Ej: 3 (0 para desactivar)"
                 />
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Nº velas previas para chequear tendencia bajista (0-1 desactiva, mín 2 para operar).</p>
+              </div>
+              <div>
+                <label htmlFor="downtrendLevelCheck" className={labelClass}>
+                  Niveles Tendencia Bajista
+                </label>
+                <input
+                  type="number"
+                  name="downtrend_level_check"
+                  id="downtrend_level_check"
+                  value={config.downtrend_level_check || ''}
+                  onChange={handleChange}
+                  className={inputNumberClass}
+                  min="1"
+                  step="1"
+                  placeholder="Ej: 5 (0 para desactivar)"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Compara el cierre de la última vela con la vela N, 2N y 3N atrás. Si todos son descendentes, bloquea la entrada. (0 o vacío para desactivar)</p>
               </div>
             </div>
         </fieldset>

@@ -178,18 +178,24 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
               {/* --- NUEVA COLUMNA VACÍA PARA EL BOTÓN DE EXPANDIR --- */}
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-12"></th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Symbol</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">State</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Current PnL</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Hist. PnL</th>
-               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-10"></th>
+              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Symbol</th>
+              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">State</th>
+              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Current PnL</th>
+              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Hist. PnL</th>
+               <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Pending Entry ID
               </th>
-               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+               <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Pending Exit ID
               </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                Pending TP ID
+              </th>
+              <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                Pending SL ID
+              </th>
+              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Last Error
               </th>
             </tr>
@@ -200,7 +206,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
                 <React.Fragment key={status.symbol}> { /* Usar Fragment para agrupar fila principal y desplegable */}
                   <tr className="hover:bg-gray-50 dark:hover:bg-gray-700">
                     {/* --- CELDA CON BOTÓN DE EXPANDIR --- */}
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       <button 
                         onClick={() => toggleRow(status.symbol)}
                         className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
@@ -211,8 +217,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
                       </button>
                     </td>
                     {/* --- Resto de las celdas (sin cambios) --- */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{status.symbol}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                    <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{status.symbol}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                          status.state === 'IN_POSITION' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                          status.state === 'ERROR' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
@@ -223,25 +229,31 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
                        {status.state || 'N/A'}
                      </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                       {formatPnl(status.pnl)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                       {formatPnl(status.cumulative_pnl)}
                     </td>
-                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                       {status.pending_entry_order_id || '-'}
                     </td>
-                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                       {status.pending_exit_order_id || '-'}
                     </td>
-                    <td className="px-6 py-4 text-sm text-red-600 dark:text-red-400 truncate" title={status.last_error || ''}>{status.last_error || '-'}</td>
+                    <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                      {status.pending_tp_order_id || '-'}
+                    </td>
+                    <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                      {status.pending_sl_order_id || '-'}
+                    </td>
+                    <td className="px-3 py-3 text-sm text-red-600 dark:text-red-400 truncate" title={status.last_error || ''}>{status.last_error || '-'}</td>
                   </tr>
                   {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
                   {expandedRows[status.symbol] && (
                     <tr id={`history-${status.symbol}`}>
                       {/* Celda que ocupa todo el ancho */}
-                      <td colSpan="7" className="px-4 py-4 bg-gray-50 dark:bg-gray-750"> {/* Color de fondo ligeramente diferente */}
+                      <td colSpan="10" className="px-2 py-2 bg-gray-50 dark:bg-gray-750">
                         {loadingHistories[status.symbol] && (
                           <p className="text-sm text-center text-gray-500 dark:text-gray-400">Loading history...</p>
                         )}
@@ -255,27 +267,27 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
                               <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-600 text-xs">
                                 <thead className="bg-gray-100 dark:bg-gray-700">
                                   <tr>
-                                    <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Close Time</th>
-                                    <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Reason</th>
-                                    <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Entry Price</th>
-                                    <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Close Price</th>
-                                    <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Quantity</th>
-                                    <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">PnL</th>
-                                    <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">ID</th> 
+                                    <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-300">Close Time</th>
+                                    <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-300">Reason</th>
+                                    <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-300">Entry Price</th>
+                                    <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-300">Close Price</th>
+                                    <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-300">Quantity</th>
+                                    <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-300">PnL</th>
+                                    <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-300">ID</th> 
                                   </tr>
                                 </thead>
                                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                   {tradeHistories[status.symbol].map(trade => (
                                     <tr key={trade.id} className="hover:bg-gray-50 dark:hover:bg-gray-600">
-                                      <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">{formatDate(trade.close_timestamp)}</td>
-                                      <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.close_reason || 'N/A'}</td>
-                                      <td className="px-3 py-2 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
-                                      <td className="px-3 py-2 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
-                                      <td className="px-3 py-2 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
-                                      <td className={`px-3 py-2 text-right whitespace-nowrap ${trade.pnl_usdt > 0 ? 'text-green-600 dark:text-green-400' : trade.pnl_usdt < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                      <td className="px-2 py-1 whitespace-nowrap text-gray-700 dark:text-gray-300">{formatDate(trade.close_timestamp)}</td>
+                                      <td className="px-2 py-1 whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.close_reason || 'N/A'}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
+                                      <td className={`px-2 py-1 text-right whitespace-nowrap ${trade.pnl_usdt > 0 ? 'text-green-600 dark:text-green-400' : trade.pnl_usdt < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
                                         {formatPnl(trade.pnl_usdt)}
                                       </td>
-                                      <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.id}</td>
+                                      <td className="px-2 py-1 whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.id}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -292,7 +304,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
               ))
             ) : (
               <tr>
-                <td colSpan="7" className="px-4 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan="10" className="px-4 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
                   {error && statuses.length === 0 
                      ? 'No se pudieron obtener datos y la API no responde.'
                      : error 

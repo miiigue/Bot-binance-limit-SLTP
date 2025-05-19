@@ -416,10 +416,147 @@ def cancel_futures_order(symbol: str, order_id: int) -> dict | None:
         # Un error común es si la orden ya no existe (fue llenada o cancelada justo antes)
         logger.error(f"Error al intentar cancelar orden {order_id} ({symbol}): {e}", exc_info=False) # No mostrar traceback completo para errores esperados
         return None
-# --- FIN NUEVAS FUNCIONES ---
 
-# --- Bloque de ejemplo (opcionalmente actualizar si se usa) ---
-if __name__ == '__main__':
-    # ... (El código de prueba aquí necesitaría ser adaptado también a la nueva librería) ...
-    # ... (Por ahora lo dejamos como está, ya que no se ejecuta normalmente) ...
-    pass # Añadimos pass para que el if no quede vacío si comentamos lo demás 
+# --- Funciones para colocar órdenes TP/SL ---
+def create_futures_take_profit_order(symbol: str, side: str, quantity: float, take_profit_price: str, close_position: bool = True) -> dict | None:
+    """
+    Coloca una orden TAKE_PROFIT_MARKET en Binance Futures.
+    Para una posición LONG, side='SELL'.
+    take_profit_price es el precio al que se activa la orden de mercado.
+    """
+    logger = get_logger()
+    client = get_futures_client()
+    if not client:
+        logger.error("Cliente de Binance no inicializado al intentar crear orden Take Profit.")
+        return None
+
+    params = {
+        'symbol': symbol,
+        'side': side,                    # 'BUY' o 'SELL'
+        'type': 'TAKE_PROFIT_MARKET',    # Tipo de orden
+        'quantity': quantity,            # Cantidad a comprar/vender
+        'stopPrice': take_profit_price,  # Precio de activación para TP
+        'closePosition': str(close_position).lower(), # 'true' o 'false'
+        'positionSide': 'LONG'           # Asumiendo que el bot solo opera LONG
+        # 'timeInForce': 'GTC', # No usualmente necesario para TAKE_PROFIT_MARKET con closePosition=true
+    }
+    logger.info(f"Intentando colocar orden TAKE_PROFIT_MARKET para {symbol}: Side={side}, Qty={quantity}, TP Price={take_profit_price}, ClosePos={close_position}")
+    try:
+        # Usar client.new_order() que es el método estándar para crear órdenes
+        order = client.new_order(**params)
+        logger.info(f"Orden TAKE_PROFIT_MARKET creada: ID={order.get('orderId')}, Status={order.get('status')}")
+        logger.debug(f"Respuesta completa de orden TP: {order}")
+        return order
+    except ClientError as e:
+        logger.error(f"Error de API al colocar la orden TAKE_PROFIT_MARKET para {symbol} @ {take_profit_price}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}", exc_info=True)
+        return None
+    except Exception as e:
+        logger.error(f"Error al colocar la orden TAKE_PROFIT_MARKET para {symbol} @ {take_profit_price}: {e}", exc_info=True)
+        return None
+
+def create_futures_stop_loss_order(symbol: str, side: str, quantity: float, stop_loss_price: str, close_position: bool = True) -> dict | None:
+    """
+    Coloca una orden STOP_MARKET en Binance Futures.
+    Para una posición LONG, side='SELL'.
+    stop_loss_price es el precio al que se activa la orden de mercado.
+    """
+    logger = get_logger()
+    client = get_futures_client()
+    if not client:
+        logger.error("Cliente de Binance no inicializado al intentar crear orden Stop Loss.")
+        return None
+
+    params = {
+        'symbol': symbol,
+        'side': side,                   # 'BUY' o 'SELL'
+        'type': 'STOP_MARKET',          # Tipo de orden
+        'quantity': quantity,           # Cantidad a comprar/vender
+        'stopPrice': stop_loss_price,   # Precio de activación para SL
+        'closePosition': str(close_position).lower(), # 'true' o 'false'
+        'positionSide': 'LONG'          # Asumiendo que el bot solo opera LONG
+        # 'timeInForce': 'GTC', # No usualmente necesario para STOP_MARKET con closePosition=true
+    }
+    logger.info(f"Intentando colocar orden STOP_MARKET para {symbol}: Side={side}, Qty={quantity}, SL Price={stop_loss_price}, ClosePos={close_position}")
+    try:
+        # Usar client.new_order()
+        order = client.new_order(**params)
+        logger.info(f"Orden STOP_MARKET creada: ID={order.get('orderId')}, Status={order.get('status')}")
+        logger.debug(f"Respuesta completa de orden SL: {order}")
+        return order
+    except ClientError as e:
+        logger.error(f"Error de API al colocar la orden STOP_MARKET para {symbol} @ {stop_loss_price}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}", exc_info=True)
+        return None
+    except Exception as e:
+        logger.error(f"Error al colocar la orden STOP_MARKET para {symbol} @ {stop_loss_price}: {e}", exc_info=True)
+        return None
+
+# --- FIN MODIFICACIONES ---
+
+# --- Nueva función para obtener historial de trades del usuario ---
+def get_user_trade_history(symbol: str, start_time_ms: int | None = None, limit: int = 10) -> list[dict] | None:
+    """
+    Fetches user's trade history for a specific symbol from Binance Futures.
+    Filters by start_time_ms if provided. Returns newest trades first by default from API,
+    but we sort explicitly to ensure.
+    """
+    logger = get_logger()
+    client = get_futures_client()
+    if not client:
+        logger.error(f"[{symbol}] Binance client not initialized for get_user_trade_history.")
+        return None
+
+    try:
+        params = {
+            'symbol': symbol.upper(),
+            'limit': limit
+        }
+        if start_time_ms is not None:
+            params['startTime'] = start_time_ms
+        
+        # client.futures_account_trades() suele devolver los más recientes si no se especifica orderId o fromId.
+        # La documentación indica que los trades se devuelven en orden ascendente por 'time'.
+        # Para obtener los más recientes relacionados con un cierre, podríamos necesitar buscar desde el final.
+        trades = client.futures_account_trades(**params)
+        
+        if trades:
+            # Ordenar por 'time' descendente (más nuevo primero) para procesar cierres recientes primero.
+            trades.sort(key=lambda x: x['time'], reverse=True)
+            logger.info(f"[{symbol}] Fetched {len(trades)} user trades. Limit: {limit}, StartTime: {start_time_ms}. Newest first.")
+            # logger.debug(f"[{symbol}] Last few trades: {trades[:min(3, len(trades))]}") # Log some for debugging
+        else:
+            logger.info(f"[{symbol}] No user trades found for the given parameters.")
+        return trades
+    except Exception as e:
+        logger.error(f"[{symbol}] Error fetching user trade history: {e}", exc_info=True)
+        return None
+# --- Fin de la nueva función ---
+
+# Ejemplo de uso (no ejecutar directamente aquí)
+# if __name__ == '__main__':
+#     from logger_setup import setup_logging
+#     main_logger = setup_logging(log_filename='binance_client_test.log')
+#     if main_logger:
+#         # Test get_futures_client
+#         # ... (código de prueba existente) ...
+
+#         # Para probar TP/SL (requiere una posición o configuración cuidadosa)
+#         # Asegúrate de que el símbolo, cantidad y precios sean válidos.
+#         test_symbol = "BTCUSDT" # Cambia a un símbolo de testnet si es necesario
+#         current_price_info = get_order_book_ticker(test_symbol)
+#         if current_price_info:
+#             current_price = Decimal(current_price_info.get('askPrice', '0'))
+#             if current_price > 0:
+#                 tp_test_price = current_price * Decimal('1.01') # TP +1%
+#                 sl_test_price = current_price * Decimal('0.99') # SL -1%
+#                 test_quantity = 0.001
+
+                # main_logger.info(f"Test: Precio actual {current_price}, TP: {tp_test_price}, SL: {sl_test_price}")
+
+                # tp_order = create_futures_take_profit_order(test_symbol, "SELL", test_quantity, str(tp_test_price.quantize(Decimal('0.01'))))
+                # if tp_order:
+                #     main_logger.info(f"TP order test result: {tp_order}")
+                
+                # sl_order = create_futures_stop_loss_order(test_symbol, "SELL", test_quantity, str(sl_test_price.quantize(Decimal('0.01'))))
+                # if sl_order:
+                #     main_logger.info(f"SL order test result: {sl_order}")
+# pass 

@@ -113,11 +113,9 @@ def config_to_dict(config: configparser.ConfigParser) -> dict:
 
 def map_frontend_trading_binance(frontend_data: dict) -> dict:
     """Mapea los datos del frontend a la estructura esperada por configparser para [TRADING] y [BINANCE]."""
-    # logger.debug(f"Mapping frontend data: {frontend_data}")
     config_output = {
         'BINANCE': {
             'mode': frontend_data.get('mode', 'paper'),
-            # Las claves API ya no se manejan aquí
         },
         'TRADING': {
             'rsi_interval': frontend_data.get('rsiInterval', '5m'),
@@ -130,6 +128,7 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'volume_sma_period': str(frontend_data.get('volumeSmaPeriod', 20)),
             'volume_factor': str(frontend_data.get('volumeFactor', 1.5)),
             'downtrend_check_candles': str(frontend_data.get('downtrendCheckCandles', 3)),
+            'downtrend_level_check': str(frontend_data.get('downtrend_level_check', 5)),
             'position_size_usdt': str(frontend_data.get('positionSizeUSDT', 50)),
             'stop_loss_usdt': str(frontend_data.get('stopLossUSDT', 20)),
             'take_profit_usdt': str(frontend_data.get('takeProfitUSDT', 30)),
@@ -140,13 +139,10 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
         }
     }
-    # Asegurarse de que los valores booleanos y numéricos se manejen correctamente si es necesario aquí
-    # Por ejemplo, si sabes que un valor debe ser un entero:
     if 'TRADING' in config_output and 'rsi_period' in config_output['TRADING']:
         try:
             config_output['TRADING']['rsi_period'] = int(config_output['TRADING']['rsi_period'])
         except ValueError:
-            # Manejar el error si no es un entero válido, o dejarlo como string
             pass 
     return config_output
 
