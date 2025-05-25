@@ -129,11 +129,27 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'volume_factor': str(frontend_data.get('volumeFactor', 1.5)),
             'downtrend_check_candles': str(frontend_data.get('downtrendCheckCandles', 3)),
             'downtrend_level_check': str(frontend_data.get('downtrend_level_check', 5)),
+            'required_uptrend_candles': str(frontend_data.get('requiredUptrendCandles', 0)),
             'position_size_usdt': str(frontend_data.get('positionSizeUSDT', 50)),
             'stop_loss_usdt': str(frontend_data.get('stopLossUSDT', 20)),
             'take_profit_usdt': str(frontend_data.get('takeProfitUSDT', 30)),
             'cycle_sleep_seconds': str(frontend_data.get('cycleSleepSeconds', 5)),
             'order_timeout_seconds': str(frontend_data.get('orderTimeoutSeconds', 10)),
+            'evaluate_rsi_delta': str(frontend_data.get('evaluateRsiDelta', True)).lower(),
+            'evaluate_volume_filter': str(frontend_data.get('evaluateVolumeFilter', True)).lower(),
+            'evaluate_rsi_range': str(frontend_data.get('evaluateRsiRange', True)).lower(),
+            'evaluate_downtrend_candles_block': str(frontend_data.get('evaluateDowntrendCandlesBlock', True)).lower(),
+            'evaluate_downtrend_levels_block': str(frontend_data.get('evaluateDowntrendLevelsBlock', True)).lower(),
+            'evaluate_required_uptrend': str(frontend_data.get('evaluateRequiredUptrend', True)).lower(),
+            'enable_take_profit_pnl': str(frontend_data.get('enableTakeProfitPnl', True)).lower(),
+            'enable_stop_loss_pnl': str(frontend_data.get('enableStopLossPnl', True)).lower(),
+            'enable_trailing_rsi_stop': str(frontend_data.get('enableTrailingRsiStop', True)).lower(),
+            'enable_price_trailing_stop': str(frontend_data.get('enablePriceTrailingStop', True)).lower(),
+            'price_trailing_stop_distance_usdt': str(frontend_data.get('priceTrailingStopDistanceUSDT', 0.05)),
+            'price_trailing_stop_activation_pnl_usdt': str(frontend_data.get('priceTrailingStopActivationPnlUSDT', 0.02)),
+            'enable_pnl_trailing_stop': str(frontend_data.get('enablePnlTrailingStop', True)).lower(),
+            'pnl_trailing_stop_activation_usdt': str(frontend_data.get('pnlTrailingStopActivationUSDT', 0.1)),
+            'pnl_trailing_stop_drop_usdt': str(frontend_data.get('pnlTrailingStopDropUSDT', 0.05))
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -532,12 +548,36 @@ def load_initial_config():
     for key, value_str in temp_trading_params.items():
         original_value = value_str # Guardar para logs en caso de error
         try:
-            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles']:
+            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_level_check', 'required_uptrend_candles']:
                 loaded_trading_params[key] = int(value_str)
             elif key in ['rsi_threshold_up', 'rsi_threshold_down', 'rsi_entry_level_low', 'rsi_entry_level_high',
                          'rsi_target',
-                         'volume_factor', 'position_size_usdt', 'stop_loss_usdt', 'take_profit_usdt']:
+                         'volume_factor', 'position_size_usdt', 'stop_loss_usdt', 'take_profit_usdt',
+                         'price_trailing_stop_distance_usdt',
+                         'price_trailing_stop_activation_pnl_usdt']:
                 loaded_trading_params[key] = float(value_str)
+            elif key == 'evaluate_rsi_delta':
+                loaded_trading_params[key] = value_str.lower() == 'true'
+            elif key == 'evaluate_volume_filter':
+                loaded_trading_params[key] = value_str.lower() == 'true'
+            elif key == 'evaluate_rsi_range':
+                loaded_trading_params[key] = value_str.lower() == 'true'
+            elif key == 'evaluate_downtrend_candles_block':
+                loaded_trading_params[key] = value_str.lower() == 'true'
+            elif key == 'evaluate_downtrend_levels_block':
+                loaded_trading_params[key] = value_str.lower() == 'true'
+            elif key == 'evaluate_required_uptrend':
+                loaded_trading_params[key] = value_str.lower() == 'true'
+            elif key == 'enable_take_profit_pnl':
+                loaded_trading_params[key] = value_str.lower() == 'true'
+            elif key == 'enable_stop_loss_pnl':
+                loaded_trading_params[key] = value_str.lower() == 'true'
+            elif key == 'enable_trailing_rsi_stop':
+                loaded_trading_params[key] = value_str.lower() == 'true'
+            elif key == 'enable_price_trailing_stop':
+                loaded_trading_params[key] = value_str.lower() == 'true'
+            elif key == 'enable_pnl_trailing_stop':
+                loaded_trading_params[key] = value_str.lower() == 'true'
             else:
                 loaded_trading_params[key] = value_str # Mantener como string si no es uno de los conocidos numéricos
         except ValueError:
@@ -554,19 +594,21 @@ def get_symbol_trade_history(symbol: str):
     logger = get_logger()
     logger.info(f"Recibida petición GET /api/trades/{symbol}")
     
-    # Podríamos añadir un parámetro opcional para el número de trades, ej: /api/trades/BTCUSDT?limit=20
-    # limit_param = request.args.get('limit', default=10, type=int)
-    # if not 1 <= limit_param <= 100: # Poner límites razonables
-    #     limit_param = 10
-    # Por ahora, usamos el default de la función (10)
+    # --- LEER Y VALIDAR EL PARÁMETRO 'limit' --- 
+    limit_param = request.args.get('limit', default=2, type=int) # Default 2 como en el frontend
+    if not 1 <= limit_param <= 50: # Poner límites razonables (ej. 1 a 50)
+        logger.warning(f"Parámetro 'limit' ({limit_param}) fuera de rango [1-50]. Usando 2.")
+        limit_param = 2 # Volver al default si está fuera de rango
+    # -------------------------------------------
     
     if not symbol:
         logger.error("Petición a /api/trades sin especificar símbolo.")
         return jsonify({"error": "Symbol parameter is required."}), 400
         
     try:
-        trades = get_last_n_trades_for_symbol(symbol)
-        logger.info(f"Devolviendo {len(trades)} trades para {symbol}")
+        # --- PASAR limit_param A LA FUNCIÓN DE LA BASE DE DATOS ---
+        trades = get_last_n_trades_for_symbol(symbol, n=limit_param)
+        logger.info(f"Devolviendo {len(trades)} trades para {symbol} (límite solicitado: {limit_param})")
         # Flask jsonify manejará la conversión de la lista de dicts
         return jsonify(trades)
     except Exception as e:

@@ -1,642 +1,354 @@
 import React, { useState, useEffect } from 'react';
 
+// --- Definiciones de Componentes Auxiliares ---
+function ConfigSection({ title, className, children }) {
+  return (
+    <fieldset className={`border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600 ${className || ''}`}>
+      <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">{title}</legend>
+      <div className="mt-4">
+        {children}
+      </div>
+    </fieldset>
+  );
+}
+
+function ConfigItem({ labelText, htmlFor, description, children }) {
+  return (
+    <div>
+      <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        {labelText}
+      </label>
+      {children}
+      {description && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{description}</p>}
+    </div>
+  );
+}
+// --- Fin Definiciones de Componentes Auxiliares ---
+
 // Valores iniciales o por defecto para el formulario
-const initialConfig = {
+const defaultConfigValues = {
   symbolsToTrade: '',
   rsiInterval: '5m',
   rsiPeriod: 14,
-  rsiThresholdUp: 8,
-  rsiThresholdDown: -8,
-  rsiEntryLevelLow: 25,
+  rsiThresholdUp: 1.5,
+  rsiThresholdDown: -1.0,
+  rsiEntryLevelLow: 30,
   rsiEntryLevelHigh: 75,
   rsiTarget: 50,
   volumeSmaPeriod: 20,
-  volumeFactor: 1,
+  volumeFactor: 1.5,
   downtrendCheckCandles: 3,
-  downtrend_level_check: 5,
+  downtrendLevelCheck: 5,
+  requiredUptrendCandles: 0,
   positionSizeUSDT: 50,
-  stopLossUSDT: 20,
-  takeProfitUSDT: 30,
-  cycleSleepSeconds: 0,
+  stopLossUSDT: -10,
+  takeProfitUSDT: 20,
+  cycleSleepSeconds: 5,
   mode: 'paper',
-  active: false,
   orderTimeoutSeconds: 60,
+  evaluateRsiDelta: true,
+  evaluateVolumeFilter: true,
+  evaluateRsiRange: true,
+  evaluateDowntrendCandlesBlock: true,
+  evaluateDowntrendLevelsBlock: true,
+  evaluateRequiredUptrend: true,
+  enableTakeProfitPnl: true,
+  enableStopLossPnl: true,
+  enableTrailingRsiStop: true,
+  enablePriceTrailingStop: true,
+  priceTrailingStopDistanceUSDT: 0.05,
+  priceTrailingStopActivationPnlUSDT: 0.02,
+  enablePnlTrailingStop: true,
+  pnlTrailingStopActivationUSDT: 0.1,
+  pnlTrailingStopDropUSDT: 0.05
 };
 
-// Helper function to parse potential numbers from config
-const parseValue = (value, defaultValue, name = '') => {
-  if (value === '' || value === null || value === undefined) return defaultValue;
-  // Allow '-' as a valid starting character for relevant fields
-  if ((name === 'stopLossUSDT' || name === 'rsiThresholdDown') && value === '-') {
-      return '-'; // Keep it as a string for now, will be parsed later or on blur
-  }
-  // Allow any valid number string for rsiTarget temporarily
-  if (name === 'rsiTarget') {
-     if (value === '') return defaultValue; // Or maybe null/empty string?
-     const num = Number(value);
-     if (!isNaN(num)) return num; // Allow float for now
-     return defaultValue; // Revert if invalid number
-  }
-  const num = Number(value);
+function ConfigForm({ initialConfig: propInitialConfig, onSave }) {
+  const [formData, setFormData] = useState(defaultConfigValues);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
-  if (!isNaN(num)) {
-    if (name === 'takeProfitUSDT' && num < 0) {
-      console.warn("Take Profit debe ser positivo o cero.");
-    }
-    if (name === 'rsiPeriod' && (!Number.isInteger(num) || num <= 0)) {
-      console.warn("RSI Period debe ser un entero positivo.");
-    }
-    if (name === 'cycleSleepSeconds' && num !== 0 && (num < 5 || !Number.isInteger(num))) {
-      console.warn("Tiempo de espera debe ser 0 (auto) o un entero >= 5 segundos.");
-    }
-    if (name === 'volumeSmaPeriod' && (!Number.isInteger(num) || num <= 0)) {
-      console.warn("Volume SMA Period debe ser un entero positivo.");
-    }
-    if (name === 'volumeFactor' && num <= 0) {
-      console.warn("Volume Factor debe ser positivo.");
-    }
-    return num;
-  }
-  return defaultValue;
-};
-
-function ConfigForm() {
-  // Estado para guardar los valores del formulario
-  const [config, setConfig] = useState(initialConfig);
-  // Estado para mensajes (opcional, para feedback al usuario)
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(true); // Estado para indicar carga inicial
-
-  // --- Cargar configuración inicial desde la API ---
   useEffect(() => {
-    const fetchConfig = async () => {
-      setMessage('Cargando configuración...');
-      setIsLoading(true);
-      try {
-        const response = await fetch('http://localhost:5002/api/config');
-        if (!response.ok) {
-          throw new Error(`Error HTTP ${response.status}: ${response.statusText}`);
-        }
-        const backendConfig = await response.json();
-
-        // Mapear la estructura del backend al estado plano del frontend
-        const frontendState = {
-          mode: backendConfig.BINANCE?.mode || 'paper',
-          symbolsToTrade: backendConfig.SYMBOLS?.symbols_to_trade || '',
-          rsiInterval: backendConfig.TRADING?.rsi_interval || '5m',
-          rsiPeriod: parseValue(backendConfig.TRADING?.rsi_period, initialConfig.rsiPeriod, 'rsiPeriod'),
-          rsiThresholdUp: parseValue(backendConfig.TRADING?.rsi_threshold_up, initialConfig.rsiThresholdUp, 'rsiThresholdUp'),
-          rsiThresholdDown: parseValue(backendConfig.TRADING?.rsi_threshold_down, initialConfig.rsiThresholdDown, 'rsiThresholdDown'),
-          rsiEntryLevelLow: parseValue(backendConfig.TRADING?.rsi_entry_level_low, initialConfig.rsiEntryLevelLow, 'rsiEntryLevelLow'),
-          rsiEntryLevelHigh: parseValue(backendConfig.TRADING?.rsi_entry_level_high, initialConfig.rsiEntryLevelHigh, 'rsiEntryLevelHigh'),
-          rsiTarget: parseValue(backendConfig.TRADING?.rsi_target, initialConfig.rsiTarget, 'rsiTarget'),
-          volumeSmaPeriod: parseValue(backendConfig.TRADING?.volume_sma_period, initialConfig.volumeSmaPeriod, 'volumeSmaPeriod'),
-          volumeFactor: parseValue(backendConfig.TRADING?.volume_factor, initialConfig.volumeFactor, 'volumeFactor'),
-          downtrendCheckCandles: parseValue(backendConfig.TRADING?.downtrend_check_candles, initialConfig.downtrendCheckCandles, 'downtrendCheckCandles'),
-          downtrend_level_check: parseValue(backendConfig.TRADING?.downtrend_level_check, initialConfig.downtrend_level_check, 'downtrend_level_check'),
-          positionSizeUSDT: parseValue(backendConfig.TRADING?.position_size_usdt, initialConfig.positionSizeUSDT, 'positionSizeUSDT'),
-          stopLossUSDT: parseValue(backendConfig.TRADING?.stop_loss_usdt, initialConfig.stopLossUSDT, 'stopLossUSDT'),
-          takeProfitUSDT: parseValue(backendConfig.TRADING?.take_profit_usdt, initialConfig.takeProfitUSDT, 'takeProfitUSDT'),
-          cycleSleepSeconds: parseValue(backendConfig.TRADING?.cycle_sleep_seconds, initialConfig.cycleSleepSeconds, 'cycleSleepSeconds'),
-          orderTimeoutSeconds: parseValue(backendConfig.TRADING?.order_timeout_seconds, initialConfig.orderTimeoutSeconds, 'orderTimeoutSeconds'),
-          active: config.active,
-        };
-
-        setConfig(frontendState);
-        setMessage('Configuración cargada.');
-
-      } catch (error) {
-        console.error('Error al cargar la configuración:', error);
-        setMessage(`Error al cargar configuración: ${error.message}. Usando valores por defecto.`);
-        setConfig(initialConfig);
-      } finally {
-          setIsLoading(false);
-          setTimeout(() => setMessage(''), 3000);
-      }
-    };
-
-    fetchConfig();
-  }, []);
-
-  // Manejador genérico para cambios en los inputs
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-
-    let processedValue = value;
-
-    const numericTextFields = [
-      'rsiThresholdUp', 'rsiThresholdDown', 'rsiEntryLevelLow', 'rsiEntryLevelHigh',
-      'rsiTarget',
-      'volumeFactor',
-      'positionSizeUSDT', 'stopLossUSDT', 'takeProfitUSDT'
-    ];
-    const integerNumberFields = [
-      'rsiPeriod', 'volumeSmaPeriod', 'cycleSleepSeconds', 'orderTimeoutSeconds', 'downtrendCheckCandles', 'downtrend_level_check'
-    ];
-
-    if (type === 'checkbox') {
-      processedValue = checked;
-    } else if (numericTextFields.includes(name)) {
-      const isValidNumericString = (val) => {
-        if (val === '') return true;
-        // Allow just a minus sign for fields that can be negative
-        if ((name === 'rsiThresholdDown' || name === 'stopLossUSDT') && val === '-') return true;
-        // Permitir números positivos y decimales para rsiTarget
-        if (name === 'rsiTarget') return /^[+]?\d*\.?\d*$/.test(val) && (val.match(/\./g) || []).length <= 1;
-        // Regex to allow optional leading minus, digits, optional single decimal point, and more digits
-        return /^-?\d*\.?\d*$/.test(val) && (val.match(/\./g) || []).length <= 1 && (val.match(/-/g) || []).length <= (val.startsWith('-') ? 1: 0) ;
-      };
-
-      if (isValidNumericString(value)) {
-        // Removed the specific block preventing '-' for stopLossUSDT
-        processedValue = value;
-      } else {
-        // If not valid, revert to the current value in state for that field
-        processedValue = config[name]; 
-      }
-    } else if (integerNumberFields.includes(name)) {
-      if (value === '') {
-        processedValue = ''; 
-      } else {
-        const num = Number(value);
-        processedValue = Number.isInteger(num) ? num : config[name]; 
-        if (name === 'cycleSleepSeconds' && num !== 0 && num < 5 && value !== '') {
-             processedValue = num;
-        }
-        if (name === 'downtrendCheckCandles' && value !== '' && num < 0) {
-            processedValue = 0;
+    if (propInitialConfig) {
+      const updatedFormData = { ...defaultConfigValues };
+      for (const key in propInitialConfig) {
+        if (propInitialConfig[key] !== undefined && propInitialConfig[key] !== null) {
+          if (typeof defaultConfigValues[key] === 'boolean') {
+            updatedFormData[key] = !!propInitialConfig[key];
+          } else {
+            updatedFormData[key] = propInitialConfig[key];
+          }
         }
       }
+      if (propInitialConfig.downtrend_level_check !== undefined) {
+        updatedFormData.downtrendLevelCheck = propInitialConfig.downtrend_level_check;
+      }
+      setFormData(updatedFormData);
     }
+  }, [propInitialConfig]);
 
-    setConfig(prevConfig => ({
-      ...prevConfig,
-      [name]: processedValue,
+  const handleChange = (event) => {
+    const { name, value, type, checked } = event.target;
+    setFormData(prevFormData => ({
+      ...prevFormData,
+      [name]: type === 'checkbox' ? checked : value
     }));
   };
 
-  // --- Manejador para enviar el formulario a la API ---
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMessage('Guardando configuración...');
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    setShowSuccessMessage(false);
 
-    // Limpiar y validar la lista de símbolos antes de enviar
-    const symbolsRaw = config.symbolsToTrade || '';
-    const symbolsList = symbolsRaw.split(',').map(s => s.trim().toUpperCase()).filter(s => s);
-    const cleanSymbolsString = symbolsList.join(',');
-
-    // Crear el objeto a enviar, asegurando tipos correctos usando parseValue
-    const configToSend = {
-      mode: config.mode,
-      symbolsToTrade: cleanSymbolsString,
-      rsiInterval: config.rsiInterval,
-      rsiPeriod: parseValue(config.rsiPeriod, initialConfig.rsiPeriod, 'rsiPeriod'),
-      rsiThresholdUp: parseValue(config.rsiThresholdUp, initialConfig.rsiThresholdUp, 'rsiThresholdUp'),
-      rsiThresholdDown: parseValue(config.rsiThresholdDown, initialConfig.rsiThresholdDown, 'rsiThresholdDown'),
-      rsiEntryLevelLow: parseValue(config.rsiEntryLevelLow, initialConfig.rsiEntryLevelLow, 'rsiEntryLevelLow'),
-      rsiEntryLevelHigh: parseValue(config.rsiEntryLevelHigh, initialConfig.rsiEntryLevelHigh, 'rsiEntryLevelHigh'),
-      rsiTarget: parseValue(config.rsiTarget, initialConfig.rsiTarget, 'rsiTarget'),
-      volumeSmaPeriod: parseValue(config.volumeSmaPeriod, initialConfig.volumeSmaPeriod, 'volumeSmaPeriod'),
-      volumeFactor: parseValue(config.volumeFactor, initialConfig.volumeFactor, 'volumeFactor'),
-      downtrendCheckCandles: parseValue(config.downtrendCheckCandles, initialConfig.downtrendCheckCandles, 'downtrendCheckCandles'),
-      downtrend_level_check: parseValue(config.downtrend_level_check, initialConfig.downtrend_level_check, 'downtrend_level_check'),
-      positionSizeUSDT: parseValue(config.positionSizeUSDT, initialConfig.positionSizeUSDT, 'positionSizeUSDT'),
-      stopLossUSDT: parseValue(config.stopLossUSDT, initialConfig.stopLossUSDT, 'stopLossUSDT'),
-      takeProfitUSDT: parseValue(config.takeProfitUSDT, initialConfig.takeProfitUSDT, 'takeProfitUSDT'),
-      cycleSleepSeconds: parseValue(config.cycleSleepSeconds, initialConfig.cycleSleepSeconds, 'cycleSleepSeconds'),
-      orderTimeoutSeconds: parseValue(config.orderTimeoutSeconds, initialConfig.orderTimeoutSeconds, 'orderTimeoutSeconds'),
-      active: config.active,
-    };
-    
-    // Actualizar el estado local con los valores limpios/parseados (bueno para UI consistency)
-    setConfig(prev => ({ 
-        ...prev,
-        ...configToSend,
-        symbolsToTrade: cleanSymbolsString,
-        active: prev.active
-    }));
+    const dataToSend = { ...formData };
+    if (dataToSend.downtrendLevelCheck !== undefined) {
+        dataToSend.downtrend_level_check = dataToSend.downtrendLevelCheck;
+    }
 
     try {
-      const response = await fetch('http://localhost:5002/api/config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(configToSend),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Error HTTP ${response.status}: ${response.statusText} - ${errorData.error || 'Error desconocido'}`);
+      const success = await onSave(dataToSend);
+      if (success) {
+        setShowSuccessMessage(true);
+        setTimeout(() => setShowSuccessMessage(false), 3000);
       }
-
-      const result = await response.json();
-      setMessage(result.message || '¡Configuración guardada con éxito!');
-      console.log('Respuesta del backend:', result);
-
-    } catch (error) {
-      console.error('Error al guardar la configuración:', error);
-      setMessage(`Error al guardar: ${error.message}`);
+    } catch (err) {
+      setError(err.message || 'Error al guardar la configuración.');
     } finally {
-         setTimeout(() => setMessage(''), 5000);
+      setIsLoading(false);
     }
   };
 
-  // Clases reutilizables de Tailwind para los inputs y labels
-  const labelClass = "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1";
-  const inputBaseClass = "mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-900 dark:text-gray-100";
-  const inputClass = `${inputBaseClass}`;
-  const inputNumberClass = `${inputBaseClass} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`; // Oculta flechas en input number
-  const selectClass = inputBaseClass;
-  const textareaClass = `${inputBaseClass} min-h-[60px]`;
+  const renderLabelWithCheckbox = (fieldName, labelText, checkboxName) => (
+    <div className="flex items-center justify-between mb-1">
+      <label htmlFor={fieldName} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        {labelText}
+      </label>
+      <div className="flex items-center">
+        <input
+          id={checkboxName}
+          name={checkboxName}
+          type="checkbox"
+          checked={!!formData[checkboxName]}
+          onChange={handleChange}
+          className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600"
+        />
+        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+          ({formData[checkboxName] ? 'Activado' : 'Desactivado'})
+        </span>
+      </div>
+    </div>
+  );
+
+  if (!propInitialConfig) {
+    return <p className="text-center text-gray-500 dark:text-gray-400">Cargando configuración...</p>;
+  }
 
   return (
-    // Añadir un div para mostrar mensajes de estado/error
-    <>
-      {message && (
-        <div className={`mb-4 p-3 rounded text-center ${message.startsWith('Error') ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'}`}>
-          {message}
+    <form onSubmit={handleSubmit} className="space-y-6 bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 mb-8">
+      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Configuración del Bot</h2>
+      
+      <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
+        <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">General</legend>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+          <div>
+            <label htmlFor="mode" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Modo Binance</label>
+            <select id="mode" name="mode" value={formData.mode} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm">
+              <option value="paper">Paper Trading (Testnet)</option>
+              <option value="live">Live Trading</option>
+            </select>
         </div>
-      )}
-      {isLoading && (
-         <div className="mb-4 p-3 rounded text-center bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200">
-            Cargando configuración inicial...
-         </div>
-      )}
-
-      {/* Contenedor del formulario principal (deshabilitar si está cargando) */}
-      <form onSubmit={handleSubmit} className={`space-y-6 p-6 bg-white dark:bg-gray-800 shadow-lg rounded-lg border border-gray-200 dark:border-gray-700 ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}>
-
-        {/* Mensaje informativo sobre gestión de API Keys */}
-        <div className="p-4 mb-6 text-sm text-blue-700 bg-blue-100 rounded-lg dark:bg-gray-800 dark:text-blue-300 border border-blue-300 dark:border-blue-600" role="alert">
-          <span className="font-medium">Nota Importante:</span> Las credenciales API (API Key y API Secret) ahora deben configurarse como variables de entorno directamente en el servidor donde se ejecuta el bot (por ejemplo, <code>BINANCE_API_KEY</code> y <code>BINANCE_API_SECRET</code>). Ya no se gestionan a través de esta interfaz.
-        </div>
-
-        {/* Sección Configuración General Trading */}
-        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
-            <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Configuración General Trading</legend>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-              <div className="md:col-span-2">
-                <label htmlFor="symbolsToTrade" className={labelClass}>
-                  Símbolos a Operar (separados por coma) <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  name="symbolsToTrade"
-                  id="symbolsToTrade"
-                  value={config.symbolsToTrade}
-                  onChange={handleChange}
-                  className={textareaClass}
-                  required
-                  placeholder="Ej: ETHUSDT,ADAUSDT,DOTUSDT,SOLUSDT"
-                  rows={2}
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Lista de pares de futuros a operar. Asegúrate que sean válidos.</p>
+          <div>
+            <label htmlFor="rsiInterval" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Intervalo Velas RSI</label>
+            <input type="text" name="rsiInterval" id="rsiInterval" value={formData.rsiInterval} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 1m, 5m"/>
               </div>
               <div>
-                <label htmlFor="rsiInterval" className={labelClass}>
-                  Intervalo RSI (para todos) <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="rsiInterval"
-                  id="rsiInterval"
-                  value={config.rsiInterval}
-                  onChange={handleChange}
-                  className={selectClass}
-                  required
-                >
-                  {['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'].map(interval => (
-                    <option key={interval} value={interval}>{interval}</option>
-                  ))}
-                </select>
+            <label htmlFor="positionSizeUSDT" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tamaño Posición (USDT)</label>
+            <input type="number" name="positionSizeUSDT" id="positionSizeUSDT" value={formData.positionSizeUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="1"/>
+          </div>
+          <div className="md:col-span-3">
+            <label htmlFor="symbolsToTrade" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Símbolos (separados por coma)</label>
+            <textarea name="symbolsToTrade" id="symbolsToTrade" value={formData.symbolsToTrade} onChange={handleChange} rows={2} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="BTCUSDT,ETHUSDT"></textarea>
               </div>
             </div>
         </fieldset>
 
-        {/* Sección Parámetros de ENTRADA */}
-        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600 bg-blue-50 dark:bg-primary-900">
-            <legend className="text-base font-medium text-primary-700 dark:text-primary-300 px-2">Parámetros de ENTRADA</legend>
+      <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
+        <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Parámetros de ENTRADA</legend>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4"> 
               <div>
-                <label htmlFor="rsiPeriod" className={labelClass}>
-                  Periodo RSI <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  name="rsiPeriod"
-                  id="rsiPeriod"
-                  value={config.rsiPeriod}
-                  onChange={handleChange}
-                  className={inputNumberClass}
-                  required
-                  min="2"
-                  step="1"
-                  placeholder="Ej: 14"
-                />
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Número de velas para calcular RSI.</p>
+            <label htmlFor="rsiPeriod" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Periodo RSI</label>
+            <input type="number" name="rsiPeriod" id="rsiPeriod" value={formData.rsiPeriod} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="1"/>
+          </div>
+          <div>
+            {renderLabelWithCheckbox("rsiThresholdUp", "RSI Cambio Positivo", "evaluateRsiDelta")}
+            <input type="number" name="rsiThresholdUp" id="rsiThresholdUp" value={formData.rsiThresholdUp} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+          </div>
+          <div>
+            {renderLabelWithCheckbox("rsiEntryLevelLow", "RSI Límite Inferior", "evaluateRsiRange")}
+            <input type="number" name="rsiEntryLevelLow" id="rsiEntryLevelLow" value={formData.rsiEntryLevelLow} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. Rango también afecta Límite Superior.</p>
               </div>
               <div>
-                <label htmlFor="rsiThresholdUp" className={labelClass}>
-                  RSI Cambio Positivo <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="rsiThresholdUp"
-                  id="rsiThresholdUp"
-                  value={config.rsiThresholdUp}
-                  onChange={handleChange}
-                  className={inputClass}
-                  required
-                />
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Cambio positivo de RSI necesario para entrar.</p>
+            <label htmlFor="rsiEntryLevelHigh" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RSI Límite Superior</label>
+            <input type="number" name="rsiEntryLevelHigh" id="rsiEntryLevelHigh" value={formData.rsiEntryLevelHigh} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
               </div>
               <div>
-                <label htmlFor="rsiEntryLevelLow" className={labelClass}>
-                  RSI Límite Inferior
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="rsiEntryLevelLow"
-                  id="rsiEntryLevelLow"
-                  value={config.rsiEntryLevelLow}
-                  onChange={handleChange}
-                  className={inputClass}
-                  step="0.1"
-                  placeholder="e.g., 25"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">El RSI debe estar por encima de este valor para considerar entrar.</p>
+            <label htmlFor="volumeSmaPeriod" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Periodo SMA Volumen</label>
+            <input type="number" name="volumeSmaPeriod" id="volumeSmaPeriod" value={formData.volumeSmaPeriod} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
               </div>
               <div>
-                <label htmlFor="rsiEntryLevelHigh" className={labelClass}>
-                  RSI Límite Superior
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="rsiEntryLevelHigh"
-                  id="rsiEntryLevelHigh"
-                  value={config.rsiEntryLevelHigh}
-                  onChange={handleChange}
-                  className={inputClass}
-                  step="0.1"
-                  placeholder="e.g., 75"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">El RSI debe estar por debajo de este valor para considerar entrar.</p>
+            {renderLabelWithCheckbox("volumeFactor", "Factor Volumen", "evaluateVolumeFilter")}
+            <input type="number" name="volumeFactor" id="volumeFactor" value={formData.volumeFactor} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. Volumen también afecta Periodo SMA.</p>
               </div>
               <div>
-                <label htmlFor="volumeSmaPeriod" className={labelClass}>
-                  Periodo SMA Volumen
-                </label>
-                <input
-                  type="number"
-                  name="volumeSmaPeriod"
-                  id="volumeSmaPeriod"
-                  value={config.volumeSmaPeriod}
-                  onChange={handleChange}
-                  className={inputNumberClass}
-                  min="1"
-                  step="1"
-                  placeholder="Ej: 20"
-                />
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Velas para calcular volumen promedio.</p>
+            {renderLabelWithCheckbox("downtrendCheckCandles", "Velas Tendencia Bajista", "evaluateDowntrendCandlesBlock")}
+            <input type="number" name="downtrendCheckCandles" id="downtrendCheckCandles" value={formData.downtrendCheckCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
               </div>
               <div>
-                <label htmlFor="volumeFactor" className={labelClass}>
-                  Factor Volumen
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="volumeFactor"
-                  id="volumeFactor"
-                  value={config.volumeFactor}
-                  onChange={handleChange}
-                  className={inputClass}
-                  min="0.01"
-                  step="0.01"
-                  placeholder="Ej: 1.5"
-                />
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Volumen actual {'>'} SMA * Factor (Ej: 1.5 = +50%).</p>
+            {renderLabelWithCheckbox("downtrendLevelCheck", "Niveles Tendencia Bajista", "evaluateDowntrendLevelsBlock")}
+            <input type="number" name="downtrendLevelCheck" id="downtrendLevelCheck" value={formData.downtrendLevelCheck} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
               </div>
               <div>
-                <label htmlFor="downtrendCheckCandles" className={labelClass}>
-                  Velas Tendencia Bajista
-                </label>
-                <input
-                  type="number"
-                  name="downtrendCheckCandles"
-                  id="downtrendCheckCandles"
-                  value={config.downtrendCheckCandles}
-                  onChange={handleChange}
-                  className={inputNumberClass}
-                  min="0"
-                  step="1"
-                  placeholder="Ej: 3 (0 para desactivar)"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Nº velas previas para chequear tendencia bajista (0-1 desactiva, mín 2 para operar).</p>
-              </div>
-              <div>
-                <label htmlFor="downtrendLevelCheck" className={labelClass}>
-                  Niveles Tendencia Bajista
-                </label>
-                <input
-                  type="number"
-                  name="downtrend_level_check"
-                  id="downtrend_level_check"
-                  value={config.downtrend_level_check || ''}
-                  onChange={handleChange}
-                  className={inputNumberClass}
-                  min="1"
-                  step="1"
-                  placeholder="Ej: 5 (0 para desactivar)"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Compara el cierre de la última vela con la vela N, 2N y 3N atrás. Si todos son descendentes, bloquea la entrada. (0 o vacío para desactivar)</p>
+            {renderLabelWithCheckbox("requiredUptrendCandles", "Velas Tendencia Alcista", "evaluateRequiredUptrend")}
+            <input type="number" name="requiredUptrendCandles" id="requiredUptrendCandles" value={formData.requiredUptrendCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
               </div>
             </div>
         </fieldset>
 
-        {/* Sección Parámetros de SALIDA y Gestión de Riesgo */}
-        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600 bg-green-50 dark:bg-green-900/20">
-            <legend className="text-base font-medium text-green-700 dark:text-green-300 px-2">Parámetros de SALIDA y Gestión de Riesgo</legend>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+      <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
+        <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Parámetros de SALIDA y Gestión de Riesgo</legend>
+        
+        <div className="mt-4 pt-4 border-t border-gray-300 dark:border-gray-700">
+          <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3">Take Profit / Stop Loss Fijos</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label htmlFor="rsiThresholdDown" className={labelClass}>
-                  RSI Drop Salida (Negativo) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="rsiThresholdDown"
-                  id="rsiThresholdDown"
-                  value={config.rsiThresholdDown}
-                  onChange={handleChange}
-                  className={inputClass}
-                  required
-                  placeholder="Ej: -10"
-                />
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Caída de RSI desde el objetivo para salir (debe ser negativo).</p>
+              {renderLabelWithCheckbox("takeProfitUSDT", "Take Profit (USDT)", "enableTakeProfitPnl")}
+              <input type="number" name="takeProfitUSDT" id="takeProfitUSDT" value={formData.takeProfitUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
               </div>
               <div>
-                <label htmlFor="rsiTarget" className={labelClass}>
-                  RSI Objetivo Activación <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="rsiTarget"
-                  id="rsiTarget"
-                  value={config.rsiTarget}
-                  onChange={handleChange}
-                  className={inputClass}
-                  required
-                  placeholder="Ej: 80"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Valor RSI que activa la vigilancia de salida por caída.</p>
-              </div>
-              <div>
-                <label htmlFor="positionSizeUSDT" className={labelClass}>
-                  Tamaño Posición (USDT) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="positionSizeUSDT"
-                  id="positionSizeUSDT"
-                  value={config.positionSizeUSDT}
-                  onChange={handleChange}
-                  className={inputClass}
-                  required
-                  min="1"
-                  step="any"
-                  placeholder="Ej: 50"
-                />
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Cantidad en USDT por operación.</p>
-              </div>
-              <div>
-                <label htmlFor="stopLossUSDT" className={labelClass}>
-                  Stop Loss (USDT)
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="stopLossUSDT"
-                  id="stopLossUSDT"
-                  value={config.stopLossUSDT}
-                  onChange={handleChange}
-                  className={inputClass}
-                  placeholder="Ej: 20 (o 0)"
-                />
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Pérdida máx. (negativo o 0). 0 o vacío = deshabilitado.</p>
-              </div>
-               <div>
-                <label htmlFor="takeProfitUSDT" className={labelClass}>
-                  Take Profit (USDT)
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="takeProfitUSDT"
-                  id="takeProfitUSDT"
-                  value={config.takeProfitUSDT}
-                  onChange={handleChange}
-                  className={inputClass}
-                  min="0"
-                  step="any"
-                  placeholder="Ej: 30 (o 0)"
-                />
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Ganancia a la que cerrar (positivo o 0). 0 o vacío = deshabilitado.</p>
-              </div>
+              {renderLabelWithCheckbox("stopLossUSDT", "Stop Loss (USDT)", "enableStopLossPnl")}
+              <input type="number" name="stopLossUSDT" id="stopLossUSDT" value={formData.stopLossUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
             </div>
-        </fieldset>
-
-        {/* Sección Control del Bot */}
-        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
-            <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Control del Bot</legend>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-              <div>
-                <label htmlFor="mode" className={labelClass}>
-                  Modo de Operación <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="mode"
-                  id="mode"
-                  value={config.mode}
-                  onChange={handleChange}
-                  className={selectClass}
-                  required
-                >
-                  <option value="paper">Paper Trading (Simulado)</option>
-                  <option value="live">Live Trading (Real)</option>
-                </select>
-                <p className={`mt-1 text-xs ${config.mode === 'live' ? 'text-red-600 dark:text-red-400 font-bold' : 'text-gray-500 dark:text-gray-400'}`}>
-                  {config.mode === 'live' ? '¡CUIDADO! Operaciones con dinero real.' : 'Operaciones simuladas sin riesgo.'}
-                </p>
-              </div>
-              <div>
-                <label htmlFor="cycleSleepSeconds" className={labelClass}>
-                  Espera entre Ciclos (seg)
-                </label>
-                <input
-                  type="number"
-                  name="cycleSleepSeconds"
-                  id="cycleSleepSeconds"
-                  value={config.cycleSleepSeconds}
-                  onChange={handleChange}
-                  className={inputNumberClass}
-                  min="0"
-                  step="1"
-                  placeholder="Ej: 10 (0 = auto)"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Segundos entre ciclos. 0 = Auto (basado en intervalo RSI, mín 60s).</p>
-              </div>
-              <div>
-                <label htmlFor="orderTimeoutSeconds" className={labelClass}>
-                  Timeout (seg)
-                </label>
-                <input
-                  type="number"
-                  name="orderTimeoutSeconds"
-                  id="orderTimeoutSeconds"
-                  value={config.orderTimeoutSeconds}
-                  onChange={handleChange}
-                  className={inputNumberClass}
-                  min="0"
-                  step="1"
-                  placeholder="Ej: 60"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Segundos a esperar antes de cancelar una orden LIMIT no completada (0 = sin timeout).</p>
-              </div>
-              <div className="flex items-center justify-start pt-5">
-                  <input
-                    id="active"
-                    name="active"
-                    type="checkbox"
-                    checked={config.active}
-                    onChange={handleChange}
-                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mr-2"
-                  />
-                  <label htmlFor="active" className={labelClass + " mb-0"}>
-                    Activar Bot (Experimental)
-                  </label>
-              </div>
-            </div>
-        </fieldset>
-
-        {/* Botón de Envío */}
-        <div className="pt-2">
-          <button
-            type="submit"
-            // Deshabilitar botón mientras se guarda
-            disabled={isLoading || message.includes('Guardando...')}
-            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {message.includes('Guardando...') ? 'Guardando...' : 'Guardar Configuración'} {/* Cambiar texto del botón */}
-          </button>
+          </div>
         </div>
 
+        <div className="mt-6 pt-4 border-t border-gray-300 dark:border-gray-700">
+          <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3">Trailing Stop por RSI</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label htmlFor="rsiTarget" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RSI Objetivo Activación (Salida)</label>
+              <input type="number" name="rsiTarget" id="rsiTarget" value={formData.rsiTarget} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+              </div>
+              <div>
+              {renderLabelWithCheckbox("rsiThresholdDown", "RSI Drop Salida (Negativo)", "enableTrailingRsiStop")}
+              <input type="number" name="rsiThresholdDown" id="rsiThresholdDown" value={formData.rsiThresholdDown} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. Trailing RSI también afecta RSI Objetivo.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 pt-4 border-t border-gray-300 dark:border-gray-700">
+          <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3">Trailing Stop por Precio</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              {renderLabelWithCheckbox("priceTrailingStopDistanceUSDT", "Distancia Trailing Precio (USDT)", "enablePriceTrailingStop")}
+                <input
+                type="number"
+                name="priceTrailingStopDistanceUSDT"
+                id="priceTrailingStopDistanceUSDT"
+                value={formData.priceTrailingStopDistanceUSDT}
+                  onChange={handleChange}
+                  step="any"
+                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                min="0"
+                />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Cuánto debe caer el precio desde su pico para activar el stop (si PnL de activación fue alcanzado).</p>
+              </div>
+              <div>
+              <label htmlFor="priceTrailingStopActivationPnlUSDT" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                PnL de Activación Trailing Precio (USDT)
+                </label>
+                <input
+                type="number"
+                name="priceTrailingStopActivationPnlUSDT"
+                id="priceTrailingStopActivationPnlUSDT"
+                value={formData.priceTrailingStopActivationPnlUSDT}
+                  onChange={handleChange}
+                step="any"
+                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                min="0"
+                />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">El PnL en USDT que la posición debe alcanzar para que este trailing stop se active.</p>
+            </div>
+          </div>
+              </div>
+
+        <div className="mt-6 pt-4 border-t border-gray-300 dark:border-gray-700">
+          <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3">Trailing Stop por PNL</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <ConfigItem 
+              description="PNL mínimo en USDT que debe alcanzar la posición para armar este trailing stop por PNL."
+            >
+              {renderLabelWithCheckbox("pnlTrailingStopActivationUSDT", "Activación PNL para Trailing PNL (USDT)", "enablePnlTrailingStop")}
+              <input
+                type="number"
+                id="pnlTrailingStopActivationUSDT"
+                name="pnlTrailingStopActivationUSDT"
+                value={formData.pnlTrailingStopActivationUSDT}
+                onChange={handleChange}
+                disabled={!formData.enablePnlTrailingStop}
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
+                step="any"
+              />
+            </ConfigItem>
+
+            <ConfigItem 
+              labelText="Caída de PNL para Salir (USDT)" 
+              htmlFor="pnlTrailingStopDropUSDT" 
+              description="Si está armado, se sale si el PNL cae esta cantidad en USDT desde el PNL pico alcanzado."
+            >
+                <input
+                type="number"
+                id="pnlTrailingStopDropUSDT"
+                name="pnlTrailingStopDropUSDT"
+                value={formData.pnlTrailingStopDropUSDT}
+                  onChange={handleChange}
+                disabled={!formData.enablePnlTrailingStop}
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
+                  step="any"
+                />
+            </ConfigItem>
+
+              </div>
+            </div>
+        </fieldset>
+
+        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
+        <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Otros Ajustes</legend>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+              <div>
+            <label htmlFor="cycleSleepSeconds" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Espera Entre Ciclos (seg)</label>
+            <input type="number" name="cycleSleepSeconds" id="cycleSleepSeconds" value={formData.cycleSleepSeconds} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="1"/>
+              </div>
+              <div>
+            <label htmlFor="orderTimeoutSeconds" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timeout Órdenes (seg)</label>
+            <input type="number" name="orderTimeoutSeconds" id="orderTimeoutSeconds" value={formData.orderTimeoutSeconds} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
+              </div>
+            </div>
+        </fieldset>
+
+      <div className="pt-6">
+        <button type="submit" disabled={isLoading} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50">
+          {isLoading ? 'Guardando...' : 'Guardar Configuración'}
+          </button>
+        {showSuccessMessage && <p className="mt-2 text-sm text-green-600 dark:text-green-400 text-center">¡Configuración guardada exitosamente!</p>}
+        {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400 text-center">Error: {error}</p>}
+        </div>
       </form>
-    </>
   );
 }
 

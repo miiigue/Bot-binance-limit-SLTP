@@ -21,7 +21,7 @@ const formatPnl = (pnl) => {
   return isNaN(value) ? 'N/A' : `${value.toFixed(4)} USDT`;
 };
 
-function StatusDisplay({ botsRunning, onStart, onShutdown }) {
+function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   // Intentar cargar el estado inicial desde localStorage, asegurando que sea un array válido
   const [statuses, setStatuses] = useState(() => {
     const cachedData = localStorage.getItem(STATUS_CACHE_KEY);
@@ -49,6 +49,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
   const [tradeHistories, setTradeHistories] = useState({}); // { symbol: [trade] }
   const [loadingHistories, setLoadingHistories] = useState({}); // { symbol: boolean }
   const [historyErrors, setHistoryErrors] = useState({}); // { symbol: string | null }
+  // --- NUEVO ESTADO PARA EL NÚMERO DE TRADES A MOSTRAR ---
+  const [numTradesToShow, setNumTradesToShow] = useState(2); // Por defecto 2 trades
   // ------------------------------------------------------
 
   useEffect(() => {
@@ -67,12 +69,48 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
         }
         const data = await response.json(); // data ahora es { bots_running: ..., statuses: [...] }
         
-        // --- EXTRAER el array 'statuses' de la respuesta --- 
+        // --- EXTRAER el array \'statuses\' de la respuesta --- 
         if (data && Array.isArray(data.statuses)) {
-            setStatuses(data.statuses); // Guardar el array actual
-             // Guardar los datos exitosos en localStorage (solo el array de statuses)
+            // --- NUEVO: Ordenar los statuses ---
+            const sortedStatuses = [...data.statuses].sort((a, b) => { // Usar spread para no mutar el original si se usa en otro lado
+              // Si 'a' está en posición y 'b' no, 'a' va primero.
+              if (a.in_position && !b.in_position) {
+                return -1;
+              }
+              // Si 'b' está en posición y 'a' no, 'b' va primero.
+              if (!a.in_position && b.in_position) {
+                return 1;
+              }
+              // Si ambos están o no están en posición, ordenar alfabéticamente por símbolo.
+              if (a.symbol < b.symbol) {
+                return -1;
+              }
+              if (a.symbol > b.symbol) {
+                return 1;
+              }
+              return 0;
+            });
+            // --- FIN NUEVO ORDENAMIENTO ---
+
+            setStatuses(sortedStatuses); // Guardar el array ORDENADO
+            // --- LLAMAR A onStatusUpdate CON LOS DATOS ACTUALIZADOS (ahora usa sortedStatuses) ---\
+            if (onStatusUpdate) {
+                const currentTotalPnl = sortedStatuses.reduce((acc, status) => { // Usar sortedStatuses
+                    const pnlValue = parseFloat(status.cumulative_pnl);
+                    if (!isNaN(pnlValue)) {
+                        return acc + pnlValue;
+                    }
+                    return acc;
+                }, 0);
+                onStatusUpdate({ 
+                    totalPnl: currentTotalPnl, 
+                    coinCount: sortedStatuses.length // Usar sortedStatuses
+                });
+            }
+            // ---------------------------------------------------------\
+             // Guardar los datos exitosos en localStorage (el array ORDENADO de statuses)\
             try {
-                localStorage.setItem(STATUS_CACHE_KEY, JSON.stringify(data.statuses));
+                localStorage.setItem(STATUS_CACHE_KEY, JSON.stringify(sortedStatuses));
             } catch (e) {
                 console.error("Error saving status to localStorage:", e);
             }
@@ -111,7 +149,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
     setHistoryErrors(prev => ({ ...prev, [symbol]: null }));
 
     try {
-      const response = await fetch(`/api/trades/${symbol}`);
+      // --- USAR numTradesToShow EN LA URL ---
+      const response = await fetch(`/api/trades/${symbol}?limit=${numTradesToShow}`);
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.error || `HTTP error! Status: ${response.status}`);
@@ -153,6 +192,17 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
   }, 0);
   // -------------------------------------
 
+  // --- LLAMAR A onStatusUpdate SI statuses CAMBIA (TAMBIÉN PARA DATOS INICIALES DE CACHÉ) ---
+  useEffect(() => {
+    if (onStatusUpdate) {
+        onStatusUpdate({ 
+            totalPnl: totalCumulativePnl, 
+            coinCount: statuses.length 
+        });
+    }
+  }, [statuses, totalCumulativePnl, onStatusUpdate]); // Dependencias: statuses y totalCumulativePnl
+  // -------------------------------------------------------------------------------------
+
   return (
     <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 mt-6">
       <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Bot Status</h2>
@@ -163,17 +213,40 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
         onShutdown={onShutdown} 
       />
       
-      {/* --- MOSTRAR TOTAL PNL --- */}
-      <div className="my-4 text-center"> {/* Contenedor para centrar y dar margen */}
-        <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-          Total PNL (Histórico) = <span className={totalCumulativePnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>{totalCumulativePnl.toFixed(5)} USDT</span>
-        </p>
-      </div>
-      {/* ------------------------- */}
-
       {/* Mostrar el mensaje de error personalizado */}
       {error && <p className="text-yellow-600 dark:text-yellow-400 mb-4 font-medium">{error}</p>}
       <div className="overflow-x-auto">
+        {/* --- NUEVO INPUT PARA NÚMERO DE TRADES --- */}
+        <div className="my-4 flex items-center">
+          <label htmlFor="numTradesToShowInput" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            Mostrar últimos trades:
+          </label>
+          <input
+            type="number"
+            id="numTradesToShowInput"
+            value={numTradesToShow}
+            onChange={(e) => {
+              const val = parseInt(e.target.value, 10);
+              if (val > 0) { // Solo actualizar si es un número positivo
+                setNumTradesToShow(val);
+                // Opcional: Recargar historiales visibles si el número cambia
+                // Object.keys(expandedRows).forEach(symbol => {
+                //   if (expandedRows[symbol]) fetchTradeHistory(symbol);
+                // });
+              } else if (e.target.value === '') { // Permitir borrar para escribir nuevo número
+                setNumTradesToShow('');
+              }
+            }}
+            onBlur={(e) => { // Si el input queda vacío o inválido al perder foco, resetear a 2
+              if (e.target.value === '' || parseInt(e.target.value, 10) <= 0) {
+                setNumTradesToShow(2);
+              }
+            }}
+            className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            min="1"
+          />
+        </div>
+        {/* ----------------------------------------- */}
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
@@ -236,18 +309,20 @@ function StatusDisplay({ botsRunning, onStart, onShutdown }) {
                       {formatPnl(status.cumulative_pnl)}
                     </td>
                      <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                      {status.pending_entry_order_id || '-'}
+                      {status.pending_entry_order_id ? 'SI' : ''}
                     </td>
                      <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                      {status.pending_exit_order_id || '-'}
+                      {status.pending_exit_order_id ? 'SI' : ''}
                     </td>
                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                      {status.pending_tp_order_id || '-'}
+                      {status.pending_tp_order_id ? 'SI' : ''}
                     </td>
                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                      {status.pending_sl_order_id || '-'}
+                      {status.pending_sl_order_id ? 'SI' : ''}
                     </td>
-                    <td className="px-3 py-3 text-sm text-red-600 dark:text-red-400 truncate" title={status.last_error || ''}>{status.last_error || '-'}</td>
+                    <td className="px-3 py-3 text-sm text-red-600 dark:text-red-400 truncate">
+                      {status.last_error ? 'ERROR' : ''}
+                    </td>
                   </tr>
                   {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
                   {expandedRows[status.symbol] && (

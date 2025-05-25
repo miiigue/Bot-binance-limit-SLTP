@@ -7,6 +7,9 @@ function App() {
   const [config, setConfig] = useState(null); // Estado para la configuración
   const [botsRunning, setBotsRunning] = useState(null); // null: desconocido, true: corriendo, false: detenidos
   const [initialLoadingError, setInitialLoadingError] = useState(null); // Para errores de carga inicial
+  // --- NUEVO ESTADO PARA DATOS DE LA CABECERA ---
+  const [headerPnlData, setHeaderPnlData] = useState({ totalPnl: 0, coinCount: 0 });
+  // ---------------------------------------------
 
   // Efecto para la carga inicial de configuración y estado
   useEffect(() => {
@@ -30,6 +33,8 @@ function App() {
                  rsiThresholdUp: configData.TRADING?.rsi_threshold_up || 1.5,
                  rsiThresholdDown: configData.TRADING?.rsi_threshold_down || -1.0,
                  rsiEntryLevelLow: configData.TRADING?.rsi_entry_level_low || 30,
+                 rsiEntryLevelHigh: configData.TRADING?.rsi_entry_level_high || 75,
+                 rsiTarget: configData.TRADING?.rsi_target || 50,
                  positionSizeUSDT: configData.TRADING?.position_size_usdt || 50,
                  stopLossUSDT: configData.TRADING?.stop_loss_usdt || 0,
                  takeProfitUSDT: configData.TRADING?.take_profit_usdt || 0,
@@ -37,7 +42,25 @@ function App() {
                  volumeSmaPeriod: configData.TRADING?.volume_sma_period || 20,
                  volumeFactor: configData.TRADING?.volume_factor || 1.5,
                  orderTimeoutSeconds: configData.TRADING?.order_timeout_seconds || 60,
-                 symbolsToTrade: symbolsString 
+                 requiredUptrendCandles: configData.TRADING?.required_uptrend_candles || 0,
+                 symbolsToTrade: symbolsString,
+                 evaluateRsiDelta: configData.TRADING?.evaluate_rsi_delta !== undefined ? configData.TRADING.evaluate_rsi_delta : true,
+                 evaluateVolumeFilter: configData.TRADING?.evaluate_volume_filter !== undefined ? configData.TRADING.evaluate_volume_filter : true,
+                 evaluateRsiRange: configData.TRADING?.evaluate_rsi_range !== undefined ? configData.TRADING.evaluate_rsi_range : true,
+                 evaluateDowntrendCandlesBlock: configData.TRADING?.evaluate_downtrend_candles_block !== undefined ? configData.TRADING.evaluate_downtrend_candles_block : true,
+                 evaluateDowntrendLevelsBlock: configData.TRADING?.evaluate_downtrend_levels_block !== undefined ? configData.TRADING.evaluate_downtrend_levels_block : true,
+                 evaluateRequiredUptrend: configData.TRADING?.evaluate_required_uptrend !== undefined ? configData.TRADING.evaluate_required_uptrend : true,
+                 enableTakeProfitPnl: configData.TRADING?.enable_take_profit_pnl !== undefined ? configData.TRADING.enable_take_profit_pnl : true,
+                 enableStopLossPnl: configData.TRADING?.enable_stop_loss_pnl !== undefined ? configData.TRADING.enable_stop_loss_pnl : true,
+                 enableTrailingRsiStop: configData.TRADING?.enable_trailing_rsi_stop !== undefined ? configData.TRADING.enable_trailing_rsi_stop : true,
+                 enablePriceTrailingStop: configData.TRADING?.enable_price_trailing_stop !== undefined ? configData.TRADING.enable_price_trailing_stop : true,
+                 priceTrailingStopDistanceUSDT: configData.TRADING?.price_trailing_stop_distance_usdt !== undefined ? parseFloat(configData.TRADING.price_trailing_stop_distance_usdt) : 0.05,
+                 priceTrailingStopActivationPnlUSDT: configData.TRADING?.price_trailing_stop_activation_pnl_usdt !== undefined ? parseFloat(configData.TRADING.price_trailing_stop_activation_pnl_usdt) : 0.02,
+                 // --- Nuevos campos para Trailing Stop por PNL ---
+                 enablePnlTrailingStop: configData.TRADING?.enable_pnl_trailing_stop !== undefined ? configData.TRADING.enable_pnl_trailing_stop : true,
+                 pnlTrailingStopActivationUSDT: configData.TRADING?.pnl_trailing_stop_activation_usdt !== undefined ? parseFloat(configData.TRADING.pnl_trailing_stop_activation_usdt) : 0.1,
+                 pnlTrailingStopDropUSDT: configData.TRADING?.pnl_trailing_stop_drop_usdt !== undefined ? parseFloat(configData.TRADING.pnl_trailing_stop_drop_usdt) : 0.05
+                 // -----------------------------------------------
             };
             setConfig(flatConfig);
             console.log("Configuración inicial cargada.", flatConfig);
@@ -130,6 +153,13 @@ function App() {
       }
       console.log('Shutdown API response:', data);
       setBotsRunning(false); // Actualizar estado local
+      // --- RESETEAR PNL EN CABECERA AL DETENER BOTS ---
+      // setHeaderPnlData({ totalPnl: headerPnlData.totalPnl, coinCount: 0 }); // Mantener PNL histórico, pero 0 monedas activas si así se decide.
+      // O resetear completamente si se prefiere:
+      // setHeaderPnlData({ totalPnl: 0, coinCount: 0 }); // Esto resetearía el PNL histórico en cabecera
+      // Por ahora, dejaremos que StatusDisplay siga actualizando el PnL histórico incluso si los bots se detienen.
+      // El coinCount se actualizará desde StatusDisplay según los workers que realmente estén listados.
+      // ---------------------------------------------
       return true; // Considerar éxito para la UI incluso si hubo error leve
     } catch (error) {
       console.error('Error sending shutdown signal:', error);
@@ -140,10 +170,31 @@ function App() {
   };
   // ------------------------------------------
 
+  // --- FUNCIÓN CALLBACK PARA ACTUALIZAR DATOS DE CABECERA ---
+  const handleStatusUpdateForHeader = (data) => {
+    setHeaderPnlData({
+      totalPnl: data.totalPnl,
+      coinCount: data.coinCount
+    });
+  };
+  // ----------------------------------------------------
+
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
-      <div className="sticky top-0 z-50 bg-primary-600 text-white p-3 shadow-md flex justify-center items-center">
+      <div className="sticky top-0 z-50 bg-primary-600 text-white p-3 shadow-md flex items-center">
+        {/* Título a la izquierda */}
         <span className="text-xl font-bold">BOT BINANCE LIMIT-SLTP</span>
+        
+        {/* PnL Info con margen a la izquierda aumentado y estilo de texto modificado */}
+        <div className="text-lg font-semibold ml-[30ch]">
+            <span>PNL {headerPnlData.coinCount} monedas = </span>
+            <span className="text-xl"> 
+              {headerPnlData.totalPnl.toFixed(5)} USDT
+            </span>
+        </div>
+        
+        {/* Este div ocupará el espacio restante, empujando cualquier contenido futuro a la derecha */}
+        <div className="flex-grow"></div>
       </div>
       <div className="container mx-auto p-4 md:p-8 max-w-5xl">
         {/* Mostrar error de carga inicial si existe */} 
@@ -172,6 +223,7 @@ function App() {
                 botsRunning={botsRunning} 
                 onStart={handleStartBots} 
                 onShutdown={handleShutdown} 
+                onStatusUpdate={handleStatusUpdateForHeader}
             /> 
           </>
         )}

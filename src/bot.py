@@ -26,6 +26,9 @@ from .binance_client import (
 )
 from .rsi_calculator import calculate_rsi
 from .database import init_db_schema, record_trade # Importamos solo las necesarias
+# --- NUEVA IMPORTACIÓN DE DB ---
+from .database import check_if_binance_trade_exists 
+# -----------------------------
 
 # --- Definición de Estados del Bot ---
 class BotState(Enum):
@@ -58,6 +61,7 @@ class TradingBot:
         self.symbol = symbol.upper()
         self.logger = get_logger()
         self.params = trading_params # <-- STORE the params dictionary
+        self.logger.info(f"[{self.symbol}] Inicializando worker con parámetros RECIBIDOS: {self.params}")
         self.logger.info(f"[{self.symbol}] Inicializando worker con parámetros: {self.params}")
 
         # --- Estado Interno ---
@@ -70,16 +74,41 @@ class TradingBot:
         self.exit_reason = ""
         self.downtrend_check_candles = trading_params.get('downtrend_check_candles', 0) # <-- Nuevo atributo
         self.downtrend_level_check = int(trading_params.get('downtrend_level_check', 0)) # <-- NUEVO: Para el check de niveles, asegurando tipo int
+        self.required_uptrend_candles = int(trading_params.get('required_uptrend_candles', 0)) # <-- NUEVO PARÁMETRO
         self.rsi_at_entry = None # <-- NUEVO: Para guardar el RSI al momento de la entrada
         self.rsi_target = float(self.params.get('rsi_target', 50.0)) # Nuevo campo para RSI objetivo
         self.rsi_objetivo_activado = False  # <-- MOVIDO AQUÍ: Indica si el objetivo ya fue alcanzado
         self.rsi_objetivo_alcanzado_en = None  # <-- MOVIDO AQUÍ: Guarda el valor de RSI cuando se alcanzó el objetivo
+        self.rsi_peak_since_target = None # Almacenará el RSI más alto desde que rsi_target fue alcanzado
         self.previous_rsi_value = None # <-- NUEVO: Para guardar el RSI de la vela anterior
         # --- NUEVO: IDs para órdenes TP/SL ---
         self.pending_tp_order_id = None
         self.pending_sl_order_id = None
-        # ------------------------------------
-        # ---------------------
+        self.evaluate_rsi_delta = trading_params.get('evaluate_rsi_delta', True) # <-- NUEVO: Leer el parámetro
+        self.evaluate_volume_filter = trading_params.get('evaluate_volume_filter', True) # <-- NUEVO: Leer parámetro de filtro de volumen
+        # --- Cargar todos los nuevos parámetros de control ---
+        self.evaluate_rsi_range = trading_params.get('evaluate_rsi_range', True)
+        self.evaluate_downtrend_candles_block = trading_params.get('evaluate_downtrend_candles_block', True)
+        self.evaluate_downtrend_levels_block = trading_params.get('evaluate_downtrend_levels_block', True)
+        self.evaluate_required_uptrend = trading_params.get('evaluate_required_uptrend', True)
+        self.enable_take_profit_pnl = trading_params.get('enable_take_profit_pnl', True)
+        self.enable_stop_loss_pnl = trading_params.get('enable_stop_loss_pnl', True)
+        self.enable_trailing_rsi_stop = trading_params.get('enable_trailing_rsi_stop', True)
+        # --- NUEVOS PARÁMETROS Y ESTADO PARA TRAILING STOP DE PRECIO ---
+        self.enable_price_trailing_stop = trading_params.get('enable_price_trailing_stop', True)
+        self.price_trailing_stop_distance_usdt = Decimal(str(trading_params.get('price_trailing_stop_distance_usdt', '0.05')))
+        self.price_trailing_stop_activation_pnl_usdt = Decimal(str(trading_params.get('price_trailing_stop_activation_pnl_usdt', '0.02')))
+        self.price_peak_since_entry = None # Precio más alto desde la entrada
+        self.price_trailing_stop_armed = False # Si el PNL de activación se ha alcanzado
+        # --- NUEVOS PARÁMETROS Y ESTADO PARA TRAILING STOP DE PNL ---
+        self.enable_pnl_trailing_stop = trading_params.get('enable_pnl_trailing_stop', True)
+        self.pnl_trailing_stop_activation_usdt = Decimal(str(trading_params.get('pnl_trailing_stop_activation_usdt', '0.1')))
+        self.pnl_trailing_stop_drop_usdt = Decimal(str(trading_params.get('pnl_trailing_stop_drop_usdt', '0.05')))
+        self.pnl_peak_since_activation = None # PNL más alto desde que el PNL trailing stop se armó
+        self.pnl_trailing_stop_armed = False # Si el PNL trailing stop está armado
+        # -------------------------------------------------------------
+        # -------------------------------------------------------------
+        # --------------------------------------------------
 
         # Cliente Binance (se inicializa una vez por bot)
         self.client = get_futures_client()
@@ -116,9 +145,9 @@ class TradingBot:
             if self.volume_sma_period <= 0:
                  self.logger.warning(f"[{self.symbol}] VOLUME_SMA_PERIOD ({self.volume_sma_period}) debe ser positivo. Usando 20.")
                  self.volume_sma_period = 20
-            if self.volume_factor <= 0:
-                 self.logger.warning(f"[{self.symbol}] VOLUME_FACTOR ({self.volume_factor}) debe ser positivo. Usando 1.5.")
-                 self.volume_factor = 1.5
+            # if self.volume_factor <= 0: # Comentado para permitir volume_factor = 0 desde config
+            #     self.logger.warning(f"[{self.symbol}] VOLUME_FACTOR ({self.volume_factor}) debe ser positivo. Usando 1.5.")
+            #     self.volume_factor = 1.5
             if self.take_profit_usdt < 0:
                  self.logger.warning(f"[{self.symbol}] TAKE_PROFIT_USDT ({self.take_profit_usdt}) debe ser positivo o cero. Usando 0.")
                  self.take_profit_usdt = Decimal('0')
@@ -174,6 +203,18 @@ class TradingBot:
         # --- FIN DE LÓGICA MODIFICADA ---
 
         self.logger.info(f"[{self.symbol}] Worker inicializado exitosamente (Timeout Órdenes: {self.order_timeout_seconds}s).")
+
+        # --- NUEVA VARIABLE PARA TRAILING RSI STOP ---
+        self.rsi_peak_since_target = None # Almacenará el RSI más alto desde que rsi_target fue alcanzado
+        # --------------------------------------------
+
+        # --- Limpiar también estado de trailing de precio ---
+        self.price_peak_since_entry = None
+        self.price_trailing_stop_armed = False
+        # --- Limpiar también estado de trailing de PNL ---
+        self.pnl_peak_since_activation = None
+        self.pnl_trailing_stop_armed = False
+        # ----------------------------------------------------
 
     def _check_initial_position(self):
         """Consulta a Binance si ya existe una posición para self.symbol."""
@@ -295,14 +336,14 @@ class TradingBot:
 
     def _is_recent_downtrend(self, klines_df: pd.DataFrame) -> bool:
         """Verifica si las 'N' velas cerradas más recientes muestran una tendencia bajista consecutiva."""
-        n = self.downtrend_check_candles
+        n = self.downtrend_check_candles # Este 'N' es para el bloqueo por bajada
         
         if n < 2: 
-            return False 
+            return False # Si el chequeo de bajada está desactivado, no bloquea
 
         if len(klines_df) < n + 1: 
-            self.logger.warning(f"[{self.symbol}] No hay suficientes klines ({len(klines_df)}) para chequear tendencia bajista de {n} velas. Se necesitan al menos {n+1}. Saltando chequeo.")
-            return False 
+            self.logger.warning(f"[{self.symbol}] No hay suficientes klines ({len(klines_df)}) para chequear tendencia bajista de {n} velas (para bloqueo). Se necesitan al menos {n+1}. Saltando chequeo de bloqueo.")
+            return False # No se puede determinar, no bloquea por precaución
 
         closes = klines_df['close']
         
@@ -311,10 +352,10 @@ class TradingBot:
             previous_candle_close = closes.iloc[-(3 + i)]
 
             if current_candle_close >= previous_candle_close:
-                return False 
+                return False # No es una tendencia bajista consecutiva, no bloquea
         
-        self.logger.info(f"[{self.symbol}] Condición de tendencia bajista reciente DETECTADA para las últimas {n} velas. Entrada bloqueada.")
-        return True
+        self.logger.info(f"[{self.symbol}] BLOQUEO DE ENTRADA: Condición de tendencia bajista reciente ({n} velas) DETECTADA. Entrada bloqueada.")
+        return True # Es tendencia bajista, SÍ bloquea
 
     def _calculate_tp_sl_prices(self) -> tuple[Decimal | None, Decimal | None]:
         """
@@ -374,9 +415,9 @@ class TradingBot:
         tp_price_dec, sl_price_dec = self._calculate_tp_sl_prices()
 
         # Colocar orden Take Profit
-        if tp_price_dec and self.take_profit_usdt > Decimal('0'):
+        if self.enable_take_profit_pnl and tp_price_dec and self.take_profit_usdt > Decimal('0'): # <-- MODIFICADO: Añadido self.enable_take_profit_pnl
             tp_price_str = f"{tp_price_dec:.{self.price_tick_size.as_tuple().exponent * -1}f}" # Formatear a la precisión correcta
-            self.logger.info(f"[{self.symbol}] Intentando colocar orden TAKE_PROFIT_MARKET @ {tp_price_str} para cantidad {quantity_float}")
+            self.logger.info(f"[{self.symbol}] Intentando colocar orden TAKE_PROFIT_MARKET @ {tp_price_str} para cantidad {quantity_float} (Habilitado)")
             tp_order_result = create_futures_take_profit_order(
                 symbol=self.symbol,
                 side='SELL', # Para cerrar una posición LONG
@@ -390,11 +431,13 @@ class TradingBot:
             else:
                 self.logger.error(f"[{self.symbol}] Fallo al colocar la orden TAKE_PROFIT_MARKET @ {tp_price_str}. Respuesta: {tp_order_result}")
                 # Considerar si se debe reintentar o entrar en estado de error
+        elif not self.enable_take_profit_pnl:
+            self.logger.info(f"[{self.symbol}] Colocación de orden Take Profit DESHABILITADA por configuración (enable_take_profit_pnl=False).")
 
         # Colocar orden Stop Loss
-        if sl_price_dec and self.stop_loss_usdt < Decimal('0'):
+        if self.enable_stop_loss_pnl and sl_price_dec and self.stop_loss_usdt < Decimal('0'): # <-- MODIFICADO: Añadido self.enable_stop_loss_pnl
             sl_price_str = f"{sl_price_dec:.{self.price_tick_size.as_tuple().exponent * -1}f}"
-            self.logger.info(f"[{self.symbol}] Intentando colocar orden STOP_MARKET @ {sl_price_str} para cantidad {quantity_float}")
+            self.logger.info(f"[{self.symbol}] Intentando colocar orden STOP_MARKET @ {sl_price_str} para cantidad {quantity_float} (Habilitado)")
             sl_order_result = create_futures_stop_loss_order(
                 symbol=self.symbol,
                 side='SELL', # Para cerrar una posición LONG
@@ -408,6 +451,8 @@ class TradingBot:
             else:
                 self.logger.error(f"[{self.symbol}] Fallo al colocar la orden STOP_MARKET @ {sl_price_str}. Respuesta: {sl_order_result}")
                 # Considerar si se debe reintentar o entrar en estado de error
+        elif not self.enable_stop_loss_pnl:
+            self.logger.info(f"[{self.symbol}] Colocación de orden Stop Loss DESHABILITADA por configuración (enable_stop_loss_pnl=False).")
 
     def _check_tp_sl_order_status(self):
         """
@@ -416,8 +461,8 @@ class TradingBot:
         Devuelve True si una orden TP/SL se llenó y manejó, False de lo contrario.
         """
         if not self.in_position: # No debería llamarse si no estamos en posición
-            return False
-
+                return False 
+        
         order_filled_and_handled = False
 
         # Verificar Orden Take Profit
@@ -458,7 +503,7 @@ class TradingBot:
                 # No necesariamente reseteamos todo el estado del bot aquí, la posición podría seguir abierta si el SL aún está activo
 
         if order_filled_and_handled: # Si el TP se llenó, no necesitamos chequear SL
-            return True
+            return True # <--- INDENTAR ESTA LÍNEA
 
         # Verificar Orden Stop Loss
         if self.pending_sl_order_id:
@@ -571,36 +616,47 @@ class TradingBot:
 
             # --- Lógica Principal de Estados ---
             if self.current_state == BotState.IDLE:
-                # Calcular RSI ANTES del chequeo de downtrend si es necesario para actualizar previous_rsi_value
                 temp_rsi_values_for_downtrend_check = None
-                if hasattr(self, 'downtrend_check_candles') and self.downtrend_check_candles >= 2:
+                if hasattr(self, 'downtrend_check_candles') and self.downtrend_check_candles >= 2 and self.evaluate_downtrend_candles_block:
                     if klines_df is not None and not klines_df.empty and 'close' in klines_df.columns:
                         temp_rsi_values_for_downtrend_check = calculate_rsi(klines_df['close'], period=self.rsi_period)
                     else:
                         self.logger.warning(f"[{self.symbol}] No se pudo calcular RSI para chequeo de downtrend debido a klines_df inválido.")
 
-                # --- NUEVO: Primero verificar tendencia bajista por niveles ---
-                if hasattr(self, 'downtrend_level_check') and self.downtrend_level_check > 0:
-                    if self._check_downtrend_levels(klines_df):
-                        self.logger.info(f"[{self.symbol}] CONDICIÓN DE NO ENTRADA (PRE-CHECK): Se detectó tendencia bajista por niveles. No se evaluarán otras condiciones de entrada.")
-                        # Actualizar previous_rsi_value si tenemos datos
-                        if temp_rsi_values_for_downtrend_check is not None and not temp_rsi_values_for_downtrend_check.empty:
-                            current_rsi_val = temp_rsi_values_for_downtrend_check.iloc[-1]
-                            if isinstance(current_rsi_val, (int, float)):
-                                self.previous_rsi_value = current_rsi_val
-                                self.logger.debug(f"[{self.symbol}] Previous RSI actualizado a {current_rsi_val:.2f} después de chequeo de tendencia bajista por niveles.")
-                        return
+                # --- NUEVO: Primero verificar tendencia bajista por niveles --- (MODIFICADO)
+                block_due_to_downtrend_levels = False
+                if self.evaluate_downtrend_levels_block: # Solo evaluar si el control está activado
+                    if hasattr(self, 'downtrend_level_check') and self.downtrend_level_check > 0:
+                        if self._check_downtrend_levels(klines_df):
+                            self.logger.info(f"[{self.symbol}] CONDICIÓN DE NO ENTRADA (PRE-CHECK): Se detectó tendencia bajista por niveles (evaluación activada). No se evaluarán otras condiciones de entrada.")
+                            block_due_to_downtrend_levels = True
+                else:
+                    self.logger.info(f"[{self.symbol}] PRE-CHECK: Evaluación de tendencia bajista por niveles DESACTIVADA.")
+                
+                if block_due_to_downtrend_levels:
+                    # Actualizar previous_rsi_value si tenemos datos (similar a como estaba)
+                    if temp_rsi_values_for_downtrend_check is not None and not temp_rsi_values_for_downtrend_check.empty:
+                        current_rsi_val = temp_rsi_values_for_downtrend_check.iloc[-1]
+                        if isinstance(current_rsi_val, (int, float)):
+                            self.previous_rsi_value = current_rsi_val
+                    return
 
-                # --- Luego verificar tendencia bajista por velas consecutivas ---
-                if hasattr(self, 'downtrend_check_candles') and self.downtrend_check_candles >= 2:
-                    if self._is_recent_downtrend(klines_df):
-                        self.logger.info(f"[{self.symbol}] CONDICIÓN DE NO ENTRADA (PRE-CHECK): Se detectó tendencia bajista reciente ({self.downtrend_check_candles} velas). No se evaluarán otras condiciones de entrada.")
-                        if temp_rsi_values_for_downtrend_check is not None and not temp_rsi_values_for_downtrend_check.empty:
-                            current_rsi_val = temp_rsi_values_for_downtrend_check.iloc[-1]
-                            if isinstance(current_rsi_val, (int, float)):
-                                self.previous_rsi_value = current_rsi_val
-                                self.logger.debug(f"[{self.symbol}] Previous RSI actualizado a {current_rsi_val:.2f} después de chequeo de downtrend fallido.")
-                        return
+                # --- Luego verificar tendencia bajista por velas consecutivas --- (MODIFICADO)
+                block_due_to_downtrend_candles = False
+                if self.evaluate_downtrend_candles_block: # Solo evaluar si el control está activado
+                    if hasattr(self, 'downtrend_check_candles') and self.downtrend_check_candles >= 2:
+                        if self._is_recent_downtrend(klines_df):
+                            self.logger.info(f"[{self.symbol}] CONDICIÓN DE NO ENTRADA (PRE-CHECK): Se detectó tendencia bajista reciente ({self.downtrend_check_candles} velas) (evaluación activada). No se evaluarán otras condiciones de entrada.")
+                            block_due_to_downtrend_candles = True
+                else:
+                    self.logger.info(f"[{self.symbol}] PRE-CHECK: Evaluación de tendencia bajista por velas consecutivas DESACTIVADA.")
+                
+                if block_due_to_downtrend_candles:
+                    if temp_rsi_values_for_downtrend_check is not None and not temp_rsi_values_for_downtrend_check.empty:
+                        current_rsi_val = temp_rsi_values_for_downtrend_check.iloc[-1]
+                        if isinstance(current_rsi_val, (int, float)):
+                            self.previous_rsi_value = current_rsi_val
+                    return
 
                 # Si no hay tendencia bajista o los chequeos están desactivados, evaluar condiciones de entrada.
                 self._check_entry_conditions(klines_df)
@@ -629,17 +685,34 @@ class TradingBot:
                     self._verify_position_status() # Esto podría cambiar el estado
                     return 
 
-                # 4. SI ESTAMOS EN POSICIÓN Y NO TENEMOS ÓRDENES TP/SL ACTIVAS (ej. reinicio, fallo previo al colocar).
-                if not self.pending_tp_order_id and not self.pending_sl_order_id:
-                    self.logger.warning(f"[{self.symbol}] EN POSICIÓN pero el bot no tiene órdenes TP/SL activas registradas. Intentando colocar TP/SL ahora.")
-                    self._place_tp_sl_orders()
-                    # El próximo ciclo de run_once verificará el estado de estas nuevas órdenes.
-                else:
-                    # Si llegamos aquí, las órdenes TP/SL están puestas y pendientes.
-                    # Logueamos el estado actual para confirmar.
-                    price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
-                    pnl_display = f"{self.last_known_pnl:.4f}" if self.last_known_pnl is not None else "N/A"
-                    self.logger.info(f"[{self.symbol}] EN POSICIÓN. PnL: {pnl_display}. Esperando TP ({self.pending_tp_order_id}) o SL ({self.pending_sl_order_id}).")
+                # --- NUEVA INTEGRACIÓN: Verificar condiciones de salida dinámica (como RSI Drop) ---
+                # Esto se hace ANTES de intentar colocar nuevas órdenes TP/SL estándar,
+                # porque si una condición dinámica se cumple, podría querer usar su propia lógica de salida.
+                if klines_df is not None and not klines_df.empty:
+                    self.logger.info(f"[{self.symbol}] IN_POSITION: Evaluando condiciones de salida dinámica (ej. RSI drop)...")
+                    # _check_exit_conditions ahora cancelará TP/SL si activa una salida propia
+                    self._check_exit_conditions(klines_df) # Esta línea y las siguientes deben estar indentadas aquí
+
+                    # Si _check_exit_conditions activó una salida y colocó una orden,
+                    # el estado del bot habrá cambiado (ej. a WAITING_EXIT_FILL).
+                    # Si es así, terminamos este ciclo de run_once; el próximo manejará el nuevo estado.
+                    if self.current_state != BotState.IN_POSITION: # Esta es la línea 649 del traceback
+                        self.logger.info(f"[{self.symbol}] Condición de salida dinámica activada. Nuevo estado: {self.current_state.value}. Terminando ciclo run_once.")
+                        return
+                # --- FIN NUEVA INTEGRACIÓN ---
+
+                # 4. SI AÚN ESTAMOS EN POSICIÓN (es decir, ni TP/SL ni salida dinámica se activaron)
+                #    Y no tenemos órdenes TP/SL activas (ej. reinicio, fallo previo al colocar, o fueron canceladas y la salida dinámica no procedió).
+                if self.current_state == BotState.IN_POSITION: # Re-chequear estado por si acaso
+                    if not self.pending_tp_order_id and not self.pending_sl_order_id:
+                        self.logger.warning(f"[{self.symbol}] EN POSICIÓN (y sin salida dinámica activada), pero el bot no tiene órdenes TP/SL activas registradas. Intentando colocar TP/SL estándar ahora.")
+                        self._place_tp_sl_orders()
+                        # El próximo ciclo de run_once verificará el estado de estas nuevas órdenes.
+                    else:
+                        # Si llegamos aquí, las órdenes TP/SL están puestas y pendientes (y la salida dinámica no se activó).
+                        price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
+                        pnl_display = f"{self.last_known_pnl:.4f}" if self.last_known_pnl is not None else "N/A"
+                        self.logger.info(f"[{self.symbol}] EN POSICIÓN. PnL: {pnl_display}. Esperando TP ({self.pending_tp_order_id}) o SL ({self.pending_sl_order_id}). Salida dinámica no activada.")
                 # --- FIN DEL CAMBIO DE ORDEN ---
 
             elif self.current_state == BotState.PLACING_ENTRY or \
@@ -689,6 +762,12 @@ class TradingBot:
             simplified_reason = "Stop Loss (Objetivo PnL)"
         elif reason.startswith("RSI_target_and_threshold_down"):
             simplified_reason = "Salida por RSI"
+        elif reason.startswith("Trailing_RSI_Stop"): # Modificado para coincidir con la razón dada
+            simplified_reason = "Salida por Trailing RSI"
+        elif reason.startswith("Price_Trailing_Stop"): # <-- NUEVA RAZÓN
+            simplified_reason = "Salida por Trailing Precio"
+        elif reason.startswith("PNL_Trailing_Stop"): # <-- NUEVA RAZÓN PARA TRAILING PNL
+            simplified_reason = "Salida por Trailing PNL"
         # Para otras razones que puedan venir de self.current_exit_reason,
         # si no coinciden con las anteriores, se usará la razón original (que podría ser más detallada).
         # Considerar añadir un mapeo más exhaustivo si es necesario o un default más genérico.
@@ -713,8 +792,20 @@ class TradingBot:
                 'rsi_entry_level_high': self.rsi_entry_level_high,
                 'position_size_usdt': float(self.position_size_usdt),
                 'take_profit_usdt': float(self.take_profit_usdt),
-                'stop_loss_usdt': float(self.stop_loss_usdt)
-            }
+                'stop_loss_usdt': float(self.stop_loss_usdt),
+                'downtrend_check_candles': self.downtrend_check_candles,
+                'order_timeout_seconds': self.order_timeout_seconds,
+                'rsi_target': self.rsi_target,
+                # --- AÑADIR NUEVOS PARAMS A DB ---
+                'enable_price_trailing_stop': self.enable_price_trailing_stop,
+                'price_trailing_stop_distance_usdt': float(self.price_trailing_stop_distance_usdt),
+                'price_trailing_stop_activation_pnl_usdt': float(self.price_trailing_stop_activation_pnl_usdt),
+                # --- AÑADIR PARAMS DE TRAILING PNL A DB ---
+                'enable_pnl_trailing_stop': self.enable_pnl_trailing_stop,
+                'pnl_trailing_stop_activation_usdt': float(self.pnl_trailing_stop_activation_usdt),
+                'pnl_trailing_stop_drop_usdt': float(self.pnl_trailing_stop_drop_usdt)
+                # ------------------------------------
+            } # Alineada con db_trade_params
             record_trade(
                 symbol=self.symbol,
                 trade_type='LONG',
@@ -760,6 +851,17 @@ class TradingBot:
         # self.last_rsi_value = None # Podríamos mantenerlo o resetearlo
         self.rsi_objetivo_activado = False
         self.rsi_objetivo_alcanzado_en = None
+        self.rsi_peak_since_target = None # Limpiar el pico de RSI para el trailing stop
+
+        # --- Limpiar también estado de trailing de precio ---
+        self.price_peak_since_entry = None
+        self.price_trailing_stop_armed = False
+        # --- Limpiar también estado de trailing de PNL ---
+        self.pnl_peak_since_activation = None
+        self.pnl_trailing_stop_armed = False
+        # ----------------------------------------------------
+
+        # Limpiar el PnL conocido (aunque se recalculará si se entra en nueva posición)
 
     # --- Métodos para actualizar estado ---
     # (Estos se llamarán desde run_once)
@@ -943,22 +1045,25 @@ class TradingBot:
                 self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: No hay RSI anterior o actual para calcular delta (Actual={self.last_rsi_value}, Anterior={self.previous_rsi_value})")
             # --- FIN NUEVA LÓGICA DELTA RSI ---
 
-            # --- Lógica de Volumen ---
-            volume_check_passed = False
-            if self.volume_sma_period > 0 and self.volume_factor > 0:
+            # --- Lógica de Volumen --- MODIFICADA
+            volume_check_passed = False # Por defecto, no pasa
+            if not self.evaluate_volume_filter: # Si la evaluación del filtro de volumen está DESACTIVADA
+                volume_check_passed = True # Considerar esta condición como cumplida por defecto
+                self.logger.info(f"[{self.symbol}] Filtro de Volumen: Evaluación DESACTIVADA (evaluate_volume_filter=False). Condición de volumen cumplida por defecto.")
+            elif self.volume_sma_period > 0 and self.volume_factor > 0: # Si está ACTIVADA y los parámetros son válidos
                 volume_data = self._calculate_volume_sma(klines_df)
                 if volume_data:
                     current_volume, average_volume, factor = volume_data
                     if current_volume > (average_volume * factor):
                         volume_check_passed = True
-                        self.logger.info(f"[{self.symbol}] CONDICIÓN DE VOLUMEN CUMPLIDA: Actual={current_volume:.2f} > Promedio({self.volume_sma_period})={average_volume:.2f} * Factor={factor}")
+                        self.logger.info(f"[{self.symbol}] CONDICIÓN DE VOLUMEN CUMPLIDA (Evaluación Activada): Actual={current_volume:.2f} > Promedio({self.volume_sma_period})={average_volume:.2f} * Factor={factor}")
                     else:
-                        self.logger.info(f"[{self.symbol}] CONDICIÓN DE VOLUMEN NO CUMPLIDA: Actual={current_volume:.2f} <= Promedio({self.volume_sma_period})={average_volume:.2f} * Factor={factor}")
+                        self.logger.info(f"[{self.symbol}] CONDICIÓN DE VOLUMEN NO CUMPLIDA (Evaluación Activada): Actual={current_volume:.2f} <= Promedio({self.volume_sma_period})={average_volume:.2f} * Factor={factor}")
                 else:
-                    self.logger.warning(f"[{self.symbol}] No se pudieron obtener datos de volumen SMA. Saltando chequeo de volumen.")
-                    volume_check_passed = False 
-            else:
-                 self.logger.info(f"[{self.symbol}] Chequeo de volumen desactivado (SMA Period o Factor no positivos).")
+                    self.logger.warning(f"[{self.symbol}] No se pudieron obtener datos de volumen SMA (Evaluación Activada). Condición de volumen NO cumplida.")
+                    # volume_check_passed permanece False
+            else: # Si está ACTIVADA pero los params (period/factor) no son positivos
+                 self.logger.info(f"[{self.symbol}] Filtro de Volumen (Evaluación Activada): Chequeo desactivado por parámetros (SMA Period o Factor no positivos). Condición de volumen cumplida por defecto en este caso.")
                  volume_check_passed = True 
             # --- Fin Lógica de Volumen ---
 
@@ -966,32 +1071,81 @@ class TradingBot:
             entry_signal = False
             self.entry_reason = ""
 
-            condition_rsi_in_range = (self.rsi_entry_level_low <= self.last_rsi_value <= self.rsi_entry_level_high)
-            
-            # --- NUEVA CONDICIÓN BASADA EN DELTA --- 
-            condition_rsi_change_meets_thresh_up = False
-            # Solo evaluar si rsi_delta se pudo calcular (no es None) y rsi_threshold_up tiene un valor significativo para un delta positivo
-            if rsi_delta is not None and self.rsi_threshold_up > 0: 
-                if rsi_delta >= self.rsi_threshold_up:
-                    condition_rsi_change_meets_thresh_up = True
-            # ------------------------------------
-
-            self.logger.info(f"[{self.symbol}] Chequeo Entrada: RSI en rango [{self.rsi_entry_level_low}, {self.rsi_entry_level_high}]? {'Sí' if condition_rsi_in_range else 'No'} (RSI={self.last_rsi_value:.2f})")
-            # self.logger.info(f"[{self.symbol}] Chequeo Entrada: RSI >= umbral_up ({self.rsi_threshold_up})? {'Sí' if condition_rsi_above_thresh_up else 'No'} (RSI={self.last_rsi_value:.2f})")
-            
-            # --- CORRECCIÓN DE LOGGING PARA rsi_delta ---
-            rsi_delta_str = f'{rsi_delta:.2f}' if rsi_delta is not None else 'N/A'
-            self.logger.info(f"[{self.symbol}] Chequeo Entrada: Incremento RSI ({rsi_delta_str}) >= umbral_incremento ({self.rsi_threshold_up})? {'Sí' if condition_rsi_change_meets_thresh_up else 'No'}")
-            # --- FIN CORRECCIÓN ---
-
-            self.logger.info(f"[{self.symbol}] Chequeo Entrada: Volumen OK? {'Sí' if volume_check_passed else 'No'}")
-
-            if condition_rsi_in_range and condition_rsi_change_meets_thresh_up and volume_check_passed:
-                self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA DETECTADA: RSI en rango, Incremento RSI OK ({rsi_delta:.2f}>={self.rsi_threshold_up}), Volumen OK.")
-                entry_signal = True
-                self.entry_reason = f"RSI_range ({self.rsi_entry_level_low}<={self.last_rsi_value:.2f}<={self.rsi_entry_level_high}) AND RSI_delta (Delta={rsi_delta:.2f}>={self.rsi_threshold_up}) & Vol_OK"
+            # Condición 0: RSI en el rango de entrada configurado (MODIFICADO)
+            condition_rsi_in_range = False
+            if not self.evaluate_rsi_range: # Si la evaluación de rango RSI está DESACTIVADA
+                condition_rsi_in_range = True
+                self.logger.info(f"[{self.symbol}] Chequeo RSI en Rango: Evaluación DESACTIVADA (evaluate_rsi_range=False). Condición cumplida por defecto.")
+            elif self.last_rsi_value is not None and self.rsi_entry_level_low <= self.last_rsi_value <= self.rsi_entry_level_high:
+                condition_rsi_in_range = True
+                # MODIFICADO: Formateo del RSI para el log
+                rsi_value_str = f"{self.last_rsi_value:.2f}" if self.last_rsi_value is not None else "N/A"
+                self.logger.info(f"[{self.symbol}] Chequeo RSI en Rango (Activado) [{self.rsi_entry_level_low}, {self.rsi_entry_level_high}]? Sí (RSI={rsi_value_str})")
             else:
-                self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA NO CUMPLIDA.")
+                condition_rsi_in_range = False
+                # MODIFICADO: Formateo del RSI para el log
+                rsi_value_str = f"{self.last_rsi_value:.2f}" if self.last_rsi_value is not None else "N/A"
+                self.logger.info(f"[{self.symbol}] Chequeo RSI en Rango (Activado) [{self.rsi_entry_level_low}, {self.rsi_entry_level_high}]? No (RSI={rsi_value_str})")
+
+            # --- Definir condition_rsi_change_meets_thresh_up y rsi_delta_str ---
+            condition_rsi_change_meets_thresh_up = False
+            rsi_delta_str = "N/A" # Valor por defecto para el log
+
+            if rsi_delta is not None: # rsi_delta se calculó antes
+                rsi_delta_str = f"{rsi_delta:.2f}" # Formatear para el log
+                if not self.evaluate_rsi_delta: # Si la evaluación de delta RSI está DESACTIVADA
+                    condition_rsi_change_meets_thresh_up = True # Considerar esta condición como cumplida
+                    self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: Evaluación DESACTIVADA (evaluate_rsi_delta=False). Condición de delta cumplida por defecto. (Delta real: {rsi_delta_str})")
+                elif rsi_delta >= self.rsi_threshold_up: # Si está ACTIVADA, evaluar normalmente
+                    condition_rsi_change_meets_thresh_up = True
+            else: # rsi_delta es None
+                if not self.evaluate_rsi_delta: # Si la evaluación está DESACTIVADA
+                    condition_rsi_change_meets_thresh_up = True
+                    self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: Evaluación DESACTIVADA (evaluate_rsi_delta=False). Condición de delta cumplida por defecto. (Delta real: {rsi_delta_str})")
+                # Si rsi_delta es None y la evaluación está activada, condition_rsi_change_meets_thresh_up permanece False.
+            
+            if self.evaluate_rsi_delta: # Log de la condición de delta solo si la evaluación está activa
+                self.logger.info(f"[{self.symbol}] Chequeo Delta RSI (Activado) >= {self.rsi_threshold_up}? {'Sí' if condition_rsi_change_meets_thresh_up else 'No'} (Delta={rsi_delta_str})")
+            # --------------------------------------------------------------------
+
+            # Condición 1: Cambio (Delta) en RSI cumple el umbral positivo (Lógica ya modificada previamente)
+            # condition_rsi_change_meets_thresh_up se calcula antes y usa self.evaluate_rsi_delta
+
+            # Condición 2: Filtro de Volumen (Lógica ya modificada previamente)
+            # volume_check_passed se calcula antes y usa self.evaluate_volume_filter
+            
+            # Condición 3: Requisito de tendencia alcista reciente (MODIFICADO)
+            condition_required_uptrend_met = False
+            if not self.evaluate_required_uptrend: # Si la evaluación está DESACTIVADA
+                condition_required_uptrend_met = True
+                self.logger.info(f"[{self.symbol}] Chequeo Requisito Velas Alcistas: Evaluación DESACTIVADA (evaluate_required_uptrend=False). Condición cumplida por defecto.")
+            else: # Si está ACTIVADA, evaluar normalmente
+                condition_required_uptrend_met = self._check_required_uptrend(klines_df)
+
+            if self.evaluate_required_uptrend: # Log solo si la evaluación está activa
+                self.logger.info(f"[{self.symbol}] Chequeo Entrada (Activado): Requisito Velas Alcistas ({self.required_uptrend_candles} velas)? {'Sí' if condition_required_uptrend_met else 'No'}")
+
+
+            self.logger.info(f"[{self.symbol}] Resumen Chequeo Entrada: RSI en rango? {'Sí' if condition_rsi_in_range else 'No'} (Eval Activa: {self.evaluate_rsi_range}), "
+                             f"Incremento RSI OK? {'Sí' if condition_rsi_change_meets_thresh_up else 'No'} (Eval Activa: {self.evaluate_rsi_delta}), "
+                             f"Volumen OK? {'Sí' if volume_check_passed else 'No'} (Eval Activa: {self.evaluate_volume_filter}), "
+                             f"Req Velas Alcistas OK? {'Sí' if condition_required_uptrend_met else 'No'} (Eval Activa: {self.evaluate_required_uptrend})")
+
+            # Evaluar todas las condiciones para la señal de entrada
+            if condition_rsi_in_range and condition_rsi_change_meets_thresh_up and volume_check_passed and condition_required_uptrend_met: # Añadir la nueva condición
+                self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA DETECTADA: RSI en rango, Incremento RSI OK, Volumen OK, Requisito Velas Alcistas OK.")
+                entry_signal = True
+                self.entry_reason = (f"RSI_range ({self.rsi_entry_level_low}<={self.last_rsi_value:.2f}<={self.rsi_entry_level_high}) "
+                                   f"AND RSI_delta (Delta={rsi_delta_str}>={self.rsi_threshold_up}) "
+                                   f"AND Vol_OK AND Req_Uptrend_OK({self.required_uptrend_candles} velas)") # Actualizar razón
+            else:
+                # Construir un mensaje detallado de por qué no se cumplió la entrada
+                fail_reasons = []
+                if not condition_rsi_in_range: fail_reasons.append(f"RSI_rango (actual {self.last_rsi_value:.2f}, esperado [{self.rsi_entry_level_low}-{self.rsi_entry_level_high}])")
+                if not condition_rsi_change_meets_thresh_up: fail_reasons.append(f"Delta_RSI (actual {rsi_delta_str}, esperado >={self.rsi_threshold_up})")
+                if not volume_check_passed: fail_reasons.append("Volumen")
+                if not condition_required_uptrend_met: fail_reasons.append(f"Req_Velas_Alcistas({self.required_uptrend_candles} velas)") # Actualizar mensaje de fallo
+                self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA NO CUMPLIDA. Fallos: {' | '.join(fail_reasons) if fail_reasons else 'Ninguno específico (revisar lógica)'}")
 
             # --- Actualizar el RSI anterior para el próximo ciclo ---
             # Es importante hacer esto aquí, después de todos los cálculos y logs que usan self.last_rsi_value y self.previous_rsi_value de ESTE ciclo.
@@ -1169,6 +1323,11 @@ class TradingBot:
         self._place_tp_sl_orders()
         # ------------------------------------
 
+        # --- INICIALIZAR PARA TRAILING STOP DE PRECIO ---
+        self.price_peak_since_entry = filled_price # El precio de entrada es el primer pico
+        self.price_trailing_stop_armed = False # Resetear al entrar en nueva posición
+        # ----------------------------------------------
+
     def _check_exit_conditions(self, klines_df: pd.DataFrame):
         """
         Verifica si se cumplen las condiciones para cerrar una posición LONG.
@@ -1191,41 +1350,142 @@ class TradingBot:
 
             exit_signal = False
 
-            # 1. Take Profit
-            if self.take_profit_usdt > 0 and self.last_known_pnl is not None and self.last_known_pnl >= self.take_profit_usdt:
-                self.logger.warning(f"[{self.symbol}] CONDICIÓN DE TAKE PROFIT (PnL) ALCANZADA. PnL={self.last_known_pnl:.4f} >= TP={self.take_profit_usdt}")
-                exit_signal = True
-                self.exit_reason = f"take_profit_pnl_reached ({self.last_known_pnl:.4f})"
-
-            # 2. Stop Loss
-            if not exit_signal and self.stop_loss_usdt < 0 and self.last_known_pnl is not None:
-                if self.last_known_pnl <= self.stop_loss_usdt:
-                    self.logger.warning(f"[{self.symbol}] CONDICIÓN DE STOP LOSS (PnL) ALCANZADA. PnL={self.last_known_pnl:.4f} <= SL={self.stop_loss_usdt}")
+            # 1. Take Profit (MODIFICADO)
+            if self.enable_take_profit_pnl:
+                if self.take_profit_usdt > 0 and self.last_known_pnl is not None and self.last_known_pnl >= self.take_profit_usdt:
+                    self.logger.warning(f"[{self.symbol}] CONDICIÓN DE TAKE PROFIT (PnL) ALCANZADA (Habilitado). PnL={self.last_known_pnl:.4f} >= TP={self.take_profit_usdt}")
                     exit_signal = True
-                    self.exit_reason = f"stop_loss_pnl_reached ({self.last_known_pnl:.4f})"
+                    self.exit_reason = f"take_profit_pnl_reached ({self.last_known_pnl:.4f})"
+            else:
+                self.logger.info(f"[{self.symbol}] Salida por Take Profit (PnL) DESHABILITADA.")
 
-            # 3. Activación de RSI objetivo
-            if not self.rsi_objetivo_activado and self.last_rsi_value is not None:
-                if self.last_rsi_value >= self.rsi_target:
-                    self.rsi_objetivo_activado = True
-                    self.logger.info(f"[{self.symbol}] RSI objetivo alcanzado: {self.rsi_target}. Se activa vigilancia de salida por threshold_down.")
+            # 2. Stop Loss (MODIFICADO)
+            if not exit_signal and self.enable_stop_loss_pnl:
+                if self.stop_loss_usdt < 0 and self.last_known_pnl is not None: 
+                    if self.last_known_pnl <= self.stop_loss_usdt:
+                        self.logger.warning(f"[{self.symbol}] CONDICIÓN DE STOP LOSS (PnL) ALCANZADA (Habilitado). PnL={self.last_known_pnl:.4f} <= SL={self.stop_loss_usdt}")
+                        exit_signal = True
+                        self.exit_reason = f"stop_loss_pnl_reached ({self.last_known_pnl:.4f})"
+            elif not exit_signal: 
+                self.logger.info(f"[{self.symbol}] Salida por Stop Loss (PnL) DESHABILITADA.")
 
-            # 4. Salida por threshold_down solo si el objetivo fue activado
-            if not exit_signal and self.rsi_objetivo_activado and self.last_rsi_value is not None:
-                rsi_salida = self.rsi_target + self.rsi_threshold_down
-                self.logger.info(f"[{self.symbol}] Chequeo Salida RSI: Actual RSI ({self.last_rsi_value:.2f}) vs RSI de salida ({rsi_salida:.2f})")
-                if self.last_rsi_value <= rsi_salida:
-                    self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (RSI OBJETIVO + threshold_down) DETECTADA: RSI Actual ({self.last_rsi_value:.2f}) <= {rsi_salida:.2f}")
+            # --- INICIO NUEVA LÓGICA: TRAILING STOP POR PRECIO ---
+            if not exit_signal and self.enable_price_trailing_stop:
+                if self.price_trailing_stop_distance_usdt > Decimal('0') and self.current_position:
+                    # Usar el precio de cierre de la última vela como precio actual del mercado
+                    # klines_df debería estar disponible y ser reciente
+                    current_market_price = Decimal(str(klines_df.iloc[-1]['close']))
+
+                    # Actualizar el precio pico si el precio actual es mayor
+                    if self.price_peak_since_entry is None or current_market_price > self.price_peak_since_entry:
+                        self.price_peak_since_entry = current_market_price
+                        self.logger.info(f"[{self.symbol}] Nuevo precio pico para Trailing Stop de Precio: {self.price_peak_since_entry:.{price_precision_log}f}")
+
+                    # Armar el trailing stop si el PNL alcanza el umbral de activación
+                    if not self.price_trailing_stop_armed and self.last_known_pnl is not None and \
+                       self.last_known_pnl >= self.price_trailing_stop_activation_pnl_usdt:
+                        self.price_trailing_stop_armed = True
+                        self.logger.info(f"[{self.symbol}] Trailing Stop de Precio ARMADO. PnL actual ({self.last_known_pnl:.4f}) >= Activación ({self.price_trailing_stop_activation_pnl_usdt:.4f})")
+
+                    # Si está armado, verificar condición de salida
+                    if self.price_trailing_stop_armed and self.price_peak_since_entry is not None:
+                        trailing_stop_price_level = self.price_peak_since_entry - self.price_trailing_stop_distance_usdt
+                        self.logger.info(f"[{self.symbol}] Chequeo Salida Trailing Precio (Habilitado, Armado): "
+                                         f"Actual Precio ({current_market_price:.{price_precision_log}f}) vs "
+                                         f"Umbral Salida ({trailing_stop_price_level:.{price_precision_log}f} = "
+                                         f"Pico {self.price_peak_since_entry:.{price_precision_log}f} - Dist {self.price_trailing_stop_distance_usdt})")
+                        if current_market_price <= trailing_stop_price_level:
+                            self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING STOP DE PRECIO) DETECTADA (Habilitado): "
+                                                f"Precio Actual ({current_market_price:.{price_precision_log}f}) <= Umbral ({trailing_stop_price_level:.{price_precision_log}f})")
+                            exit_signal = True
+                            self.exit_reason = (f"Price_Trailing_Stop (Precio={current_market_price:.{price_precision_log}f}, "
+                                                f"Pico={self.price_peak_since_entry:.{price_precision_log}f}, "
+                                                f"Dist={self.price_trailing_stop_distance_usdt})")
+                else:
+                    if self.price_trailing_stop_distance_usdt <= Decimal('0'):
+                        self.logger.info(f"[{self.symbol}] Trailing Stop de Precio (Habilitado) pero distancia no es positiva ({self.price_trailing_stop_distance_usdt}). No se evaluará.")
+                    # No loguear si !self.current_position porque ya se loguea al inicio de la función
+            elif not exit_signal: # Si no hay señal de salida aún y el Price Trailing está deshabilitado
+                 self.logger.info(f"[{self.symbol}] Salida por Trailing Stop de Precio DESHABILITADA.")
+            # --- FIN NUEVA LÓGICA: TRAILING STOP POR PRECIO ---
+
+            # --- INICIO NUEVA LÓGICA: TRAILING STOP POR PNL ---
+            if not exit_signal and self.enable_pnl_trailing_stop:
+                if self.pnl_trailing_stop_drop_usdt > Decimal('0') and self.last_known_pnl is not None:
+                    # Armar el PNL trailing stop si el PNL alcanza el umbral de activación de PNL Trailing
+                    if not self.pnl_trailing_stop_armed and self.last_known_pnl >= self.pnl_trailing_stop_activation_usdt:
+                        self.pnl_trailing_stop_armed = True
+                        self.pnl_peak_since_activation = self.last_known_pnl # El PNL actual es el primer pico
+                        self.logger.info(f"[{self.symbol}] Trailing Stop por PNL ARMADO. "
+                                         f"PNL actual ({self.last_known_pnl:.4f}) >= Activación PNL TS ({self.pnl_trailing_stop_activation_usdt:.4f}). "
+                                         f"Pico PNL inicial: {self.pnl_peak_since_activation:.4f}")
+
+                    # Si está armado, actualizar el pico de PNL y verificar condición de salida
+                    if self.pnl_trailing_stop_armed:
+                        if self.last_known_pnl > self.pnl_peak_since_activation:
+                            self.pnl_peak_since_activation = self.last_known_pnl
+                            self.logger.info(f"[{self.symbol}] Nuevo pico de PNL para Trailing Stop por PNL: {self.pnl_peak_since_activation:.4f}")
+
+                        # Calcular el nivel de PNL de salida
+                        pnl_trailing_exit_level = self.pnl_peak_since_activation - self.pnl_trailing_stop_drop_usdt
+                        self.logger.info(f"[{self.symbol}] Chequeo Salida Trailing PNL (Habilitado, Armado): "
+                                         f"Actual PNL ({self.last_known_pnl:.4f}) vs "
+                                         f"Umbral Salida PNL ({pnl_trailing_exit_level:.4f} = "
+                                         f"Pico PNL {self.pnl_peak_since_activation:.4f} - Caída {self.pnl_trailing_stop_drop_usdt})")
+
+                        if self.last_known_pnl <= pnl_trailing_exit_level:
+                            self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING STOP POR PNL) DETECTADA (Habilitado): "
+                                                f"PNL Actual ({self.last_known_pnl:.4f}) <= Umbral PNL ({pnl_trailing_exit_level:.4f})")
+                            exit_signal = True
+                            self.exit_reason = (f"PNL_Trailing_Stop (PNL={self.last_known_pnl:.4f}, "
+                                                f"PicoPNL={self.pnl_peak_since_activation:.4f}, "
+                                                f"DropPNL={self.pnl_trailing_stop_drop_usdt})")
+                else:
+                    if self.pnl_trailing_stop_drop_usdt <= Decimal('0'):
+                        self.logger.info(f"[{self.symbol}] Trailing Stop por PNL (Habilitado) pero la distancia de caída no es positiva ({self.pnl_trailing_stop_drop_usdt}). No se evaluará.")
+            elif not exit_signal: # Si no hay señal de salida aún y el PNL Trailing está deshabilitado
+                 self.logger.info(f"[{self.symbol}] Salida por Trailing Stop por PNL DESHABILITADA.")
+            # --- FIN NUEVA LÓGICA: TRAILING STOP POR PNL ---
+
+            # 3. Activación de RSI objetivo y seguimiento del pico para Trailing Stop RSI (MODIFICADO)
+            # La activación del rsi_objetivo y el seguimiento del pico se hacen independientemente de si el Trailing Stop está habilitado,
+            if self.last_rsi_value is not None:
+                if not self.rsi_objetivo_activado:
+                    if self.last_rsi_value >= self.rsi_target: # INDENTAR ESTE BLOQUE if
+                        self.rsi_objetivo_activado = True
+                        self.rsi_peak_since_target = self.last_rsi_value # Inicializar el pico RSI
+                        self.rsi_objetivo_alcanzado_en = pd.Timestamp.now(tz='UTC') # Opcional: registrar cuándo se armó
+                        self.logger.info(f"[{self.symbol}] RSI objetivo ({self.rsi_target}) alcanzado. RSI actual: {self.last_rsi_value:.2f}. Se activa TRAILING RSI STOP. Pico inicial: {self.rsi_peak_since_target:.2f}")
+                elif self.rsi_objetivo_activado: # Si ya está activado, actualizar el pico
+                    if self.last_rsi_value > self.rsi_peak_since_target:
+                        self.logger.info(f"[{self.symbol}] Nuevo pico RSI para TRAILING STOP: {self.last_rsi_value:.2f} (anterior: {self.rsi_peak_since_target:.2f})")
+                        self.rsi_peak_since_target = self.last_rsi_value
+
+            # 4. Salida por TRAILING RSI STOP (MODIFICADO)
+            if not exit_signal and self.enable_trailing_rsi_stop: # Solo si está habilitado y no hay otra señal
+                if self.rsi_objetivo_activado and self.rsi_peak_since_target is not None and self.last_rsi_value is not None:
+                    trailing_rsi_exit_level = self.rsi_peak_since_target + self.rsi_threshold_down
+                    self.logger.info(f"[{self.symbol}] Chequeo Salida TRAILING RSI (Habilitado): Actual RSI ({self.last_rsi_value:.2f}) vs Umbral Salida Dinámico ({trailing_rsi_exit_level:.2f} = Pico {self.rsi_peak_since_target:.2f} + Drop {self.rsi_threshold_down})")
+                    if self.last_rsi_value <= trailing_rsi_exit_level:
+                        self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING RSI STOP) DETECTADA (Habilitado): RSI Actual ({self.last_rsi_value:.2f}) <= Umbral ({trailing_rsi_exit_level:.2f})")
                     exit_signal = True
-                    self.exit_reason = f"RSI_target_and_threshold_down (Actual={self.last_rsi_value:.2f}, Target={self.rsi_target:.2f}, Down={self.rsi_threshold_down})"
+                    self.exit_reason = f"Trailing_RSI_Stop (Actual={self.last_rsi_value:.2f}, Pico={self.rsi_peak_since_target:.2f}, Drop={self.rsi_threshold_down})"
+            elif not exit_signal: # Si no hay señal de salida aún y el Trailing RSI está deshabilitado
+                 self.logger.info(f"[{self.symbol}] Salida por Trailing RSI Stop DESHABILITADA.")
 
             if exit_signal:
                 best_bid_price = self._get_best_exit_price('SELL')
                 if not best_bid_price:
                     self.logger.error(f"[{self.symbol}] No se pudo obtener el mejor precio Bid para la salida. No se colocará orden de salida.")
-                    self._update_state(BotState.IN_POSITION)
+                    self._update_state(BotState.IN_POSITION) # Mantener en posición, podría no tener TP/SL si fueron cancelados
                     return
-                self.logger.warning(f"[{self.symbol}] SEÑAL DE SALIDA ({self.exit_reason}). Intentando colocar orden LIMIT SELL @ {best_bid_price}")
+                
+                self.logger.warning(f"[{self.symbol}] SEÑAL DE SALIDA ({self.exit_reason}). Cancelando TP/SL existentes y colocando nueva orden LIMIT SELL @ {best_bid_price}")
+                
+                # --- CANCELAR ÓRDENES TP/SL EXISTENTES ANTES DE COLOCAR LA NUEVA ---
+                self._cancel_active_tp_sl_orders()
+                # --------------------------------------------------------------------
+                
                 self._place_exit_order(price=best_bid_price, reason=self.exit_reason)
             else:
                 self.logger.debug(f"[{self.symbol}] No hay señal de salida. Manteniendo posición.")
@@ -1422,19 +1682,23 @@ class TradingBot:
         """
         Actualiza el PnL no realizado, precio de entrada y cantidad de la posición abierta actual
         consultando directamente a Binance. También maneja si la posición ya no existe.
+        Si la posición existía para el bot y ya no existe en Binance, intenta encontrar el trade de cierre
+        en el historial de Binance y registrarlo. Si no, registra un cierre con PNL 0.
         Devuelve True si la posición sigue abierta y se actualizó, False si la posición se cerró
         o hubo un error al obtener los datos.
         """
-        if not self.in_position or not self.current_position:
-            self.logger.debug(f"[{self.symbol}] _update_open_position_pnl llamado pero no se está en posición según el estado interno. Saltando.")
-            return True # No es un cierre, simplemente no hay nada que actualizar.
+        if not self.in_position or not self.current_position: # self.current_position es clave
+            self.logger.debug(f"[{self.symbol}] _update_open_position_pnl llamado pero no se está en posición o current_position es None. Saltando.")
+            return True
 
-        self.logger.debug(f"[{self.symbol}] Actualizando PnL para posición abierta...")
+        self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Verificando posición abierta en Binance...")
         position_data = get_futures_position(self.symbol)
 
         if not position_data:
-            self.logger.warning(f"[{self.symbol}] No se pudo obtener información de posición de Binance para actualizar PnL. La posición podría estar cerrada.")
-            self._handle_external_closure_or_discrepancy(reason="pnl_update_no_pos_data")
+            self.logger.warning(f"[{self.symbol}] _update_open_position_pnl: No se pudo obtener información de posición de Binance.")
+            # Si el bot pensaba que estaba en posición, se considera un cierre externo.
+            # _handle_external_closure_or_discrepancy es llamado y se espera que registre algo si es posible.
+            self._handle_external_closure_or_discrepancy(reason="pnl_update_no_pos_data_assumed_closed")
             return False
 
         pos_amt_str = position_data.get('positionAmt', '0')
@@ -1442,162 +1706,268 @@ class TradingBot:
         unrealized_pnl_str = position_data.get('unRealizedProfit', '0')
 
         try:
-            pos_amt = Decimal(pos_amt_str)
-            entry_price = Decimal(entry_price_str)
-            unrealized_pnl = Decimal(unrealized_pnl_str)
+            pos_amt_binance = Decimal(pos_amt_str)
+            entry_price_binance = Decimal(entry_price_str)
+            unrealized_pnl_binance = Decimal(unrealized_pnl_str)
         except Exception as e:
-            self.logger.error(f"[{self.symbol}] Error al convertir datos de posición de Binance a Decimal: {e}. Datos: {position_data}")
-            return True # No se pudo actualizar, pero no asumimos cierre aún.
+            self.logger.error(f"[{self.symbol}] _update_open_position_pnl: Error al convertir datos de posición de Binance a Decimal: {e}. Datos: {position_data}")
+            return True
 
-        if abs(pos_amt) < Decimal('1e-9'):
-            self.logger.info(f"[{self.symbol}] Posición para {self.symbol} parece cerrada externamente (Cantidad: {pos_amt}).")
-            self._handle_external_closure_or_discrepancy(reason="pnl_update_pos_closed_externally")
-            return False
+        # El bot pensaba que estaba en posición (self.in_position == True)
+        if abs(pos_amt_binance) < Decimal('1e-9'): # Posición cerrada en Binance
+            self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Posición para {self.symbol} CERRADA en Binance (Cantidad: {pos_amt_binance}). El bot la tenía como ABIERTA.")
+            
+            old_pos_data_original = self.current_position.copy() # self.current_position no debería ser None aquí debido al check inicial
+            old_entry_price_from_bot = old_pos_data_original.get('entry_price')
+            old_quantity_from_bot = old_pos_data_original.get('quantity')
+            old_entry_time_from_bot = old_pos_data_original.get('entry_time')
 
-        if pos_amt < 0:
-            self.logger.warning(f"[{self.symbol}] Posición SHORT inesperada detectada ({pos_amt}) durante actualización de PnL. Manejando cierre.")
+            self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Datos de posición (current_position) que el bot TENÍA: {old_pos_data_original}")
+            self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Extracted: old_entry_price={old_entry_price_from_bot}, old_quantity={old_quantity_from_bot}, old_entry_time={old_entry_time_from_bot}")
+
+            # Fallbacks iniciales
+            actual_close_price = old_entry_price_from_bot if old_entry_price_from_bot else Decimal('0')
+            actual_pnl_usdt = Decimal('0.0')
+            actual_close_timestamp = pd.Timestamp.now(tz='UTC')
+            associated_binance_trade_id = None
+            db_reason_for_closure = "Cierre Externo (Detectado PnL Update)"
+
+            # Preparar parámetros del bot para la DB (hacerlo una vez)
+            db_trade_params = {}
+            string_params = ['rsi_interval', 'rsi_period', 'rsi_threshold_up', 'rsi_threshold_down', 
+                             'rsi_entry_level_low', 'rsi_entry_level_high', 'volume_sma_period', 
+                             'volume_factor', 'downtrend_check_candles', 'order_timeout_seconds']
+            float_params = ['position_size_usdt', 'take_profit_usdt', 'stop_loss_usdt', 'rsi_target',
+                            'price_trailing_stop_distance_usdt', 'price_trailing_stop_activation_pnl_usdt',
+                            'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt']
+            bool_params = ['enable_price_trailing_stop', 'enable_pnl_trailing_stop', 'evaluate_rsi_delta', 
+                           'evaluate_volume_filter', 'evaluate_rsi_range', 'evaluate_downtrend_candles_block',
+                           'evaluate_downtrend_levels_block', 'evaluate_required_uptrend', 
+                           'enable_take_profit_pnl', 'enable_stop_loss_pnl', 'enable_trailing_rsi_stop']
+
+            for p_name in string_params:
+                if hasattr(self, p_name): db_trade_params[p_name] = str(getattr(self, p_name))
+            for p_name in float_params:
+                if hasattr(self, p_name):
+                    try: db_trade_params[p_name] = float(getattr(self, p_name))
+                    except (ValueError, TypeError): self.logger.warning(f"[{self.symbol}] Param {p_name} ({getattr(self,p_name)}) to float failed."); db_trade_params[p_name] = 0.0
+            for p_name in bool_params:
+                 if hasattr(self, p_name): db_trade_params[p_name] = bool(getattr(self, p_name))
+
+
+            data_is_sufficient_for_detailed_search = \
+                old_entry_price_from_bot is not None and old_entry_price_from_bot > Decimal('0') and \
+                old_quantity_from_bot is not None and old_quantity_from_bot > Decimal('0')
+
+            if data_is_sufficient_for_detailed_search:
+                self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Datos suficientes. Se intentará búsqueda en historial.")
+                
+                effective_entry_time_for_search = old_entry_time_from_bot
+                if effective_entry_time_for_search is None:
+                    self.logger.warning(f"[{self.symbol}] _update_open_position_pnl: 'old_entry_time_from_bot' era None. Estimando para búsqueda.")
+                    effective_entry_time_for_search = actual_close_timestamp - pd.Timedelta(minutes=2)
+
+                try:
+                    user_trades = get_user_trade_history(symbol=self.symbol, limit=15)
+                    found_match = False
+                    if user_trades:
+                        for trade in user_trades:
+                            binance_trade_id_from_api = trade.get('id')
+                            trade_time_dt = pd.Timestamp(trade['time'], unit='ms', tz='UTC')
+                            trade_qty = Decimal(trade.get('qty', '0'))
+                            trade_price = Decimal(trade.get('price', '0'))
+                            trade_side = trade.get('side', '').upper()
+                            trade_realized_pnl = Decimal(trade.get('realizedPnl', '0'))
+
+                            if trade_side == 'SELL' and trade_time_dt >= effective_entry_time_for_search:
+                                quantity_diff_percent = (abs(trade_qty - old_quantity_from_bot) / old_quantity_from_bot) * 100
+                                if quantity_diff_percent < 5.0:
+                                    if not check_if_binance_trade_exists(binance_trade_id=int(binance_trade_id_from_api)):
+                                        self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Trade de cierre ENCONTRADO y NO REGISTRADO: BinanceID={binance_trade_id_from_api}, PnL={trade_realized_pnl}")
+                                        actual_close_price = trade_price
+                                        actual_pnl_usdt = trade_realized_pnl
+                                        actual_close_timestamp = trade_time_dt
+                                        associated_binance_trade_id = int(binance_trade_id_from_api)
+                                        db_reason_for_closure = f"Cierre Externo (Historial BinanceID {associated_binance_trade_id})"
+                                        found_match = True
+                                        break
+                                    else:
+                                        self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Trade de cierre {binance_trade_id_from_api} ya estaba registrado. Ignorando.")
+                    if not found_match:
+                        self.logger.warning(f"[{self.symbol}] _update_open_position_pnl: No se encontró trade de cierre no registrado en historial. Razón actual: '{db_reason_for_closure}' (se actualizará si era el default).")
+                        if db_reason_for_closure == "Cierre Externo (Detectado PnL Update)": # Si no se actualizó por un match
+                           db_reason_for_closure = "Cierre Externo (No hallado en historial reciente)"
+                except Exception as e_hist:
+                    self.logger.error(f"[{self.symbol}] _update_open_position_pnl: Error buscando historial: {e_hist}", exc_info=True)
+                    db_reason_for_closure = "Cierre Externo (Error en búsqueda historial)"
+                
+                # Registro con datos de búsqueda (o fallbacks si búsqueda falló)
+                try:
+                    record_trade(
+                        symbol=self.symbol, trade_type='LONG',
+                        open_timestamp=effective_entry_time_for_search,
+                        close_timestamp=actual_close_timestamp,
+                        open_price=float(old_entry_price_from_bot),
+                        close_price=float(actual_close_price), # Puede ser de Binance o fallback
+                        quantity=float(old_quantity_from_bot),
+                        position_size_usdt=float(abs(old_entry_price_from_bot * old_quantity_from_bot)),
+                        pnl_usdt=float(actual_pnl_usdt), # Puede ser de Binance o fallback 0.0
+                        close_reason=db_reason_for_closure,
+                        parameters=db_trade_params,
+                        binance_trade_id=associated_binance_trade_id
+                    )
+                    self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Cierre (después de intento de búsqueda) registrado. PNL: {actual_pnl_usdt:.4f}, Razón: '{db_reason_for_closure}'")
+                except Exception as e_rec:
+                    self.logger.error(f"[{self.symbol}] _update_open_position_pnl: Error al registrar cierre (después de intento de búsqueda): {e_rec}", exc_info=True)
+            
+            else: # Datos NO eran suficientes para búsqueda detallada, pero el bot creía estar en posición.
+                self.logger.warning(f"[{self.symbol}] _update_open_position_pnl: Datos insuficientes para búsqueda en historial ({old_pos_data_original}). Intentando registro de FALLBACK BÁSICO.")
+                
+                # Usar los datos que teníamos, aunque sean None, y la función record_trade debería manejar Nones o defaults.
+                # Si old_entry_price_from_bot o old_quantity_from_bot son None, el PNL será 0, y position_size_usdt también.
+                # Los precios y cantidad en DB serán 0.0 si eran None.
+                final_open_price = old_entry_price_from_bot if old_entry_price_from_bot else Decimal('0')
+                final_quantity = old_quantity_from_bot if old_quantity_from_bot else Decimal('0')
+                final_open_time = old_entry_time_from_bot if old_entry_time_from_bot else actual_close_timestamp - pd.Timedelta(minutes=1)
+
+                db_reason_for_closure = "Cierre Externo (Datos Bot Insuficientes para Búsqueda)"
+                try:
+                    record_trade(
+                        symbol=self.symbol, trade_type='LONG',
+                        open_timestamp=final_open_time,
+                        close_timestamp=actual_close_timestamp, # Tiempo actual
+                        open_price=float(final_open_price),
+                        close_price=float(final_open_price), # Para PNL 0
+                        quantity=float(final_quantity),
+                        position_size_usdt=float(abs(final_open_price * final_quantity)),
+                        pnl_usdt=0.0, # PNL Cero
+                        close_reason=db_reason_for_closure,
+                        parameters=db_trade_params,
+                        binance_trade_id=None
+                    )
+                    self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Cierre (FALLBACK BÁSICO) registrado. Razón: '{db_reason_for_closure}'")
+                except Exception as e_rec_fallback:
+                    self.logger.error(f"[{self.symbol}] _update_open_position_pnl: Error al registrar cierre (FALLBACK BÁSICO): {e_rec_fallback}", exc_info=True)
+            
+            self._reset_state() # Limpia self.in_position, self.current_position, etc.
+            self._update_state(BotState.IDLE)
+            return False # Indica que la posición se cerró
+
+        elif pos_amt_binance < 0: # Posición SHORT inesperada
+            self.logger.warning(f"[{self.symbol}] _update_open_position_pnl: Posición SHORT inesperada detectada ({pos_amt_binance}).")
             self._handle_external_closure_or_discrepancy(reason="pnl_update_unexpected_short", short_position_data=position_data)
             return False
 
-        self.last_known_pnl = unrealized_pnl
+        # Si llegamos aquí, la posición sigue abierta y es LONG. Actualizar datos.
+        self.last_known_pnl = unrealized_pnl_binance
         
-        if self.current_position['entry_price'] != entry_price or self.current_position['quantity'] != pos_amt:
-            self.logger.info(f"[{self.symbol}] Datos de posición actualizados desde Binance: "
-                             f"Viejo EntryP: {self.current_position['entry_price']}, Nuevo: {entry_price}. "
-                             f"Vieja Cant: {self.current_position['quantity']}, Nueva: {pos_amt}.")
-            self.current_position['entry_price'] = entry_price
-            self.current_position['quantity'] = pos_amt
-            self.current_position['positionAmt'] = pos_amt
-            self.current_position['position_size_usdt'] = abs(entry_price * pos_amt)
+        if self.current_position['entry_price'] != entry_price_binance or self.current_position['quantity'] != pos_amt_binance:
+            self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Datos de posición actualizados desde Binance: "
+                             f"Viejo EntryP: {self.current_position['entry_price']}, Nuevo: {entry_price_binance}. "
+                             f"Vieja Cant: {self.current_position['quantity']}, Nueva: {pos_amt_binance}.")
+            self.current_position['entry_price'] = entry_price_binance
+            self.current_position['quantity'] = pos_amt_binance
+            self.current_position['positionAmt'] = pos_amt_binance # Asegurar que actualizamos esto también
+            self.current_position['position_size_usdt'] = abs(entry_price_binance * pos_amt_binance)
         
         price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
-        self.logger.debug(f"[{self.symbol}] PnL actualizado: {self.last_known_pnl:.4f} USDT, Entrada: {entry_price:.{price_precision_log}f}, Cant: {pos_amt}")
+        self.logger.debug(f"[{self.symbol}] _update_open_position_pnl: PnL actualizado: {self.last_known_pnl:.4f} USDT, Entrada: {entry_price_binance:.{price_precision_log}f}, Cant: {pos_amt_binance}")
         return True
 
     def _handle_external_closure_or_discrepancy(self, reason: str, short_position_data: dict | None = None):
         """
-        Maneja el caso donde una posición que el bot creía abierta ya no lo está según Binance,
-        o se detecta una posición SHORT inesperada.
-        Intenta registrar el cierre si había una posición activa, buscando PnL real.
+        Maneja casos de discrepancia donde la lógica de _update_open_position_pnl no pudo resolver completamente,
+        o cuando se detecta una posición SHORT y el bot esperaba LONG (y _update_open_position_pnl ya intentó manejarlo).
+        Esta función ahora es más un fallback o un manejador de errores específicos de discrepancia
+        que un procesador primario de cierres externos (esa lógica se movió a _update_open_position_pnl).
         """
-        self.logger.warning(f"[{self.symbol}] Manejando cierre externo o discrepancia: {reason}")
+        self.logger.warning(f"[{self.symbol}] --- _handle_external_closure_or_discrepancy --- Reason: {reason}")
 
-        old_entry_price = self.current_position.get('entry_price') if self.current_position else None
-        old_quantity = self.current_position.get('quantity') if self.current_position else None
-        old_entry_time = self.current_position.get('entry_time') if self.current_position else None
+        # Tomar una copia de self.current_position ANTES de resetear estado, por si se necesita para un log de último recurso.
+        # Es posible que _update_open_position_pnl ya haya reseteado el estado si el cierre se manejó ahí.
+        # Esta función es un fallback.
+        current_pos_at_call = self.current_position.copy() if self.current_position else {}
+        old_entry_price = current_pos_at_call.get('entry_price')
+        old_quantity = current_pos_at_call.get('quantity')
+        old_entry_time = current_pos_at_call.get('entry_time')
 
-        # Guardar los parámetros ANTES de resetear el estado, por si los necesitamos para la DB
-        # (aunque _reset_state ya no limpia self.params directamente, es buena práctica tenerlos listos)
-        db_trade_params = {
-            'rsi_interval': self.rsi_interval,
-            'rsi_period': self.rsi_period,
-            'rsi_threshold_up': self.rsi_threshold_up,
-            'rsi_threshold_down': self.rsi_threshold_down,
-            'rsi_entry_level_low': self.rsi_entry_level_low,
-            'rsi_entry_level_high': self.rsi_entry_level_high,
-            'volume_sma_period': self.volume_sma_period,
-            'volume_factor': self.volume_factor,
-            'position_size_usdt': float(self.position_size_usdt),
-            'take_profit_usdt': float(self.take_profit_usdt),
-            'stop_loss_usdt': float(self.stop_loss_usdt),
-            'downtrend_check_candles': self.downtrend_check_candles,
-            'order_timeout_seconds': self.order_timeout_seconds,
-            'rsi_target': self.rsi_target
-        }
+        self.logger.info(f"[{self.symbol}] Data de posición al momento de llamar a _handle_external_closure_or_discrepancy: EntryP={old_entry_price}, Qty={old_quantity}, EntryT={old_entry_time}")
+
+        # Mapeo de razones internas a razones simplificadas para el usuario 
+        db_reason = f"Discrepancia ({reason})"
+        if reason == "pnl_update_no_pos_data_assumed_closed": # Nueva razón desde _update_open_position_pnl
+             db_reason = "Cierre Externo (Fallo al obtener datos de posición de Binance)"
+        elif reason == "pnl_update_unexpected_short":
+             db_reason = "Error: Posición Corta Detectada Inesperadamente"
         
-        # Resetear el estado del bot ANTES de intentar cualquier operación de API que pueda tardar.
-        # Esto asegura que el bot no intente operar sobre una posición que ya considera cerrada.
-        self._reset_state() # Esto limpia pending_tp_order_id, pending_sl_order_id, etc.
+        self.logger.info(f"[{self.symbol}] Razón de discrepancia mapeada para DB: '{db_reason}'")
+
+        # Primero, resetear el estado del bot para este símbolo a un estado limpio.
+        # Esto es crucial para evitar comportamientos erráticos.
+        self.logger.info(f"[{self.symbol}] _handle_external_closure_or_discrepancy: Reseteando estado del bot AHORA.")
+        self._reset_state() # Limpia self.in_position, self.current_position, órdenes pendientes, etc.
         self._update_state(BotState.IDLE)
 
-        # --- Mapeo de razones internas a razones simplificadas para el usuario ---
-        db_reason = f"Cierre Externo ({reason})"
-        if reason == "pnl_update_no_pos_data":
-            db_reason = "Cierre Externo (Datos Pos. No Disp.)"
-        elif reason == "pnl_update_pos_closed_externally":
-            db_reason = "Cierre Externo (Detectado en PnL)"
-        elif reason == "pnl_update_unexpected_short" or reason == "verify_pos_found_short":
-            db_reason = "Error: Posición Corta Detectada"
-        elif reason == "verify_pos_now_closed":
-            db_reason = "Cierre Externo (Verificado)"
-        elif reason == "verify_pos_no_data":
-            db_reason = "Cierre Externo (Datos Pos. No Disp.)"
-        # ---------------------------------------------------------------------
-
-        if reason == "pnl_update_unexpected_short" or reason == "verify_pos_found_short":
-            self.logger.error(f"[{self.symbol}] Se detectó una posición SHORT. "
-                              f"El bot solo maneja LONGs. Se ha reseteado el estado. No se registra trade 'LONG' cerrado para '{reason}'.")
+        # Si el problema es una posición SHORT, solo loguear el error y asegurarse de que el estado está reseteado.
+        # El registro de un posible cierre de LONG previo ya debería haber ocurrido en _update_open_position_pnl.
+        if "pnl_update_unexpected_short" in reason:
+            self.logger.error(f"[{self.symbol}] Discrepancia: Se detectó una posición SHORT. El bot solo maneja LONGs. Estado ya reseteado.")
+            self.logger.info(f"[{self.symbol}] --- FIN _handle_external_closure_or_discrepancy (SHORT detectado) ---")
             return
 
-        # --- Intentar obtener PnL y precio de cierre reales ---
-        actual_close_price = old_entry_price # Fallback si no se encuentra trade
-        actual_pnl_usdt = Decimal('0.0')    # Fallback
-        actual_close_timestamp = pd.Timestamp.now(tz='UTC') # Fallback
-        trade_found_for_pnl = False
+        # Si la razón fue "pnl_update_no_pos_data_assumed_closed", _update_open_position_pnl
+        # NO pudo obtener datos de Binance, así que la búsqueda de historial no se pudo hacer allí.
+        # Intentamos un registro de último recurso aquí SI teníamos datos de la posición vieja del bot.
+        if reason == "pnl_update_no_pos_data_assumed_closed":
+            if old_entry_price is not None and old_quantity is not None and old_entry_price > Decimal('0') and old_quantity > Decimal('0'):
+                self.logger.warning(f"[{self.symbol}] _handle_external_closure_or_discrepancy: Intentando registro de último recurso para '{reason}' porque los datos de Binance no estuvieron disponibles.")
+                
+                final_open_timestamp = old_entry_time if old_entry_time else pd.Timestamp.now(tz='UTC') - pd.Timedelta(minutes=1)
+                final_close_timestamp = pd.Timestamp.now(tz='UTC')
 
-        if old_entry_price is not None and old_quantity is not None and old_entry_price > Decimal('0') and old_quantity > Decimal('0') and old_entry_time is not None:
-            self.logger.info(f"[{self.symbol}] Intentando encontrar trade de cierre en historial para pos: Entrada@{old_entry_price}, Cant:{old_quantity}, TiempoEntrada:{old_entry_time}")
-            try:
-                old_entry_time_ms = int(old_entry_time.timestamp() * 1000)
-                # Pedir unos pocos trades después del tiempo de entrada
-                user_trades = get_user_trade_history(symbol=self.symbol, start_time_ms=old_entry_time_ms, limit=10) 
+                # Construcción de db_trade_params mejorada
+                db_trade_params = {}
+                string_params = ['rsi_interval', 'rsi_period', 'rsi_threshold_up', 'rsi_threshold_down', 
+                                 'rsi_entry_level_low', 'rsi_entry_level_high', 'volume_sma_period', 
+                                 'volume_factor', 'downtrend_check_candles', 'order_timeout_seconds']
+                float_params = ['position_size_usdt', 'take_profit_usdt', 'stop_loss_usdt', 'rsi_target',
+                                'price_trailing_stop_distance_usdt', 'price_trailing_stop_activation_pnl_usdt',
+                                'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt']
+                bool_params = ['enable_price_trailing_stop', 'enable_pnl_trailing_stop', 'evaluate_rsi_delta', 
+                               'evaluate_volume_filter', 'evaluate_rsi_range', 'evaluate_downtrend_candles_block',
+                               'evaluate_downtrend_levels_block', 'evaluate_required_uptrend', 
+                               'enable_take_profit_pnl', 'enable_stop_loss_pnl', 'enable_trailing_rsi_stop']
 
-                if user_trades: # user_trades está ordenado del más nuevo al más viejo
-                    for trade in user_trades:
-                        trade_time = pd.Timestamp(trade['time'], unit='ms', tz='UTC')
-                        # Solo considerar trades que ocurrieron DESPUÉS de nuestra entrada (o muy poco antes, por si hay desfase de ms)
-                        if trade_time < old_entry_time - pd.Timedelta(seconds=1): 
-                            continue
+                for p_name in string_params:
+                    if hasattr(self, p_name): db_trade_params[p_name] = str(getattr(self, p_name))
+                for p_name in float_params:
+                    if hasattr(self, p_name):
+                        try: db_trade_params[p_name] = float(getattr(self, p_name))
+                        except (ValueError, TypeError): self.logger.warning(f"[{self.symbol}] Param {p_name} ({getattr(self,p_name)}) to float failed."); db_trade_params[p_name] = 0.0
+                for p_name in bool_params:
+                     if hasattr(self, p_name): db_trade_params[p_name] = bool(getattr(self, p_name))
 
-                        trade_qty = Decimal(str(trade.get('qty', '0')))
-                        trade_price = Decimal(str(trade.get('price', '0')))
-                        trade_side = trade.get('side', '').upper()
-                        # El PnL realizado en el historial de trades ya viene con el signo correcto.
-                        trade_realized_pnl = Decimal(str(trade.get('realizedPnl', '0'))) 
-
-                        # Para una posición LONG, el cierre es un trade 'SELL'
-                        # Comparamos cantidades. Permitimos una pequeña diferencia por si hay redondeos.
-                        # El bot opera solo LONG, así que un cierre manual será un SELL.
-                        if trade_side == 'SELL' and abs(trade_qty - old_quantity) < (old_quantity * Decimal('0.01') + Decimal('1e-8')):
-                            self.logger.info(f"[{self.symbol}] Trade de cierre encontrado en historial: "
-                                             f"ID={trade.get('id')}, Precio={trade_price}, Cant={trade_qty}, "
-                                             f"PnL Realizado={trade_realized_pnl}, Lado={trade_side}, Tiempo={trade_time}")
-                            actual_close_price = trade_price
-                            actual_close_timestamp = trade_time
-                            actual_pnl_usdt = trade_realized_pnl # Usar PnL de Binance directamente
-                            trade_found_for_pnl = True
-                            # Usamos el primer trade de venta que coincida (el más reciente)
-                            break 
-            except Exception as e:
-                self.logger.error(f"[{self.symbol}] Error al buscar/procesar trades para PnL de cierre externo: {e}", exc_info=True)
+                try:
+                    record_trade(
+                        symbol=self.symbol, trade_type='LONG',
+                        open_timestamp=final_open_timestamp,
+                        close_timestamp=final_close_timestamp,
+                        open_price=float(old_entry_price),
+                        close_price=float(old_entry_price), # PNL Cero
+                        quantity=float(old_quantity),
+                        position_size_usdt=float(abs(old_entry_price * old_quantity)),
+                        pnl_usdt=0.0,
+                        close_reason=db_reason,
+                        parameters=db_trade_params,
+                        binance_trade_id=None
+                    )
+                    self.logger.info(f"[{self.symbol}] _handle_external_closure_or_discrepancy: Registro de último recurso en DB. PNL: 0.0, Razón: {db_reason}")
+                except Exception as e_rec_fallback:
+                    self.logger.error(f"[{self.symbol}] _handle_external_closure_or_discrepancy: Error en registro de último recurso: {e_rec_fallback}", exc_info=True)
+            else:
+                self.logger.warning(f"[{self.symbol}] _handle_external_closure_or_discrepancy: No hay suficientes datos de posición previa para un registro de último recurso para '{reason}'. Estado ya reseteado.")
         
-            # --- Registrar el trade con la mejor información disponible ---
-            if old_entry_time is None: # Fallback si old_entry_time no se pudo obtener
-                old_entry_time = pd.Timestamp.now(tz='UTC') - pd.Timedelta(minutes=5)
-                self.logger.warning(f"[{self.symbol}] Usando timestamp de entrada estimado para registro de cierre externo.")
-
-            try:
-                record_trade(
-                    symbol=self.symbol,
-                    trade_type='LONG', # Asumimos que el bot solo maneja LONGs
-                    open_timestamp=old_entry_time,
-                    close_timestamp=actual_close_timestamp,
-                    open_price=float(old_entry_price),
-                    close_price=float(actual_close_price if actual_close_price else old_entry_price), # Usar old_entry_price si actual_close_price es None
-                    quantity=float(old_quantity),
-                    position_size_usdt=float(abs(old_entry_price * old_quantity)),
-                    pnl_usdt=float(actual_pnl_usdt),
-                    close_reason=db_reason,
-                    parameters=db_trade_params
-                )
-                if trade_found_for_pnl:
-                    self.logger.info(f"[{self.symbol}] Cierre externo registrado en DB. Razón: '{db_reason}', PnL: {actual_pnl_usdt:.4f} (desde historial).")
-                else:
-                    self.logger.info(f"[{self.symbol}] Cierre externo registrado en DB. Razón: '{db_reason}', PnL: {actual_pnl_usdt:.4f} (PnL no encontrado en historial, usando fallback).")
-            except Exception as e:
-                self.logger.error(f"[{self.symbol}] Error al registrar el trade de cierre externo en la DB: {e}", exc_info=True)
-        else:
-            self.logger.info(f"[{self.symbol}] Cierre externo/discrepancia detectada, pero no había datos de posición previa válida (entrada/cant/tiempo) para registrar un trade.")
+        self.logger.info(f"[{self.symbol}] --- FIN _handle_external_closure_or_discrepancy (Estado ya reseteado) ---")
 
     def _check_downtrend_levels(self, klines_df: pd.DataFrame) -> bool:
         """
@@ -1642,6 +2012,68 @@ class TradingBot:
         except Exception as e:
             self.logger.error(f"[{self.symbol}] Error al verificar tendencia bajista de niveles: {e}", exc_info=True)
             return False
+
+    # --- NUEVA FUNCIÓN AUXILIAR ---
+    def _cancel_active_tp_sl_orders(self):
+        """Cancels any pending TP or SL orders the bot is tracking."""
+        cancelled_any = False
+        if self.pending_tp_order_id:
+            self.logger.info(f"[{self.symbol}] Canceling pending TP order {self.pending_tp_order_id} due to alternative exit signal.")
+            try:
+                # Asegurarse de que la función de cancelación existe y se llama correctamente
+                cancel_futures_order(self.symbol, self.pending_tp_order_id)
+            except Exception as e:
+                self.logger.error(f"[{self.symbol}] Failed to cancel TP order {self.pending_tp_order_id}: {e}", exc_info=True)
+            self.pending_tp_order_id = None # Clear ID regardless of cancellation success
+            cancelled_any = True
+
+        if self.pending_sl_order_id:
+            self.logger.info(f"[{self.symbol}] Canceling pending SL order {self.pending_sl_order_id} due to alternative exit signal.")
+            try:
+                cancel_futures_order(self.symbol, self.pending_sl_order_id)
+            except Exception as e:
+                self.logger.error(f"[{self.symbol}] Failed to cancel SL order {self.pending_sl_order_id}: {e}", exc_info=True)
+            self.pending_sl_order_id = None # Clear ID
+            cancelled_any = True
+        
+        if cancelled_any:
+            self.logger.info(f"[{self.symbol}] Pending TP/SL orders cleared/attempted cancellation.")
+        return cancelled_any # Devuelve True si se intentó cancelar algo
+    # --- FIN NUEVA FUNCIÓN AUXILIAR ---
+
+    # --- NUEVA FUNCIÓN para verificar velas alcistas REQUERIDAS ---
+    def _check_required_uptrend(self, klines_df: pd.DataFrame) -> bool:
+        """
+        Verifica si las 'N' velas cerradas más recientes muestran una tendencia ALCISTA consecutiva REQUERIDA.
+        Esta función es llamada por _check_entry_conditions como un REQUISITO ADICIONAL.
+        El valor de 'N' se toma de self.required_uptrend_candles.
+        Devuelve True si se detecta tendencia alcista requerida (o si el chequeo está desactivado N < 2),
+        False si no se detecta tendencia alcista y el chequeo está activo (N >= 2).
+        """
+        n_req = self.required_uptrend_candles # Este 'N' es para el requisito de subida
+
+        if n_req < 2:
+            self.logger.debug(f"[{self.symbol}] Requisito de tendencia alcista reciente (N_req={n_req}) desactivado o no aplicable. Condición cumplida por defecto.")
+            return True # Si el chequeo está desactivado (N_req=0 o N_req=1), no es un obstáculo.
+
+        if len(klines_df) < n_req + 1:
+            self.logger.warning(f"[{self.symbol}] No hay suficientes klines ({len(klines_df)}) para REQUERIR tendencia alcista de {n_req} velas. Se necesitan al menos {n_req+1}. Condición NO cumplida.")
+            return False
+
+        closes = klines_df['close']
+        
+        for i in range(n_req - 1):
+            current_candle_in_sequence_close = closes.iloc[-(2 + i)]
+            previous_to_current_close = closes.iloc[-(3 + i)]
+
+            if current_candle_in_sequence_close <= previous_to_current_close:
+                self.logger.info(f"[{self.symbol}] REQUISITO de tendencia alcista ({n_req} velas) NO CUMPLIDO. "
+                                 f"Vela {-(2+i)} ({current_candle_in_sequence_close:.8f}) no fue > vela {-(3+i)} ({previous_to_current_close:.8f}).")
+                return False
+        
+        self.logger.info(f"[{self.symbol}] REQUISITO de tendencia alcista ({n_req} velas) CUMPLIDO.")
+        return True
+    # --- FIN NUEVA FUNCIÓN ---
 
 # --- Bloque de ejemplo (ya no se usa directamente así) ---
 # if __name__ == '__main__':

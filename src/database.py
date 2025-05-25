@@ -2,10 +2,11 @@
 
 import sqlite3
 import json
-import datetime
+from datetime import datetime # Asegurar importación directa de datetime
 import os
 from decimal import Decimal # Mantener para posible conversión
 import pandas as pd
+from typing import Union # <-- NUEVA IMPORTACIÓN
 
 # Importamos la configuración y el logger (Logger sí, Config no es necesaria aquí)
 # from .config_loader import load_config # Ya no necesitamos leer config de DB
@@ -33,151 +34,114 @@ def get_db_connection():
         return None
 
 def init_db_schema():
-    """Crea la tabla 'trades' si no existe en la base de datos SQLite."""
-    logger = get_logger()
-    logger.info(f"Verificando/creando esquema de DB en: {DATABASE_FILE}")
-    conn = get_db_connection()
-    if not conn:
-        logger.error("No se pudo obtener conexión a SQLite DB para inicializar esquema.")
-        return False
-
-    # SQL para crear la tabla en SQLite.
-    # Usamos 'INTEGER PRIMARY KEY AUTOINCREMENT' para el ID.
-    # Usamos 'TEXT' para fechas (guardaremos en formato ISO 8601).
-    # Usamos 'REAL' para números decimales (suficiente precisión para este caso).
-    # Usamos 'TEXT' para guardar el JSON de parámetros.
-    create_table_sql = """
-    CREATE TABLE IF NOT EXISTS trades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        symbol TEXT NOT NULL,
-        trade_type TEXT NOT NULL CHECK (trade_type IN ('LONG', 'SHORT')),
-        open_timestamp TEXT NOT NULL, -- Formato ISO 8601 YYYY-MM-DD HH:MM:SS.sss
-        close_timestamp TEXT,
-        open_price REAL NOT NULL,
-        close_price REAL,
-        quantity REAL NOT NULL,
-        position_size_usdt REAL NOT NULL,
-        pnl_usdt REAL,
-        close_reason TEXT, -- 'take_profit', 'stop_loss', 'manual', 'error', 'limit_order_filled' etc.
-        parameters TEXT, -- Guardar config usada para este trade (JSON string)
-        created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now', 'localtime')),
-        entry_price REAL,
-        exit_price REAL,
-        side TEXT,
-        entry_timestamp TEXT,
-        exit_timestamp TEXT,
-        reason TEXT,
-        order_details TEXT
-    );
-    """
-    success = False
-    try:
-        # Usamos 'with conn:' para manejar automáticamente commit/rollback y cierre
-        with conn:
-            cur = conn.cursor()
-            cur.execute(create_table_sql)
-        logger.info("Tabla 'trades' verificada/creada exitosamente en SQLite DB.")
-        success = True
-    except sqlite3.Error as e:
-        logger.error(f"Error de SQLite al crear/verificar la tabla 'trades': {e}")
-    except Exception as e:
-        logger.error(f"Error inesperado al inicializar esquema SQLite: {e}")
-    finally:
-        # Aunque 'with conn:' cierra la conexión en éxito/error,
-        # es buena práctica cerrarla explícitamente si la obtuvimos fuera del 'with'.
-        # En este caso, 'with conn:' ya lo maneja. Si no usáramos 'with', haríamos conn.close() aquí.
-        if conn:
-           conn.close() # Asegurarnos de cerrar si salimos por error antes del 'with' (poco probable aquí)
-
-    return success
-
-
-def record_trade(**kwargs):
-    """Registra un trade completado en la tabla 'trades'."""
+    """Inicializa el esquema de la base de datos si no existe."""
     logger = get_logger()
     conn = None
     try:
-        conn = get_db_connection()
-        if conn is None:
-            # El error ya se logueó en get_db_connection
-            return
-            
+        conn = sqlite3.connect(DATABASE_FILE, timeout=10) # Timeout de 10 segundos
         cursor = conn.cursor()
+        # La sentencia CREATE TABLE IF NOT EXISTS creará la tabla con todas las columnas
+        # si no existe. Si ya existe, no la modificará.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            trade_type TEXT NOT NULL, -- 'LONG' o 'SHORT'
+            open_timestamp DATETIME NOT NULL,
+            close_timestamp DATETIME,
+            open_price REAL NOT NULL,
+            close_price REAL,
+            quantity REAL NOT NULL,
+            position_size_usdt REAL, 
+            pnl_usdt REAL,
+            close_reason TEXT,
+            parameters TEXT, -- JSON string para guardar los parámetros de trading usados
+            binance_trade_id INTEGER UNIQUE -- Esta columna se creará con la restricción UNIQUE si la tabla se crea nueva.
+        )
+        """)
+        conn.commit() # Commit después de CREATE TABLE
 
-        # Definir las columnas esperadas (coincide con init_db_schema)
-        columns = ['symbol', 'trade_type', 'open_timestamp', 'close_timestamp', 
-                   'open_price', 'close_price', 'quantity', 'position_size_usdt', 
-                   'pnl_usdt', 'close_reason', 'parameters',
-                   # --- Nuevas columnas para detalles de órdenes --- 
-                   'entry_price', 'exit_price', 'side', 'entry_timestamp', 'exit_timestamp',
-                   'reason', 'order_details'
-                   # ---------------------------------------------
-                   ]
-                   
-        # Preparar los datos a insertar
-        # Usar kwargs.get(col, None) para manejar columnas opcionales/nuevas
-        # Convertir Decimal a float y Timestamp a string ISO donde sea necesario
-        values_dict = {}
-        for col in columns:
-            value = kwargs.get(col)
-            # Conversiones y formateo
-            if isinstance(value, Decimal):
-                values_dict[col] = float(value)
-            elif isinstance(value, (datetime.datetime, pd.Timestamp)):
-                # Asegurarse de que tenga timezone (UTC) y formatear
-                if value.tzinfo is None:
-                    value = value.replace(tzinfo=datetime.timezone.utc)
-                else:
-                    value = value.tz_convert('UTC') # Asegurar UTC
-                values_dict[col] = value.isoformat()
-            elif isinstance(value, dict):
-                values_dict[col] = json.dumps(value) # Convertir dict a JSON string
+        # Intentar añadir la columna explícitamente SOLO si la tabla ya existía 
+        # y la columna podría faltar. Esto es para migraciones.
+        # Sin embargo, para evitar el error "Cannot add a UNIQUE column", 
+        # la mejor práctica si esta columna es nueva es recrear la tabla 
+        # (borrando el .db) o manejar la migración de datos de forma más compleja.
+        # Por ahora, simplificaremos asumiendo que si la tabla existe, 
+        # y este código se ejecuta, el usuario debe asegurarse de que el esquema es compatible 
+        # o borrar el .db para una nueva creación.
+
+        # Solo intentar añadir la columna si no existe, SIN la restricción UNIQUE aquí,
+        # ya que ALTER TABLE no puede añadir UNIQUE a una tabla con datos.
+        # La restricción UNIQUE se aplica si la tabla se crea desde cero con la columna.
+        # Si la tabla ya existe y la columna se añade, NO tendrá la restricción UNIQUE con este ALTER.
+        # ESTO ES UNA LIMITACIÓN DE SQLITE con ALTER TABLE.
+        # LA SOLUCIÓN REAL ES BORRAR EL DB SI SE AÑADE UNA COLUMNA CON UNIQUE.
+        try:
+            # Primero verificar si la columna existe
+            cursor.execute("PRAGMA table_info(trades)")
+            columns = [info[1] for info in cursor.fetchall()]
+            if 'binance_trade_id' not in columns:
+                cursor.execute("ALTER TABLE trades ADD COLUMN binance_trade_id INTEGER") # Sin UNIQUE aquí
+                conn.commit()
+                logger.info("Columna 'binance_trade_id' (sin UNIQUE) añadida a la tabla 'trades' existente.")
             else:
-                values_dict[col] = value # Usar el valor tal cual (None, str, float, int)
+                logger.info("Columna 'binance_trade_id' ya existe.")
+        except sqlite3.Error as e_alter:
+            logger.warning(f"Advertencia durante el intento de ALTER TABLE para binance_trade_id: {e_alter}")
 
-        # Crear placeholders (?, ?, ...) y la lista de valores en orden
-        placeholders = ', '.join(['?'] * len(columns))
-        ordered_values = [values_dict.get(col) for col in columns]
+        # Intentar crear el índice. Esto funcionará si la columna existe.
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_binance_trade_id ON trades (binance_trade_id)")
+        conn.commit() # Commit después de CREATE INDEX
 
-        sql = f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders})"
-        
-        # --- Log Detallado Antes de Insertar --- 
-        logger.debug(f"Intentando registrar trade en DB:")
-        logger.debug(f"  SQL: {sql}")
-        # Loguear valores de forma segura (truncar largos si es necesario)
-        log_values = []
-        for v in ordered_values:
-            if isinstance(v, str) and len(v) > 100:
-                log_values.append(v[:100] + '... (truncated)')
-            else:
-                log_values.append(repr(v)) # Usar repr para ver Nones, etc.
-        logger.debug(f"  Valores: {log_values}")
-        # ----------------------------------------
-
-        cursor.execute(sql, ordered_values)
-        conn.commit()
-        logger.info(f"Trade para {values_dict.get('symbol', 'N/A')} ({values_dict.get('side', 'N/A')}) registrado exitosamente en la DB.")
-
+        logger.info("Esquema de la base de datos inicializado/verificado.")
+        return True
     except sqlite3.Error as e:
-        # Log específico de SQLite
-        logger.error(f"Error SQLite al registrar trade: {e}", exc_info=True)
-        # Intentar hacer rollback si algo falló
-        if conn:
-            try:
-                conn.rollback()
-                logger.warning("Rollback de transacción DB realizado.")
-            except sqlite3.Error as rb_err:
-                 logger.error(f"Error durante rollback de DB: {rb_err}")
-    except Exception as e:
-        # Log genérico para otros errores (ej: JSON, conversión)
-        logger.error(f"Error inesperado al preparar/registrar trade en DB: {e}", exc_info=True)
+        logger.error(f"Error al inicializar/verificar el esquema de la DB: {e}", exc_info=True)
+        return False
     finally:
         if conn:
             conn.close()
-            logger.debug("Conexión SQLite cerrada.")
+
+def record_trade(symbol: str, trade_type: str, open_timestamp: datetime, 
+                 open_price: float, quantity: float, position_size_usdt: float,
+                 close_timestamp: Union[datetime, None] = None,  # <-- CAMBIO AQUÍ
+                 close_price: Union[float, None] = None, # Unificar estilo para None
+                 pnl_usdt: Union[float, None] = None,    # Unificar estilo para None
+                 close_reason: Union[str, None] = None, # Unificar estilo para None
+                 parameters: Union[dict, None] = None,   # Unificar estilo para None
+                 binance_trade_id: Union[int, None] = None): # <-- CAMBIO AQUÍ y Unificar
+    """
+    Registra un trade completado o una posición abierta en la base de datos.
+    """
+    logger = get_logger()
+    conn = None
+    # Convertir el diccionario de parámetros a JSON string si se proporciona
+    parameters_json = json.dumps(parameters) if parameters else None
+
+    try:
+        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO trades (symbol, trade_type, open_timestamp, close_timestamp, 
+                          open_price, close_price, quantity, position_size_usdt, 
+                          pnl_usdt, close_reason, parameters, binance_trade_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (symbol, trade_type, open_timestamp, close_timestamp, 
+              open_price, close_price, quantity, position_size_usdt, 
+              pnl_usdt, close_reason, parameters_json, binance_trade_id)) # <-- AÑADIR binance_trade_id
+        conn.commit()
+        logger.info(f"Trade para {symbol} registrado en la DB. Binance Trade ID: {binance_trade_id if binance_trade_id else 'N/A'}")
+    except sqlite3.IntegrityError as ie:
+        # Esto podría ocurrir si intentamos insertar un binance_trade_id que ya existe (debido a la restricción UNIQUE)
+        logger.error(f"Error de integridad al registrar trade para {symbol} (Binance ID: {binance_trade_id}): {ie}. Es posible que este trade ya exista.", exc_info=True)
+    except sqlite3.Error as e:
+        logger.error(f"Error al registrar trade para {symbol} en la DB: {e}", exc_info=True)
+    finally:
+        if conn:
+            conn.close()
 
 # --- NUEVA FUNCIÓN PARA PNL ACUMULADO ---
-def get_cumulative_pnl_by_symbol():
+def get_cumulative_pnl_by_symbol() -> dict: # Cambiado para devolver dict directamente
     """Calcula el PnL acumulado para cada símbolo desde la tabla 'trades'."""
     logger = get_logger()
     conn = None
@@ -232,6 +196,7 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
                     con claves correspondientes a las columnas de la tabla 'trades'.
                     La lista estará vacía si no hay trades para el símbolo.
     """
+    logger = get_logger()
     conn = None
     trades = []
     try:
@@ -266,13 +231,60 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
         #             trade['parameters'] = {} # O dejar como string?
 
     except sqlite3.Error as e:
-        get_logger().error(f"Error al acceder a la base de datos para obtener trades de {symbol}: {e}", exc_info=True)
+        logger.error(f"Error al acceder a la base de datos para obtener trades de {symbol}: {e}", exc_info=True)
     finally:
         if conn:
             conn.close()
             
     return trades
 # --- FIN NUEVA FUNCIÓN ---
+
+# --- NUEVAS FUNCIONES ---
+def check_if_binance_trade_exists(binance_trade_id: Union[int, None]) -> bool: # <-- CAMBIO AQUÍ
+    """Verifica si un trade con el binance_trade_id especificado ya existe en la base de datos."""
+    logger = get_logger()
+    conn = None
+    if binance_trade_id is None: # No podemos buscar un ID nulo de esta forma
+        return False
+    try:
+        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM trades WHERE binance_trade_id = ?", (binance_trade_id,))
+        exists = cursor.fetchone() is not None
+        logger.debug(f"Chequeo existencia Binance Trade ID {binance_trade_id}: {'Existe' if exists else 'No existe'}")
+        return exists
+    except sqlite3.Error as e:
+        logger.error(f"Error al chequear existencia de Binance Trade ID {binance_trade_id}: {e}", exc_info=True)
+        return False # Asumir que no existe en caso de error para evitar problemas mayores
+    finally:
+        if conn:
+            conn.close()
+
+def get_trade_by_binance_id(binance_trade_id: Union[int, None]) -> Union[dict, None]: # <-- CAMBIOS AQUÍ
+    """Obtiene los detalles de un trade de la base de datos usando su binance_trade_id."""
+    logger = get_logger()
+    conn = None
+    if binance_trade_id is None:
+        return None
+    try:
+        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        conn.row_factory = sqlite3.Row # Para acceder a columnas por nombre
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM trades WHERE binance_trade_id = ?", (binance_trade_id,))
+        row = cursor.fetchone()
+        if row:
+            logger.debug(f"Trade encontrado en DB por Binance ID {binance_trade_id}: {dict(row)}")
+            return dict(row)
+        else:
+            logger.debug(f"Ningún trade encontrado en DB con Binance ID {binance_trade_id}")
+            return None
+    except sqlite3.Error as e:
+        logger.error(f"Error al obtener trade por Binance ID {binance_trade_id}: {e}", exc_info=True)
+        return None
+    finally:
+        if conn:
+            conn.close()
+# --- FIN NUEVAS FUNCIONES ---
 
 # Ejemplo de uso (actualizado para SQLite)
 if __name__ == '__main__':
@@ -294,12 +306,13 @@ if __name__ == '__main__':
                 'rsi_threshold_down': -10,
                 'stop_loss_usdt': -0.01
             }
-
+            # Usar datetime.now() y timedelta de forma consistente
+            now_utc = datetime.now(datetime.timezone.utc)
             trade_id_ejemplo = record_trade(
                 symbol='TESTUSDT',
                 trade_type='LONG',
-                open_timestamp=datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1),
-                close_timestamp=datetime.datetime.now(datetime.timezone.utc),
+                open_timestamp=now_utc - datetime.timedelta(hours=1),
+                close_timestamp=now_utc,
                 open_price=100.50,
                 close_price=101.25,
                 quantity=10.0,
