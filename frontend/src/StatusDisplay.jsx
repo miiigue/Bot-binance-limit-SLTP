@@ -200,7 +200,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
             coinCount: statuses.length 
         });
     }
-  }, [statuses, totalCumulativePnl, onStatusUpdate]); // Dependencias: statuses y totalCumulativePnl
+  }, [totalCumulativePnl, statuses.length, onStatusUpdate]); // Refined dependencies
   // -------------------------------------------------------------------------------------
 
   return (
@@ -273,15 +273,17 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
               </th>
             </tr>
           </thead>
-          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+          <tbody>{/* <--- APERTURA DE TBODY */}
             {statuses.length > 0 ? (
-              statuses.map((status) => ( 
-                <React.Fragment key={status.symbol}> { /* Usar Fragment para agrupar fila principal y desplegable */}
-                  <tr className="hover:bg-gray-50 dark:hover:bg-gray-700">
+              statuses.map((status) => (
+                <React.Fragment key={status.symbol}>
+                  <tr 
+                    className={`border-b dark:border-gray-700 ${status.in_position ? 'bg-green-50 dark:bg-green-900/50 hover:bg-green-100 dark:hover:bg-green-800/60' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'} transition-colors duration-150`}
+                    onClick={() => toggleRow(status.symbol)}
+                  >
                     {/* --- CELDA CON BOTÓN DE EXPANDIR --- */}
                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       <button 
-                        onClick={() => toggleRow(status.symbol)}
                         className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                         aria-expanded={!!expandedRows[status.symbol]}
                         aria-controls={`history-${status.symbol}`}
@@ -379,16 +381,12 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
               ))
             ) : (
               <tr>
-                <td colSpan="10" className="px-4 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                  {error && statuses.length === 0 
-                     ? 'No se pudieron obtener datos y la API no responde.'
-                     : error 
-                         ? 'API no disponible. Mostrando últimos datos conocidos.'
-                         : 'Esperando datos de la API...'}
+                <td colSpan="10" className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                  {isLoading ? 'Cargando estados...' : (error ? `Error: ${error}` : 'No hay datos de bots disponibles.')}
                 </td>
               </tr>
             )}
-          </tbody>
+          </tbody>{/* <--- CIERRE DE TBODY */}
         </table>
       </div>
     </div>

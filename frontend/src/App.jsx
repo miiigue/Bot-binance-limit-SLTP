@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import ConfigForm from './ConfigForm'; // Importa el componente del formulario
 import StatusDisplay from './StatusDisplay'; // <-- Importar el nuevo componente
 import './index.css'; // Importar el archivo CSS principal existente
@@ -171,12 +171,12 @@ function App() {
   // ------------------------------------------
 
   // --- FUNCIÓN CALLBACK PARA ACTUALIZAR DATOS DE CABECERA ---
-  const handleStatusUpdateForHeader = (data) => {
+  const handleStatusUpdateForHeader = useCallback((data) => {
     setHeaderPnlData({
       totalPnl: data.totalPnl,
       coinCount: data.coinCount
     });
-  };
+  }, []);
   // ----------------------------------------------------
 
   return (

@@ -412,54 +412,69 @@ def get_worker_status():
     global workers_started # Necesitamos acceso al flag global
     logger = get_logger()
     logger.debug("API call received for /api/status")
-    
-    all_symbols_status = []
-    # Usar los símbolos cargados al inicio
-    configured_symbols = loaded_symbols_to_trade 
-    historical_pnl_data = get_cumulative_pnl_by_symbol()
 
-    logger.debug(f"Símbolos configurados (cargados al inicio): {configured_symbols}")
-    logger.debug(f"PnL histórico de DB: {historical_pnl_data}")
+    try: # <--- INICIO DEL BLOQUE TRY GENERAL
+        all_symbols_status = []
+        # Usar los símbolos cargados al inicio
+        configured_symbols = loaded_symbols_to_trade
+        historical_pnl_data = get_cumulative_pnl_by_symbol()
 
-    with status_lock: 
-        active_worker_details = dict(worker_statuses)
+        logger.debug(f"Símbolos configurados (cargados al inicio): {configured_symbols}")
+        logger.debug(f"PnL histórico de DB: {historical_pnl_data}")
 
-    for symbol in configured_symbols:
-        status_entry = {
-            'symbol': symbol,
-            'state': BotState.STOPPED.value if not workers_started else 'Initializing', # Estado inicial antes de que el worker actualice
-            'in_position': False,
-            'entry_price': None,
-            'quantity': None,
-            'pnl': None,
-            'pending_entry_order_id': None,
-            'pending_exit_order_id': None,
-            'last_error': None,
-            'cumulative_pnl': historical_pnl_data.get(symbol, 0.0)
+        with status_lock:
+            active_worker_details = dict(worker_statuses)
+
+        for symbol in configured_symbols:
+            status_entry = {
+                'symbol': symbol,
+                'state': BotState.STOPPED.value if not workers_started else 'Initializing', # Estado inicial antes de que el worker actualice
+                'in_position': False,
+                'entry_price': None,
+                'quantity': None,
+                'pnl': None,
+                'pending_entry_order_id': None,
+                'pending_exit_order_id': None,
+                'last_error': None,
+                'cumulative_pnl': historical_pnl_data.get(symbol, 0.0) # Only this key for historical PNL
+            }
+
+            if symbol in active_worker_details and workers_started:
+                active_status = active_worker_details[symbol]
+                # Sobrescribir solo si el estado del worker no es STOPPED (o si es la primera vez)
+                if active_status.get('state') != BotState.STOPPED.value:
+                    status_entry.update(active_status)
+                    status_entry['symbol'] = symbol # Asegurar que el símbolo es el correcto
+                    # Ensure only cumulative_pnl is used for historical PNL after update
+                    status_entry['cumulative_pnl'] = historical_pnl_data.get(symbol, 0.0)
+                    # Remove other historical PNL keys if they exist from previous logic
+                    for key_to_remove in ['hist_pnl', 'histPnl', 'historical_pnl', 'historicalPnl', 'cumulativePnl']:
+                        if key_to_remove in status_entry:
+                            del status_entry[key_to_remove]
+
+                # Si el worker individual reporta STOPPED, mantenerlo.
+                elif active_status.get('state') == BotState.STOPPED.value:
+                    status_entry['state'] = BotState.STOPPED.value
+                    # Also ensure only cumulative_pnl is present for stopped bots if others were added
+                    status_entry['cumulative_pnl'] = historical_pnl_data.get(symbol, 0.0)
+                    for key_to_remove in ['hist_pnl', 'histPnl', 'historical_pnl', 'historicalPnl', 'cumulativePnl']:
+                        if key_to_remove in status_entry:
+                            del status_entry[key_to_remove]
+
+            all_symbols_status.append(status_entry)
+
+        # Añadir estado global de los workers
+        response_data = {
+            "bots_running": workers_started,
+            "statuses": all_symbols_status
         }
 
-        if symbol in active_worker_details and workers_started:
-            active_status = active_worker_details[symbol]
-            # Sobrescribir solo si el estado del worker no es STOPPED (o si es la primera vez)
-            if active_status.get('state') != BotState.STOPPED.value:
-                 status_entry.update(active_status)
-                 status_entry['symbol'] = symbol # Asegurar que el símbolo es el correcto
-                 status_entry['cumulative_pnl'] = historical_pnl_data.get(symbol, 0.0) # Mantener PnL histórico
-            # Si el worker individual reporta STOPPED, mantenerlo.
-            elif active_status.get('state') == BotState.STOPPED.value:
-                 status_entry['state'] = BotState.STOPPED.value
+        logger.debug(f"Returning combined statuses. Bots running: {workers_started}")
+        return jsonify(response_data)
 
-        all_symbols_status.append(status_entry)
-    
-    # Añadir estado global de los workers
-    response_data = {
-        "bots_running": workers_started,
-        "statuses": all_symbols_status
-    }
-    
-    logger.debug(f"Returning combined statuses. Bots running: {workers_started}")
-    # return jsonify(all_symbols_status) # Devolver el nuevo formato
-    return jsonify(response_data)
+    except Exception as e: # <--- BLOQUE CATCH GENERAL
+        logger.error(f"CRITICAL ERROR in /api/status endpoint: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error processing status.", "details": str(e)}), 500
 
 @app.route('/api/shutdown', methods=['POST'])
 def shutdown_bot():

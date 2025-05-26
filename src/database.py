@@ -114,10 +114,13 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
     Registra un trade completado o una posición abierta en la base de datos.
     """
     logger = get_logger()
-    conn = None
     # Convertir el diccionario de parámetros a JSON string si se proporciona
     parameters_json = json.dumps(parameters) if parameters else None
 
+    # <<< DETAILED LOGGING OF PARAMETERS RECEIVED BY record_trade >>>
+    logger.info(f"record_trade (database.py) called with: symbol='{symbol}', type='{trade_type}', open_ts={open_timestamp}, close_ts={close_timestamp}, open_p={open_price}, close_p={close_price}, qty={quantity}, pos_size_usdt={position_size_usdt}, PNL_USDT={pnl_usdt}, reason='{close_reason}', binance_id={binance_trade_id}, params_json_len={len(parameters_json) if parameters_json else 0}")
+
+    conn = None
     try:
         conn = sqlite3.connect(DATABASE_FILE, timeout=10)
         cursor = conn.cursor()
@@ -134,6 +137,8 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
     except sqlite3.IntegrityError as ie:
         # Esto podría ocurrir si intentamos insertar un binance_trade_id que ya existe (debido a la restricción UNIQUE)
         logger.error(f"Error de integridad al registrar trade para {symbol} (Binance ID: {binance_trade_id}): {ie}. Es posible que este trade ya exista.", exc_info=True)
+        # <<< LOGGING DETAILS OF THE TRADE CAUSING INTEGRITY ERROR >>>
+        logger.error(f"Failed trade details: symbol='{symbol}', type='{trade_type}', open_ts={open_timestamp}, close_ts={close_timestamp}, open_p={open_price}, close_p={close_price}, qty={quantity}, PNL_USDT={pnl_usdt}, reason='{close_reason}', binance_id={binance_trade_id}")
     except sqlite3.Error as e:
         logger.error(f"Error al registrar trade para {symbol} en la DB: {e}", exc_info=True)
     finally:
@@ -345,6 +350,20 @@ if __name__ == '__main__':
                  main_logger.error("Fallo al registrar el trade de ejemplo.")
         else:
             main_logger.error("Fallo al inicializar el esquema de la base de datos SQLite.")
+
+    # Diagnóstico: imprimir los primeros 5 registros y el esquema de la tabla 'trades'
+    import sqlite3
+    print('--- Esquema de la tabla trades ---')
+    conn = sqlite3.connect(DATABASE_FILE)
+    cur = conn.cursor()
+    cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='trades'")
+    print(cur.fetchone()[0])
+    print('\n--- Primeros 5 registros de trades ---')
+    cur.execute("SELECT * FROM trades LIMIT 5")
+    rows = cur.fetchall()
+    for row in rows:
+        print(row)
+    conn.close()
 
 # --- FIN DE MODIFICACIONES ---
 # El código original de PostgreSQL ha sido completamente reemplazado. 

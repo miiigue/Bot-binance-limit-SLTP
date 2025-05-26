@@ -749,6 +749,7 @@ class TradingBot:
         position_size_usdt_est = abs(entry_price * quantity_dec) # Estimar basado en cantidad cerrada
 
         final_pnl = (close_price_dec - entry_price) * quantity_dec
+        self.logger.info(f"[{self.symbol}] _handle_successful_closure: Calculated final_pnl = {final_pnl:.4f} (Close: {close_price_dec}, Entry: {entry_price}, Qty: {quantity_dec})") # DETAILED LOG FOR PNL
         
         # --- Simplificar la razón del cierre ---
         simplified_reason = reason # Por defecto, usar la razón original
@@ -781,6 +782,10 @@ class TradingBot:
         # Usar timestamp de cierre si se proporciona, si no, usar ahora
         actual_close_timestamp = close_timestamp if close_timestamp else pd.Timestamp.now(tz='UTC')
 
+        # Convertir pd.Timestamp a datetime.datetime para la DB
+        open_ts_for_db = entry_time.to_pydatetime() if pd.notna(entry_time) else None # Asegurar conversión correcta incluso si entry_time pudo ser None
+        close_ts_for_db = actual_close_timestamp.to_pydatetime() if pd.notna(actual_close_timestamp) else None
+
         try:
             # Preparar parámetros para la DB (estos son los compartidos)
             db_trade_params = {
@@ -806,11 +811,19 @@ class TradingBot:
                 'pnl_trailing_stop_drop_usdt': float(self.pnl_trailing_stop_drop_usdt)
                 # ------------------------------------
             } # Alineada con db_trade_params
+
+            # <<< LOG DETALLADO ANTES DE record_trade >>>
+            self.logger.info(f"[{self.symbol}] _handle_successful_closure: Intentando registrar con los siguientes datos -> "
+                             f"Symbol: {self.symbol}, Type: LONG, OpenTS: {open_ts_for_db}, CloseTS: {close_ts_for_db}, "
+                             f"OpenPrice: {float(entry_price)}, ClosePrice: {float(close_price_dec)}, Qty: {float(quantity_dec)}, "
+                             f"PosSizeUSDT: {float(position_size_usdt_est)}, PNL: {float(final_pnl)}, Reason: '{simplified_reason}', "
+                             f"Params: {db_trade_params}, BinanceTradeID: [No aplicable directamente aquí, se busca en _update_open_position_pnl]")
+
             record_trade(
                 symbol=self.symbol,
                 trade_type='LONG',
-                open_timestamp=entry_time,
-                close_timestamp=actual_close_timestamp, # Usar timestamp real/proporcionado
+                open_timestamp=open_ts_for_db, # Usar convertido
+                close_timestamp=close_ts_for_db, # Usar convertido
                 open_price=float(entry_price),
                 close_price=float(close_price_dec),
                 quantity=float(quantity_dec),
@@ -819,8 +832,15 @@ class TradingBot:
                 close_reason=simplified_reason, # <-- USAR RAZÓN SIMPLIFICADA
                 parameters=db_trade_params # Guardar los parámetros usados
             )
+            self.logger.info(f"[{self.symbol}] _handle_successful_closure: Trade registrado exitosamente en DB.")
         except Exception as e:
-            self.logger.error(f"[{self.symbol}] Error al registrar el trade en la DB: {e}", exc_info=True)
+            # <<< LOG MEJORADO EN LA EXCEPCIÓN >>>
+            self.logger.error(f"[{self.symbol}] ERROR CRÍTICO en _handle_successful_closure al registrar el trade en la DB: {e}", exc_info=True)
+            self.logger.error(f"[{self.symbol}] Datos que se intentaron registrar: Symbol: {self.symbol}, Type: LONG, OpenTS: {open_ts_for_db}, CloseTS: {close_ts_for_db}, "
+                             f"OpenPrice: {float(entry_price)}, ClosePrice: {float(close_price_dec)}, Qty: {float(quantity_dec)}, "
+                             f"PosSizeUSDT: {float(position_size_usdt_est)}, PNL: {float(final_pnl)}, Reason: '{simplified_reason}', "
+                             f"Params: {db_trade_params}")
+
 
         # Resetear estado interno del bot DESPUÉS de intentar registrar
         self._reset_state()
@@ -1718,6 +1738,9 @@ class TradingBot:
             self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Posición para {self.symbol} CERRADA en Binance (Cantidad: {pos_amt_binance}). El bot la tenía como ABIERTA.")
             
             old_pos_data_original = self.current_position.copy() # self.current_position no debería ser None aquí debido al check inicial
+            # <<< DETAILED LOGGING FOR OLD POSITION DATA >>>
+            self.logger.info(f"[{self.symbol}] _update_open_position_pnl: old_pos_data_original: {old_pos_data_original}")
+
             old_entry_price_from_bot = old_pos_data_original.get('entry_price')
             old_quantity_from_bot = old_pos_data_original.get('quantity')
             old_entry_time_from_bot = old_pos_data_original.get('entry_time')
@@ -1759,6 +1782,9 @@ class TradingBot:
                 old_entry_price_from_bot is not None and old_entry_price_from_bot > Decimal('0') and \
                 old_quantity_from_bot is not None and old_quantity_from_bot > Decimal('0')
 
+            # <<< DETAILED LOGGING FOR SEARCH SUFFICIENCY >>>
+            self.logger.info(f"[{self.symbol}] _update_open_position_pnl: data_is_sufficient_for_detailed_search: {data_is_sufficient_for_detailed_search}")
+
             if data_is_sufficient_for_detailed_search:
                 self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Datos suficientes. Se intentará búsqueda en historial.")
                 
@@ -1766,12 +1792,23 @@ class TradingBot:
                 if effective_entry_time_for_search is None:
                     self.logger.warning(f"[{self.symbol}] _update_open_position_pnl: 'old_entry_time_from_bot' era None. Estimando para búsqueda.")
                     effective_entry_time_for_search = actual_close_timestamp - pd.Timedelta(minutes=2)
+                
+                # <<< DETAILED LOGGING FOR SEARCH TIME >>>
+                self.logger.info(f"[{self.symbol}] _update_open_position_pnl: effective_entry_time_for_search: {effective_entry_time_for_search}")
 
                 try:
                     user_trades = get_user_trade_history(symbol=self.symbol, limit=15)
+                    # <<< DETAILED LOGGING FOR USER TRADES FETCHED >>>
+                    if user_trades:
+                        self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Fetched {len(user_trades)} user_trades from Binance history: {user_trades}")
+                    else:
+                        self.logger.info(f"[{self.symbol}] _update_open_position_pnl: No user_trades fetched from Binance history.")
+                    
                     found_match = False
                     if user_trades:
-                        for trade in user_trades:
+                        for trade_idx, trade in enumerate(user_trades):
+                            # <<< DETAILED LOGGING FOR EACH TRADE IN HISTORY >>>
+                            self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Checking Binance trade history item {trade_idx}: {trade}")
                             binance_trade_id_from_api = trade.get('id')
                             trade_time_dt = pd.Timestamp(trade['time'], unit='ms', tz='UTC')
                             trade_qty = Decimal(trade.get('qty', '0'))
@@ -1780,10 +1817,16 @@ class TradingBot:
                             trade_realized_pnl = Decimal(trade.get('realizedPnl', '0'))
 
                             if trade_side == 'SELL' and trade_time_dt >= effective_entry_time_for_search:
-                                quantity_diff_percent = (abs(trade_qty - old_quantity_from_bot) / old_quantity_from_bot) * 100
-                                if quantity_diff_percent < 5.0:
-                                    if not check_if_binance_trade_exists(binance_trade_id=int(binance_trade_id_from_api)):
-                                        self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Trade de cierre ENCONTRADO y NO REGISTRADO: BinanceID={binance_trade_id_from_api}, PnL={trade_realized_pnl}")
+                                quantity_diff_percent = (abs(trade_qty - old_quantity_from_bot) / old_quantity_from_bot) * 100 if old_quantity_from_bot else float('inf') # Handle old_quantity_from_bot being zero
+                                self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Binance trade {binance_trade_id_from_api} (SELL, Time: {trade_time_dt}, Qty: {trade_qty}, Price: {trade_price}, PnL: {trade_realized_pnl}) vs Bot Qty: {old_quantity_from_bot}. Qty Diff %: {quantity_diff_percent:.2f}%")
+                                
+                                if quantity_diff_percent < 5.0: # Original: 5.0
+                                    binance_trade_id_int = int(binance_trade_id_from_api) if binance_trade_id_from_api else None
+                                    db_trade_exists = check_if_binance_trade_exists(binance_trade_id=binance_trade_id_int)
+                                    self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Binance trade {binance_trade_id_int} meets qty diff. DB exists check: {db_trade_exists}")
+
+                                    if not db_trade_exists:
+                                        self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Trade de cierre ENCONTRADO y NO REGISTRADO: BinanceID={binance_trade_id_int}, PnL={trade_realized_pnl}")
                                         actual_close_price = trade_price
                                         actual_pnl_usdt = trade_realized_pnl
                                         actual_close_timestamp = trade_time_dt
@@ -1803,10 +1846,12 @@ class TradingBot:
                 
                 # Registro con datos de búsqueda (o fallbacks si búsqueda falló)
                 try:
+                    # <<< DETAILED LOGGING BEFORE record_trade CALL (HISTORY SEARCH PATH) >>>
+                    self.logger.info(f"[{self.symbol}] _update_open_position_pnl (history search path): PRE-record_trade. Symbol: {self.symbol}, OpenTS: {effective_entry_time_for_search.to_pydatetime() if pd.notna(effective_entry_time_for_search) else None}, CloseTS: {actual_close_timestamp.to_pydatetime() if pd.notna(actual_close_timestamp) else None}, OpenPrice: {float(old_entry_price_from_bot)}, ClosePrice: {float(actual_close_price)}, Qty: {float(old_quantity_from_bot)}, PNL: {float(actual_pnl_usdt)}, Reason: '{db_reason_for_closure}', BinanceID: {associated_binance_trade_id}")
                     record_trade(
                         symbol=self.symbol, trade_type='LONG',
-                        open_timestamp=effective_entry_time_for_search,
-                        close_timestamp=actual_close_timestamp,
+                        open_timestamp=effective_entry_time_for_search.to_pydatetime() if pd.notna(effective_entry_time_for_search) else None,
+                        close_timestamp=actual_close_timestamp.to_pydatetime() if pd.notna(actual_close_timestamp) else None,
                         open_price=float(old_entry_price_from_bot),
                         close_price=float(actual_close_price), # Puede ser de Binance o fallback
                         quantity=float(old_quantity_from_bot),
@@ -1832,10 +1877,12 @@ class TradingBot:
 
                 db_reason_for_closure = "Cierre Externo (Datos Bot Insuficientes para Búsqueda)"
                 try:
+                    # <<< DETAILED LOGGING BEFORE record_trade CALL (FALLBACK PATH) >>>
+                    self.logger.info(f"[{self.symbol}] _update_open_position_pnl (fallback path): PRE-record_trade. Symbol: {self.symbol}, OpenTS: {final_open_time.to_pydatetime() if pd.notna(final_open_time) else None}, CloseTS: {actual_close_timestamp.to_pydatetime() if pd.notna(actual_close_timestamp) else None}, OpenPrice: {float(final_open_price)}, ClosePrice: {float(final_open_price)}, Qty: {float(final_quantity)}, PNL: 0.0, Reason: '{db_reason_for_closure}', BinanceID: None")
                     record_trade(
                         symbol=self.symbol, trade_type='LONG',
-                        open_timestamp=final_open_time,
-                        close_timestamp=actual_close_timestamp, # Tiempo actual
+                        open_timestamp=final_open_time.to_pydatetime() if pd.notna(final_open_time) else None,
+                        close_timestamp=actual_close_timestamp.to_pydatetime() if pd.notna(actual_close_timestamp) else None, # Tiempo actual
                         open_price=float(final_open_price),
                         close_price=float(final_open_price), # Para PNL 0
                         quantity=float(final_quantity),
@@ -1947,6 +1994,12 @@ class TradingBot:
                 for p_name in bool_params:
                      if hasattr(self, p_name): db_trade_params[p_name] = bool(getattr(self, p_name))
 
+                # <<< LOG DETALLADO AÑADIDO AQUÍ >>>
+                self.logger.info(f"[{self.symbol}] _handle_external_closure_or_discrepancy: Intentando registrar (último recurso) con los siguientes datos -> "
+                                 f"Symbol: {self.symbol}, Type: LONG, OpenTS: {final_open_timestamp}, CloseTS: {final_close_timestamp}, "
+                                 f"OpenPrice: {float(old_entry_price)}, ClosePrice: {float(old_entry_price)}, Qty: {float(old_quantity)}, "
+                                 f"PosSizeUSDT: {float(abs(old_entry_price * old_quantity))}, PNL: 0.0, Reason: '{db_reason}', "
+                                 f"Params: {db_trade_params}, BinanceTradeID: None")
                 try:
                     record_trade(
                         symbol=self.symbol, trade_type='LONG',
@@ -1956,7 +2009,7 @@ class TradingBot:
                         close_price=float(old_entry_price), # PNL Cero
                         quantity=float(old_quantity),
                         position_size_usdt=float(abs(old_entry_price * old_quantity)),
-                        pnl_usdt=0.0,
+                        pnl_usdt=0.0, 
                         close_reason=db_reason,
                         parameters=db_trade_params,
                         binance_trade_id=None
