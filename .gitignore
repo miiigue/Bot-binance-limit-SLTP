@@ -142,3 +142,4 @@ frontend/build/
 *.log
 *.log.*
 
+#se borro el config.ini
