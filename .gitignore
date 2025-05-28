@@ -142,5 +142,3 @@ frontend/build/
 *.log
 *.log.*
 
-# Configuration with secrets (IMPORTANT)
-#config.ini 
