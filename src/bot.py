@@ -2047,7 +2047,7 @@ class TradingBot:
                         close_price=float(old_entry_price), # PNL Cero
                         quantity=float(old_quantity),
                         position_size_usdt=float(abs(old_entry_price * old_quantity)),
-                        pnl_usdt=0.0,
+                        pnl_usdt=0.0, 
                         close_reason=db_reason,
                         parameters=db_trade_params,
                         binance_trade_id=None
