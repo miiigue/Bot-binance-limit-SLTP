@@ -4,6 +4,7 @@
 import os
 import sys
 import configparser
+import json # <--- AÑADIR IMPORT JSON
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import threading
@@ -33,6 +34,22 @@ workers_started = False # Flag para saber si los workers están activos
 loaded_trading_params = {}
 loaded_symbols_to_trade = []
 # --------------------------------------------------------------------
+
+# --- Directorio para Estrategias Guardadas ---
+STRATEGIES_DIR_NAME = "strategies"
+# Construir la ruta al directorio de estrategias relativa a la raíz del proyecto
+# Asumiendo que api_server.py está en src/ y la raíz del proyecto es un nivel arriba
+PROJECT_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STRATEGIES_PATH = os.path.join(PROJECT_ROOT_DIR, STRATEGIES_DIR_NAME)
+
+# Crear el directorio si no existe
+if not os.path.exists(STRATEGIES_PATH):
+    try:
+        os.makedirs(STRATEGIES_PATH)
+        print(f"Directorio de estrategias creado en: {STRATEGIES_PATH}") # Usar print si el logger no está listo
+    except OSError as e:
+        print(f"Error al crear el directorio de estrategias {STRATEGIES_PATH}: {e}")
+# -------------------------------------------
 
 # --- Funciones para calcular sleep (Movidas desde run_bot.py) ---
 def calculate_sleep_from_interval(interval_str: str) -> int:
@@ -696,6 +713,100 @@ def get_symbol_trade_history(symbol: str):
         logger.error(f"Error inesperado al obtener historial de trades para {symbol}: {e}", exc_info=True)
         return jsonify({"error": f"Failed to retrieve trade history for {symbol}"}), 500
 # --- FIN NUEVO ENDPOINT ---
+
+# --- NUEVOS ENDPOINTS PARA ESTRATEGIAS ---
+
+# Funciones auxiliares refactorizadas para manejar la lógica de cada método
+def _save_strategy_logic(strategy_name: str, data: dict):
+    logger = get_logger()
+    strategy_file_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
+    try:
+        with open(strategy_file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        logger.info(f"Estrategia '{strategy_name}' guardada exitosamente en {strategy_file_path}")
+        return jsonify({"message": f"Estrategia '{strategy_name}' guardada exitosamente."}), 201
+    except Exception as e:
+        logger.error(f"Error al guardar la estrategia '{strategy_name}': {e}", exc_info=True)
+        return jsonify({"error": f"Error interno al guardar la estrategia: {str(e)}"}), 500
+
+def _load_strategy_logic(strategy_name: str):
+    logger = get_logger()
+    strategy_file_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
+    if not os.path.exists(strategy_file_path):
+        logger.error(f"No se encontró el archivo de estrategia: {strategy_file_path}")
+        return jsonify({"error": f"Estrategia '{strategy_name}' no encontrada."}), 404
+    try:
+        with open(strategy_file_path, 'r', encoding='utf-8') as f:
+            strategy_data = json.load(f)
+        logger.info(f"Estrategia '{strategy_name}' cargada exitosamente.")
+        return jsonify(strategy_data), 200
+    except json.JSONDecodeError as e_json:
+        logger.error(f"Error al decodificar JSON para la estrategia '{strategy_name}' desde {strategy_file_path}: {e_json}", exc_info=True)
+        return jsonify({"error": f"Error al leer el archivo de la estrategia '{strategy_name}'. Formato JSON inválido."}), 500
+    except Exception as e:
+        logger.error(f"Error al cargar la estrategia '{strategy_name}' desde {strategy_file_path}: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno al cargar la estrategia: {str(e)}"}), 500
+
+def _delete_strategy_logic(strategy_name: str):
+    logger = get_logger()
+    strategy_file_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
+    if not os.path.exists(strategy_file_path):
+        logger.error(f"No se encontró el archivo de estrategia para eliminar: {strategy_file_path}")
+        return jsonify({"error": f"Estrategia '{strategy_name}' no encontrada."}), 404
+    try:
+        os.remove(strategy_file_path)
+        logger.info(f"Estrategia '{strategy_name}' eliminada exitosamente de {strategy_file_path}")
+        return jsonify({"message": f"Estrategia '{strategy_name}' eliminada exitosamente."}), 200
+    except OSError as e_os:
+        logger.error(f"Error de OS al eliminar la estrategia '{strategy_name}' desde {strategy_file_path}: {e_os}", exc_info=True)
+        return jsonify({"error": f"Error del sistema al eliminar la estrategia '{strategy_name}'."}), 500
+    except Exception as e:
+        logger.error(f"Error inesperado al eliminar la estrategia '{strategy_name}' desde {strategy_file_path}: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno inesperado al eliminar la estrategia: {str(e)}"}), 500
+
+@app.route('/api/strategies/<strategy_name>', methods=['GET', 'POST', 'DELETE'])
+def handle_specific_strategy(strategy_name: str):
+    logger = get_logger()
+    logger.info(f"Solicitud {request.method} para estrategia: {strategy_name}")
+
+    # Validación común del nombre de la estrategia
+    if not strategy_name or any(c in strategy_name for c in ('.', '/', '\\\\')):
+        logger.error(f"Nombre de estrategia inválido: {strategy_name}")
+        return jsonify({"error": "Nombre de estrategia inválido. No debe contener ., /, o \\\\."}), 400
+
+    if request.method == 'POST':
+        data = request.get_json()
+        if not data:
+            logger.error("No se recibieron datos JSON para guardar la estrategia.")
+            return jsonify({"error": "No se recibieron datos JSON."}), 400
+        return _save_strategy_logic(strategy_name, data)
+    elif request.method == 'GET':
+        return _load_strategy_logic(strategy_name)
+    elif request.method == 'DELETE':
+        return _delete_strategy_logic(strategy_name)
+    else:
+        # Esto no debería ocurrir si los methods están bien definidos en la ruta
+        logger.error(f"Método {request.method} no permitido para esta ruta.")
+        return jsonify({"error": "Método no permitido"}), 405
+
+@app.route('/api/strategies', methods=['GET'])
+def list_strategies():
+    logger = get_logger()
+    logger.info("Solicitud para listar estrategias guardadas.")
+    try:
+        if not os.path.exists(STRATEGIES_PATH):
+            # Si el directorio no existe (aunque debió crearse), devolver lista vacía
+            logger.warning(f"El directorio de estrategias {STRATEGIES_PATH} no existe. Devolviendo lista vacía.")
+            return jsonify([]), 200
+            
+        strategy_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
+        strategy_names = [os.path.splitext(f)[0] for f in strategy_files]
+        logger.info(f"Estrategias encontradas: {strategy_names}")
+        return jsonify(strategy_names), 200
+    except Exception as e:
+        logger.error(f"Error al listar estrategias: {e}", exc_info=True)
+        # Asegurar que se devuelve JSON en caso de error
+        return jsonify({"error": f"Error interno al listar estrategias: {str(e)}"}), 500
 
 # La función para correr Flask en un hilo (start_flask_app) 
 # y el if __name__ == '__main__' no se necesitan aquí 

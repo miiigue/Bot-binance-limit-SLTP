@@ -65,11 +65,33 @@ const defaultConfigValues = {
   openInterestPeriod: '5m'
 };
 
-function ConfigForm({ initialConfig: propInitialConfig, onSave }) {
+function ConfigForm({ 
+  initialConfig: propInitialConfig, 
+  onSave, 
+  availableStrategies, 
+  onRefreshStrategies,
+  isLoadingStrategies,
+  strategyError
+}) {
   const [formData, setFormData] = useState(defaultConfigValues);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+
+  // --- Estados para la gestión de estrategias ---
+  const [strategyNameInput, setStrategyNameInput] = useState('');
+  const [selectedStrategyToLoad, setSelectedStrategyToLoad] = useState('');
+  const [isSavingStrategy, setIsSavingStrategy] = useState(false);
+  const [saveStrategyError, setSaveStrategyError] = useState(null);
+  const [saveStrategySuccess, setSaveStrategySuccess] = useState(null);
+  const [isLoadingSelectedStrategy, setIsLoadingSelectedStrategy] = useState(false);
+  const [loadStrategyError, setLoadStrategyError] = useState(null);
+  const [loadStrategySuccess, setLoadStrategySuccess] = useState(null);
+  // --- Estados para la eliminación de estrategias ---
+  const [isDeletingStrategy, setIsDeletingStrategy] = useState(null); // Guardará el nombre de la estrategia que se está eliminando
+  const [deleteStrategyError, setDeleteStrategyError] = useState(null);
+  const [deleteStrategySuccess, setDeleteStrategySuccess] = useState(null);
+  // -------------------------------------------------
 
   useEffect(() => {
     if (propInitialConfig) {
@@ -140,6 +162,105 @@ function ConfigForm({ initialConfig: propInitialConfig, onSave }) {
       setIsLoading(false);
     }
   };
+
+  // --- Funciones para Guardar y Cargar Estrategias ---
+  const handleSaveCurrentStrategy = async () => {
+    if (!strategyNameInput.trim()) {
+      setSaveStrategyError("Por favor, introduce un nombre para la estrategia.");
+      setTimeout(() => setSaveStrategyError(null), 3000);
+      return;
+    }
+    setIsSavingStrategy(true);
+    setSaveStrategyError(null);
+    setSaveStrategySuccess(null);
+
+    try {
+      const response = await fetch(`/api/strategies/${encodeURIComponent(strategyNameInput)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData), // Guardar el formData actual tal cual
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || `Error HTTP ${response.status}`);
+      }
+      setSaveStrategySuccess(result.message || "Estrategia guardada con éxito.");
+      setStrategyNameInput(''); // Limpiar input
+      onRefreshStrategies(); // Actualizar la lista de estrategias en el desplegable
+      setTimeout(() => setSaveStrategySuccess(null), 3000);
+    } catch (err) {
+      console.error("Error saving strategy:", err);
+      setSaveStrategyError(err.message || "Error al guardar la estrategia.");
+      setTimeout(() => setSaveStrategyError(null), 5000);
+    }
+    setIsSavingStrategy(false);
+  };
+
+  const handleLoadSelectedStrategy = async (strategyName) => {
+    if (!strategyName) {
+      setLoadStrategyError("Por favor, selecciona una estrategia para cargar.");
+      setTimeout(() => setLoadStrategyError(null), 3000);
+      return;
+    }
+    setIsLoadingSelectedStrategy(true);
+    setLoadStrategyError(null);
+    setLoadStrategySuccess(null);
+
+    try {
+      const response = await fetch(`/api/strategies/${encodeURIComponent(strategyName)}`);
+      const strategyData = await response.json();
+      if (!response.ok) {
+        throw new Error(strategyData.error || `Error HTTP ${response.status}`);
+      }
+      // Aquí es crucial asegurar que todos los campos que ConfigForm espera existan en strategyData,
+      // o que se usen valores por defecto si faltan, para evitar errores de "controlled/uncontrolled".
+      // Una forma es fusionar con defaultConfigValues.
+      const newFormData = { ...defaultConfigValues, ...strategyData }; 
+      setFormData(newFormData); // Actualizar el formulario con los datos de la estrategia
+      setLoadStrategySuccess(`Estrategia '${strategyName}' cargada en el formulario. ¡Recuerda guardar la configuración si deseas aplicarla!`);
+      setTimeout(() => setLoadStrategySuccess(null), 5000);
+    } catch (err) {
+      console.error("Error loading strategy:", err);
+      setLoadStrategyError(err.message || "Error al cargar la estrategia.");
+      setTimeout(() => setLoadStrategyError(null), 5000);
+    }
+    setIsLoadingSelectedStrategy(false);
+  };
+
+  // --- NUEVA FUNCIÓN PARA ELIMINAR ESTRATEGIA ---
+  const handleDeleteStrategy = async (strategyName) => {
+    if (!window.confirm(`¿Estás seguro de que quieres eliminar la estrategia "${strategyName}"? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    setIsDeletingStrategy(strategyName); // Indica qué estrategia se está eliminando
+    setDeleteStrategyError(null);
+    setDeleteStrategySuccess(null);
+
+    try {
+      const response = await fetch(`/api/strategies/${encodeURIComponent(strategyName)}`, {
+        method: 'DELETE',
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || `Error HTTP ${response.status}`);
+      }
+      setDeleteStrategySuccess(result.message || `Estrategia "${strategyName}" eliminada con éxito.`);
+      onRefreshStrategies(); // Actualizar la lista de estrategias disponibles
+      // Limpiar el input de carga si la estrategia eliminada era la seleccionada
+      if (selectedStrategyToLoad === strategyName) {
+        setSelectedStrategyToLoad('');
+      }
+      setTimeout(() => setDeleteStrategySuccess(null), 3000);
+    } catch (err) {
+      console.error("Error deleting strategy:", err);
+      setDeleteStrategyError(err.message || `Error al eliminar la estrategia "${strategyName}".`);
+      setTimeout(() => setDeleteStrategyError(null), 5000);
+    }
+    setIsDeletingStrategy(null);
+  };
+  // -------------------------------------------------
 
   const renderLabelWithCheckbox = (fieldName, labelText, checkboxName) => (
     <div className="flex items-center justify-between mb-1">
@@ -396,11 +517,90 @@ function ConfigForm({ initialConfig: propInitialConfig, onSave }) {
 
       <div className="pt-6">
         <button type="submit" disabled={isLoading} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50">
-          {isLoading ? 'Guardando...' : 'Guardar Configuración'}
+          {isLoading ? 'Guardando en config.ini...' : 'Guardar Configuración (para el Bot)'}
           </button>
-        {showSuccessMessage && <p className="mt-2 text-sm text-green-600 dark:text-green-400 text-center">¡Configuración guardada exitosamente!</p>}
-        {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400 text-center">Error: {error}</p>}
+        {showSuccessMessage && <p className="mt-2 text-sm text-green-600 dark:text-green-400 text-center">¡Configuración (config.ini) guardada exitosamente!</p>}
+        {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400 text-center">Error al guardar config.ini: {error}</p>}
         </div>
+
+      {/* --- Sección de Gestión de Estrategias --- */}
+      <ConfigSection title="Gestión de Estrategias" className="mt-8">
+        <div className="space-y-6">
+          {/* Guardar Estrategia */}
+          <div>
+            <h4 className="text-md font-medium text-gray-800 dark:text-gray-200 mb-2">Guardar Configuración Actual como Estrategia</h4>
+            <div className="flex items-end space-x-3">
+              <div className="flex-grow">
+                <label htmlFor="strategyNameInput" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre para la Estrategia:</label>
+                <input 
+                  type="text" 
+                  id="strategyNameInput"
+                  value={strategyNameInput}
+                  onChange={(e) => setStrategyNameInput(e.target.value)}
+                  placeholder="Ej: MiEstrategiaRSI"
+                  className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                />
+              </div>
+              <button 
+                type="button" 
+                onClick={handleSaveCurrentStrategy} 
+                disabled={isSavingStrategy || !strategyNameInput.trim()}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 whitespace-nowrap"
+              >
+                {isSavingStrategy ? 'Guardando...' : 'Guardar Estrategia'}
+              </button>
+            </div>
+            {saveStrategySuccess && <p className="mt-2 text-sm text-green-500 dark:text-green-400">{saveStrategySuccess}</p>}
+            {saveStrategyError && <p className="mt-2 text-sm text-red-500 dark:text-red-400">{saveStrategyError}</p>}
+          </div>
+
+          {/* Cargar Estrategia */}
+          <div className="pt-6 border-t border-gray-300 dark:border-gray-600">
+            <h4 className="text-md font-medium text-gray-800 dark:text-gray-200 mb-2">Estrategias Guardadas</h4>
+            {isLoadingStrategies && <p className="text-sm text-gray-500 dark:text-gray-400">Cargando lista de estrategias...</p>}
+            {strategyError && <p className="text-sm text-red-500 dark:text-red-400">Error al cargar estrategias: {strategyError}</p>}
+            
+            {deleteStrategySuccess && <p className="mt-2 mb-2 text-sm text-green-500 dark:text-green-400">{deleteStrategySuccess}</p>}
+            {deleteStrategyError && <p className="mt-2 mb-2 text-sm text-red-500 dark:text-red-400">{deleteStrategyError}</p>}
+
+            {!isLoadingStrategies && !strategyError && (
+              availableStrategies.length > 0 ? (
+                <ul className="space-y-3">
+                  {availableStrategies.map(name => (
+                    <li key={name} className="p-3 bg-gray-50 dark:bg-gray-700 rounded-md shadow-sm flex items-center justify-between">
+                      <span className="text-gray-800 dark:text-gray-200 font-medium">{name}</span>
+                      <div className="space-x-2 flex-shrink-0">
+                        <button 
+                          type="button" 
+                          onClick={() => handleLoadSelectedStrategy(name)} // Modificado para pasar el nombre directamente
+                          disabled={isLoadingSelectedStrategy || isDeletingStrategy === name}
+                          className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {isLoadingSelectedStrategy && selectedStrategyToLoad === name ? 'Cargando...' : 'Cargar'}
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => handleDeleteStrategy(name)}
+                          disabled={isDeletingStrategy === name}
+                          className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white font-semibold rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {isDeletingStrategy === name ? 'Eliminando...' : 'Eliminar'}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">No hay estrategias guardadas.</p>
+              )
+            )}
+            {/* Mensajes de éxito/error para la carga general (si se mantiene el select) */}
+            {loadStrategySuccess && !deleteStrategySuccess && <p className="mt-2 text-sm text-green-500 dark:text-green-400">{loadStrategySuccess}</p>}
+            {loadStrategyError && !deleteStrategyError && <p className="mt-2 text-sm text-red-500 dark:text-red-400">{loadStrategyError}</p>}
+          </div>
+        </div>
+      </ConfigSection>
+      {/* --- Fin Sección de Gestión de Estrategias --- */}
       </form>
   );
 }

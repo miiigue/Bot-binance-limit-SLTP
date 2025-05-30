@@ -33,6 +33,33 @@ function App() {
   const countdownIntervalRef = useRef(null);
   // ---------------------------------------------
 
+  // --- NUEVOS ESTADOS PARA GESTIÓN DE ESTRATEGIAS ---
+  const [availableStrategies, setAvailableStrategies] = useState([]);
+  const [isLoadingStrategies, setIsLoadingStrategies] = useState(false);
+  const [strategyError, setStrategyError] = useState(null);
+  // ---------------------------------------------------
+
+  // --- FUNCIÓN PARA CARGAR ESTRATEGIAS DISPONIBLES ---
+  const fetchAvailableStrategies = useCallback(async () => {
+    setIsLoadingStrategies(true);
+    setStrategyError(null);
+    try {
+      const response = await fetch('/api/strategies');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Error al obtener estrategias" }));
+        throw new Error(errorData.error || `HTTP error ${response.status}`);
+      }
+      const strategies = await response.json();
+      setAvailableStrategies(strategies || []);
+    } catch (error) {
+      console.error("Error fetching strategies:", error);
+      setStrategyError(error.message);
+      setAvailableStrategies([]); // Limpiar en caso de error
+    }
+    setIsLoadingStrategies(false);
+  }, []);
+  // ---------------------------------------------------
+
   // Efecto para la carga inicial de configuración y estado
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -91,6 +118,9 @@ function App() {
               setCountdown(parseInt(flatConfig.cycleSleepSeconds, 10));
             }
             // ----------------------------------------------------
+
+            // Cargar estrategias disponibles después de la config
+            await fetchAvailableStrategies(); // <--- LLAMAR AQUÍ
 
             // Ahora, obtener el estado general (que incluye si los bots están corriendo)
             const statusResponse = await fetch('/api/status');
@@ -271,23 +301,25 @@ function App() {
 
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
-      <div className="sticky top-0 z-50 bg-primary-600 text-white p-3 shadow-md flex items-center justify-between">
+      <div className="sticky top-0 z-50 bg-yellow-400 text-black p-3 shadow-md flex items-center justify-between">
         {/* Título a la izquierda */}
         <span className="text-xl font-bold">BOT BINANCE LIMIT-SLTP</span>
         
         {/* PnL Info y Temporizador en el centro/derecha */}
         <div className="flex items-center space-x-6">
           <div className="text-lg font-semibold">
-              <span>PNL {headerPnlData.coinCount} monedas = </span>
-              <span className="text-xl"> 
-                {headerPnlData.totalPnl.toFixed(5)} USDT
-              </span>
+            <span>PNL {headerPnlData.coinCount} monedas = </span>
+            <span 
+              className={`text-xl ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-600' : 'text-black'}`}
+            > 
+              {headerPnlData.totalPnl.toFixed(5)} USDT
+            </span>
           </div>
           {/* --- TEMPORIZADOR VISIBLE AQUÍ --- */}
           {(botsRunning !== null) && ( // Mostrar solo si se sabe el estado de los bots
             <div className="text-lg">
               <span className="font-semibold">Tiempo Activo: </span>
-              <span className="text-xl font-mono bg-primary-700 px-2 py-1 rounded">
+              <span className="text-xl font-mono bg-yellow-500 text-white px-2 py-1 rounded">
                 {formatElapsedTime(elapsedTime)}
               </span>
             </div>
@@ -296,12 +328,12 @@ function App() {
           {botsRunning && config && ( // Mostrar solo si los bots están corriendo y hay config
             <div className="text-lg">
               <span className="font-semibold">Siguiente Ciclo: </span>
-              <span className="text-xl font-mono bg-primary-700 px-2 py-1 rounded">
+              <span className="text-xl font-mono bg-yellow-500 text-white px-2 py-1 rounded">
                 {formatElapsedTime(countdown)}
               </span>
             </div>
           )}
-          {/* ----------------------------------- */}
+          {/* ---------------------------------------------------- */}
         </div>
         
         {/* Este div ya no es necesario para empujar, justify-between en el padre lo hace */}
@@ -324,7 +356,14 @@ function App() {
 
             {/* -- Sección de Configuración -- */}
             {config ? (
-                <ConfigForm initialConfig={config} onSave={handleSave} />
+                <ConfigForm 
+                  initialConfig={config} 
+                  onSave={handleSave} 
+                  availableStrategies={availableStrategies}
+                  onRefreshStrategies={fetchAvailableStrategies}
+                  isLoadingStrategies={isLoadingStrategies}
+                  strategyError={strategyError}
+                />
             ) : (
                 <p className="text-center">(Loading configuration...)</p>
             )}
