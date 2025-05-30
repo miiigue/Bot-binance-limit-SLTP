@@ -770,9 +770,12 @@ def handle_specific_strategy(strategy_name: str):
     logger.info(f"Solicitud {request.method} para estrategia: {strategy_name}")
 
     # Validación común del nombre de la estrategia
-    if not strategy_name or any(c in strategy_name for c in ('.', '/', '\\\\')):
-        logger.error(f"Nombre de estrategia inválido: {strategy_name}")
-        return jsonify({"error": "Nombre de estrategia inválido. No debe contener ., /, o \\\\."}), 400
+    # Permitir la mayoría de los caracteres, excepto los que son problemáticos para nombres de archivo/URLs.
+    # Prohibido: '.', '/', '\\'
+    # Permitidos implícitamente: espacios (manejados por encodeURIComponent), guiones, guiones bajos, etc.
+    if not strategy_name or any(c in strategy_name for c in ('.', '/', '\\')):
+        logger.error(f"Nombre de estrategia inválido: {strategy_name}. No debe contener '.', '/', o '\\'.")
+        return jsonify({"error": "Nombre de estrategia inválido. No debe contener '.', '/', o '\\'."}), 400
 
     if request.method == 'POST':
         data = request.get_json()

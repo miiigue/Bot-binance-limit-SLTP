@@ -39,6 +39,10 @@ function App() {
   const [strategyError, setStrategyError] = useState(null);
   // ---------------------------------------------------
 
+  // --- NUEVO ESTADO PARA EL NOMBRE DE LA ESTRATEGIA ACTIVA EN EL FORMULARIO ---
+  const [activeStrategyDisplayName, setActiveStrategyDisplayName] = useState('');
+  // ------------------------------------------------------------------------
+
   // --- FUNCIÓN PARA CARGAR ESTRATEGIAS DISPONIBLES ---
   const fetchAvailableStrategies = useCallback(async () => {
     setIsLoadingStrategies(true);
@@ -59,6 +63,12 @@ function App() {
     setIsLoadingStrategies(false);
   }, []);
   // ---------------------------------------------------
+
+  // --- NUEVA FUNCIÓN CALLBACK PARA ACTUALIZAR EL NOMBRE DE LA ESTRATEGIA --- 
+  const handleStrategyNameChange = useCallback((name) => {
+    setActiveStrategyDisplayName(name || ''); // Si name es null/undefined, usar ''
+  }, []);
+  // --------------------------------------------------------------------
 
   // Efecto para la carga inicial de configuración y estado
   useEffect(() => {
@@ -303,7 +313,12 @@ function App() {
     <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
       <div className="sticky top-0 z-50 bg-yellow-400 text-black p-3 shadow-md flex items-center justify-between">
         {/* Título a la izquierda */}
-        <span className="text-xl font-bold">BOT BINANCE LIMIT-SLTP</span>
+        <span className="text-xl font-bold">
+          BOT BINANCE LIMIT-SLTP 
+          {activeStrategyDisplayName && (
+            <span className="text-lg font-semibold ml-2 text-blue-800">({activeStrategyDisplayName})</span>
+          )}
+        </span>
         
         {/* PnL Info y Temporizador en el centro/derecha */}
         <div className="flex items-center space-x-6">
@@ -363,6 +378,7 @@ function App() {
                   onRefreshStrategies={fetchAvailableStrategies}
                   isLoadingStrategies={isLoadingStrategies}
                   strategyError={strategyError}
+                  onStrategyNameChange={handleStrategyNameChange}
                 />
             ) : (
                 <p className="text-center">(Loading configuration...)</p>
