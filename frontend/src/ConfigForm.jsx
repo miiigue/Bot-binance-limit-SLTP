@@ -71,7 +71,8 @@ function ConfigForm({
   availableStrategies, 
   onRefreshStrategies,
   isLoadingStrategies,
-  strategyError
+  strategyError,
+  onStrategyNameChange
 }) {
   const [formData, setFormData] = useState(defaultConfigValues);
   const [isLoading, setIsLoading] = useState(false);
@@ -121,9 +122,14 @@ function ConfigForm({
       // Estas se manejan por el bucle general si las claves son las mismas.
 
       setFormData(newFormData);
+      // Cuando la configuración inicial se carga (ej. al inicio o si se actualiza desde App.jsx),
+      // reseteamos el nombre de la estrategia activa porque es la config general.
+      if (onStrategyNameChange) {
+        onStrategyNameChange(''); // Resetear al cargar config.ini
+      }
       console.log("ConfigForm recibió propInitialConfig y actualizó formData:", newFormData);
     }
-  }, [propInitialConfig]);
+  }, [propInitialConfig, onStrategyNameChange]);
 
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
@@ -131,6 +137,10 @@ function ConfigForm({
       ...prevFormData,
       [name]: type === 'checkbox' ? checked : value
     }));
+    // Al cambiar cualquier campo, indicar que la estrategia actual (si la había) ha sido modificada.
+    if (onStrategyNameChange) {
+      onStrategyNameChange('Configuración Modificada'); // O simplemente '' para borrarlo
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -155,6 +165,7 @@ function ConfigForm({
       if (success) {
         setShowSuccessMessage(true);
         setTimeout(() => setShowSuccessMessage(false), 3000);
+        // Al guardar en config.ini, la configuración ya no es una estrategia nombrada específica.
       }
     } catch (err) {
       setError(err.message || 'Error al guardar la configuración.');
@@ -187,6 +198,9 @@ function ConfigForm({
         throw new Error(result.error || `Error HTTP ${response.status}`);
       }
       setSaveStrategySuccess(result.message || "Estrategia guardada con éxito.");
+      if (onStrategyNameChange) {
+        onStrategyNameChange(strategyNameInput); 
+      }
       setStrategyNameInput(''); // Limpiar input
       onRefreshStrategies(); // Actualizar la lista de estrategias en el desplegable
       setTimeout(() => setSaveStrategySuccess(null), 3000);
@@ -219,6 +233,9 @@ function ConfigForm({
       // Una forma es fusionar con defaultConfigValues.
       const newFormData = { ...defaultConfigValues, ...strategyData }; 
       setFormData(newFormData); // Actualizar el formulario con los datos de la estrategia
+      if (onStrategyNameChange) {
+        onStrategyNameChange(strategyName); // Actualizar el nombre en la cabecera
+      }
       setLoadStrategySuccess(`Estrategia '${strategyName}' cargada en el formulario. ¡Recuerda guardar la configuración si deseas aplicarla!`);
       setTimeout(() => setLoadStrategySuccess(null), 5000);
     } catch (err) {
@@ -251,6 +268,9 @@ function ConfigForm({
       // Limpiar el input de carga si la estrategia eliminada era la seleccionada
       if (selectedStrategyToLoad === strategyName) {
         setSelectedStrategyToLoad('');
+        if (onStrategyNameChange) {
+          onStrategyNameChange(''); // Borrar el nombre si la estrategia activa fue eliminada
+        }
       }
       setTimeout(() => setDeleteStrategySuccess(null), 3000);
     } catch (err) {
