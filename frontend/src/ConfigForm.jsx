@@ -60,7 +60,9 @@ const defaultConfigValues = {
   priceTrailingStopActivationPnlUSDT: 0.02,
   enablePnlTrailingStop: true,
   pnlTrailingStopActivationUSDT: 0.1,
-  pnlTrailingStopDropUSDT: 0.05
+  pnlTrailingStopDropUSDT: 0.05,
+  evaluateOpenInterestIncrease: true,
+  openInterestPeriod: '5m'
 };
 
 function ConfigForm({ initialConfig: propInitialConfig, onSave }) {
@@ -71,20 +73,33 @@ function ConfigForm({ initialConfig: propInitialConfig, onSave }) {
 
   useEffect(() => {
     if (propInitialConfig) {
-      const updatedFormData = { ...defaultConfigValues };
+      // Crear una copia de propInitialConfig para no mutar el original directamente
+      const newFormData = { ...defaultConfigValues }; // Empezar con defaults por si alguna clave falta en propInitialConfig
+
       for (const key in propInitialConfig) {
-        if (propInitialConfig[key] !== undefined && propInitialConfig[key] !== null) {
-          if (typeof defaultConfigValues[key] === 'boolean') {
-            updatedFormData[key] = !!propInitialConfig[key];
-          } else {
-            updatedFormData[key] = propInitialConfig[key];
-          }
+        if (Object.prototype.hasOwnProperty.call(propInitialConfig, key)) {
+          // Si la clave existe en propInitialConfig, usar su valor.
+          // Esto incluye los booleanos que ya deberían venir correctamente desde App.jsx
+          newFormData[key] = propInitialConfig[key];
         }
       }
-      if (propInitialConfig.downtrend_level_check !== undefined) {
-        updatedFormData.downtrendLevelCheck = propInitialConfig.downtrend_level_check;
+
+      // Mapeo específico si las claves internas del formulario difieren de las props
+      // En App.jsx, ahora enviamos 'evaluateDowntrendLevelsBlock'. 
+      // Si ConfigForm usa 'downtrendLevelCheck' internamente para su estado formData:
+      if (propInitialConfig.evaluateDowntrendLevelsBlock !== undefined) {
+        newFormData.downtrendLevelCheck = propInitialConfig.evaluateDowntrendLevelsBlock;
+      } else if (propInitialConfig.downtrend_level_check !== undefined) { // Fallback si aún viniera la clave vieja
+        newFormData.downtrendLevelCheck = propInitialConfig.downtrend_level_check;
       }
-      setFormData(updatedFormData);
+
+      // Las claves de Open Interest ya deberían coincidir con lo que App.jsx envía:
+      // newFormData.evaluateOpenInterestIncrease = propInitialConfig.evaluateOpenInterestIncrease;
+      // newFormData.openInterestPeriod = propInitialConfig.openInterestPeriod;
+      // Estas se manejan por el bucle general si las claves son las mismas.
+
+      setFormData(newFormData);
+      console.log("ConfigForm recibió propInitialConfig y actualizó formData:", newFormData);
     }
   }, [propInitialConfig]);
 
@@ -105,6 +120,12 @@ function ConfigForm({ initialConfig: propInitialConfig, onSave }) {
     const dataToSend = { ...formData };
     if (dataToSend.downtrendLevelCheck !== undefined) {
         dataToSend.downtrend_level_check = dataToSend.downtrendLevelCheck;
+    }
+    if (dataToSend.evaluateOpenInterestIncrease !== undefined) {
+        dataToSend.evaluate_open_interest_increase = dataToSend.evaluateOpenInterestIncrease;
+    }
+    if (dataToSend.openInterestPeriod !== undefined) {
+        dataToSend.open_interest_period = dataToSend.openInterestPeriod;
     }
 
     try {
@@ -214,6 +235,38 @@ function ConfigForm({ initialConfig: propInitialConfig, onSave }) {
               <div>
             {renderLabelWithCheckbox("requiredUptrendCandles", "Velas Tendencia Alcista", "evaluateRequiredUptrend")}
             <input type="number" name="requiredUptrendCandles" id="requiredUptrendCandles" value={formData.requiredUptrendCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
+              </div>
+              <div>
+                {renderLabelWithCheckbox("evaluateOpenInterestIncrease", "Evaluar Aumento OI", "evaluateOpenInterestIncrease")}
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Si está activado, la entrada requiere que el Open Interest (en USDT) en el intervalo seleccionado sea mayor que el anterior.
+                </p>
+              </div>
+              <div>
+                <label htmlFor="openInterestPeriod" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Periodo Velas OI
+                </label>
+                <select 
+                  id="openInterestPeriod" 
+                  name="openInterestPeriod" 
+                  value={formData.openInterestPeriod} 
+                  onChange={handleChange} 
+                  className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                  disabled={!formData.evaluateOpenInterestIncrease}
+                >
+                  <option value="5m">5 minutos</option>
+                  <option value="15m">15 minutos</option>
+                  <option value="30m">30 minutos</option>
+                  <option value="1h">1 hora</option>
+                  <option value="2h">2 horas</option>
+                  <option value="4h">4 horas</option>
+                  <option value="6h">6 horas</option>
+                  <option value="12h">12 horas</option>
+                  <option value="1d">1 día</option>
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Intervalo para obtener datos de Open Interest. Usado si "Evaluar Aumento OI" está activado.
+                </p>
               </div>
             </div>
         </fieldset>

@@ -149,7 +149,9 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'price_trailing_stop_activation_pnl_usdt': str(frontend_data.get('priceTrailingStopActivationPnlUSDT', 0.02)),
             'enable_pnl_trailing_stop': str(frontend_data.get('enablePnlTrailingStop', True)).lower(),
             'pnl_trailing_stop_activation_usdt': str(frontend_data.get('pnlTrailingStopActivationUSDT', 0.1)),
-            'pnl_trailing_stop_drop_usdt': str(frontend_data.get('pnlTrailingStopDropUSDT', 0.05))
+            'pnl_trailing_stop_drop_usdt': str(frontend_data.get('pnlTrailingStopDropUSDT', 0.05)),
+            'evaluate_open_interest_increase': str(frontend_data.get('evaluateOpenInterestIncrease', True)).lower(),
+            'open_interest_period': frontend_data.get('openInterestPeriod', '5m')
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -299,52 +301,123 @@ def start_bot_workers():
 
 @app.route('/api/config', methods=['GET'])
 def get_config_endpoint():
-    """Endpoint para obtener la configuración actual, incluyendo símbolos."""
-    logger = get_logger()
-    logger.info("Recibida petición GET /api/config")
-    config = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(';', '#'))
+    """Endpoint para obtener la configuración actual."""
+    global loaded_trading_params, loaded_symbols_to_trade # Usar las globales cargadas
+    api_logger.info("Solicitud GET /api/config recibida.")
+
+    config = configparser.ConfigParser(allow_no_value=True)
     try:
         if not os.path.exists(CONFIG_FILE_PATH):
-            logger.error(f"Archivo de configuración no encontrado en {CONFIG_FILE_PATH}")
-            # Devolver estructura vacía o valores por defecto si el archivo no existe
-            default_empty_config = {
-                "BINANCE": {"mode": "paper"}, # Provide default for mode
-                "TRADING": {},
-                "SYMBOLS": {"symbols_to_trade": ""}
+            api_logger.warning(f"El archivo de configuración {CONFIG_FILE_PATH} no existe. Devolviendo configuración por defecto.")
+            # Devolver los valores por defecto que el frontend podría esperar
+            # Esta es una simplificación; idealmente, los valores por defecto estarían centralizados
+            default_frontend_config = {
+                "mode": "paper",
+                "rsiInterval": "5m",
+                "rsiPeriod": 14,
+                "rsiThresholdUp": 8,
+                "rsiThresholdDown": -8,
+                "rsiEntryLevelLow": 25,
+                "rsiEntryLevelHigh": 75,
+                "rsiTarget": 50,
+                "volumeSmaPeriod": 20,
+                "volumeFactor": 1.5,
+                "downtrendCheckCandles": 3,
+                "downtrend_level_check": 5, # Mantener consistencia con config.ini
+                "requiredUptrendCandles": 0,
+                "positionSizeUSDT": 50,
+                "stopLossUSDT": 20,
+                "takeProfitUSDT": 30,
+                "cycleSleepSeconds": 5,
+                "orderTimeoutSeconds": 10,
+                "evaluateRsiDelta": True,
+                "evaluateVolumeFilter": True,
+                "evaluateRsiRange": True,
+                "evaluateDowntrendCandlesBlock": True,
+                "evaluateDowntrendLevelsBlock": True,
+                "evaluateRequiredUptrend": True,
+                "enableTakeProfitPnl": True,
+                "enableStopLossPnl": True,
+                "enableTrailingRsiStop": True,
+                "enablePriceTrailingStop": True,
+                "priceTrailingStopDistanceUSDT": 0.05,
+                "priceTrailingStopActivationPnlUSDT": 0.02,
+                "enablePnlTrailingStop": True,
+                "pnlTrailingStopActivationUSDT": 0.1,
+                "pnlTrailingStopDropUSDT": 0.05,
+                "evaluateOpenInterestIncrease": True, # Cambio de clave aquí
+                "openInterestPeriod": "5m", # <-- Clave para el frontend
+                "symbolsToTrade": ""
             }
-            # Explicitly remove API keys if they were part of a default template
-            if "api_key" in default_empty_config["BINANCE"]:
-                del default_empty_config["BINANCE"]["api_key"]
-            if "api_secret" in default_empty_config["BINANCE"]:
-                del default_empty_config["BINANCE"]["api_secret"]
-            return jsonify(default_empty_config)
+            return jsonify(default_frontend_config)
         
-        config.read(CONFIG_FILE_PATH, encoding='utf-8')
+        config.read(CONFIG_FILE_PATH)
         config_dict = config_to_dict(config)
         
-        # Ensure API keys are NOT sent to frontend, even if they are placeholders in config.ini
+        # Mapear para el frontend
+        frontend_config = {}
         if 'BINANCE' in config_dict:
-            if 'api_key' in config_dict['BINANCE']:
-                del config_dict['BINANCE']['api_key']
-            if 'api_secret' in config_dict['BINANCE']:
-                del config_dict['BINANCE']['api_secret']
-            # Ensure 'mode' is present, defaulting to 'paper' if somehow missing after reading
-            if 'mode' not in config_dict['BINANCE']:
-                 config_dict['BINANCE']['mode'] = 'paper'
+            frontend_config['mode'] = config_dict['BINANCE'].get('mode', 'paper')
+        
+        if 'TRADING' in config_dict:
+            # Mapear claves de config.ini a las esperadas por el frontend
+            for key_ini, key_frontend in [
+                ('rsi_interval', 'rsiInterval'),
+                ('rsi_period', 'rsiPeriod'),
+                ('rsi_threshold_up', 'rsiThresholdUp'),
+                ('rsi_threshold_down', 'rsiThresholdDown'),
+                ('rsi_entry_level_low', 'rsiEntryLevelLow'),
+                ('rsi_entry_level_high', 'rsiEntryLevelHigh'),
+                ('rsi_target', 'rsiTarget'),
+                ('volume_sma_period', 'volumeSmaPeriod'),
+                ('volume_factor', 'volumeFactor'),
+                ('downtrend_check_candles', 'downtrendCheckCandles'),
+                ('downtrend_level_check', 'downtrend_level_check'), # Ya es la correcta
+                ('required_uptrend_candles', 'requiredUptrendCandles'),
+                ('position_size_usdt', 'positionSizeUSDT'),
+                ('stop_loss_usdt', 'stopLossUSDT'),
+                ('take_profit_usdt', 'takeProfitUSDT'),
+                ('cycle_sleep_seconds', 'cycleSleepSeconds'),
+                ('order_timeout_seconds', 'orderTimeoutSeconds'),
+                ('evaluate_rsi_delta', 'evaluateRsiDelta'),
+                ('evaluate_volume_filter', 'evaluateVolumeFilter'),
+                ('evaluate_rsi_range', 'evaluateRsiRange'),
+                ('evaluate_downtrend_candles_block', 'evaluateDowntrendCandlesBlock'),
+                ('evaluate_downtrend_levels_block', 'evaluateDowntrendLevelsBlock'),
+                ('evaluate_required_uptrend', 'evaluateRequiredUptrend'),
+                ('enable_take_profit_pnl', 'enableTakeProfitPnl'),
+                ('enable_stop_loss_pnl', 'enableStopLossPnl'),
+                ('enable_trailing_rsi_stop', 'enableTrailingRsiStop'),
+                ('enable_price_trailing_stop', 'enablePriceTrailingStop'),
+                ('price_trailing_stop_distance_usdt', 'priceTrailingStopDistanceUSDT'),
+                ('price_trailing_stop_activation_pnl_usdt', 'priceTrailingStopActivationPnlUSDT'),
+                ('enable_pnl_trailing_stop', 'enablePnlTrailingStop'),
+                ('pnl_trailing_stop_activation_usdt', 'pnlTrailingStopActivationUSDT'),
+                ('pnl_trailing_stop_drop_usdt', 'pnlTrailingStopDropUSDT'),
+                ('evaluate_open_interest_increase', 'evaluateOpenInterestIncrease'), # Cambio de clave aquí
+                ('open_interest_period', 'openInterestPeriod') # <-- CAMBIO DE CLAVE AQUÍ para el frontend
+            ]:
+                if key_ini in config_dict['TRADING']:
+                    frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
+        
+        if 'SYMBOLS' in config_dict:
+            frontend_config['symbolsToTrade'] = config_dict['SYMBOLS'].get('symbols_to_trade', '')
 
+        # Asegurar que las globales también se actualizan si es la primera carga o si el archivo cambió
+        loaded_trading_params = config_dict.get('TRADING', {})
+        loaded_symbols_to_trade = frontend_config.get('symbolsToTrade', '').split(',') if frontend_config.get('symbolsToTrade') else []
 
-        # Asegurarse de que la sección SYMBOLS y la clave existen en la respuesta
-        if 'SYMBOLS' not in config_dict:
-            config_dict['SYMBOLS'] = {'symbols_to_trade': ''}
-        elif 'symbols_to_trade' not in config_dict['SYMBOLS']:
-            config_dict['SYMBOLS']['symbols_to_trade'] = ''
-            
-        logger.info("Configuración (incluyendo símbolos) enviada al frontend.")
-        return jsonify(config_dict)
-
+        api_logger.info(f"Configuración FINAL que se enviará al frontend vía /api/config GET: {frontend_config}")
+        api_logger.info(f"Específicamente, symbolsToTrade que se enviará: {frontend_config.get('symbolsToTrade')}")
+        api_logger.info(f"Específicamente, rsiPeriod que se enviará: {frontend_config.get('rsiPeriod')}")
+        return jsonify(frontend_config)
+    
+    except FileNotFoundError:
+        api_logger.error(f"El archivo de configuración {CONFIG_FILE_PATH} no fue encontrado.")
+        return jsonify({"error": "Config file not found"}), 404
     except Exception as e:
-        logger.error(f"Error al leer la configuración: {e}", exc_info=True)
-        return jsonify({"error": "Failed to read configuration"}), 500
+        api_logger.error(f"Error al procesar la configuración: {e}", exc_info=True)
+        return jsonify({"error": f"Error processing config: {e}"}), 500
 
 @app.route('/api/config', methods=['POST'])
 def update_config_endpoint():
@@ -412,17 +485,17 @@ def get_worker_status():
     global workers_started # Necesitamos acceso al flag global
     logger = get_logger()
     logger.debug("API call received for /api/status")
-
+    
     try: # <--- INICIO DEL BLOQUE TRY GENERAL
         all_symbols_status = []
         # Usar los símbolos cargados al inicio
-        configured_symbols = loaded_symbols_to_trade
+        configured_symbols = loaded_symbols_to_trade 
         historical_pnl_data = get_cumulative_pnl_by_symbol()
 
         logger.debug(f"Símbolos configurados (cargados al inicio): {configured_symbols}")
         logger.debug(f"PnL histórico de DB: {historical_pnl_data}")
 
-        with status_lock:
+        with status_lock: 
             active_worker_details = dict(worker_statuses)
 
         for symbol in configured_symbols:
@@ -441,34 +514,27 @@ def get_worker_status():
 
             if symbol in active_worker_details and workers_started:
                 active_status = active_worker_details[symbol]
-                # Sobrescribir solo si el estado del worker no es STOPPED (o si es la primera vez)
                 if active_status.get('state') != BotState.STOPPED.value:
                     status_entry.update(active_status)
-                    status_entry['symbol'] = symbol # Asegurar que el símbolo es el correcto
-                    # Ensure only cumulative_pnl is used for historical PNL after update
+                    status_entry['symbol'] = symbol 
                     status_entry['cumulative_pnl'] = historical_pnl_data.get(symbol, 0.0)
-                    # Remove other historical PNL keys if they exist from previous logic
                     for key_to_remove in ['hist_pnl', 'histPnl', 'historical_pnl', 'historicalPnl', 'cumulativePnl']:
                         if key_to_remove in status_entry:
                             del status_entry[key_to_remove]
-
-                # Si el worker individual reporta STOPPED, mantenerlo.
                 elif active_status.get('state') == BotState.STOPPED.value:
                     status_entry['state'] = BotState.STOPPED.value
-                    # Also ensure only cumulative_pnl is present for stopped bots if others were added
                     status_entry['cumulative_pnl'] = historical_pnl_data.get(symbol, 0.0)
                     for key_to_remove in ['hist_pnl', 'histPnl', 'historical_pnl', 'historicalPnl', 'cumulativePnl']:
                         if key_to_remove in status_entry:
                             del status_entry[key_to_remove]
-
+            
             all_symbols_status.append(status_entry)
-
-        # Añadir estado global de los workers
+        
         response_data = {
             "bots_running": workers_started,
             "statuses": all_symbols_status
         }
-
+        
         logger.debug(f"Returning combined statuses. Bots running: {workers_started}")
         return jsonify(response_data)
 

@@ -22,7 +22,8 @@ from .binance_client import (
     cancel_futures_order,
     create_futures_take_profit_order, # <-- NUEVA IMPORTACIÓN
     create_futures_stop_loss_order,    # <-- NUEVA IMPORTACIÓN
-    get_user_trade_history # <-- NUEVA IMPORTACIÓN
+    get_user_trade_history, # <-- NUEVA IMPORTACIÓN
+    get_open_interest_history # <-- NUEVA IMPORTACIÓN
 )
 from .rsi_calculator import calculate_rsi
 from .database import init_db_schema, record_trade # Importamos solo las necesarias
@@ -106,6 +107,9 @@ class TradingBot:
         self.pnl_trailing_stop_drop_usdt = Decimal(str(trading_params.get('pnl_trailing_stop_drop_usdt', '0.05')))
         self.pnl_peak_since_activation = None # PNL más alto desde que el PNL trailing stop se armó
         self.pnl_trailing_stop_armed = False # Si el PNL trailing stop está armado
+        # --- NUEVO: Para Open Interest ---
+        self.evaluate_open_interest_increase = str(trading_params.get('evaluate_open_interest_increase', 'True')).lower() == 'true'
+        self.open_interest_period = trading_params.get('open_interest_period', '5m') # <-- NUEVO: Leer el período para OI
         # -------------------------------------------------------------
         # -------------------------------------------------------------
         # --------------------------------------------------
@@ -214,6 +218,8 @@ class TradingBot:
         # --- Limpiar también estado de trailing de PNL ---
         self.pnl_peak_since_activation = None
         self.pnl_trailing_stop_armed = False
+        # --- NUEVO: Limpiar estado de Open Interest ---
+        # self.previous_open_interest_usdt = None # <-- YA NO SE NECESITA
         # ----------------------------------------------------
 
     def _check_initial_position(self):
@@ -273,6 +279,14 @@ class TradingBot:
              # Se asumirá que si se reinicia en posición, se manejará manualmente o por lógica de PnL si TP/SL no se colocan.
              self.pending_tp_order_id = None # Limpiar al inicio por ahora
              self.pending_sl_order_id = None # Limpiar al inicio por ahora
+
+        self.pnl_peak_since_activation = None
+        self.pnl_trailing_stop_armed = False
+        # --- NUEVO: Limpiar estado de Open Interest --- # ESTA SECCIÓN YA NO ES NECESARIA
+        # self.previous_open_interest_usdt = None # <-- YA NO SE NECESITA
+        # ----------------------------------------------------
+
+        # Limpiar el PnL conocido (aunque se recalculará si se entra en nueva posición)
 
     def _adjust_quantity(self, quantity: Decimal) -> float:
         """Ajusta la cantidad a la precisión requerida por self.symbol."""
@@ -905,6 +919,8 @@ class TradingBot:
         # --- Limpiar también estado de trailing de PNL ---
         self.pnl_peak_since_activation = None
         self.pnl_trailing_stop_armed = False
+        # --- NUEVO: Limpiar estado de Open Interest ---
+        # self.previous_open_interest_usdt = None # <-- YA NO SE NECESITA
         # ----------------------------------------------------
 
         # Limpiar el PnL conocido (aunque se recalculará si se entra en nueva posición)
@@ -1171,19 +1187,63 @@ class TradingBot:
             if self.evaluate_required_uptrend: # Log solo si la evaluación está activa
                 self.logger.info(f"[{self.symbol}] Chequeo Entrada (Activado): Requisito Velas Alcistas ({self.required_uptrend_candles} velas)? {'Sí' if condition_required_uptrend_met else 'No'}")
 
+            # --- NUEVO: Lógica de Open Interest ---
+            condition_oi_increase_met = False # Por defecto, no pasa
+            current_oi_value_for_log = "N/A"
+            previous_oi_value_for_log = "N/A"
+            open_interest_delta_str = "N/A"
+
+            if not self.evaluate_open_interest_increase: # Si la evaluación de OI está DESACTIVADA
+                condition_oi_increase_met = True
+                self.logger.info(f"[{self.symbol}] Chequeo Open Interest: Evaluación DESACTIVADA (evaluate_open_interest_increase=False). Condición OI cumplida por defecto.")
+            else:
+                # Usar la nueva función para obtener los 2 últimos puntos de OI
+                # La función get_open_interest_history ya está importada desde .binance_client
+                oi_history = get_open_interest_history(symbol=self.symbol, period=self.open_interest_period, limit=2)
+                
+                if oi_history and len(oi_history) == 2:
+                    latest_oi_data = oi_history[1] # El más reciente
+                    previous_oi_data = oi_history[0] # El anterior al más reciente
+                    
+                    current_oi_usdt = latest_oi_data.get('sumOpenInterestValue', Decimal('0'))
+                    previous_oi_usdt = previous_oi_data.get('sumOpenInterestValue', Decimal('0'))
+                    
+                    current_oi_value_for_log = f"{current_oi_usdt:.2f}"
+                    previous_oi_value_for_log = f"{previous_oi_usdt:.2f}"
+                    open_interest_delta_str = f"{current_oi_usdt - previous_oi_usdt:.2f}"
+
+                    if current_oi_usdt > previous_oi_usdt:
+                        condition_oi_increase_met = True
+                    
+                    self.logger.info(f"[{self.symbol}] Chequeo Open Interest (Activado, Período: {self.open_interest_period}): "
+                                     f"Actual OI USDT ({latest_oi_data.get('timestamp')}): {current_oi_value_for_log}, "
+                                     f"Anterior OI USDT ({previous_oi_data.get('timestamp')}): {previous_oi_value_for_log}, "
+                                     f"Aumento? {'Sí' if condition_oi_increase_met else 'No'}. Delta: {open_interest_delta_str}")
+                elif oi_history and len(oi_history) == 1:
+                    latest_oi_data = oi_history[0]
+                    current_oi_usdt = latest_oi_data.get('sumOpenInterestValue', Decimal('0'))
+                    current_oi_value_for_log = f"{current_oi_usdt:.2f}"
+                    self.logger.warning(f"[{self.symbol}] Chequeo Open Interest (Activado, Período: {self.open_interest_period}): Solo se obtuvo 1 punto de OI ({current_oi_value_for_log}). No se puede comparar. Condición NO cumplida.")
+                    # condition_oi_increase_met permanece False
+                else:
+                    self.logger.warning(f"[{self.symbol}] Chequeo Open Interest (Activado, Período: {self.open_interest_period}): No se pudieron obtener suficientes datos de OI (recibidos: {len(oi_history) if oi_history else 'None'}). Condición NO cumplida.")
+                    # condition_oi_increase_met permanece False
+            # --- FIN Lógica de Open Interest ---
 
             self.logger.info(f"[{self.symbol}] Resumen Chequeo Entrada: RSI en rango? {'Sí' if condition_rsi_in_range else 'No'} (Eval Activa: {self.evaluate_rsi_range}), "
                              f"Incremento RSI OK? {'Sí' if condition_rsi_change_meets_thresh_up else 'No'} (Eval Activa: {self.evaluate_rsi_delta}), "
                              f"Volumen OK? {'Sí' if volume_check_passed else 'No'} (Eval Activa: {self.evaluate_volume_filter}), "
-                             f"Req Velas Alcistas OK? {'Sí' if condition_required_uptrend_met else 'No'} (Eval Activa: {self.evaluate_required_uptrend})")
+                             f"Req Velas Alcistas OK? {'Sí' if condition_required_uptrend_met else 'No'} (Eval Activa: {self.evaluate_required_uptrend}), "
+                             f"Incremento OI OK? {'Sí' if condition_oi_increase_met else 'No'} (Eval Activa: {self.evaluate_open_interest_increase})")
 
             # Evaluar todas las condiciones para la señal de entrada
-            if condition_rsi_in_range and condition_rsi_change_meets_thresh_up and volume_check_passed and condition_required_uptrend_met: # Añadir la nueva condición
-                self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA DETECTADA: RSI en rango, Incremento RSI OK, Volumen OK, Requisito Velas Alcistas OK.")
+            if condition_rsi_in_range and condition_rsi_change_meets_thresh_up and volume_check_passed and condition_required_uptrend_met and condition_oi_increase_met: # Añadir la nueva condición de OI
+                self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA DETECTADA: RSI en rango, Incremento RSI OK, Volumen OK, Requisito Velas Alcistas OK, Incremento OI OK.")
                 entry_signal = True
                 self.entry_reason = (f"RSI_range ({self.rsi_entry_level_low}<={self.last_rsi_value:.2f}<={self.rsi_entry_level_high}) "
                                    f"AND RSI_delta (Delta={rsi_delta_str}>={self.rsi_threshold_up}) "
-                                   f"AND Vol_OK AND Req_Uptrend_OK({self.required_uptrend_candles} velas)") # Actualizar razón
+                                   f"AND Vol_OK AND Req_Uptrend_OK({self.required_uptrend_candles} velas) " # Actualizar razón
+                                   f"AND OI_Increase (Delta={open_interest_delta_str})")
             else:
                 # Construir un mensaje detallado de por qué no se cumplió la entrada
                 fail_reasons = []
@@ -1191,6 +1251,7 @@ class TradingBot:
                 if not condition_rsi_change_meets_thresh_up: fail_reasons.append(f"Delta_RSI (actual {rsi_delta_str}, esperado >={self.rsi_threshold_up})")
                 if not volume_check_passed: fail_reasons.append("Volumen")
                 if not condition_required_uptrend_met: fail_reasons.append(f"Req_Velas_Alcistas({self.required_uptrend_candles} velas)") # Actualizar mensaje de fallo
+                if not condition_oi_increase_met: fail_reasons.append(f"OI_Increase (Delta={open_interest_delta_str})") # Añadir fallo de OI
                 self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA NO CUMPLIDA. Fallos: {' | '.join(fail_reasons) if fail_reasons else 'Ninguno específico (revisar lógica)'}")
 
             # --- Actualizar el RSI anterior para el próximo ciclo ---
@@ -1203,6 +1264,12 @@ class TradingBot:
                 # O podríamos decidir ponerlo a None también. Por ahora, no lo actualizamos.
                 self.logger.debug(f"[{self.symbol}] No se actualiza previous_rsi_value porque last_rsi_value es None.")
             # ----------------------------------------------------
+            # --- NUEVO: Actualizar el Open Interest anterior para el próximo ciclo ---
+            # if current_open_interest_usdt is not None and not pd.isna(current_open_interest_usdt):
+            # self.previous_open_interest_usdt = current_open_interest_usdt
+            # else:
+            # self.logger.debug(f"[{self.symbol}] No se actualiza previous_open_interest_usdt porque el OI actual no es válido o no está disponible.")
+            # ---------------------------------------------------------------------
 
             if entry_signal:
                  # Calcular precio y cantidad para la orden LIMIT BUY

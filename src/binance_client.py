@@ -8,6 +8,7 @@ from binance.error import ClientError
 import pandas as pd
 import time
 import os # Import the os module
+from decimal import Decimal
 
 # Importamos nuestra configuración y logger
 from .config_loader import load_config
@@ -85,7 +86,8 @@ def get_futures_client():
 def get_historical_klines(symbol: str, interval: str, limit: int = 500):
     """
     Obtiene datos históricos de velas (klines) para un símbolo y un intervalo dados.
-    (Adaptado para binance-futures-connector)
+    Intenta obtener Open Interest de markPriceKlines si es posible, aunque para 1m no es estándar.
+    El volumen se toma de las klines estándar.
     """
     logger = get_logger()
     client = get_futures_client()
@@ -93,53 +95,57 @@ def get_historical_klines(symbol: str, interval: str, limit: int = 500):
         logger.error("No se pudo obtener el cliente UMFutures para buscar klines.")
         return None
 
-    # La nueva librería puede tener validación interna de intervalo, pero podemos mantenerla
-    # valid_intervals = [...] # Podríamos necesitar ajustar los strings si son diferentes
-
     logger.info(f"Obteniendo {limit} klines históricos para {symbol} en intervalo {interval}...")
+    klines_data = None
+    klines_df = pd.DataFrame()
 
     try:
-        # La función se llama 'klines' en esta librería
-        klines = client.klines(symbol=symbol, interval=interval, limit=limit)
-
-        if not klines:
-            logger.warning(f"No se recibieron klines para {symbol}, intervalo {interval}. ¿Es el símbolo correcto?")
+        # Obtener klines estándar PRIMERO para asegurar datos OHLCV correctos
+        standard_klines_raw = client.klines(symbol=symbol, interval=interval, limit=limit)
+        if not standard_klines_raw:
+            logger.warning(f"[{symbol}] No se recibieron datos de klines estándar.")
             return None
 
-        # Use lowercase and underscore standard column names
-        columns = [
-            'timestamp', 'open', 'high', 'low', 'close', 'volume',
-            'close_time', 'quote_asset_volume', 'number_of_trades',
-            'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
-        ]
-        df = pd.DataFrame(klines, columns=columns)
-
-        # Convert appropriate columns to numeric types
-        numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'quote_asset_volume',
-                        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']
-        for col in numeric_cols:
-            # Use errors='coerce' to turn invalid parsing into NaN (Not a Number)
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        # Convert timestamp columns to datetime objects (UTC)
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
-        df['close_time'] = pd.to_datetime(df['close_time'], unit='ms', utc=True)
+        # Columnas para klines estándar
+        standard_columns = ['open_time', 'open', 'high', 'low', 'close', 'volume', 
+                            'close_time', 'quote_volume', 'trades', 
+                            'taker_buy_base_volume', 'taker_buy_quote_volume', 'ignore']
         
-        # Optional: Drop rows with NaN values in critical columns like 'close' or 'volume'
-        # df.dropna(subset=['close', 'volume'], inplace=True)
-        # Optional: Set timestamp as index
-        # df.set_index('timestamp', inplace=True)
+        klines_df = pd.DataFrame(standard_klines_raw, columns=standard_columns)
+        
+        # Convertir columnas relevantes a tipos numéricos adecuados
+        numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'quote_volume', 
+                        'taker_buy_base_volume', 'taker_buy_quote_volume']
+        for col in numeric_cols:
+            klines_df[col] = pd.to_numeric(klines_df[col], errors='coerce').fillna(Decimal(0))
 
-        # Log using the new column name 'close_time'
-        logger.info(f"Se obtuvieron {len(df)} klines para {symbol}. Última vela cierra a: {df['close_time'].iloc[-1]}")
-        return df
+        klines_df['open_time'] = pd.to_datetime(klines_df['open_time'], unit='ms')
+        klines_df['close_time'] = pd.to_datetime(klines_df['close_time'], unit='ms')
+        
+        # Intentar obtener Open Interest (aunque para 1m no es estándar y probablemente no funcionará bien)
+        # Por ahora, vamos a registrar que OI en 1m no es fiable.
+        # La API de Binance no ofrece OI Histórico en velas de 1m. Mínimo 5m.
+        # La llamada a mark_price_klines NO devuelve OI.
+        logger.warning(f"[{symbol}] Open Interest para velas de 1 minuto no está disponible de forma fiable a través de la API de Binance. El chequeo de OI podría no funcionar como se espera.")
+        klines_df['open_interest_usdt'] = Decimal('0') # Default a 0 ya que no lo podemos obtener fiablemente en 1m
+
+        # Mantener el cálculo de previous_close_price si se usa en otro lado
+        klines_df['previous_close_price'] = klines_df['close'].shift(1)
+
 
     except ClientError as e:
-        logger.error(f"Error de API al obtener klines para {symbol}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
+        logger.error(f"Excepción de API de Binance al obtener klines para {symbol}: {e}")
         return None
     except Exception as e:
-        logger.error(f"Error inesperado al obtener/procesar klines para {symbol}: {e}", exc_info=True)
+        logger.error(f"Error inesperado al obtener/procesar klines para {symbol}: {e}")
         return None
+
+    if klines_df.empty:
+        logger.warning(f"No se pudieron obtener datos de klines para {symbol} después del procesamiento.")
+        return None
+
+    logger.info(f"Se obtuvieron y procesaron {len(klines_df)} klines para {symbol}. Última vela cierra a: {klines_df['close_time'].iloc[-1] if not klines_df.empty else 'N/A'}")
+    return klines_df
 
 def get_futures_symbol_info(symbol: str):
     """
@@ -530,6 +536,85 @@ def get_user_trade_history(symbol: str, start_time_ms: int | None = None, limit:
         logger.error(f"[{symbol}] Error fetching user trade history: {e}", exc_info=True)
         return None
 # --- Fin de la nueva función ---
+
+# --- NUEVA FUNCIÓN PARA OBTENER HISTORIAL DE OPEN INTEREST ---
+def get_open_interest_history(symbol: str, period: str, limit: int = 2) -> list[dict] | None:
+    """
+    Obtiene el historial de estadísticas de Open Interest para un símbolo y período dados.
+    Usa el endpoint /futures/data/openInterestHist.
+
+    Args:
+        symbol (str): El símbolo del par de trading (ej. "BTCUSDT").
+        period (str): El período de las velas de OI ("5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d").
+        limit (int): Número de puntos de datos a obtener (default 2, max 500).
+
+    Returns:
+        list[dict] | None: Una lista de diccionarios con los datos de OI, o None si hay un error.
+                           Cada diccionario contiene: 'symbol', 'sumOpenInterest', 'sumOpenInterestValue', 'timestamp'.
+                           Los datos se devuelven en orden ascendente de tiempo (el más reciente al final).
+    """
+    logger = get_logger()
+    client = get_futures_client()
+    if not client:
+        logger.error(f"[{symbol}] No se pudo obtener el cliente UMFutures para get_open_interest_history.")
+        return None
+
+    valid_periods = ["5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"]
+    if period not in valid_periods:
+        logger.error(f"[{symbol}] Período de Open Interest inválido: '{period}'. Válidos: {valid_periods}")
+        return None
+    
+    if not 1 <= limit <= 500:
+        logger.error(f"[{symbol}] Límite para Open Interest inválido: {limit}. Debe estar entre 1 y 500.")
+        return None
+
+    logger.info(f"[{symbol}] Obteniendo historial de Open Interest. Símbolo: {symbol}, Período: {period}, Límite: {limit}")
+
+    try:
+        # El método en la librería se llama open_interest_hist
+        # Nota: La librería python-binance (si es la que está implícita) podría no tener este endpoint directamente.
+        # Es posible que se necesite una llamada HTTP directa o una actualización de la librería si es antigua.
+        # Asumiendo que el cliente UMFutures tiene un método genérico para llamadas GET o uno específico.
+        # Si la librería 'binance-futures-connector' (o la que se esté usando) no tiene open_interest_hist,
+        # este código necesitará adaptarse para hacer una llamada HTTP directa.
+        # Por ahora, asumimos que la librería lo soporta o que este código es un placeholder para esa lógica.
+
+        # Consultando la documentación de python-binance, no parece tener un método directo para /futures/data/openInterestHist.
+        # Para una implementación robusta, se necesitaría una llamada HTTP directa si el SDK no lo soporta.
+        # Sin embargo, para continuar con el flujo de desarrollo y si el SDK se actualiza o hay otro método,
+        # lo dejaremos así conceptualmente.
+        
+        # UPDATE: La librería `binance-futures-connector` SÍ tiene `open_interest_hist`.
+        oi_history = client.open_interest_hist(symbol=symbol, period=period, limit=limit)
+        
+        if oi_history:
+            logger.info(f"[{symbol}] Se obtuvieron {len(oi_history)} puntos de Open Interest. El más reciente: {oi_history[-1] if oi_history else 'N/A'}")
+            # Convertir 'sumOpenInterestValue' a Decimal para consistencia si es necesario
+            for item in oi_history:
+                if 'sumOpenInterestValue' in item:
+                    try:
+                        item['sumOpenInterestValue'] = Decimal(str(item['sumOpenInterestValue']))
+                    except Exception as e_dec:
+                        logger.warning(f"[{symbol}] No se pudo convertir sumOpenInterestValue a Decimal para el item: {item}. Error: {e_dec}")
+                        item['sumOpenInterestValue'] = Decimal('0') # Fallback
+                if 'sumOpenInterest' in item: # También el OI base
+                     try:
+                        item['sumOpenInterest'] = Decimal(str(item['sumOpenInterest']))
+                     except Exception as e_dec:
+                        logger.warning(f"[{symbol}] No se pudo convertir sumOpenInterest a Decimal para el item: {item}. Error: {e_dec}")
+                        item['sumOpenInterest'] = Decimal('0') # Fallback
+            return oi_history
+        else:
+            logger.warning(f"[{symbol}] No se recibió historial de Open Interest para {symbol}, período {period}.")
+            return [] # Devolver lista vacía en lugar de None si la llamada fue exitosa pero no hay datos
+
+    except ClientError as e:
+        logger.error(f"[{symbol}] Error de API (ClientError) al obtener historial de Open Interest para {symbol} ({period}): Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
+        return None
+    except Exception as e:
+        logger.error(f"[{symbol}] Error inesperado al obtener historial de Open Interest para {symbol} ({period}): {e}", exc_info=True)
+        return None
+# --- FIN NUEVA FUNCIÓN ---
 
 # Ejemplo de uso (no ejecutar directamente aquí)
 # if __name__ == '__main__':
