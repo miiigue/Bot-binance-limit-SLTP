@@ -1,7 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ConfigForm from './ConfigForm'; // Importa el componente del formulario
 import StatusDisplay from './StatusDisplay'; // <-- Importar el nuevo componente
 import './index.css'; // Importar el archivo CSS principal existente
+
+// --- FUNCIÓN PARA FORMATEAR EL TIEMPO TRANSCURRIDO (movida o copiada aquí) ---
+const formatElapsedTime = (totalSeconds) => {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const pad = (num) => String(num).padStart(2, '0');
+
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+};
+// -----------------------------------------------------------------------------
 
 function App() {
   const [config, setConfig] = useState(null); // Estado para la configuración
@@ -9,6 +21,16 @@ function App() {
   const [initialLoadingError, setInitialLoadingError] = useState(null); // Para errores de carga inicial
   // --- NUEVO ESTADO PARA DATOS DE LA CABECERA ---
   const [headerPnlData, setHeaderPnlData] = useState({ totalPnl: 0, coinCount: 0 });
+  // ---------------------------------------------
+
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [timerActive, setTimerActive] = useState(false);
+  const intervalRef = useRef(null);
+
+  // --- NUEVOS ESTADOS PARA LA CUENTA REGRESIVA ---
+  const [countdown, setCountdown] = useState(0);
+  const [isCountdownActive, setIsCountdownActive] = useState(false);
+  const countdownIntervalRef = useRef(null);
   // ---------------------------------------------
 
   // Efecto para la carga inicial de configuración y estado
@@ -63,6 +85,12 @@ function App() {
             };
             setConfig(flatConfig);
             console.log("Configuración inicial cargada.", flatConfig);
+
+            // --- INICIALIZAR COUNTDOWN CON VALOR DE CONFIGURACIÓN ---
+            if (flatConfig.cycleSleepSeconds) {
+              setCountdown(parseInt(flatConfig.cycleSleepSeconds, 10));
+            }
+            // ----------------------------------------------------
 
             // Ahora, obtener el estado general (que incluye si los bots están corriendo)
             const statusResponse = await fetch('/api/status');
@@ -132,11 +160,22 @@ function App() {
       }
       console.log("Start bots response:", data);
       setBotsRunning(true); // Actualizar estado local
+      setElapsedTime(0); // <--- REINICIAR TIEMPO A 0
+      setTimerActive(true); // <--- ACTIVAR TEMPORIZADOR
+
+      // --- INICIAR CUENTA REGRESIVA ---
+      if (config && config.cycleSleepSeconds) {
+        setCountdown(parseInt(config.cycleSleepSeconds, 10));
+        setIsCountdownActive(true);
+      }
+      // -----------------------------
       return true; // Éxito
     } catch (error) {
       console.error('Error starting bots:', error);
       // El mensaje de error se maneja en BotControls
       setBotsRunning(false); // Asegurarse de que el estado refleje el fallo
+      setTimerActive(false);
+      setIsCountdownActive(false); // <--- DETENER CUENTA REGRESIVA EN ERROR
       return false; // Fallo
     }
   };
@@ -152,6 +191,14 @@ function App() {
       }
       console.log('Shutdown API response:', data);
       setBotsRunning(false); // Actualizar estado local
+      setTimerActive(false); // <--- DETENER TEMPORIZADOR
+
+      // --- DETENER Y RESETEAR CUENTA REGRESIVA ---
+      setIsCountdownActive(false);
+      if (config && config.cycleSleepSeconds) {
+        setCountdown(parseInt(config.cycleSleepSeconds, 10));
+      }
+      // ----------------------------------------
       // --- RESETEAR PNL EN CABECERA AL DETENER BOTS ---
       // setHeaderPnlData({ totalPnl: headerPnlData.totalPnl, coinCount: 0 }); // Mantener PNL histórico, pero 0 monedas activas si así se decide.
       // O resetear completamente si se prefiere:
@@ -164,6 +211,8 @@ function App() {
       console.error('Error sending shutdown signal:', error);
       // El mensaje de error se maneja en BotControls
        setBotsRunning(false); // Asegurarse de que el estado refleje el fallo
+      setTimerActive(false);
+      setIsCountdownActive(false); // <--- DETENER CUENTA REGRESIVA EN ERROR
       return false; // Fallo
     }
   };
@@ -178,22 +227,85 @@ function App() {
   }, []);
   // ----------------------------------------------------
 
+  useEffect(() => {
+    if (timerActive) {
+      intervalRef.current = setInterval(() => {
+        setElapsedTime(prevTime => prevTime + 1);
+      }, 1000);
+    } else {
+      clearInterval(intervalRef.current);
+    }
+    return () => {
+      clearInterval(intervalRef.current);
+    };
+  }, [timerActive]);
+
+  // --- USEEFFECT PARA LA LÓGICA DE LA CUENTA REGRESIVA ---
+  useEffect(() => {
+    if (isCountdownActive && config && config.cycleSleepSeconds) {
+      const cycleDuration = parseInt(config.cycleSleepSeconds, 10);
+      if (countdown <= 0) { // Si llega a 0 (o es negativo por alguna razón)
+        setCountdown(cycleDuration); // Reiniciar al valor de la config
+      }
+      
+      countdownIntervalRef.current = setInterval(() => {
+        setCountdown(prevCountdown => {
+          if (prevCountdown <= 1) { // Si está en 1, el próximo será 0, así que reinicia
+            return cycleDuration;
+          }
+          return prevCountdown - 1;
+        });
+      }, 1000);
+    } else {
+      clearInterval(countdownIntervalRef.current);
+      // Si se detiene, pero tenemos config, resetear countdown a su valor base
+      if (config && config.cycleSleepSeconds) {
+        setCountdown(parseInt(config.cycleSleepSeconds, 10));
+      }
+    }
+    return () => {
+      clearInterval(countdownIntervalRef.current);
+    };
+  }, [isCountdownActive, config, countdown]); // Incluir countdown como dependencia para re-evaluar si se reinicia.
+  // --------------------------------------------------------
+
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
-      <div className="sticky top-0 z-50 bg-primary-600 text-white p-3 shadow-md flex items-center">
+      <div className="sticky top-0 z-50 bg-primary-600 text-white p-3 shadow-md flex items-center justify-between">
         {/* Título a la izquierda */}
         <span className="text-xl font-bold">BOT BINANCE LIMIT-SLTP</span>
         
-        {/* PnL Info con margen a la izquierda aumentado y estilo de texto modificado */}
-        <div className="text-lg font-semibold ml-[30ch]">
-            <span>PNL {headerPnlData.coinCount} monedas = </span>
-            <span className="text-xl"> 
-              {headerPnlData.totalPnl.toFixed(5)} USDT
-            </span>
+        {/* PnL Info y Temporizador en el centro/derecha */}
+        <div className="flex items-center space-x-6">
+          <div className="text-lg font-semibold">
+              <span>PNL {headerPnlData.coinCount} monedas = </span>
+              <span className="text-xl"> 
+                {headerPnlData.totalPnl.toFixed(5)} USDT
+              </span>
+          </div>
+          {/* --- TEMPORIZADOR VISIBLE AQUÍ --- */}
+          {(botsRunning !== null) && ( // Mostrar solo si se sabe el estado de los bots
+            <div className="text-lg">
+              <span className="font-semibold">Tiempo Activo: </span>
+              <span className="text-xl font-mono bg-primary-700 px-2 py-1 rounded">
+                {formatElapsedTime(elapsedTime)}
+              </span>
+            </div>
+          )}
+          {/* --- TEMPORIZADOR DE CUENTA REGRESIVA VISIBLE AQUÍ --- */}
+          {botsRunning && config && ( // Mostrar solo si los bots están corriendo y hay config
+            <div className="text-lg">
+              <span className="font-semibold">Siguiente Ciclo: </span>
+              <span className="text-xl font-mono bg-primary-700 px-2 py-1 rounded">
+                {formatElapsedTime(countdown)}
+              </span>
+            </div>
+          )}
+          {/* ----------------------------------- */}
         </div>
         
-        {/* Este div ocupará el espacio restante, empujando cualquier contenido futuro a la derecha */}
-        <div className="flex-grow"></div>
+        {/* Este div ya no es necesario para empujar, justify-between en el padre lo hace */}
+        {/* <div className="flex-grow"></div> */}
       </div>
       <div className="container mx-auto p-4 md:p-8 max-w-5xl">
         {/* Mostrar error de carga inicial si existe */} 

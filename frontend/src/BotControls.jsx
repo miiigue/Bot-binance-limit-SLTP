@@ -38,10 +38,8 @@ function BotControls({ botsRunning, onStart, onShutdown }) {
   const startDisabled = botsRunning === null || botsRunning === true || isActionPending;
   const shutdownDisabled = botsRunning === null || botsRunning === false || isActionPending;
 
-  // Ajustar el div exterior para que no tenga su propio fondo/sombra si se prefiere
   return (
-    <div className="mb-4"> {/* Quitado p-4, bg-*, rounded, shadow */}
-      {/* <h3 className="text-lg font-semibold mb-3 text-center text-gray-800 dark:text-gray-200">Control de Bots</h3> */} {/* TÍTULO ELIMINADO */}
+    <div className="mb-4">
       <div className="flex justify-center space-x-4">
         <button
           onClick={handleStartClick}
@@ -75,4 +73,4 @@ function BotControls({ botsRunning, onStart, onShutdown }) {
   );
 }
 
-export default BotControls; // Exportar el componente 
+export default BotControls; 
