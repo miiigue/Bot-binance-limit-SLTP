@@ -327,7 +327,7 @@ function App() {
           <div className="text-lg font-semibold text-center"> {/* text-center para el contenido del PNL */}
             <span>PNL {headerPnlData.coinCount} monedas = </span>
             <span 
-              className={`text-2xl ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-600' : 'text-black'}`}
+              className={`text-4xl ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-600' : 'text-black'}`}
             > 
               {headerPnlData.totalPnl.toFixed(5)}
             </span>
@@ -341,7 +341,7 @@ function App() {
           {(botsRunning !== null) && (
             <div className="text-lg">
               <span className="font-semibold">Tiempo Activo: </span>
-              <span className="text-xl font-mono bg-yellow-500 text-white px-2 py-1 rounded">
+              <span className="text-xl font-mono bg-yellow-500 text-black px-2 py-1 rounded">
                 {formatElapsedTime(elapsedTime)}
               </span>
             </div>
@@ -351,7 +351,7 @@ function App() {
           {botsRunning && config && (
             <div className="text-lg">
               <span className="font-semibold">Siguiente Ciclo: </span>
-              <span className="text-xl font-mono bg-yellow-500 text-white px-2 py-1 rounded">
+              <span className="text-xl font-mono bg-yellow-500 text-black px-2 py-1 rounded">
                 {formatElapsedTime(countdown)}
               </span>
             </div>
