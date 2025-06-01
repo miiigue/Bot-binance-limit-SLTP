@@ -96,36 +96,33 @@ function ConfigForm({
 
   useEffect(() => {
     if (propInitialConfig) {
-      // Crear una copia de propInitialConfig para no mutar el original directamente
-      const newFormData = { ...defaultConfigValues }; // Empezar con defaults por si alguna clave falta en propInitialConfig
+      const newFormData = { ...defaultConfigValues }; 
 
+      // Copiar todos los valores de propInitialConfig al nuevo estado del formulario
+      // Esto manejará la mayoría de las claves, incluyendo las que ya están en camelCase
       for (const key in propInitialConfig) {
         if (Object.prototype.hasOwnProperty.call(propInitialConfig, key)) {
-          // Si la clave existe en propInitialConfig, usar su valor.
-          // Esto incluye los booleanos que ya deberían venir correctamente desde App.jsx
           newFormData[key] = propInitialConfig[key];
         }
       }
 
-      // Mapeo específico si las claves internas del formulario difieren de las props
-      // En App.jsx, ahora enviamos 'evaluateDowntrendLevelsBlock'. 
-      // Si ConfigForm usa 'downtrendLevelCheck' internamente para su estado formData:
-      if (propInitialConfig.evaluateDowntrendLevelsBlock !== undefined) {
-        newFormData.downtrendLevelCheck = propInitialConfig.evaluateDowntrendLevelsBlock;
-      } else if (propInitialConfig.downtrend_level_check !== undefined) { // Fallback si aún viniera la clave vieja
+      // Mapeo específico para claves que difieren o necesitan conversión especial
+      // Para 'downtrendLevelCheck' (campo numérico del formulario):
+      // Debe tomar su valor de 'downtrend_level_check' (snake_case desde el backend).
+      if (propInitialConfig.downtrend_level_check !== undefined) {
         newFormData.downtrendLevelCheck = propInitialConfig.downtrend_level_check;
       }
+      // No hay necesidad de la condición 'else if (propInitialConfig.evaluateDowntrendLevelsBlock !== undefined)' aquí
+      // para 'newFormData.downtrendLevelCheck', ya que 'evaluateDowntrendLevelsBlock'
+      // es para el checkbox y ya se habrá copiado a 'newFormData.evaluateDowntrendLevelsBlock' en el bucle anterior si existe.
 
-      // Las claves de Open Interest ya deberían coincidir con lo que App.jsx envía:
-      // newFormData.evaluateOpenInterestIncrease = propInitialConfig.evaluateOpenInterestIncrease;
-      // newFormData.openInterestPeriod = propInitialConfig.openInterestPeriod;
-      // Estas se manejan por el bucle general si las claves son las mismas.
+      // Si el backend enviara 'evaluate_downtrend_levels_block' (snake_case) y el form usa 'evaluateDowntrendLevelsBlock' (camelCase)
+      // el bucle anterior ya lo manejaría si 'propInitialConfig' tuviera la clave correcta del backend.
+      // El backend ya envía 'evaluateDowntrendLevelsBlock', así que el bucle es suficiente.
 
       setFormData(newFormData);
-      // Cuando la configuración inicial se carga (ej. al inicio o si se actualiza desde App.jsx),
-      // reseteamos el nombre de la estrategia activa porque es la config general.
       if (onStrategyNameChange) {
-        onStrategyNameChange(''); // Resetear al cargar config.ini
+        onStrategyNameChange('');
       }
       console.log("ConfigForm recibió propInitialConfig y actualizó formData:", newFormData);
     }

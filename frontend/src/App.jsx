@@ -313,25 +313,32 @@ function App() {
     <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
       <div className="sticky top-0 z-50 bg-yellow-400 text-black p-3 shadow-md flex items-center justify-between">
         {/* Título a la izquierda */}
-        <span className="text-xl font-bold">
-          BOT BINANCE LIMIT-SLTP 
-          {activeStrategyDisplayName && (
-            <span className="text-lg font-semibold ml-2 text-blue-800">({activeStrategyDisplayName})</span>
-          )}
-        </span>
+        <div className="flex-1 min-w-0"> {/* Contenedor para el título, permite que se encoja si es necesario */} 
+          <span className="text-xl font-bold truncate">
+            BOT BINANCE LIMIT-SLTP 
+            {activeStrategyDisplayName && (
+              <span className="text-lg font-semibold ml-2 text-blue-800">({activeStrategyDisplayName})</span>
+            )}
+          </span>
+        </div>
         
-        {/* PnL Info y Temporizador en el centro/derecha */}
-        <div className="flex items-center space-x-6">
-          <div className="text-lg font-semibold">
+        {/* PNL Info en el CENTRO */}
+        <div className="flex-initial px-4"> {/* flex-initial para que no crezca/encoja, px-4 para espaciado */} 
+          <div className="text-lg font-semibold text-center"> {/* text-center para el contenido del PNL */}
             <span>PNL {headerPnlData.coinCount} monedas = </span>
             <span 
-              className={`text-xl ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-600' : 'text-black'}`}
+              className={`text-2xl ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-600' : 'text-black'}`}
             > 
-              {headerPnlData.totalPnl.toFixed(5)} USDT
+              {headerPnlData.totalPnl.toFixed(5)}
             </span>
+            <span className="text-lg"> USDT</span>
           </div>
-          {/* --- TEMPORIZADOR VISIBLE AQUÍ --- */}
-          {(botsRunning !== null) && ( // Mostrar solo si se sabe el estado de los bots
+        </div>
+        
+        {/* Temporizadores a la derecha */}
+        <div className="flex-1 flex items-center justify-end space-x-6 min-w-0"> {/* Contenedor para temporizadores, empujados a la derecha */} 
+          {/* --- TIEMPO ACTIVO --- */}
+          {(botsRunning !== null) && (
             <div className="text-lg">
               <span className="font-semibold">Tiempo Activo: </span>
               <span className="text-xl font-mono bg-yellow-500 text-white px-2 py-1 rounded">
@@ -339,8 +346,9 @@ function App() {
               </span>
             </div>
           )}
-          {/* --- TEMPORIZADOR DE CUENTA REGRESIVA VISIBLE AQUÍ --- */}
-          {botsRunning && config && ( // Mostrar solo si los bots están corriendo y hay config
+
+          {/* --- TEMPORIZADOR DE CUENTA REGRESIVA (SIGUIENTE CICLO) --- */}
+          {botsRunning && config && (
             <div className="text-lg">
               <span className="font-semibold">Siguiente Ciclo: </span>
               <span className="text-xl font-mono bg-yellow-500 text-white px-2 py-1 rounded">
@@ -348,11 +356,8 @@ function App() {
               </span>
             </div>
           )}
-          {/* ---------------------------------------------------- */}
         </div>
         
-        {/* Este div ya no es necesario para empujar, justify-between en el padre lo hace */}
-        {/* <div className="flex-grow"></div> */}
       </div>
       <div className="container mx-auto p-4 md:p-8 max-w-5xl">
         {/* Mostrar error de carga inicial si existe */} 
