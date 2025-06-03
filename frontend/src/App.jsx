@@ -23,6 +23,15 @@ function App() {
   const [headerPnlData, setHeaderPnlData] = useState({ totalPnl: 0, coinCount: 0 });
   // ---------------------------------------------
 
+  // --- NUEVO ESTADO PARA EL PNL AL INICIO DE LA SESIÓN ---
+  const [pnlAtSessionStart, setPnlAtSessionStart] = useState(null);
+  // ----------------------------------------------------
+
+  // --- NUEVOS ESTADOS PARA ALTO Y BAJO PNL DE SESIÓN ---
+  const [sessionPnlHigh, setSessionPnlHigh] = useState(null);
+  const [sessionPnlLow, setSessionPnlLow] = useState(null);
+  // -----------------------------------------------------
+
   const [elapsedTime, setElapsedTime] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
   const intervalRef = useRef(null);
@@ -203,6 +212,13 @@ function App() {
       setElapsedTime(0); // <--- REINICIAR TIEMPO A 0
       setTimerActive(true); // <--- ACTIVAR TEMPORIZADOR
 
+      // --- GUARDAR PNL AL INICIO DE LA SESIÓN ---
+      setPnlAtSessionStart(headerPnlData.totalPnl);
+      // --- INICIALIZAR ALTO Y BAJO DE SESIÓN ---
+      setSessionPnlHigh(0);
+      setSessionPnlLow(0);
+      // ----------------------------------------
+
       // --- INICIAR CUENTA REGRESIVA ---
       if (config && config.cycleSleepSeconds) {
         setCountdown(parseInt(config.cycleSleepSeconds, 10));
@@ -245,6 +261,8 @@ function App() {
       // setHeaderPnlData({ totalPnl: 0, coinCount: 0 }); // Esto resetearía el PNL histórico en cabecera
       // Por ahora, dejaremos que StatusDisplay siga actualizando el PnL histórico incluso si los bots se detienen.
       // El coinCount se actualizará desde StatusDisplay según los workers que realmente estén listados.
+      // --- NO RESETEAR PNL AL INICIO DE SESIÓN AL DETENER ---
+      // No se toca pnlAtSessionStart aquí para que persista.
       // ---------------------------------------------
       return true; // Considerar éxito para la UI incluso si hubo error leve
     } catch (error) {
@@ -309,29 +327,95 @@ function App() {
   }, [isCountdownActive, config, countdown]); // Incluir countdown como dependencia para re-evaluar si se reinicia.
   // --------------------------------------------------------
 
+  // --- USEEFFECT PARA ACTUALIZAR ALTO Y BAJO PNL DE SESIÓN ---
+  useEffect(() => {
+    if (pnlAtSessionStart !== null) {
+      const currentSessionPnl = headerPnlData.totalPnl - pnlAtSessionStart;
+
+      setSessionPnlHigh(prevHigh => {
+        // prevHigh es 0 justo después de handleStartBots.
+        // Si prevHigh fuera null (caso inicial antes de cualquier sesión), lo trataríamos.
+        // Pero como lo seteamos a 0 en handleStartBots, esta comparación es segura.
+        return Math.max(prevHigh === null ? currentSessionPnl : prevHigh, currentSessionPnl);
+      });
+
+      setSessionPnlLow(prevLow => {
+        // prevLow es 0 justo después de handleStartBots.
+        return Math.min(prevLow === null ? currentSessionPnl : prevLow, currentSessionPnl);
+      });
+    }
+    // pnlAtSessionStart en las dependencias asegura que esto se re-evalúe si una nueva sesión comienza
+    // (aunque los valores de high/low se resetean en handleStartBots).
+    // headerPnlData.totalPnl asegura que se actualiza cuando el PNL total cambia.
+  }, [headerPnlData.totalPnl, pnlAtSessionStart]);
+  // -----------------------------------------------------------
+
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
       <div className="sticky top-0 z-50 bg-yellow-400 text-black p-3 shadow-md flex items-center justify-between">
         {/* Título a la izquierda */}
-        <div className="flex-1 min-w-0"> {/* Contenedor para el título, permite que se encoja si es necesario */} 
-          <span className="text-xl font-bold truncate">
-            BOT BINANCE LIMIT-SLTP 
-            {activeStrategyDisplayName && (
-              <span className="text-lg font-semibold ml-2 text-blue-800">({activeStrategyDisplayName})</span>
-            )}
-          </span>
+        <div className="flex-1 min-w-0"> {/* Contenedor para el título y nombre de estrategia */}
+          <div className="text-xl font-bold truncate">
+            BOT BINANCE LIMIT-SLTP
+          </div>
+          {activeStrategyDisplayName && (
+            <div className="text-sm font-semibold text-blue-800 truncate"> {/* Nombre de la estrategia en nueva línea */}
+              ({activeStrategyDisplayName})
+            </div>
+          )}
         </div>
         
         {/* PNL Info en el CENTRO */}
-        <div className="flex-initial px-4"> {/* flex-initial para que no crezca/encoja, px-4 para espaciado */} 
-          <div className="text-lg font-semibold text-center"> {/* text-center para el contenido del PNL */}
+        <div className="flex-initial px-4"> {/* Volvemos al contenedor original no-flex para el PNL */}
+          <div className="text-lg font-semibold text-center"> {/* Contenedor que centra todo el texto de PNL */}
             <span>PNL {headerPnlData.coinCount} monedas = </span>
-            <span 
+            <span
               className={`text-4xl ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-600' : 'text-black'}`}
-            > 
+            >
               {headerPnlData.totalPnl.toFixed(5)}
             </span>
             <span className="text-lg"> USDT</span>
+            
+            {/* PNL de Sesión (Actual, y luego Alto/Bajo) */}
+            {pnlAtSessionStart !== null && (
+              <span className="ml-3 align-baseline" style={{ display: 'inline-block' }}> {/* Contenedor principal para Sesión y Alto/Bajo */}
+                {/* PNL de Sesión Actual - en línea */}
+                <span className="text-lg mr-4">
+                  <span>Sesión: </span>
+                  <span
+                    className={`font-semibold ${ (headerPnlData.totalPnl - pnlAtSessionStart) < 0 ? 'text-red-700 dark:text-red-500' : (headerPnlData.totalPnl - pnlAtSessionStart) > 0 ? 'text-green-700 dark:text-green-500' : 'text-black dark:text-white' }`}
+                  >
+                    {`${(headerPnlData.totalPnl - pnlAtSessionStart).toFixed(5)}`}
+                  </span>
+                  <span> USDT</span>
+                </span>
+
+                {/* Bloque para Alto y Bajo - en línea, pero con divs internos para apilar Alto/Bajo */}
+                <span className="text-xs leading-tight" style={{ display: 'inline-block', verticalAlign: 'middle'}}>
+                  {/* Alto de Sesión */}
+                  <div>
+                    <span className="mr-1">Alto:</span>
+                    <span
+                      className={`font-semibold ${sessionPnlHigh < 0 ? 'text-red-600 dark:text-red-400' : sessionPnlHigh > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}
+                    >
+                      {`${sessionPnlHigh !== null ? sessionPnlHigh.toFixed(5) : '0.00000'}`}
+                    </span>
+                    <span> USDT</span>
+                  </div>
+                  
+                  {/* Bajo de Sesión */}
+                  <div>
+                    <span className="mr-1">Bajo:</span>
+                    <span
+                      className={`font-semibold ${sessionPnlLow < 0 ? 'text-red-600 dark:text-red-400' : sessionPnlLow > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}
+                    >
+                      {`${sessionPnlLow !== null ? sessionPnlLow.toFixed(5) : '0.00000'}`}
+                    </span>
+                    <span> USDT</span>
+                  </div>
+                </span>
+              </span>
+            )}
           </div>
         </div>
         
