@@ -1,0 +1,30 @@
+services:
+  # Web Service for the API
+  - type: web
+    name: bot-api
+    env: python
+    plan: free # You can change this to a paid plan for better performance
+    buildCommand: "./render-build.sh"
+    startCommand: "gunicorn -w 4 -k uvicorn.workers.UvicornWorker src.api_server:app"
+    envVars:
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.0 # Specify a Python version
+
+  # Worker Service for the Trading Bot
+  - type: worker
+    name: bot-worker
+    env: python
+    plan: free # You can change this to a paid plan for better performance
+    buildCommand: "./render-build.sh"
+    startCommand: "python run_bot.py"
+    envVars:
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.0 # Specify a Python version 

@@ -55,8 +55,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
 
   useEffect(() => {
     const fetchData = async () => {
+      // --- MODIFICADO: Construir la URL de la API ---
+      const apiUrl = process.env.REACT_APP_API_URL || '';
+      // -------------------------------------------
       try {
-        const response = await fetch('/api/status');
+        const response = await fetch(`${apiUrl}/api/status`);
         if (!response.ok) {
           // Si la respuesta no es OK, lanzar un error para ir al catch
           // Podríamos intentar leer un mensaje de error específico si la API lo envía
@@ -145,12 +148,15 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   const fetchTradeHistory = async (symbol) => {
     if (loadingHistories[symbol]) return; // Evitar cargas múltiples
 
+    // --- MODIFICADO: Construir la URL de la API ---
+    const apiUrl = process.env.REACT_APP_API_URL || '';
+    // -------------------------------------------
     setLoadingHistories(prev => ({ ...prev, [symbol]: true }));
     setHistoryErrors(prev => ({ ...prev, [symbol]: null }));
 
     try {
       // --- USAR numTradesToShow EN LA URL ---
-      const response = await fetch(`/api/trades/${symbol}?limit=${numTradesToShow}`);
+      const response = await fetch(`${apiUrl}/api/trades/${symbol}?limit=${numTradesToShow}`);
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.error || `HTTP error! Status: ${response.status}`);
