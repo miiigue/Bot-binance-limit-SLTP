@@ -56,7 +56,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   useEffect(() => {
     const fetchData = async () => {
       // --- MODIFICADO: Construir la URL de la API ---
-      const apiUrl = process.env.REACT_APP_API_URL || '';
+      const apiUrl = '';
       // -------------------------------------------
       try {
         const response = await fetch(`${apiUrl}/api/status`);
@@ -149,7 +149,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
     if (loadingHistories[symbol]) return; // Evitar cargas múltiples
 
     // --- MODIFICADO: Construir la URL de la API ---
-    const apiUrl = process.env.REACT_APP_API_URL || '';
+    const apiUrl = '';
     // -------------------------------------------
     setLoadingHistories(prev => ({ ...prev, [symbol]: true }));
     setHistoryErrors(prev => ({ ...prev, [symbol]: null }));
@@ -301,7 +301,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                     <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{status.symbol}</td>
                     <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                         status.state === 'IN_POSITION' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                         status.state && typeof status.state === 'string' && status.state.toLowerCase().replace(/\\s+/g, '') === 'inposition' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                          status.state === 'ERROR' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
                          status.state?.includes('WAITING') ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
                          status.state === 'Inactive' ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300' : /* Estilo para Inactivo */

@@ -1935,7 +1935,7 @@ class TradingBot:
                         self.logger.warning(f"[{self.symbol}] _update_open_position_pnl: No se encontró trade de cierre no registrado en historial. Razón actual: '{db_reason_for_closure}' (se actualizará si era el default). PNL se calculará o será 0.")
                         if db_reason_for_closure == "Cierre Externo (Detectado PnL Update)":
                            db_reason_for_closure = "Cierre Externo (No hallado en historial reciente)"
-                        # Si no se encontró PNL de API, se usará el PNL de fallback (0.0 o calculado si es posible)
+                        # Si no se encontró PNL de API, se usará el PNL de fallback (0.0 o calculado si es muy necesario)
                         # actual_pnl_usdt ya está inicializado a 0.0 o se podría intentar calcular aquí si es muy necesario,
                         # pero la lógica actual de _handle_successful_closure lo haría si aquí no se define.
                         # Por simplicidad y consistencia con el flujo, si no hay match, el PNL vendrá del cálculo manual o será 0.
