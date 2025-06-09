@@ -421,25 +421,28 @@ function App() {
         
         {/* Temporizadores a la derecha */}
         <div className="flex-1 flex items-center justify-end space-x-6 min-w-0"> {/* Contenedor para temporizadores, empujados a la derecha */} 
-          {/* --- TIEMPO ACTIVO --- */}
-          {(botsRunning !== null) && (
-            <div className="text-lg">
-              <span className="font-semibold">Tiempo Activo: </span>
-              <span className="text-xl font-mono bg-yellow-500 text-black px-2 py-1 rounded">
-                {formatElapsedTime(elapsedTime)}
-              </span>
-            </div>
-          )}
-
-          {/* --- TEMPORIZADOR DE CUENTA REGRESIVA (SIGUIENTE CICLO) --- */}
-          {botsRunning && config && (
-            <div className="text-lg">
-              <span className="font-semibold">Siguiente Ciclo: </span>
-              <span className="text-xl font-mono bg-yellow-500 text-black px-2 py-1 rounded">
-                {formatElapsedTime(countdown)}
-              </span>
-            </div>
-          )}
+           {/* --- NUEVO CONTENEDOR FLEX-COL PARA APILAR TIMERS --- */}
+           <div className="flex flex-col text-lg text-right">
+             {/* --- TIEMPO ACTIVO --- */}
+             {(botsRunning !== null) && (
+               <div>
+                 <span className="font-semibold">Tiempo Activo: </span>
+                 <span className="text-xl font-mono bg-yellow-500 text-black px-2 py-1 rounded">
+                   {formatElapsedTime(elapsedTime)}
+                 </span>
+               </div>
+             )}
+    
+             {/* --- TEMPORIZADOR DE CUENTA REGRESIVA (SIGUIENTE CICLO) --- */}
+             {botsRunning && config && (
+               <div>
+                 <span className="font-semibold">Siguiente Ciclo: </span>
+                 <span className="text-xl font-mono bg-yellow-500 text-black px-2 py-1 rounded">
+                   {formatElapsedTime(countdown)}
+                 </span>
+               </div>
+             )}
+           </div>
         </div>
         
       </div>
