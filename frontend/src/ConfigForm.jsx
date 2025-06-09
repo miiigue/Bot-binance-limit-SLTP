@@ -233,7 +233,27 @@ function ConfigForm({
       if (onStrategyNameChange) {
         onStrategyNameChange(strategyName); // Actualizar el nombre en la cabecera
       }
-      setLoadStrategySuccess(`Estrategia '${strategyName}' cargada en el formulario. ¡Recuerda guardar la configuración si deseas aplicarla!`);
+      setLoadStrategySuccess(`Estrategia '${strategyName}' cargada. Guardando como activa...`);
+      
+      // --- NUEVO: Llamar a la API para establecer esta estrategia como activa ---
+      try {
+        const setActiveResponse = await fetch(`/api/strategies/set-active/${encodeURIComponent(strategyName)}`, {
+          method: 'POST',
+        });
+        if (!setActiveResponse.ok) {
+          // Si falla, mostrarlo como un error no bloqueante
+          const errorResult = await setActiveResponse.json();
+          throw new Error(errorResult.error || "No se pudo marcar la estrategia como activa.");
+        }
+        console.log(`Estrategia '${strategyName}' establecida como activa en el backend.`);
+        setLoadStrategySuccess(`Estrategia '${strategyName}' cargada y establecida como activa.`);
+      } catch (setActiveError) {
+        console.error("Error setting active strategy:", setActiveError);
+        // Mostrar un error en la UI sobre el fallo al marcar como activa
+        setLoadStrategyError(`Error: ${setActiveError.message}`);
+      }
+      // --------------------------------------------------------------------
+
       setTimeout(() => setLoadStrategySuccess(null), 5000);
     } catch (err) {
       console.error("Error loading strategy:", err);

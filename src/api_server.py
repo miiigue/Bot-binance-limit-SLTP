@@ -794,22 +794,45 @@ def handle_specific_strategy(strategy_name: str):
 
 @app.route('/api/strategies', methods=['GET'])
 def list_strategies():
-    logger = get_logger()
-    logger.info("Solicitud para listar estrategias guardadas.")
+    """Devuelve una lista de nombres de estrategias guardadas."""
+    if not os.path.exists(STRATEGIES_PATH):
+        return jsonify([]) # Devolver array vacío si el directorio no existe
+
     try:
-        if not os.path.exists(STRATEGIES_PATH):
-            # Si el directorio no existe (aunque debió crearse), devolver lista vacía
-            logger.warning(f"El directorio de estrategias {STRATEGIES_PATH} no existe. Devolviendo lista vacía.")
-            return jsonify([]), 200
-            
-        strategy_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
-        strategy_names = [os.path.splitext(f)[0] for f in strategy_files]
-        logger.info(f"Estrategias encontradas: {strategy_names}")
-        return jsonify(strategy_names), 200
+        # Filtrar solo archivos .json y quitar la extensión
+        strategy_files = [f.replace('.json', '') for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
+        return jsonify(strategy_files)
     except Exception as e:
-        logger.error(f"Error al listar estrategias: {e}", exc_info=True)
-        # Asegurar que se devuelve JSON en caso de error
-        return jsonify({"error": f"Error interno al listar estrategias: {str(e)}"}), 500
+        api_logger.error(f"Error al listar estrategias: {e}", exc_info=True)
+        return jsonify({"error": "No se pudieron listar las estrategias"}), 500
+
+@app.route('/api/strategies/set-active/<strategy_name>', methods=['POST'])
+def set_active_strategy(strategy_name: str):
+    """Actualiza el config.ini para establecer la estrategia activa."""
+    api_logger.info(f"Recibida solicitud para activar la estrategia: {strategy_name}")
+    try:
+        config = configparser.ConfigParser()
+        # Leer con UTF-8 para asegurar compatibilidad
+        config.read(CONFIG_FILE_PATH, encoding='utf-8')
+
+        # Si la sección [STRATEGY_INFO] no existe, la creamos
+        if not config.has_section('STRATEGY_INFO'):
+            config.add_section('STRATEGY_INFO')
+            api_logger.info("Sección [STRATEGY_INFO] no encontrada, creada en config.ini.")
+
+        # Establecer el nombre de la estrategia activa
+        config.set('STRATEGY_INFO', 'active_strategy_name', strategy_name)
+
+        # Guardar los cambios en el archivo
+        with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as configfile:
+            config.write(configfile)
+        
+        api_logger.info(f"Estrategia activa actualizada a '{strategy_name}' en {CONFIG_FILE_PATH}")
+        return jsonify({"message": f"Estrategia activa establecida a: {strategy_name}"}), 200
+
+    except Exception as e:
+        api_logger.error(f"Error al establecer la estrategia activa '{strategy_name}': {e}", exc_info=True)
+        return jsonify({"error": f"No se pudo establecer la estrategia activa: {e}"}), 500
 
 # La función para correr Flask en un hilo (start_flask_app) 
 # y el if __name__ == '__main__' no se necesitan aquí 
