@@ -190,7 +190,7 @@ def main():
     logger = None
     try:
         # 1. Configuración inicial (Logging, Señales)
-        logger = setup_logging(log_filename='bot_combined.log')
+        logger = setup_logging() # MODIFICADO: sin nombre de archivo para loguear a consola
         logger.info("="*40)
         logger.info("Iniciando el Multi-Symbol Binance RSI Trading Bot & API Server...")
         logger.info("="*40)
@@ -207,7 +207,7 @@ def main():
         logger.info("Configuración inicial cargada en el módulo API.")
             
         # 3. Inicializar Base de Datos
-        logger.info("Inicializando/Verificando esquema de la base de datos SQLite...")
+        logger.info("Inicializando/Verificando esquema de la base de datos PostgreSQL...")
         if not init_db_schema():
             logger.critical("Fallo al inicializar el esquema de la DB. Abortando.")
             return
