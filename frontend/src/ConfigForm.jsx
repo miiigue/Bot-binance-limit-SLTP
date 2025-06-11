@@ -609,11 +609,37 @@ function ConfigForm({
                       <div className="space-x-2 flex-shrink-0">
                         <button 
                           type="button" 
-                          onClick={() => handleLoadSelectedStrategy(name)} // Modificado para pasar el nombre directamente
-                          disabled={isLoadingSelectedStrategy || isDeletingStrategy === name}
-                          className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 text-white font-semibold rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 whitespace-nowrap"
+                          onClick={async () => {
+                            setIsLoadingSelectedStrategy(true);
+                            setLoadStrategyError(null);
+                            try {
+                              const res = await fetch(`/api/strategies/set-active/${encodeURIComponent(name)}`, { method: 'POST' });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.error || 'Error al activar estrategia');
+                              
+                              // Ahora cargar la config de la estrategia para mostrarla en el form
+                              const configRes = await fetch(`/api/strategies/${encodeURIComponent(name)}`);
+                              const configData = await configRes.json();
+                              if (!configRes.ok) throw new Error(configData.error || 'Error al cargar datos de la estrategia');
+
+                              const newFormData = { ...defaultConfigValues, ...configData };
+                              setFormData(newFormData);
+                              if (onStrategyNameChange) {
+                                onStrategyNameChange(name);
+                              }
+                              setLoadStrategySuccess(`Estrategia '${name}' cargada y activa.`);
+
+                            } catch (err) {
+                              console.error("Error setting active strategy:", err);
+                              setLoadStrategyError(err.message);
+                            } finally {
+                              setIsLoadingSelectedStrategy(false);
+                            }
+                          }}
+                          className="px-3 py-1 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400"
+                          disabled={isLoadingSelectedStrategy}
                         >
-                          {isLoadingSelectedStrategy && selectedStrategyToLoad === name ? 'Cargando...' : 'Cargar'}
+                          Cargar
                         </button>
                         <button 
                           type="button" 
