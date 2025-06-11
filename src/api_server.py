@@ -110,7 +110,7 @@ init_db_schema()
 
 app = Flask(__name__) # Crear la aplicación Flask
 # Habilitar CORS para permitir peticiones desde el frontend (que corre en otro puerto)
-CORS(app) 
+CORS(app, resources={r"/api/*": {"origins": "https://frontend-bot-binance-limit.onrender.com"}})
 
 @app.route('/', methods=['GET'])
 def index():
