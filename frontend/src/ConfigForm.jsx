@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
+const API_BASE_URL = 'https://bot-binance-limit-sltp.onrender.com'; // <--- URL DEL BACKEND
+
 // --- Definiciones de Componentes Auxiliares ---
 function ConfigSection({ title, className, children }) {
   return (
@@ -183,7 +185,7 @@ function ConfigForm({
     setSaveStrategySuccess(null);
 
     try {
-      const response = await fetch(`/api/strategies/${encodeURIComponent(strategyNameInput)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/strategies/${encodeURIComponent(strategyNameInput)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -220,7 +222,7 @@ function ConfigForm({
     setLoadStrategySuccess(null);
 
     try {
-      const response = await fetch(`/api/strategies/${encodeURIComponent(strategyName)}`);
+      const response = await fetch(`${API_BASE_URL}/api/strategies/${encodeURIComponent(strategyName)}`);
       const strategyData = await response.json();
       if (!response.ok) {
         throw new Error(strategyData.error || `Error HTTP ${response.status}`);
@@ -237,7 +239,7 @@ function ConfigForm({
       
       // --- NUEVO: Llamar a la API para establecer esta estrategia como activa ---
       try {
-        const setActiveResponse = await fetch(`/api/strategies/set-active/${encodeURIComponent(strategyName)}`, {
+        const setActiveResponse = await fetch(`${API_BASE_URL}/api/strategies/set-active/${encodeURIComponent(strategyName)}`, {
           method: 'POST',
         });
         if (!setActiveResponse.ok) {
@@ -273,7 +275,7 @@ function ConfigForm({
     setDeleteStrategySuccess(null);
 
     try {
-      const response = await fetch(`/api/strategies/${encodeURIComponent(strategyName)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/strategies/${encodeURIComponent(strategyName)}`, {
         method: 'DELETE',
       });
       const result = await response.json();
@@ -613,12 +615,12 @@ function ConfigForm({
                             setIsLoadingSelectedStrategy(true);
                             setLoadStrategyError(null);
                             try {
-                              const res = await fetch(`/api/strategies/set-active/${encodeURIComponent(name)}`, { method: 'POST' });
+                              const res = await fetch(`${API_BASE_URL}/api/strategies/set-active/${encodeURIComponent(name)}`, { method: 'POST' });
                               const data = await res.json();
                               if (!res.ok) throw new Error(data.error || 'Error al activar estrategia');
                               
                               // Ahora cargar la config de la estrategia para mostrarla en el form
-                              const configRes = await fetch(`/api/strategies/${encodeURIComponent(name)}`);
+                              const configRes = await fetch(`${API_BASE_URL}/api/strategies/${encodeURIComponent(name)}`);
                               const configData = await configRes.json();
                               if (!configRes.ok) throw new Error(configData.error || 'Error al cargar datos de la estrategia');
 

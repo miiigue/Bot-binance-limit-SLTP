@@ -3,6 +3,8 @@ import ConfigForm from './ConfigForm'; // Importa el componente del formulario
 import StatusDisplay from './StatusDisplay'; // <-- Importar el nuevo componente
 import './index.css'; // Importar el archivo CSS principal existente
 
+const API_BASE_URL = 'https://bot-binance-limit-sltp.onrender.com'; // <--- URL DEL BACKEND
+
 // --- FUNCIÓN PARA FORMATEAR EL TIEMPO TRANSCURRIDO (movida o copiada aquí) ---
 const formatElapsedTime = (totalSeconds) => {
   const hours = Math.floor(totalSeconds / 3600);
@@ -57,7 +59,7 @@ function App() {
     setIsLoadingStrategies(true);
     setStrategyError(null);
     try {
-      const response = await fetch('/api/strategies');
+      const response = await fetch(`${API_BASE_URL}/api/strategies`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "Error al obtener estrategias" }));
         throw new Error(errorData.error || `HTTP error ${response.status}`);
@@ -85,7 +87,7 @@ function App() {
         setInitialLoadingError(null); // Resetear error
         try {
             // Intentar obtener la configuración primero
-            const configResponse = await fetch('/api/config');
+            const configResponse = await fetch(`${API_BASE_URL}/api/config`);
             if (!configResponse.ok) {
                 throw new Error(`Error al cargar configuración: ${configResponse.status}`);
             }
@@ -142,7 +144,7 @@ function App() {
             await fetchAvailableStrategies(); // <--- LLAMAR AQUÍ
 
             // Ahora, obtener el estado general (que incluye si los bots están corriendo)
-            const statusResponse = await fetch('/api/status');
+            const statusResponse = await fetch(`${API_BASE_URL}/api/status`);
             if (!statusResponse.ok) {
                  // Si la config cargó pero el estado falla, aún podemos mostrar config
                  console.warn("Configuración cargada, pero falló la carga inicial del estado de los bots.");
@@ -169,7 +171,7 @@ function App() {
     console.log('Sending updated config to API:', newConfig);
 
     // Devolver una promesa para que se pueda esperar si es necesario
-    return fetch('/api/config', {
+    return fetch(`${API_BASE_URL}/api/config`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -202,7 +204,7 @@ function App() {
   // --- Funciones para INICIAR y DETENER bots --- 
   const handleStartBots = async () => {
     try {
-      const response = await fetch('/api/start_bots', { method: 'POST' });
+      const response = await fetch(`${API_BASE_URL}/api/start_bots`, { method: 'POST' });
       const data = await response.json(); // Intentar leer JSON siempre
       if (!response.ok) {
         throw new Error(data.error || `Error HTTP ${response.status}`);
@@ -238,7 +240,7 @@ function App() {
 
   const handleShutdown = async () => {
     try {
-      const response = await fetch('/api/shutdown', { method: 'POST' });
+      const response = await fetch(`${API_BASE_URL}/api/shutdown`, { method: 'POST' });
       const data = await response.json(); // Intentar leer JSON siempre
        if (!response.ok) {
         // Incluso si falla, asumimos que el intento de apagar significa que ya no corren
