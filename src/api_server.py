@@ -20,7 +20,7 @@ import logging # Necesario para get_logger y calculate_sleep
 # Importar funciones y variables usando importaciones ABSOLUTAS (desde src)
 from src.config_loader import load_config, get_trading_symbols, CONFIG_FILE_PATH
 from src.logger_setup import setup_logging, get_logger
-from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol
+from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, init_db_schema
 # Importar TradingBot y BotState para run_bot_worker
 from src.bot import TradingBot, BotState 
 
@@ -102,6 +102,11 @@ def get_sleep_seconds(trading_params: dict) -> int:
 
 # --- Configuración Inicial ---
 api_logger = setup_logging(log_filename='api.log')
+
+# --- INICIALIZAR LA BASE DE DATOS ANTES DE ARRANCAR ---
+from src.database import init_db_schema
+init_db_schema()
+# ---------------------------------------------------
 
 app = Flask(__name__) # Crear la aplicación Flask
 # Habilitar CORS para permitir peticiones desde el frontend (que corre en otro puerto)

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import BotControls from './BotControls';
 
+const API_BASE_URL = 'https://bot-binance-limit-sltp.onrender.com'; // <--- URL DEL BACKEND
+
 // Clave para guardar/leer en localStorage
 const STATUS_CACHE_KEY = 'botStatusesCache';
 
@@ -56,10 +58,10 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   useEffect(() => {
     const fetchData = async () => {
       // --- MODIFICADO: Construir la URL de la API ---
-      const apiUrl = '';
+      // const apiUrl = ''; // ESTA LÍNEA YA NO ES NECESARIA
       // -------------------------------------------
       try {
-        const response = await fetch(`${apiUrl}/api/status`);
+        const response = await fetch(`${API_BASE_URL}/api/status`);
         if (!response.ok) {
           // Si la respuesta no es OK, lanzar un error para ir al catch
           // Podríamos intentar leer un mensaje de error específico si la API lo envía
@@ -149,14 +151,14 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
     if (loadingHistories[symbol]) return; // Evitar cargas múltiples
 
     // --- MODIFICADO: Construir la URL de la API ---
-    const apiUrl = '';
+    // const apiUrl = ''; // ESTA LÍNEA YA NO ES NECESARIA
     // -------------------------------------------
     setLoadingHistories(prev => ({ ...prev, [symbol]: true }));
     setHistoryErrors(prev => ({ ...prev, [symbol]: null }));
 
     try {
       // --- USAR numTradesToShow EN LA URL ---
-      const response = await fetch(`${apiUrl}/api/trades/${symbol}?limit=${numTradesToShow}`);
+      const response = await fetch(`${API_BASE_URL}/api/trades/${symbol}?limit=${numTradesToShow}`);
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.error || `HTTP error! Status: ${response.status}`);
