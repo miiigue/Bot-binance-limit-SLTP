@@ -56,8 +56,9 @@ def get_futures_client():
             base_url_to_use = futures_testnet_url
         else:
             logger.info("Inicializando cliente UMFutures en modo LIVE.")
-            # La librería por defecto usa fapi.binance.com, pero lo pasamos explícitamente por claridad
-            base_url_to_use = futures_base_url
+            # FORZADO: Usar un endpoint alternativo para evitar geobloqueos en plataformas como Render.
+            base_url_to_use = "https://fapi.binance.me"
+            logger.info(f"URL base de Futuros (Live) forzada a: {base_url_to_use}")
 
         # Crear instancia del cliente UMFutures
         client = UMFutures(key=api_key, secret=api_secret, base_url=base_url_to_use)
