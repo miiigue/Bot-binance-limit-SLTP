@@ -107,6 +107,15 @@ app = Flask(__name__) # Crear la aplicación Flask
 # Habilitar CORS para permitir peticiones desde el frontend (que corre en otro puerto)
 CORS(app) 
 
+@app.route('/', methods=['GET'])
+def index():
+    """Ruta de bienvenida para verificar que el servidor está en línea."""
+    return jsonify({
+        "status": "online",
+        "message": "Welcome to the Trading Bot API. The server is running.",
+        "version": "1.0.0"
+    })
+
 def config_to_dict(config: configparser.ConfigParser) -> dict:
     """Convierte un objeto ConfigParser a un diccionario anidado."""
     the_dict = {}
