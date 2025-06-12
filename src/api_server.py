@@ -289,7 +289,7 @@ def run_bot_worker(symbol, trading_params, stop_event_ref):
 
 
 # --- Función para iniciar los workers (Movida y Adaptada) ---
-def start_bot_workers():
+def start_bot_workers(bot_configs):
     global workers_started, threads, loaded_trading_params, loaded_symbols_to_trade
     logger = get_logger()
     
@@ -314,7 +314,7 @@ def start_bot_workers():
         for symbol_idx, symbol in enumerate(loaded_symbols_to_trade):
             logger.info(f"-> Preparando worker para {symbol}...")
             # Usar loaded_trading_params
-            thread = threading.Thread(target=run_bot_worker, args=(symbol, loaded_trading_params, stop_event), name=f"Worker-{symbol}")
+            thread = threading.Thread(target=run_bot_worker, args=(symbol, bot_configs.get(symbol, {}), stop_event), name=f"Worker-{symbol}")
             threads.append(thread)
             thread.start()
             if (symbol_idx + 1) < len(loaded_symbols_to_trade):
@@ -610,28 +610,25 @@ def shutdown_bot():
 # --- NUEVO ENDPOINT PARA INICIAR LOS BOTS ---
 @app.route('/api/start_bots', methods=['POST'])
 def start_bots_endpoint():
-    global workers_started
-    logger = get_logger()
+    """Endpoint para iniciar todos los workers de los bots."""
     logger.info("Recibida petición POST /api/start_bots")
     
-    if workers_started:
-        logger.warning("Intento de iniciar workers cuando ya estaban corriendo.")
-        return jsonify({"error": "Bots ya están corriendo."}), 409 # 409 Conflict
+    # --- FIX: Obtener el JSON de la petición ---
+    # Usar request.get_json() para parsear correctamente el cuerpo de la petición.
+    # El frontend envía la configuración de los bots aquí.
+    bot_configs = request.get_json()
+    if not bot_configs:
+        logger.error("La petición a /api/start_bots no contenía un cuerpo JSON o estaba vacío.")
+        return jsonify({"status": "error", "message": "Request body is missing or empty."}), 400
 
-    # Llamar a la función que realmente inicia los hilos
-    success = start_bot_workers() 
+    # Pasar la configuración recibida a la función que inicia los workers
+    success = start_bot_workers(bot_configs)
 
     if success:
-        return jsonify({"message": "Bots iniciados exitosamente."}), 200
+        return jsonify({"status": "success", "message": "Todos los bots iniciados correctamente."})
     else:
         logger.error("Fallo al iniciar los workers (ver logs anteriores).")
-        # Revisar si workers_started se quedó en False debido al fallo
-        if not workers_started:
-             return jsonify({"error": "Fallo al iniciar los bots (verificar configuración o logs)."}), 500 # Internal Server Error
-        else:
-             # Caso raro: la función falló pero el flag cambió? Devolver error igualmente.
-              return jsonify({"error": "Estado inconsistente al iniciar los bots."}), 500
-# ------------------------------------------
+        return jsonify({"status": "error", "message": "Fallo al iniciar los bots (verificar configuración o logs)."}), 500
 
 # Función para cargar configuración inicial (llamada desde run_bot.py)
 def load_initial_config():
