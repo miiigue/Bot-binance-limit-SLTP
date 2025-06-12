@@ -290,7 +290,7 @@ def run_bot_worker(symbol, trading_params, stop_event_ref):
 
 # --- Función para iniciar los workers (Movida y Adaptada) ---
 def start_bot_workers(bot_configs):
-    global workers_started, threads, loaded_trading_params, loaded_symbols_to_trade
+    global workers_started, threads
     logger = get_logger()
     
     with status_lock: # Proteger acceso a workers_started y threads
@@ -302,22 +302,26 @@ def start_bot_workers(bot_configs):
         threads.clear() # Limpiar lista de hilos anterior
         stop_event.clear() # Asegurarse que el evento de parada no esté activo
 
-        if not loaded_symbols_to_trade:
-            logger.error("No hay símbolos configurados para iniciar los workers.")
+        # --- FIX: Obtener la lista de símbolos desde la configuración recibida ---
+        symbols_to_trade_str = bot_configs.get('symbolsToTrade', '')
+        symbols_to_trade = [s.strip() for s in symbols_to_trade_str.split(',') if s.strip()]
+
+        if not symbols_to_trade:
+            logger.error("No hay símbolos en la configuración recibida para iniciar los workers.")
             return False
             
-        if not loaded_trading_params:
+        if not bot_configs:
             logger.error("No hay parámetros de trading configurados para iniciar los workers.")
             return False
 
         logger.info("Iniciando workers de bot...")
-        for symbol_idx, symbol in enumerate(loaded_symbols_to_trade):
+        for symbol_idx, symbol in enumerate(symbols_to_trade):
             logger.info(f"-> Preparando worker para {symbol}...")
-            # Usar loaded_trading_params
-            thread = threading.Thread(target=run_bot_worker, args=(symbol, bot_configs.get(symbol, {}), stop_event), name=f"Worker-{symbol}")
+            # --- FIX: Pasar el diccionario de configuración COMPLETO a cada worker ---
+            thread = threading.Thread(target=run_bot_worker, args=(symbol, bot_configs, stop_event), name=f"Worker-{symbol}")
             threads.append(thread)
             thread.start()
-            if (symbol_idx + 1) < len(loaded_symbols_to_trade):
+            if (symbol_idx + 1) < len(symbols_to_trade):
                  # Espera corta entre inicios de hilos para evitar sobrecarga inicial
                  time.sleep(1) 
         
