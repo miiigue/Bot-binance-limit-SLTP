@@ -201,10 +201,25 @@ function App() {
     });
   };
   
-  // --- Funciones para INICIAR y DETENER bots --- 
+  // --- Funciones para INICIAR y DETENER bots ---
   const handleStartBots = async () => {
+    // Primero, asegurarse de que la configuración está presente
+    if (!config) {
+        console.error("No hay configuración para enviar al iniciar los bots.");
+        alert("Error: La configuración no está cargada. No se pueden iniciar los bots.");
+        return false;
+    }
+
+    console.log("Enviando configuración para iniciar los bots:", config);
+
     try {
-      const response = await fetch(`${API_BASE_URL}/api/start_bots`, { method: 'POST' });
+      const response = await fetch(`${API_BASE_URL}/api/start_bots`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config), // Enviar la configuración actual
+      });
       const data = await response.json(); // Intentar leer JSON siempre
       if (!response.ok) {
         throw new Error(data.error || `Error HTTP ${response.status}`);

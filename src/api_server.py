@@ -615,9 +615,8 @@ def start_bots_endpoint():
     logger.info("Recibida petición POST /api/start_bots")
     
     # --- FIX: Obtener el JSON de la petición ---
-    # Usar request.get_json() para parsear correctamente el cuerpo de la petición.
-    # El frontend envía la configuración de los bots aquí.
-    bot_configs = request.get_json()
+    # Usar request.get_json(force=True) para parsear el cuerpo aunque el Content-Type no sea application/json.
+    bot_configs = request.get_json(force=True)
     if not bot_configs:
         logger.error("La petición a /api/start_bots no contenía un cuerpo JSON o estaba vacío.")
         return jsonify({"status": "error", "message": "Request body is missing or empty."}), 400
