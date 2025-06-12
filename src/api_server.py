@@ -611,6 +611,7 @@ def shutdown_bot():
 @app.route('/api/start_bots', methods=['POST'])
 def start_bots_endpoint():
     """Endpoint para iniciar todos los workers de los bots."""
+    logger = get_logger()
     logger.info("Recibida petición POST /api/start_bots")
     
     # --- FIX: Obtener el JSON de la petición ---
