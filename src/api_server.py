@@ -364,7 +364,8 @@ def get_config_endpoint():
                 "pnlTrailingStopDropUSDT": 0.05,
                 "evaluateOpenInterestIncrease": True, # Cambio de clave aquí
                 "openInterestPeriod": "5m", # <-- Clave para el frontend
-                "symbolsToTrade": ""
+                "symbolsToTrade": "",
+                "activeStrategyName": ""
             }
             return jsonify(default_frontend_config)
         
@@ -420,6 +421,13 @@ def get_config_endpoint():
         if 'SYMBOLS' in config_dict:
             frontend_config['symbolsToTrade'] = config_dict['SYMBOLS'].get('symbols_to_trade', '')
 
+        # --- NUEVO: Leer nombre de estrategia activa ---
+        if 'STRATEGY_INFO' in config_dict:
+            frontend_config['activeStrategyName'] = config_dict['STRATEGY_INFO'].get('active_strategy_name', '')
+        else:
+            frontend_config['activeStrategyName'] = ''
+        # ---------------------------------------------
+
         # Asegurar que las globales también se actualizan si es la primera carga o si el archivo cambió
         loaded_trading_params = config_dict.get('TRADING', {})
         loaded_symbols_to_trade = frontend_config.get('symbolsToTrade', '').split(',') if frontend_config.get('symbolsToTrade') else []
@@ -453,6 +461,11 @@ def update_config_endpoint():
 
     logger.debug(f"Datos recibidos del frontend: {frontend_data}")
 
+    # --- NUEVO: Extraer active_strategy_name del payload ---
+    active_strategy_name_from_frontend = frontend_data.pop('activeStrategyName', '')
+    logger.info(f"[STRATEGY_DEBUG] active_strategy_name_from_frontend POPPED: '{active_strategy_name_from_frontend}'") # LOG POP
+    # ------------------------------------------------------
+
     # 1. Extraer la lista de símbolos del frontend_data
     symbols_string_raw = frontend_data.get('symbolsToTrade', '') # Usar la clave del estado de React
     # Limpiar y validar la lista de símbolos
@@ -471,6 +484,8 @@ def update_config_endpoint():
              config.read(CONFIG_FILE_PATH, encoding='utf-8')
         else:
              logger.warning(f"El archivo {CONFIG_FILE_PATH} no existía, se creará uno nuevo.")
+        
+        logger.info(f"[STRATEGY_DEBUG] Secciones en config DESPUÉS DE LEER config.ini: {config.sections()}") # LOG SECTIONS AFTER READ
 
         # 3. Actualizar el objeto config con los datos mapeados (BINANCE, TRADING)
         for section, keys in ini_other_data.items():
@@ -486,15 +501,43 @@ def update_config_endpoint():
         config.set('SYMBOLS', 'symbols_to_trade', symbols_to_save)
         logger.debug(f"Actualizando [SYMBOLS] symbols_to_trade = {symbols_to_save}")
 
+        logger.info(f"[STRATEGY_DEBUG] Secciones en config ANTES de procesar STRATEGY_INFO: {config.sections()}") # LOG SECTIONS BEFORE STRATEGY
+
+        # --- NUEVO: Guardar active_strategy_name en [STRATEGY_INFO] ---
+        if not config.has_section('STRATEGY_INFO'):
+            logger.info("[STRATEGY_DEBUG] La sección STRATEGY_INFO no existe, añadiéndola.")
+            config.add_section('STRATEGY_INFO')
+        else:
+            logger.info("[STRATEGY_DEBUG] La sección STRATEGY_INFO ya existe.")
+        
+        actual_name_to_save_in_ini = '' if active_strategy_name_from_frontend == 'Configuración Modificada' else active_strategy_name_from_frontend
+        logger.info(f"[STRATEGY_DEBUG] 'actual_name_to_save_in_ini' será: '{actual_name_to_save_in_ini}'")
+        config.set('STRATEGY_INFO', 'active_strategy_name', actual_name_to_save_in_ini)
+        logger.info(f"[STRATEGY_DEBUG] SET [STRATEGY_INFO] active_strategy_name = {actual_name_to_save_in_ini}")
+        
+        # Verificar si se estableció correctamente en el objeto config
+        if config.has_section('STRATEGY_INFO') and config.has_option('STRATEGY_INFO', 'active_strategy_name'):
+            retrieved_value = config.get('STRATEGY_INFO', 'active_strategy_name')
+            logger.info(f"[STRATEGY_DEBUG] VERIFICACIÓN POST-SET: config.get('STRATEGY_INFO', 'active_strategy_name') devolvió: '{retrieved_value}'")
+        else:
+            logger.error("[STRATEGY_DEBUG] ERROR DE VERIFICACIÓN POST-SET: STRATEGY_INFO o active_strategy_name no encontrados en el objeto config.")
+        # -------------------------------------------------------------
+
+        logger.info(f"[STRATEGY_DEBUG] Secciones en config ANTES DE ESCRIBIR en config.ini: {config.sections()}") # LOG SECTIONS BEFORE WRITE
+        if config.has_section('STRATEGY_INFO'):
+            logger.info(f"[STRATEGY_DEBUG] Contenido de [STRATEGY_INFO] en objeto config ANTES DE ESCRIBIR: {list(config.items('STRATEGY_INFO'))}")
+        else:
+            logger.info("[STRATEGY_DEBUG] La sección [STRATEGY_INFO] NO ESTÁ en el objeto config ANTES DE ESCRIBIR.")
+
         # 5. Escribir los cambios de vuelta al archivo config.ini
         with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as configfile:
             config.write(configfile)
         
-        logger.info(f"Archivo de configuración {CONFIG_FILE_PATH} actualizado exitosamente.")
+        logger.info(f"Archivo de configuración {CONFIG_FILE_PATH} actualizado exitosamente.") # Esta es la confirmación final
         return jsonify({"message": "Configuration updated successfully"}), 200
 
     except Exception as e:
-        logger.error(f"Error al escribir la configuración: {e}", exc_info=True)
+        logger.error(f"Error al escribir la configuración: {e}", exc_info=True) # Log de error
         return jsonify({"error": "Failed to write configuration"}), 500
 
 @app.route('/api/status', methods=['GET'])

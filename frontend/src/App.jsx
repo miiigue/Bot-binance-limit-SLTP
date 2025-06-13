@@ -130,7 +130,13 @@ function App() {
                  openInterestPeriod: configData.openInterestPeriod || '5m'
             };
             setConfig(flatConfig);
+            // --- NUEVO: Establecer nombre de estrategia activa desde config.ini ---
+            setActiveStrategyDisplayName(configData.activeStrategyName || '');
+            // ------------------------------------------------------------------
             console.log("Configuración inicial cargada.", flatConfig);
+            if (configData.activeStrategyName) {
+                console.log("Nombre de estrategia activa cargado desde config.ini:", configData.activeStrategyName);
+            }
 
             // --- INICIALIZAR COUNTDOWN CON VALOR DE CONFIGURACIÓN ---
             if (flatConfig.cycleSleepSeconds) {
@@ -165,8 +171,14 @@ function App() {
     fetchInitialData();
 }, []);
 
-  const handleSave = (newConfig) => {
-    console.log('Sending updated config to API:', newConfig);
+  const handleSave = (newConfigFromForm) => {
+    // --- NUEVO: Añadir activeStrategyDisplayName al payload para la API ---
+    const configToSendToApi = {
+      ...newConfigFromForm,
+      activeStrategyName: activeStrategyDisplayName 
+    };
+    console.log('Sending updated config to API (with activeStrategyName):', configToSendToApi);
+    // -----------------------------------------------------------------
 
     // Devolver una promesa para que se pueda esperar si es necesario
     return fetch('/api/config', {
@@ -174,7 +186,7 @@ function App() {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(newConfig),
+      body: JSON.stringify(configToSendToApi), // <--- USAR EL OBJETO COMBINADO
     })
     .then(response => {
         if (!response.ok) {
