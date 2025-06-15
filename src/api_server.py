@@ -168,7 +168,9 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'pnl_trailing_stop_activation_usdt': str(frontend_data.get('pnlTrailingStopActivationUSDT', 0.1)),
             'pnl_trailing_stop_drop_usdt': str(frontend_data.get('pnlTrailingStopDropUSDT', 0.05)),
             'evaluate_open_interest_increase': str(frontend_data.get('evaluateOpenInterestIncrease', True)).lower(),
-            'open_interest_period': frontend_data.get('openInterestPeriod', '5m')
+            'open_interest_period': frontend_data.get('openInterestPeriod', '5m'),
+            'evaluate_ma_filter': str(frontend_data.get('evaluateMaFilter', False)).lower(),
+            'ma_period': str(frontend_data.get('maPeriod', 200)),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -413,7 +415,9 @@ def get_config_endpoint():
                 ('pnl_trailing_stop_activation_usdt', 'pnlTrailingStopActivationUSDT'),
                 ('pnl_trailing_stop_drop_usdt', 'pnlTrailingStopDropUSDT'),
                 ('evaluate_open_interest_increase', 'evaluateOpenInterestIncrease'), # Cambio de clave aquí
-                ('open_interest_period', 'openInterestPeriod') # <-- CAMBIO DE CLAVE AQUÍ para el frontend
+                ('open_interest_period', 'openInterestPeriod'), # <-- CAMBIO DE CLAVE AQUÍ para el frontend
+                ('evaluate_ma_filter', 'evaluateMaFilter'),
+                ('ma_period', 'maPeriod')
             ]:
                 if key_ini in config_dict['TRADING']:
                     frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
