@@ -585,10 +585,11 @@ class TradingBot:
                     self.rsi_period + 10, 
                     self.volume_sma_period + 10 if hasattr(self, 'volume_sma_period') else 0,
                     self.downtrend_check_candles + 5 if hasattr(self, 'downtrend_check_candles') else 0,
-                    3 * self.downtrend_level_check + 5 if hasattr(self, 'downtrend_level_check') else 0  # <-- NUEVO: Asegurar suficientes velas para el check de niveles
+                    3 * self.downtrend_level_check + 5 if hasattr(self, 'downtrend_level_check') else 0,
+                    self.ma_period + 10 if self.evaluate_ma_filter else 0 # <-- FIX: Asegurar suficientes velas para el filtro MA
                 )
                 if limit_needed == 0:
-                    limit_needed = 20
+                    limit_needed = 20 # Mantenemos un mínimo por si todos los checks están desactivados
 
                 # get_historical_klines ahora sabemos que devuelve un DataFrame
                 klines_df = get_historical_klines(
