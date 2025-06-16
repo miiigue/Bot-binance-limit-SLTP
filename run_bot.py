@@ -118,66 +118,24 @@ def run_bot_worker(symbol, trading_params, stop_event_ref):
     
     bot_instance = None
     try:
-        bot_instance = TradingBot(symbol=symbol, trading_params=trading_params)
-        with status_lock:
-             worker_statuses[symbol] = bot_instance.get_current_status() 
+        bot_instance = TradingBot(
+            symbol=symbol, 
+            trading_params=trading_params, 
+            stop_event=stop_event_ref
+        )
+        
         logger.info(f"[{symbol}] Worker thread iniciado. Instancia de TradingBot creada. Tiempo de espera: {get_sleep_seconds(trading_params)}s")
     except (ValueError, ConnectionError) as init_error:
          logger.error(f"No se pudo inicializar la instancia de TradingBot para {symbol}: {init_error}. Terminando worker.", exc_info=True)
-         with status_lock:
-              worker_statuses[symbol] = {
-                  'symbol': symbol, 'state': BotState.ERROR.value, 'last_error': str(init_error),
-                  'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                  'pending_entry_order_id': None, 'pending_exit_order_id': None
-              }
          return
     except Exception as thread_error:
          logger.error(f"Error inesperado al crear instancia de TradingBot para {symbol}: {thread_error}. Terminando worker.", exc_info=True)
-         with status_lock:
-              worker_statuses[symbol] = {
-                  'symbol': symbol, 'state': BotState.ERROR.value, 
-                  'last_error': f"Unexpected init error: {thread_error}",
-                  'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                  'pending_entry_order_id': None, 'pending_exit_order_id': None
-              }
          return
 
-    sleep_duration = get_sleep_seconds(trading_params)
-
-    while not stop_event_ref.is_set():
-        try:
-            if bot_instance:
-                bot_instance.run_once()
-            if bot_instance:
-                with status_lock:
-                     worker_statuses[symbol] = bot_instance.get_current_status()
-        except Exception as cycle_error:
-            logger.error(f"[{symbol}] Error inesperado en el ciclo principal del worker: {cycle_error}", exc_info=True)
-            if bot_instance:
-                bot_instance._set_error_state(f"Unhandled exception in worker loop: {cycle_error}")
-                with status_lock:
-                     worker_statuses[symbol] = bot_instance.get_current_status()
-            else:
-                 with status_lock:
-                      worker_statuses[symbol] = {
-                          'symbol': symbol, 'state': BotState.ERROR.value, 
-                          'last_error': f"Unhandled exception in worker loop: {cycle_error}",
-                          'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                          'pending_entry_order_id': None, 'pending_exit_order_id': None
-                      }
-            pass 
-
-        interrupted = stop_event_ref.wait(timeout=sleep_duration)
-        if interrupted:
-            logger.info(f"[{symbol}] Señal de parada recibida durante la espera.")
-            break
+    if bot_instance:
+        bot_instance.run()
 
     logger.info(f"[{symbol}] Worker thread terminado.")
-    with status_lock:
-         if symbol in worker_statuses and isinstance(worker_statuses[symbol], dict):
-              worker_statuses[symbol]['state'] = BotState.STOPPED.value
-         else:
-              worker_statuses[symbol] = {'symbol': symbol, 'state': BotState.STOPPED.value}
 
 def signal_handler(sig, frame):
     """Manejador para señales como SIGINT (Ctrl+C) y SIGTERM."""

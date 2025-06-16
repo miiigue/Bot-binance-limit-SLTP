@@ -7,10 +7,12 @@ from decimal import Decimal, ROUND_DOWN, ROUND_UP
 import math
 from enum import Enum # <-- Importar Enum
 import os
+import threading
 
 # Importamos los módulos que hemos creado
 # from .config_loader import load_config # No se usa directamente aquí ahora
 from .logger_setup import get_logger
+from .utils import get_sleep_seconds
 from .binance_client import (
     get_futures_client,
     get_historical_klines,
@@ -54,16 +56,22 @@ class TradingBot:
     Diseñada para ser instanciada por cada símbolo a operar.
     Ahora usa órdenes LIMIT.
     """
-    def __init__(self, symbol: str, trading_params: dict):
+    def __init__(self, symbol: str, trading_params: dict, stop_event: threading.Event, worker_statuses: dict, status_lock: threading.Lock):
         """
         Inicializa el bot para un símbolo específico.
         Lee parámetros, inicializa el cliente, obtiene información del símbolo y estado inicial.
         """
         self.symbol = symbol.upper()
         self.logger = get_logger()
-        self.params = trading_params # <-- STORE the params dictionary
+        self.params = trading_params
+        
+        # --- Objetos de control y estado compartido ---
+        self.stop_event = stop_event
+        self.worker_statuses = worker_statuses
+        self.status_lock = status_lock
+        # ---------------------------------------------
+
         self.logger.info(f"[{self.symbol}] Inicializando worker con parámetros RECIBIDOS: {self.params}")
-        self.logger.info(f"[{self.symbol}] Inicializando worker con parámetros: {self.params}")
 
         # --- Estado Interno ---
         self.current_state = BotState.INITIALIZING # Estado inicial
@@ -566,192 +574,119 @@ class TradingBot:
 
         return order_filled_and_handled
 
-    def run_once(self):
+    def run(self):
         """
-        Ejecuta un ciclo de la lógica del bot para self.symbol.
-        Ahora maneja órdenes LIMIT, su estado pendiente/timeout y actualiza self.current_state.
+        Ejecuta el ciclo de vida principal del bot para self.symbol.
+        Contiene el bucle que se ejecuta hasta que se recibe la señal de parada.
         """
         try:
-            # LOG AÑADIDO AQUÍ
-            self.logger.info(f"[{self.symbol}] --- Inicio run_once. Estado: {self.current_state.value}, En Posición: {self.in_position}, Orden Entrada Pendiente: {self.pending_entry_order_id}, Orden Salida Pendiente: {self.pending_exit_order_id} ---")
-            self.logger.debug(f"[{self.symbol}] Running cycle. Current state: {self.current_state.value}")
+            self.logger.info(f"[{self.symbol}] --- Iniciando bucle principal del worker. Estado: {self.current_state.value} ---")
+            
+            # Bucle principal del bot
+            while not self.stop_event.is_set():
+                self.logger.debug(f"[{self.symbol}] Running cycle. Current state: {self.current_state.value}")
 
-            # Obtener datos de klines (velas)
-            try:
-                # Determinar el límite de klines necesario
-                limit_needed = max(
-                    self.rsi_period + 10, 
-                    self.volume_sma_period + 10 if hasattr(self, 'volume_sma_period') else 0,
-                    self.downtrend_check_candles + 5 if hasattr(self, 'downtrend_check_candles') else 0,
-                    3 * self.downtrend_level_check + 5 if hasattr(self, 'downtrend_level_check') else 0  # <-- NUEVO: Asegurar suficientes velas para el check de niveles
-                )
-                if limit_needed == 0:
-                    limit_needed = 20
+                # --- LÓGICA DE OBTENCIÓN DE DATOS CENTRALIZADA ---
+                self._update_state(BotState.FETCHING_DATA)
 
-                # get_historical_klines ahora sabemos que devuelve un DataFrame
+                # Determinar dinámicamente cuántos klines necesitamos
+                required_klines = self.volume_sma_period + 5  # Por defecto, basado en el volumen SMA
+                if self.evaluate_ma_filter:
+                    required_klines = max(required_klines, self.ma_period + 5)
+                
+                # Añadir un buffer extra para cálculos de RSI y otros
+                required_klines = max(required_klines, 50) # Asegurar un mínimo para otros cálculos
+                
+                self.logger.info(f"[{self.symbol}] Se requieren {required_klines} klines para los cálculos (MA: {self.ma_period}, Vol: {self.volume_sma_period}).")
+
                 klines_df = get_historical_klines(
-                    symbol=self.symbol,
-                    interval=self.rsi_interval,
-                    limit=limit_needed
+                    symbol=self.symbol, 
+                    interval=self.rsi_interval, 
+                    limit=required_klines
                 )
 
-                # Comprobar si klines_df (que es un DataFrame) está vacío o es None
+                # --- Espera para el siguiente ciclo (sección unificada) ---
+                # Definir aquí para usarlo en continue y al final del bucle
+                sleep_duration = get_sleep_seconds(self.params)
+
                 if klines_df is None or klines_df.empty:
-                    self.logger.warning(f"[{self.symbol}] No klines data (DataFrame) received or DataFrame is empty for run_once cycle (limit: {limit_needed}).")
-                    return
+                    self._set_error_state(f"No se pudieron obtener datos de mercado (klines) para {self.symbol}.")
+                    self.stop_event.wait(sleep_duration) # Esperar antes de reintentar
+                    continue # Saltar al siguiente ciclo
+
+                # Obtener el precio de mercado actual desde las klines (más eficiente)
+                current_market_price = klines_df['close'].iloc[-1]
+                self.logger.debug(f"[{self.symbol}] Precio de mercado actual (desde klines): {current_market_price}")
 
                 # La conversión a DataFrame y el procesamiento de columnas ya se hacen en get_historical_klines.
+                # Asegurar índice de timestamp
                 if 'timestamp' in klines_df.columns and not isinstance(klines_df.index, pd.DatetimeIndex):
                     klines_df.set_index('timestamp', inplace=True)
                 
                 if klines_df.empty:
                     self.logger.warning(f"[{self.symbol}] Kline DataFrame is empty after ensuring index. Skipping cycle.")
-                    return
+                    self.stop_event.wait(sleep_duration) # Esperar antes de reintentar
+                    continue
 
-            except Exception as e:
-                self.logger.error(f"[{self.symbol}] Error al obtener o procesar klines: {e}", exc_info=True)
-                self._set_error_state(f"Failed to get current price: {e}")
-                return
-
-            # Si el bot está en estado de error, intentar recuperarse o esperar
-            if self.current_state == BotState.ERROR:
-                self.logger.warning(f"[{self.symbol}] Intentando recuperarse del estado de ERROR. Reseteando...")
-                self._reset_state()
-                return
-
-            # --- Gestión de Órdenes Pendientes ---
-            if self.current_state == BotState.WAITING_ENTRY_FILL:
-                if self.pending_entry_order_id:
-                    self._check_pending_entry_order(klines_df.iloc[-1]['close'] if not klines_df.empty else self.last_known_pnl)
-                else:
-                    self.logger.warning(f"[{self.symbol}] En estado WAITING_ENTRY_FILL sin pending_entry_order_id. Volviendo a IDLE.")
-                    self._update_state(BotState.IDLE)
-
-            elif self.current_state == BotState.WAITING_EXIT_FILL:
-                if self.pending_exit_order_id:
-                    self._check_pending_exit_order(klines_df.iloc[-1]['close'] if not klines_df.empty else self.last_known_pnl)
-                else:
-                    self.logger.warning(f"[{self.symbol}] En WAITING_EXIT_FILL sin pending_exit_order_id. Reevaluando posición.")
-                    self._verify_position_status()
-
-            # LOG AÑADIDO AQUÍ
-            self.logger.info(f"[{self.symbol}] --- Antes de evaluar lógica principal de estados. Estado actual: {self.current_state.value} ---")
-
-            # --- Lógica Principal de Estados ---
-            if self.current_state == BotState.IDLE:
-                temp_rsi_values_for_downtrend_check = None
-                if hasattr(self, 'downtrend_check_candles') and self.downtrend_check_candles >= 2 and self.evaluate_downtrend_candles_block:
-                    if klines_df is not None and not klines_df.empty and 'close' in klines_df.columns:
-                        temp_rsi_values_for_downtrend_check = calculate_rsi(klines_df['close'], period=self.rsi_period)
+                # --- Lógica de Estados ---
+                # Si el bot está en estado de error, intentar recuperarse o esperar
+                if self.current_state == BotState.ERROR:
+                    self.logger.warning(f"[{self.symbol}] En estado de ERROR. Último error: {self.last_error_message}. Intentando recuperarse...")
+                    self._verify_position_status() # Re-sincronizar el estado de la posición
+                    # Si la re-sincronización nos saca del error, el estado cambiará.
+                    # Si no, seguiremos en ERROR y esperaremos.
+                    
+                # Gestión de Órdenes Pendientes
+                elif self.current_state == BotState.WAITING_ENTRY_FILL:
+                    if self.pending_entry_order_id:
+                        self._check_pending_entry_order(current_market_price)
                     else:
-                        self.logger.warning(f"[{self.symbol}] No se pudo calcular RSI para chequeo de downtrend debido a klines_df inválido.")
+                        self.logger.warning(f"[{self.symbol}] En estado WAITING_ENTRY_FILL sin pending_entry_order_id. Volviendo a IDLE.")
+                        self._update_state(BotState.IDLE)
 
-                # --- NUEVO: Primero verificar tendencia bajista por niveles --- (MODIFICADO)
-                block_due_to_downtrend_levels = False
-                if self.evaluate_downtrend_levels_block: # Solo evaluar si el control está activado
-                    if hasattr(self, 'downtrend_level_check') and self.downtrend_level_check > 0:
-                        if self._check_downtrend_levels(klines_df):
-                            self.logger.info(f"[{self.symbol}] CONDICIÓN DE NO ENTRADA (PRE-CHECK): Se detectó tendencia bajista por niveles (evaluación activada). No se evaluarán otras condiciones de entrada.")
-                            block_due_to_downtrend_levels = True
-                else:
-                    self.logger.info(f"[{self.symbol}] PRE-CHECK: Evaluación de tendencia bajista por niveles DESACTIVADA.")
-                
-                if block_due_to_downtrend_levels:
-                    # Actualizar previous_rsi_value si tenemos datos (similar a como estaba)
-                    if temp_rsi_values_for_downtrend_check is not None and not temp_rsi_values_for_downtrend_check.empty:
-                        current_rsi_val = temp_rsi_values_for_downtrend_check.iloc[-1]
-                        if isinstance(current_rsi_val, (int, float)):
-                            self.previous_rsi_value = current_rsi_val
-                    return
-
-                # --- Luego verificar tendencia bajista por velas consecutivas --- (MODIFICADO)
-                block_due_to_downtrend_candles = False
-                if self.evaluate_downtrend_candles_block: # Solo evaluar si el control está activado
-                    if hasattr(self, 'downtrend_check_candles') and self.downtrend_check_candles >= 2:
-                        if self._is_recent_downtrend(klines_df):
-                            self.logger.info(f"[{self.symbol}] CONDICIÓN DE NO ENTRADA (PRE-CHECK): Se detectó tendencia bajista reciente ({self.downtrend_check_candles} velas) (evaluación activada). No se evaluarán otras condiciones de entrada.")
-                            block_due_to_downtrend_candles = True
-                else:
-                    self.logger.info(f"[{self.symbol}] PRE-CHECK: Evaluación de tendencia bajista por velas consecutivas DESACTIVADA.")
-                
-                if block_due_to_downtrend_candles:
-                    if temp_rsi_values_for_downtrend_check is not None and not temp_rsi_values_for_downtrend_check.empty:
-                        current_rsi_val = temp_rsi_values_for_downtrend_check.iloc[-1]
-                        if isinstance(current_rsi_val, (int, float)):
-                            self.previous_rsi_value = current_rsi_val
-                    return
-
-                # Si no hay tendencia bajista o los chequeos están desactivados, evaluar condiciones de entrada.
-                self._check_entry_conditions(klines_df)
-
-            elif self.current_state == BotState.IN_POSITION:
-                # --- CAMBIO DE ORDEN DE OPERACIONES ---
-                # 1. PRIMERO, chequear si nuestras órdenes TP/SL (las que el bot conoce) se han llenado.
-                if self.pending_tp_order_id or self.pending_sl_order_id:
-                    if self._check_tp_sl_order_status(): # Devuelve True si una orden se llenó y el estado cambió a IDLE
-                        self.logger.info(f"[{self.symbol}] Orden TP/SL llenada y manejada. El bot está ahora en estado IDLE.")
-                        return # La posición se cerró, ciclo completado para esta posición.
-                    # Si _check_tp_sl_order_status devolvió False, las órdenes TP/SL siguen pendientes o una fue cancelada y la otra sigue activa.
-                    # Continuamos para actualizar PnL y verificar si no hay órdenes TP/SL que colocar.
-
-                # 2. SI NINGUNA ORDEN TP/SL SE LLENÓ, actualizar PnL de la posición abierta y verificar si sigue abierta.
-                position_still_open = self._update_open_position_pnl()
-                if not position_still_open:
-                    self.logger.info(f"[{self.symbol}] Posición ya no está abierta después de _update_open_position_pnl (y TP/SL no se detectaron como llenas). El estado debería haber sido manejado por _handle_external_closure.")
-                    # _update_open_position_pnl llama a _handle_external_closure_or_discrepancy si detecta cierre.
-                    # Esa función resetea el estado a IDLE.
-                    return 
-
-                # 3. Defensa: Si después de todo, estamos en posición pero current_position es None (no debería pasar).
-                if not self.current_position: 
-                    self.logger.error(f"[{self.symbol}] IN_POSITION state pero self.current_position es None. Re-verificando posición.")
-                    self._verify_position_status() # Esto podría cambiar el estado
-                    return 
-
-                # --- NUEVA INTEGRACIÓN: Verificar condiciones de salida dinámica (como RSI Drop) ---
-                # Esto se hace ANTES de intentar colocar nuevas órdenes TP/SL estándar,
-                # porque si una condición dinámica se cumple, podría querer usar su propia lógica de salida.
-                if klines_df is not None and not klines_df.empty:
-                    self.logger.info(f"[{self.symbol}] IN_POSITION: Evaluando condiciones de salida dinámica (ej. RSI drop)...")
-                    # _check_exit_conditions ahora cancelará TP/SL si activa una salida propia
-                    self._check_exit_conditions(klines_df) # Esta línea y las siguientes deben estar indentadas aquí
-
-                    # Si _check_exit_conditions activó una salida y colocó una orden,
-                    # el estado del bot habrá cambiado (ej. a WAITING_EXIT_FILL).
-                    # Si es así, terminamos este ciclo de run_once; el próximo manejará el nuevo estado.
-                    if self.current_state != BotState.IN_POSITION: # Esta es la línea 649 del traceback
-                        self.logger.info(f"[{self.symbol}] Condición de salida dinámica activada. Nuevo estado: {self.current_state.value}. Terminando ciclo run_once.")
-                        return
-                # --- FIN NUEVA INTEGRACIÓN ---
-
-                # 4. SI AÚN ESTAMOS EN POSICIÓN (es decir, ni TP/SL ni salida dinámica se activaron)
-                #    Y no tenemos órdenes TP/SL activas (ej. reinicio, fallo previo al colocar, o fueron canceladas y la salida dinámica no procedió).
-                if self.current_state == BotState.IN_POSITION: # Re-chequear estado por si acaso
-                    if not self.pending_tp_order_id and not self.pending_sl_order_id:
-                        self.logger.warning(f"[{self.symbol}] EN POSICIÓN (y sin salida dinámica activada), pero el bot no tiene órdenes TP/SL activas registradas. Intentando colocar TP/SL estándar ahora.")
-                        self._place_tp_sl_orders()
-                        # El próximo ciclo de run_once verificará el estado de estas nuevas órdenes.
+                elif self.current_state == BotState.WAITING_EXIT_FILL:
+                    if self.pending_exit_order_id:
+                        self._check_pending_exit_order(current_market_price)
                     else:
-                        # Si llegamos aquí, las órdenes TP/SL están puestas y pendientes (y la salida dinámica no se activó).
-                        price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
-                        pnl_display = f"{self.last_known_pnl:.4f}" if self.last_known_pnl is not None else "N/A"
-                        self.logger.info(f"[{self.symbol}] EN POSICIÓN. PnL: {pnl_display}. Esperando TP ({self.pending_tp_order_id}) o SL ({self.pending_sl_order_id}). Salida dinámica no activada.")
-                # --- FIN DEL CAMBIO DE ORDEN ---
+                        self.logger.warning(f"[{self.symbol}] En WAITING_EXIT_FILL sin pending_exit_order_id. Reevaluando posición.")
+                        self._verify_position_status()
+                
+                # Lógica Principal de Estados Activos
+                elif self.current_state == BotState.IDLE:
+                    self._check_entry_conditions(klines_df)
 
-            elif self.current_state == BotState.PLACING_ENTRY or \
-                 self.current_state == BotState.PLACING_EXIT or \
-                 self.current_state == BotState.CANCELING_ORDER:
-                self.logger.info(f"[{self.symbol}] En estado {self.current_state.value}, esperando resolución de operación. Saltando lógica principal este ciclo.")
-                # No hacer nada más en este ciclo si estamos activamente colocando/cancelando.
-                # La gestión de WAITING_ENTRY_FILL o WAITING_EXIT_FILL se encargará en el próximo ciclo si la operación resulta en espera.
+                elif self.current_state == BotState.IN_POSITION:
+                    position_still_open = self._update_open_position_pnl()
+                    if not position_still_open:
+                        self.logger.info(f"[{self.symbol}] Posición ya no está abierta. El manejador de cierre externo debería haber cambiado el estado.")
+                        continue # El estado se actualiza en el manejador
+                    
+                    if not self.current_position: 
+                        self.logger.error(f"[{self.symbol}] IN_POSITION state pero self.current_position es None. Re-verificando.")
+                        self._verify_position_status()
+                        continue
 
-            elif self.current_state == BotState.STOPPED:
-                pass
+                    # Verificar si alguna orden TP/SL se ha llenado
+                    if not self._check_tp_sl_order_status():
+                        # Si ninguna orden TP/SL se llenó, verificar condiciones de salida dinámica
+                        self._check_exit_conditions(klines_df)
+
+                # --- Actualizar estado global para la API ---
+                with self.status_lock:
+                    self.worker_statuses[self.symbol] = self.get_current_status()
+                # -------------------------------------------
+                
+                self.logger.debug(f"[{self.symbol}] Ciclo completado. Esperando {sleep_duration}s.")
+                self.stop_event.wait(sleep_duration)
 
         except Exception as e:
-            self.logger.error(f"[{self.symbol}] Error al obtener el precio actual: {e}", exc_info=True)
-            self._set_error_state(f"Failed to get current price: {e}")
-            return
+            self.logger.critical(f"[{self.symbol}] Bucle principal 'run' CRASHED: {e}", exc_info=True)
+            self._set_error_state(f"Critical error in main loop: {e}")
+            # Última actualización de estado antes de morir
+            with self.status_lock:
+                self.worker_statuses[self.symbol] = self.get_current_status()
+        
+        self.logger.info(f"[{self.symbol}] --- Bucle principal del worker terminado. Estado final: {self.current_state.value} ---")
 
     def _handle_successful_closure(self, close_price, quantity_closed, reason, close_timestamp=None, binance_order_id_of_closure: str | None = None):
         """
@@ -2290,7 +2225,7 @@ if __name__ == '__main__':
             main_logger.warning("*** INICIANDO EJECUCIÓN DE PRUEBA - PUEDE CREAR ÓRDENES EN BINANCE TESTNET ***")
             for i in range(5):
                 main_logger.info(f"\n===== EJECUTANDO CICLO {i+1} =====")
-                bot.run_once()
+                bot.run()
                 # Usar el intervalo de sleep definido en main.py si se ejecuta desde ahí
                 # Aquí usamos una pausa corta solo para el ejemplo
                 time.sleep(5)

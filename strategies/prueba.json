@@ -36,7 +36,7 @@
     "evaluateOpenInterestIncrease": true,
     "openInterestPeriod": "5m",
     "evaluateMaFilter": true,
-    "maPeriod": "125",
+    "maPeriod": "130",
     "maType": "EMA",
     "apiKey": "",
     "apiSecret": ""

@@ -63,7 +63,7 @@ const defaultConfigValues = {
   pnlTrailingStopDropUSDT: 0.05,
   evaluateOpenInterestIncrease: true,
   openInterestPeriod: '5m',
-  evaluateMaFilter: false,
+  evaluateMaFilter: true,
   maPeriod: 200,
   maType: 'EMA',
 };
@@ -388,50 +388,53 @@ function ConfigForm({
             {renderLabelWithCheckbox("requiredUptrendCandles", "Velas Verdes Requeridas", "evaluateRequiredUptrend")}
             <input type="number" name="requiredUptrendCandles" id="requiredUptrendCandles" value={formData.requiredUptrendCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
           </div>
+          <div>
+            {renderLabelWithCheckbox("openInterestPeriod", "Aumento Open Interest", "evaluateOpenInterestIncrease")}
+            <input type="text" name="openInterestPeriod" id="openInterestPeriod" value={formData.openInterestPeriod} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 5m"/>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. OI también afecta el checkbox.</p>
+          </div>
         </div>
 
-        {/* --- INICIO: SECCIÓN AÑADIDA DE MEDIA MÓVIL --- */}
-        <div className="mt-6 pt-4 border-t border-gray-300 dark:border-gray-700">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                    <ConfigItem 
-                        labelText="Filtro de Media Móvil"
-                        description="Activa el filtro para que el bot solo entre si el precio está por debajo de la media móvil."
-                    >
-                        <div className="flex items-center mt-2">
-                        <input
-                            id="evaluateMaFilter"
-                            name="evaluateMaFilter"
-                            type="checkbox"
-                            checked={formData.evaluateMaFilter}
-                            onChange={handleChange}
-                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <label htmlFor="evaluateMaFilter" className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Activar Filtro
-                            {!formData.evaluateMaFilter && (
-                            <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">(Desactivado)</span>
-                            )}
-                        </label>
-                        </div>
-                    </ConfigItem>
-                </div>
-                <div>
-                    <ConfigItem labelText="Periodo de la Media Móvil" htmlFor="maPeriod">
-                        <input
-                        type="number"
-                        id="maPeriod"
-                        name="maPeriod"
-                        value={formData.maPeriod}
-                        onChange={handleChange}
-                        disabled={!formData.evaluateMaFilter}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 disabled:opacity-50"
-                        />
-                    </ConfigItem>
-                </div>
+        {/* --- Filtro de Media Móvil --- */}
+        <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <div className="flex flex-col justify-center">
+              {renderLabelWithCheckbox("maPeriod", "Filtro Media Móvil", "evaluateMaFilter")}
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Sólo abre si el precio está por debajo de la MA.</p>
             </div>
+
+            <div>
+              <label htmlFor="maType" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de MA</label>
+              <select 
+                id="maType" 
+                name="maType" 
+                value={formData.maType} 
+                onChange={handleChange} 
+                disabled={!formData.evaluateMaFilter}
+                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm disabled:opacity-50"
+              >
+                <option value="EMA">EMA (Exponencial)</option>
+                <option value="SMA">SMA (Simple)</option>
+              </select>
+            </div>
+            
+            <div>
+              <label htmlFor="maPeriod" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Periodo de la MA</label>
+              <input 
+                type="number" 
+                id="maPeriod" 
+                name="maPeriod" 
+                value={formData.maPeriod} 
+                onChange={handleChange} 
+                disabled={!formData.evaluateMaFilter}
+                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm disabled:opacity-50" 
+                min="1"
+              />
+            </div>
+
+          </div>
         </div>
-        {/* --- FIN: SECCIÓN AÑADIDA DE MEDIA MÓVIL --- */}
       </fieldset>
 
       <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">

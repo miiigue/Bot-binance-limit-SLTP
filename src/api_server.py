@@ -186,94 +186,48 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
 # --- Función run_bot_worker (Movida desde run_bot.py) ---
 # Adaptada para usar las variables globales definidas aquí
 def run_bot_worker(symbol, trading_params, stop_event_ref):
-    """Función ejecutada por cada hilo para manejar un bot de símbolo único."""
+    """
+    Función ejecutada por cada hilo para manejar un bot de símbolo único.
+    Ahora, simplemente instancia el bot y llama a su método .run() que contiene el bucle principal.
+    """
     logger = get_logger()
-    
     bot_instance = None
     try:
         # Asegurarse de que trading_params no esté vacío
         if not trading_params:
-             logger.error(f"[{symbol}] No se proporcionaron parámetros de trading válidos al worker. Terminando.")
-             # Actualizar estado a Error
-             with status_lock:
-                  worker_statuses[symbol] = {
-                      'symbol': symbol, 'state': BotState.ERROR.value, 'last_error': "Missing trading parameters.",
-                      'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                      'pending_entry_order_id': None, 'pending_exit_order_id': None
-                  }
-             return
-             
-        # Obtener sleep_duration aquí usando la función movida
-        sleep_duration = get_sleep_seconds(trading_params)
-        
-        bot_instance = TradingBot(symbol=symbol, trading_params=trading_params)
-        with status_lock:
-             worker_statuses[symbol] = bot_instance.get_current_status() 
-        logger.info(f"[{symbol}] Worker thread iniciado. Instancia de TradingBot creada. Tiempo de espera: {sleep_duration}s") # Usar sleep_duration
-    except (ValueError, ConnectionError) as init_error:
-         logger.error(f"No se pudo inicializar la instancia de TradingBot para {symbol}: {init_error}. Terminando worker.", exc_info=True)
-         with status_lock:
-              worker_statuses[symbol] = {
-                  'symbol': symbol, 'state': BotState.ERROR.value, 'last_error': str(init_error),
-                  'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                  'pending_entry_order_id': None, 'pending_exit_order_id': None
-              }
-         return
+            logger.error(f"[{symbol}] No se proporcionaron parámetros de trading válidos al worker. Terminando.")
+            with status_lock:
+                worker_statuses[symbol] = {'symbol': symbol, 'state': BotState.ERROR.value, 'last_error': "Missing trading parameters."}
+            return
+
+        # Instanciar el bot, pasándole los objetos de control y estado compartido
+        bot_instance = TradingBot(
+            symbol=symbol,
+            trading_params=trading_params,
+            stop_event=stop_event_ref,
+            worker_statuses=worker_statuses,
+            status_lock=status_lock
+        )
+
+        # El bot ahora maneja su propio bucle y actualizaciones de estado.
+        # Simplemente lo iniciamos. Su método .run() es bloqueante y se ejecutará hasta que se detenga.
+        bot_instance.run()
+
     except Exception as thread_error:
-         logger.error(f"Error inesperado al crear instancia de TradingBot para {symbol}: {thread_error}. Terminando worker.", exc_info=True)
-         with status_lock:
-              worker_statuses[symbol] = {
-                  'symbol': symbol, 'state': BotState.ERROR.value, 
-                  'last_error': f"Unexpected init error: {thread_error}",
-                  'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                  'pending_entry_order_id': None, 'pending_exit_order_id': None
-              }
-         return
+        logger.critical(f"Error CRÍTICO al crear o ejecutar TradingBot para {symbol}: {thread_error}. Terminando worker.", exc_info=True)
+        # Actualizar el estado a ERROR si la instancia del bot falla
+        with status_lock:
+            worker_statuses[symbol] = {
+                'symbol': symbol, 'state': BotState.ERROR.value, 
+                'last_error': f"Worker crashed on init/run: {thread_error}",
+                'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
+                'pending_entry_order_id': None, 'pending_exit_order_id': None,
+                'pending_tp_order_id': None, 'pending_sl_order_id': None
+            }
+        return
 
-    # Ya no necesitamos get_sleep_seconds aquí si lo calculamos antes
-
-    while not stop_event_ref.is_set():
-        try:
-            if bot_instance:
-                bot_instance.run_once()
-            if bot_instance:
-                with status_lock:
-                     worker_statuses[symbol] = bot_instance.get_current_status()
-        except Exception as cycle_error:
-            logger.error(f"[{symbol}] Error inesperado en el ciclo principal del worker: {cycle_error}", exc_info=True)
-            if bot_instance:
-                bot_instance._set_error_state(f"Unhandled exception in worker loop: {cycle_error}")
-                with status_lock:
-                     worker_statuses[symbol] = bot_instance.get_current_status()
-            else:
-                 # Si bot_instance es None aquí, hubo un error muy temprano
-                 with status_lock:
-                      if symbol not in worker_statuses or not isinstance(worker_statuses.get(symbol), dict):
-                           worker_statuses[symbol] = {} # Asegurar que existe como dict
-                           
-                      worker_statuses[symbol].update({
-                          'symbol': symbol, 'state': BotState.ERROR.value, 
-                          'last_error': f"Critical worker loop error before bot ready: {cycle_error}",
-                          'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                          'pending_entry_order_id': None, 'pending_exit_order_id': None
-                      })
-            # Continuar el bucle para permitir posible recuperación o apagado
-            pass 
-
-        # Usar el sleep_duration calculado
-        interrupted = stop_event_ref.wait(timeout=sleep_duration)
-        if interrupted:
-            logger.info(f"[{symbol}] Señal de parada recibida durante la espera.")
-            break
-
-    logger.info(f"[{symbol}] Worker thread terminado.")
-    # Actualizar estado final al detenerse
-    with status_lock:
-         # Asegurarse que la entrada existe y es un diccionario
-         if symbol not in worker_statuses or not isinstance(worker_statuses.get(symbol), dict):
-             worker_statuses[symbol] = {'symbol': symbol} # Crear entrada mínima
-         worker_statuses[symbol]['state'] = BotState.STOPPED.value
-# --- Fin de run_bot_worker ---
+    # Este log se alcanzará solo cuando el bucle en bot_instance.run() termine limpiamente
+    logger.info(f"[{symbol}] Worker thread terminado limpiamente.")
 
 
 # --- Función para iniciar los workers (Movida y Adaptada) ---
