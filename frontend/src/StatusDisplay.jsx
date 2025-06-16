@@ -21,6 +21,17 @@ const formatPnl = (pnl) => {
   return isNaN(value) ? 'N/A' : `${value.toFixed(4)} USDT`;
 };
 
+// --- NUEVA FUNCIÓN HELPER PARA COLOR DE PNL ---
+const getPnlColorClass = (pnl) => {
+  if (pnl === null || pnl === undefined) return 'text-gray-500 dark:text-gray-400';
+  const value = parseFloat(pnl);
+  if (isNaN(value)) return 'text-gray-500 dark:text-gray-400';
+  if (value > 0) return 'text-green-500';
+  if (value < 0) return 'text-red-500';
+  return 'text-gray-500 dark:text-gray-400';
+};
+// ---------------------------------------------
+
 function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   // Intentar cargar el estado inicial desde localStorage, asegurando que sea un array válido
   const [statuses, setStatuses] = useState(() => {
@@ -304,11 +315,15 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                        {status.state || 'N/A'}
                      </span>
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                      {formatPnl(status.pnl)}
+                    <td className="px-3 py-3 whitespace-nowrap text-sm">
+                      <span className={`font-semibold ${getPnlColorClass(status.pnl)}`}>
+                        {formatPnl(status.pnl)}
+                      </span>
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                      {formatPnl(status.cumulative_pnl)}
+                    <td className="px-3 py-3 whitespace-nowrap text-sm">
+                      <span className={`font-semibold ${getPnlColorClass(status.cumulative_pnl)}`}>
+                        {formatPnl(status.cumulative_pnl)}
+                      </span>
                     </td>
                      <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                       {status.pending_entry_order_id ? 'SI' : ''}
@@ -361,7 +376,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                                       <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
                                       <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
                                       <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
-                                      <td className={`px-2 py-1 text-right whitespace-nowrap ${trade.pnl_usdt > 0 ? 'text-green-600 dark:text-green-400' : trade.pnl_usdt < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                      <td className={`px-2 py-1 text-right whitespace-nowrap ${getPnlColorClass(trade.pnl_usdt)}`}>
                                         {formatPnl(trade.pnl_usdt)}
                                       </td>
                                       <td className="px-2 py-1 whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.id}</td>
@@ -369,7 +384,23 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                                   ))}
                                 </tbody>
                               </table>
-                            </div>
+                              {(() => {
+                                 const totalHistoryPnl = tradeHistories[status.symbol].reduce((acc, trade) => {
+                                   const pnl = parseFloat(trade.pnl_usdt);
+                                   return isNaN(pnl) ? acc : acc + pnl;
+                                 }, 0);
+                                 return (
+                                   <div className="mt-2 text-right pr-4">
+                                     <span className="font-bold text-sm text-gray-700 dark:text-gray-300">
+                                       Total PNL de la lista: 
+                                       <span className={`ml-2 ${getPnlColorClass(totalHistoryPnl)}`}>
+                                         {formatPnl(totalHistoryPnl)}
+                                       </span>
+                                     </span>
+                                   </div>
+                                 );
+                               })()}
+                             </div>
                           ) : (
                             <p className="text-sm text-center text-gray-500 dark:text-gray-400">No trade history found for {status.symbol}.</p>
                           )

@@ -13,7 +13,7 @@
     "downtrendLevelCheck": 5,
     "requiredUptrendCandles": 3,
     "positionSizeUSDT": 10,
-    "stopLossUSDT": -0.087,
+    "stopLossUSDT": "-0.055",
     "takeProfitUSDT": 0.875,
     "cycleSleepSeconds": 25,
     "mode": "real",
@@ -36,7 +36,7 @@
     "evaluateOpenInterestIncrease": true,
     "openInterestPeriod": "5m",
     "evaluateMaFilter": true,
-    "maPeriod": "200",
+    "maPeriod": "125",
     "maType": "EMA",
     "apiKey": "",
     "apiSecret": ""
