@@ -66,6 +66,15 @@ const defaultConfigValues = {
   evaluateMaFilter: false,
   maPeriod: 200,
   maType: 'EMA',
+
+  // --- NUEVO: Valores por defecto para Estrategia de Soportes ---
+  evaluateSupportStrategy: false,
+  supportHistoryCandles: 200,
+  supportPivotWindow: 5,
+  supportConfirmations: 2,
+  supportLevelTolerancePercent: 0.5,
+  supportOrderStopLossPercent: 2.0,
+  supportOrderTakeProfitPercent: 4.0,
 };
 
 function ConfigForm({ 
@@ -96,6 +105,100 @@ function ConfigForm({
   const [deleteStrategyError, setDeleteStrategyError] = useState(null);
   const [deleteStrategySuccess, setDeleteStrategySuccess] = useState(null);
   // -------------------------------------------------
+
+  // --- NUEVO: Cargar la configuración desde el backend al montar ---
+  useEffect(() => {
+    const fetchInitialConfig = async () => {
+      try {
+        const response = await fetch('/api/config');
+        if (!response.ok) {
+          throw new Error(`No se pudo cargar la configuración inicial: ${response.statusText}`);
+        }
+        const configFromServer = await response.json();
+        
+        // Mapear la configuración del backend (snake_case) al formato del frontend (camelCase)
+        const mappedData = {
+          ...defaultConfigValues, // Empezar con los valores por defecto
+          symbolsToTrade: configFromServer.SYMBOLS?.symbols_to_trade || '',
+          activeStrategyName: configFromServer.GENERAL?.active_strategy_name || 'N/A',
+          
+          // Mapeo de [TRADING]
+          rsiInterval: configFromServer.TRADING?.rsi_interval,
+          rsiPeriod: configFromServer.TRADING?.rsi_period,
+          rsiThresholdUp: configFromServer.TRADING?.rsi_threshold_up,
+          rsiThresholdDown: configFromServer.TRADING?.rsi_threshold_down,
+          rsiEntryLevelLow: configFromServer.TRADING?.rsi_entry_level_low,
+          rsiEntryLevelHigh: configFromServer.TRADING?.rsi_entry_level_high,
+          rsiTarget: configFromServer.TRADING?.rsi_target,
+          volumeSmaPeriod: configFromServer.TRADING?.volume_sma_period,
+          volumeFactor: configFromServer.TRADING?.volume_factor,
+          downtrendCheckCandles: configFromServer.TRADING?.downtrend_check_candles,
+          downtrendLevelCheck: configFromServer.TRADING?.downtrend_level_check,
+          requiredUptrendCandles: configFromServer.TRADING?.required_uptrend_candles,
+          positionSizeUSDT: configFromServer.TRADING?.position_size_usdt,
+          stopLossUSDT: configFromServer.TRADING?.stop_loss_usdt,
+          takeProfitUSDT: configFromServer.TRADING?.take_profit_usdt,
+          cycleSleepSeconds: configFromServer.TRADING?.cycle_sleep_seconds,
+          orderTimeoutSeconds: configFromServer.TRADING?.order_timeout_seconds,
+          
+          // Mapeo de booleans de [TRADING]
+          evaluateRsiDelta: configFromServer.TRADING?.evaluate_rsi_delta,
+          evaluateVolumeFilter: configFromServer.TRADING?.evaluate_volume_filter,
+          evaluateRsiRange: configFromServer.TRADING?.evaluate_rsi_range,
+          evaluateDowntrendCandlesBlock: configFromServer.TRADING?.evaluate_downtrend_candles_block,
+          evaluateDowntrendLevelsBlock: configFromServer.TRADING?.evaluate_downtrend_levels_block,
+          evaluateRequiredUptrend: configFromServer.TRADING?.evaluate_required_uptrend,
+          enableTakeProfitPnl: configFromServer.TRADING?.enable_take_profit_pnl,
+          enableStopLossPnl: configFromServer.TRADING?.enable_stop_loss_pnl,
+          enableTrailingRsiStop: configFromServer.TRADING?.enable_trailing_rsi_stop,
+          enablePriceTrailingStop: configFromServer.TRADING?.enable_price_trailing_stop,
+          priceTrailingStopDistanceUSDT: configFromServer.TRADING?.price_trailing_stop_distance_usdt,
+          priceTrailingStopActivationPnlUSDT: configFromServer.TRADING?.price_trailing_stop_activation_pnl_usdt,
+          enablePnlTrailingStop: configFromServer.TRADING?.enable_pnl_trailing_stop,
+          pnlTrailingStopActivationUSDT: configFromServer.TRADING?.pnl_trailing_stop_activation_usdt,
+          pnlTrailingStopDropUSDT: configFromServer.TRADING?.pnl_trailing_stop_drop_usdt,
+          evaluateOpenInterestIncrease: configFromServer.TRADING?.evaluate_open_interest_increase,
+          openInterestPeriod: configFromServer.TRADING?.open_interest_period,
+
+          // Mapeo de Media Móvil
+          evaluateMaFilter: configFromServer.TRADING?.evaluate_ma_filter,
+          maType: configFromServer.TRADING?.ma_type,
+          maPeriod: configFromServer.TRADING?.ma_period,
+
+          // --- NUEVO: Mapeo de Estrategia de Soportes ---
+          evaluateSupportStrategy: configFromServer.TRADING?.evaluate_support_strategy,
+          supportHistoryCandles: configFromServer.TRADING?.support_history_candles,
+          supportPivotWindow: configFromServer.TRADING?.support_pivot_window,
+          supportConfirmations: configFromServer.TRADING?.support_confirmations,
+          supportLevelTolerancePercent: configFromServer.TRADING?.support_level_tolerance_percent,
+          supportOrderStopLossPercent: configFromServer.TRADING?.support_order_stop_loss_percent,
+          supportOrderTakeProfitPercent: configFromServer.TRADING?.support_order_take_profit_percent,
+
+          // Mapeo de [BINANCE]
+          mode: configFromServer.BINANCE?.mode
+        };
+
+        // Filtrar claves undefined para no sobreescribir defaults innecesariamente
+        Object.keys(mappedData).forEach(key => {
+          if (mappedData[key] === undefined) {
+            delete mappedData[key];
+          }
+        });
+        
+        setFormData(prevData => ({ ...prevData, ...mappedData }));
+        if (onStrategyNameChange && mappedData.activeStrategyName) {
+            onStrategyNameChange(mappedData.activeStrategyName);
+        }
+
+      } catch (error) {
+        console.error("Error al cargar la configuración del servidor:", error);
+        setError("No se pudo cargar la configuración de config.ini. Se muestran los valores por defecto.");
+      }
+    };
+
+    fetchInitialConfig();
+  }, [onStrategyNameChange]); // Dependencia para que se ejecute una vez
+  // -------------------------------------------------------------
 
   useEffect(() => {
     if (propInitialConfig) {
@@ -170,7 +273,29 @@ function ConfigForm({
     if (dataToSend.maPeriod !== undefined) {
       dataToSend.ma_period = dataToSend.maPeriod;
     }
-    // -----------------------------------------------------------------
+
+    // --- NUEVO: Añadir los nuevos campos de Soportes al objeto que se envía ---
+    if (dataToSend.evaluateSupportStrategy !== undefined) {
+      dataToSend.evaluate_support_strategy = dataToSend.evaluateSupportStrategy;
+    }
+    if (dataToSend.supportHistoryCandles !== undefined) {
+      dataToSend.support_history_candles = dataToSend.supportHistoryCandles;
+    }
+    if (dataToSend.supportPivotWindow !== undefined) {
+      dataToSend.support_pivot_window = dataToSend.supportPivotWindow;
+    }
+    if (dataToSend.supportConfirmations !== undefined) {
+      dataToSend.support_confirmations = dataToSend.supportConfirmations;
+    }
+    if (dataToSend.supportLevelTolerancePercent !== undefined) {
+      dataToSend.support_level_tolerance_percent = dataToSend.supportLevelTolerancePercent;
+    }
+    if (dataToSend.supportOrderStopLossPercent !== undefined) {
+      dataToSend.support_order_stop_loss_percent = dataToSend.supportOrderStopLossPercent;
+    }
+    if (dataToSend.supportOrderTakeProfitPercent !== undefined) {
+      dataToSend.support_order_take_profit_percent = dataToSend.supportOrderTakeProfitPercent;
+    }
 
     try {
       const success = await onSave(dataToSend);
@@ -389,54 +514,105 @@ function ConfigForm({
             <input type="number" name="requiredUptrendCandles" id="requiredUptrendCandles" value={formData.requiredUptrendCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
           </div>
         </div>
-
-        {/* --- INICIO: SECCIÓN AÑADIDA DE MEDIA MÓVIL --- */}
-        <div className="mt-6 pt-4 border-t border-gray-300 dark:border-gray-700">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                    <ConfigItem 
-                        labelText="Filtro de Media Móvil"
-                        description="Activa el filtro para que el bot solo entre si el precio está por debajo de la media móvil."
-                    >
-                        <div className="flex items-center mt-2">
-                        <input
-                            id="evaluateMaFilter"
-                            name="evaluateMaFilter"
-                            type="checkbox"
-                            checked={formData.evaluateMaFilter}
-                            onChange={handleChange}
-                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <label htmlFor="evaluateMaFilter" className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Activar Filtro
-                            {!formData.evaluateMaFilter && (
-                            <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">(Desactivado)</span>
-                            )}
-                        </label>
-                        </div>
-                    </ConfigItem>
-                </div>
-                <div>
-                    <ConfigItem labelText="Periodo de la Media Móvil" htmlFor="maPeriod">
-                        <input
-                        type="number"
-                        id="maPeriod"
-                        name="maPeriod"
-                        value={formData.maPeriod}
-                        onChange={handleChange}
-                        disabled={!formData.evaluateMaFilter}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 disabled:opacity-50"
-                        />
-                    </ConfigItem>
-                </div>
-            </div>
-        </div>
-        {/* --- FIN: SECCIÓN AÑADIDA DE MEDIA MÓVIL --- */}
       </fieldset>
 
-      <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
-        <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Parámetros de SALIDA</legend>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4"> 
+      {/* --- Estrategia de Media Móvil --- */}
+      <ConfigSection title="Filtro de Media Móvil (MA)" className="col-span-1">
+        <div className="space-y-4">
+          <ConfigItem labelText="Activar Filtro de Media Móvil">
+            <Switch
+              name="evaluateMaFilter"
+              checked={formData.evaluateMaFilter}
+              onChange={handleChange}
+            />
+          </ConfigItem>
+          {formData.evaluateMaFilter && (
+            <>
+              <ConfigItem labelText="Período de la Media Móvil" htmlFor="maPeriod">
+                <NumberInput
+                  id="maPeriod"
+                  name="maPeriod"
+                  value={formData.maPeriod}
+                  onChange={handleChange}
+                />
+              </ConfigItem>
+            </>
+          )}
+        </div>
+      </ConfigSection>
+
+      {/* --- NUEVA SECCIÓN: Estrategia de Soportes Confirmados --- */}
+      <ConfigSection title="Estrategia de Soportes Confirmados" className="col-span-1 md:col-span-2">
+        <div className="space-y-4">
+          <ConfigItem labelText="Activar Estrategia de Soportes (Desactiva la Estrategia RSI)">
+            <Switch
+              name="evaluateSupportStrategy"
+              checked={formData.evaluateSupportStrategy}
+              onChange={handleChange}
+            />
+          </ConfigItem>
+
+          {formData.evaluateSupportStrategy && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+              <ConfigItem labelText="Velas de Historial" htmlFor="supportHistoryCandles" description="Nº de velas a analizar para encontrar soportes.">
+                <NumberInput
+                  id="supportHistoryCandles"
+                  name="supportHistoryCandles"
+                  value={formData.supportHistoryCandles}
+                  onChange={handleChange}
+                />
+              </ConfigItem>
+              <ConfigItem labelText="Ventana de Pivote" htmlFor="supportPivotWindow" description="Nº de velas a cada lado para confirmar un valle (pivote).">
+                <NumberInput
+                  id="supportPivotWindow"
+                  name="supportPivotWindow"
+                  value={formData.supportPivotWindow}
+                  onChange={handleChange}
+                />
+              </ConfigItem>
+              <ConfigItem labelText="Confirmaciones Mínimas" htmlFor="supportConfirmations" description="Nº de toques (pivotes) para validar un soporte.">
+                <NumberInput
+                  id="supportConfirmations"
+                  name="supportConfirmations"
+                  value={formData.supportConfirmations}
+                  onChange={handleChange}
+                />
+              </ConfigItem>
+              <ConfigItem labelText="Tolerancia de Nivel (%)" htmlFor="supportLevelTolerancePercent" description="Porcentaje de diferencia para agrupar pivotes en un solo nivel.">
+                <NumberInput
+                  id="supportLevelTolerancePercent"
+                  name="supportLevelTolerancePercent"
+                  value={formData.supportLevelTolerancePercent}
+                  onChange={handleChange}
+                  step={0.1}
+                />
+              </ConfigItem>
+              <ConfigItem labelText="Stop Loss de Orden (%)" htmlFor="supportOrderStopLossPercent" description="Porcentaje de SL para las órdenes en soportes.">
+                <NumberInput
+                  id="supportOrderStopLossPercent"
+                  name="supportOrderStopLossPercent"
+                  value={formData.supportOrderStopLossPercent}
+                  onChange={handleChange}
+                  step={0.1}
+                />
+              </ConfigItem>
+              <ConfigItem labelText="Take Profit de Orden (%)" htmlFor="supportOrderTakeProfitPercent" description="Porcentaje de TP para las órdenes en soportes.">
+                <NumberInput
+                  id="supportOrderTakeProfitPercent"
+                  name="supportOrderTakeProfitPercent"
+                  value={formData.supportOrderTakeProfitPercent}
+                  onChange={handleChange}
+                  step={0.1}
+                />
+              </ConfigItem>
+            </div>
+          )}
+        </div>
+      </ConfigSection>
+
+      {/* --- Trailing Stops --- */}
+      <ConfigSection title="Trailing Stops" className="col-span-1 md:col-span-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             {renderLabelWithCheckbox("takeProfitUSDT", "Take Profit (USDT)", "enableTakeProfitPnl")}
             <input type="number" name="takeProfitUSDT" id="takeProfitUSDT" value={formData.takeProfitUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
@@ -445,54 +621,41 @@ function ConfigForm({
             {renderLabelWithCheckbox("stopLossUSDT", "Stop Loss (USDT)", "enableStopLossPnl")}
             <input type="number" name="stopLossUSDT" id="stopLossUSDT" value={formData.stopLossUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" max="0"/>
           </div>
-        </div>
-        <div className="mt-6 pt-4 border-t border-gray-300 dark:border-gray-700">
-          <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3">Trailing Stop por RSI</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label htmlFor="rsiTarget" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RSI Objetivo Activación (Salida)</label>
-              <input type="number" name="rsiTarget" id="rsiTarget" value={formData.rsiTarget} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-            </div>
-            <div>
-              {renderLabelWithCheckbox("rsiThresholdDown", "RSI Drop Salida (Negativo)", "enableTrailingRsiStop")}
-              <input type="number" name="rsiThresholdDown" id="rsiThresholdDown" value={formData.rsiThresholdDown} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. Trailing RSI también afecta RSI Objetivo.</p>
-            </div>
+          <div>
+            <label htmlFor="rsiTarget" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RSI Objetivo Activación (Salida)</label>
+            <input type="number" name="rsiTarget" id="rsiTarget" value={formData.rsiTarget} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
           </div>
-        </div>
-        <div className="mt-6 pt-4 border-t border-gray-300 dark:border-gray-700">
-          <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3">Trailing Stop por Precio</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              {renderLabelWithCheckbox("priceTrailingStopDistanceUSDT", "Distancia Trailing Precio (USDT)", "enablePriceTrailingStop")}
-              <input
-                type="number"
-                name="priceTrailingStopDistanceUSDT"
-                id="priceTrailingStopDistanceUSDT"
-                value={formData.priceTrailingStopDistanceUSDT}
-                onChange={handleChange}
-                step="any"
-                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                min="0"
-              />
-            </div>
-            <div>
-              <label htmlFor="priceTrailingStopActivationPnlUSDT" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Activación PNL para Trailing Precio (USDT)</label>
-              <input
-                type="number"
-                name="priceTrailingStopActivationPnlUSDT"
-                id="priceTrailingStopActivationPnlUSDT"
-                value={formData.priceTrailingStopActivationPnlUSDT}
-                onChange={handleChange}
-                className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white"
-                step="any"
-              />
-            </div>
+          <div>
+            {renderLabelWithCheckbox("rsiThresholdDown", "RSI Drop Salida (Negativo)", "enableTrailingRsiStop")}
+            <input type="number" name="rsiThresholdDown" id="rsiThresholdDown" value={formData.rsiThresholdDown} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. Trailing RSI también afecta RSI Objetivo.</p>
           </div>
-        </div>
-        <div className="mt-6 pt-4 border-t border-gray-300 dark:border-gray-700">
-          <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3">Trailing Stop por PNL</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            {renderLabelWithCheckbox("priceTrailingStopDistanceUSDT", "Distancia Trailing Precio (USDT)", "enablePriceTrailingStop")}
+            <input
+              type="number"
+              name="priceTrailingStopDistanceUSDT"
+              id="priceTrailingStopDistanceUSDT"
+              value={formData.priceTrailingStopDistanceUSDT}
+              onChange={handleChange}
+              step="any"
+              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+              min="0"
+            />
+          </div>
+          <div>
+            <label htmlFor="priceTrailingStopActivationPnlUSDT" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Activación PNL para Trailing Precio (USDT)</label>
+            <input
+              type="number"
+              name="priceTrailingStopActivationPnlUSDT"
+              id="priceTrailingStopActivationPnlUSDT"
+              value={formData.priceTrailingStopActivationPnlUSDT}
+              onChange={handleChange}
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white"
+              step="any"
+            />
+          </div>
+          <div>
             <ConfigItem 
               description="PNL mínimo en USDT que debe alcanzar la posición para armar este trailing stop por PNL."
             >
@@ -526,7 +689,7 @@ function ConfigForm({
             </ConfigItem>
           </div>
         </div>
-      </fieldset>
+      </ConfigSection>
 
       <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
         <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Otros Parámetros</legend>
@@ -631,6 +794,53 @@ function ConfigForm({
       </ConfigSection>
       {/* --- Fin Sección de Gestión de Estrategias --- */}
     </form>
+  );
+}
+
+// --- Componentes Reutilizables ---
+function NumberInput({ id, name, value, onChange, step = "any", min, max, disabled }) {
+  const handleChange = (e) => {
+    // Permitir vaciar el campo o escribir un número
+    const val = e.target.value;
+    if (val === '' || !isNaN(val)) {
+      onChange(e);
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      id={id}
+      name={name}
+      value={value}
+      onChange={handleChange}
+      step={step}
+      min={min}
+      max={max}
+      disabled={disabled}
+      className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-800 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:opacity-50"
+    />
+  );
+}
+
+function Switch({ name, checked, onChange, disabled }) {
+  return (
+    <button
+      type="button"
+      className={`${
+        checked ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'
+      } relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50`}
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange({ target: { name, value: !checked, type: 'checkbox', checked: !checked } })}
+      disabled={disabled}
+    >
+      <span
+        className={`${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        } inline-block w-4 h-4 transform bg-white rounded-full transition-transform`}
+      />
+    </button>
   );
 }
 

@@ -118,6 +118,21 @@ class TradingBot:
         self.evaluate_open_interest_increase = str(trading_params.get('evaluate_open_interest_increase', 'True')).lower() == 'true'
         self.open_interest_period = trading_params.get('open_interest_period', '5m') # <-- NUEVO: Leer el período para OI
         # -------------------------------------------------------------
+        
+        # --- NUEVO: PARÁMETROS PARA ESTRATEGIA DE SOPORTES ---
+        self.evaluate_support_strategy = str(trading_params.get('evaluate_support_strategy', 'False')).lower() == 'true'
+        self.support_history_candles = int(trading_params.get('support_history_candles', 200))
+        self.support_pivot_window = int(trading_params.get('support_pivot_window', 5))
+        self.support_confirmations = int(trading_params.get('support_confirmations', 2))
+        self.support_level_tolerance_percent = float(trading_params.get('support_level_tolerance_percent', 0.5))
+        self.support_order_stop_loss_percent = float(trading_params.get('support_order_stop_loss_percent', 2.0))
+        self.support_order_take_profit_percent = float(trading_params.get('support_order_take_profit_percent', 4.0))
+        # --- FIN PARÁMETROS DE SOPORTES ---
+        
+        # --- NUEVO: ESTADO PARA ÓRDENES DE SOPORTE ---
+        self.active_support_orders = {} # {price_level: order_id}
+        # ---------------------------------------------
+        
         # -------------------------------------------------------------
         # --------------------------------------------------
 
@@ -578,49 +593,100 @@ class TradingBot:
             self.logger.info(f"[{self.symbol}] --- Inicio run_once. Estado: {self.current_state.value}, En Posición: {self.in_position}, Orden Entrada Pendiente: {self.pending_entry_order_id}, Orden Salida Pendiente: {self.pending_exit_order_id} ---")
             self.logger.debug(f"[{self.symbol}] Running cycle. Current state: {self.current_state.value}")
 
-            # Obtener datos de klines (velas)
-            try:
-                # Determinar el límite de klines necesario
-                limit_needed = max(
-                    self.rsi_period + 10, 
-                    self.volume_sma_period + 10 if hasattr(self, 'volume_sma_period') else 0,
-                    self.downtrend_check_candles + 5 if hasattr(self, 'downtrend_check_candles') else 0,
-                    3 * self.downtrend_level_check + 5 if hasattr(self, 'downtrend_level_check') else 0,
-                    self.ma_period + 10 if self.evaluate_ma_filter else 0 # <-- FIX: Asegurar suficientes velas para el filtro MA
-                )
-                if limit_needed == 0:
-                    limit_needed = 20 # Mantenemos un mínimo por si todos los checks están desactivados
-
-                # get_historical_klines ahora sabemos que devuelve un DataFrame
-                klines_df = get_historical_klines(
-                    symbol=self.symbol,
-                    interval=self.rsi_interval,
-                    limit=limit_needed
-                )
-
-                # Comprobar si klines_df (que es un DataFrame) está vacío o es None
-                if klines_df is None or klines_df.empty:
-                    self.logger.warning(f"[{self.symbol}] No klines data (DataFrame) received or DataFrame is empty for run_once cycle (limit: {limit_needed}).")
-                    return
-
-                # La conversión a DataFrame y el procesamiento de columnas ya se hacen en get_historical_klines.
-                if 'timestamp' in klines_df.columns and not isinstance(klines_df.index, pd.DatetimeIndex):
-                    klines_df.set_index('timestamp', inplace=True)
+            # --- Tarea 1: Obtener datos de mercado ---
+            # Solo obtener klines si no estamos en un estado de error o esperando que una orden se llene
+            if self.current_state not in [BotState.ERROR, BotState.WAITING_ENTRY_FILL, BotState.WAITING_EXIT_FILL]:
+                self._update_state(BotState.FETCHING_DATA)
                 
-                if klines_df.empty:
-                    self.logger.warning(f"[{self.symbol}] Kline DataFrame is empty after ensuring index. Skipping cycle.")
-                    return
+                # --- LÓGICA DE CÁLCULO DE LÍMITE DE VELAS MEJORADA ---
+                # Empezamos con el período de RSI como base
+                limit_needed = self.rsi_period + 1 
+                
+                # Añadimos el requisito del filtro de MA si está activo
+                if self.evaluate_ma_filter:
+                    limit_needed = max(limit_needed, self.ma_period)
 
-            except Exception as e:
-                self.logger.error(f"[{self.symbol}] Error al obtener o procesar klines: {e}", exc_info=True)
-                self._set_error_state(f"Failed to get current price: {e}")
-                return
+                # --- NUEVO: Añadir requisito de la estrategia de soportes ---
+                if self.evaluate_support_strategy:
+                    # La búsqueda de soportes necesita un histórico más largo
+                    limit_needed = max(limit_needed, self.support_history_candles)
+                
+                # El +10 es un búfer de seguridad
+                final_limit = limit_needed + 10
+                self.logger.debug(f"[{self.symbol}] Límite de velas calculado: {final_limit} (Base: {limit_needed})")
+                
+                klines_df = get_historical_klines(self.symbol, self.rsi_interval, limit=final_limit)
 
-            # Si el bot está en estado de error, intentar recuperarse o esperar
-            if self.current_state == BotState.ERROR:
-                self.logger.warning(f"[{self.symbol}] Intentando recuperarse del estado de ERROR. Reseteando...")
-                self._reset_state()
-                return
+                if klines_df is None or klines_df.empty:
+                    self.logger.warning(f"[{self.symbol}] No se pudieron obtener klines. Saltando este ciclo.")
+                    # Volver al estado IDLE y esperar al siguiente ciclo
+                    self._update_state(BotState.IDLE)
+                    return # Termina esta ejecución de run_once
+            else:
+                klines_df = None # Nos aseguramos de que no hay datos viejos si estamos esperando
+
+            # --- Tarea 2: Actualizar PNL si hay posición ---
+            if self.in_position:
+                self._update_open_position_pnl()
+
+            # --- Tarea 3: Ejecutar la lógica de estado ---
+            self._update_state(BotState.CHECKING_CONDITIONS)
+
+            # --- NUEVA LÓGICA: ESTRATEGIA DE SOPORTES ---
+            if self.evaluate_support_strategy and not self.in_position and klines_df is not None:
+                self.logger.info(f"[{self.symbol}] Estrategia de soportes activada. Buscando niveles...")
+                confirmed_supports = self._find_confirmed_supports(klines_df)
+                
+                # --- GESTIÓN DE ÓRDENES DE SOPORTE ---
+                # 1. Cancelar órdenes en soportes que ya no existen
+                current_prices_with_orders = list(self.active_support_orders.keys())
+                for price_level in current_prices_with_orders:
+                    if price_level not in confirmed_supports:
+                        order_id_to_cancel = self.active_support_orders.pop(price_level)
+                        self.logger.info(f"[{self.symbol}] El soporte en {price_level} ya no es válido. Cancelando orden {order_id_to_cancel}.")
+                        cancel_futures_order(self.symbol, order_id_to_cancel)
+                
+                # 2. Colocar órdenes en nuevos soportes
+                if confirmed_supports:
+                    current_market_price = klines_df['close'].iloc[-1]
+                    for support_price in confirmed_supports:
+                        # Solo colocar orden si está por debajo del precio actual (para evitar compras accidentales)
+                        # y si no hay ya una orden para este nivel
+                        if support_price < current_market_price and support_price not in self.active_support_orders:
+                            self.logger.info(f"[{self.symbol}] Nuevo soporte válido encontrado en {support_price}. Colocando orden LIMIT.")
+                            
+                            # Calcular cantidad basada en el tamaño de posición en USDT
+                            quantity = self.position_size_usdt / support_price
+                            adjusted_qty = self._adjust_quantity(quantity)
+                            
+                            # Crear la orden LIMIT
+                            order_result = create_futures_limit_order(self.symbol, 'BUY', adjusted_qty, support_price)
+                            
+                            if order_result and 'orderId' in order_result:
+                                self.logger.info(f"[{self.symbol}] Orden LIMIT de compra colocada en soporte {support_price}. Cantidad: {adjusted_qty}, ID: {order_result['orderId']}")
+                                # Registrar la orden activa
+                                self.active_support_orders[support_price] = order_result['orderId']
+                            else:
+                                self.logger.error(f"[{self.symbol}] Fallo al colocar la orden LIMIT en el soporte {support_price}.")
+
+
+            # --- LÓGICA ORIGINAL DE ESTRATEGIA (RSI, etc.) ---
+            # Solo ejecutar si no estamos en una posición Y si la estrategia de soportes NO está activa
+            # O si la estrategia de soportes SÍ está activa pero no queremos que sea exclusiva.
+            # Por ahora, las haremos exclusivas: si una está on, la otra está off.
+            if not self.evaluate_support_strategy:
+                if not self.in_position:
+                    if self.pending_entry_order_id:
+                        self._check_pending_entry_order(current_market_price=klines_df['close'].iloc[-1] if klines_df is not None else None)
+                    else:
+                        if klines_df is not None:
+                            self._check_entry_conditions(klines_df)
+                else: # Si estamos en posición
+                    if self.pending_exit_order_id:
+                        self._check_pending_exit_order(current_market_price=klines_df['close'].iloc[-1] if klines_df is not None else None)
+                    else:
+                        if klines_df is not None:
+                            self._check_exit_conditions(klines_df)
 
             # --- Gestión de Órdenes Pendientes ---
             if self.current_state == BotState.WAITING_ENTRY_FILL:
@@ -2273,6 +2339,82 @@ class TradingBot:
         except Exception as e:
             self.logger.error(f"[{self.symbol}] Error al calcular la media móvil: {e}", exc_info=True)
             return None
+
+    def _find_confirmed_supports(self, klines_df: pd.DataFrame) -> list[Decimal]:
+        """
+        Identifica niveles de soporte confirmados basados en puntos de pivote bajos.
+        
+        Un soporte se confirma si N o más puntos de pivote bajos han ocurrido
+        dentro de un rango de precios porcentual de tolerancia.
+
+        Args:
+            klines_df: DataFrame con los datos de las velas (debe tener columna 'low').
+
+        Returns:
+            Una lista de precios (Decimal) que representan los niveles de soporte confirmados.
+        """
+        self.logger.info(f"[{self.symbol}] Buscando soportes. Ventana: {self.support_pivot_window}, Confirmaciones: {self.support_confirmations}, Tolerancia: {self.support_level_tolerance_percent}%")
+
+        if len(klines_df) < self.support_history_candles:
+             self.logger.warning(f"[{self.symbol}] No hay suficientes klines ({len(klines_df)}) para buscar soportes (se requieren {self.support_history_candles}).")
+             return []
+
+        # 1. Encontrar Valles (Pivots Bajos)
+        # Un 'low' es un pivot si es el más bajo en una ventana a su alrededor.
+        # Usamos rolling window para encontrar el mínimo en una ventana N a cada lado.
+        # El +1 es porque la ventana incluye la propia vela.
+        window_size = 2 * self.support_pivot_window + 1
+        
+        # El método rolling de pandas nos permite comparar cada punto con los de su 'vecindario'
+        klines_df['pivot_low'] = klines_df['low'].rolling(window=window_size, center=True).min()
+        
+        # Un punto es un pivot bajo si su 'low' es igual al mínimo de su ventana
+        pivot_lows_df = klines_df[klines_df['low'] == klines_df['pivot_low']]
+        
+        if pivot_lows_df.empty:
+            self.logger.info(f"[{self.symbol}] No se encontraron puntos de pivote bajos en el histórico.")
+            return []
+
+        pivot_prices = sorted([Decimal(str(p)) for p in pivot_lows_df['low'].unique()], reverse=True)
+        self.logger.debug(f"[{self.symbol}] Encontrados {len(pivot_prices)} pivotes únicos: {pivot_prices}")
+
+        # 2. Agrupar Pivots Cercanos y 3. Confirmar Soportes
+        confirmed_supports = []
+        
+        while pivot_prices:
+            # Empezamos un nuevo grupo con el pivot más alto
+            base_pivot = pivot_prices.pop(0)
+            current_group = [base_pivot]
+            
+            # Calculamos el umbral de tolerancia
+            tolerance = base_pivot * (Decimal(str(self.support_level_tolerance_percent)) / Decimal('100'))
+            
+            # Recogemos otros pivots que estén dentro de la tolerancia
+            remaining_pivots = []
+            for p in pivot_prices:
+                if base_pivot - p <= tolerance:
+                    current_group.append(p)
+                else:
+                    remaining_pivots.append(p)
+            
+            pivot_prices = remaining_pivots
+
+            # 3. Confirmar si el grupo es un soporte válido
+            if len(current_group) >= self.support_confirmations:
+                # 4. Calcular el precio final del soporte (promedio del grupo)
+                avg_price = sum(current_group) / len(current_group)
+                
+                # Ajustamos el precio al tick_size del símbolo
+                support_price = self._adjust_price(avg_price)
+                
+                confirmed_supports.append(support_price)
+                self.logger.info(f"[{self.symbol}] SOPORTE CONFIRMADO en {support_price} con {len(current_group)} toques. Grupo: {current_group}")
+
+        if not confirmed_supports:
+            self.logger.info(f"[{self.symbol}] No se encontraron soportes que cumplan el criterio de {self.support_confirmations} confirmaciones.")
+
+        return sorted(confirmed_supports, reverse=True) # Devolverlos del más alto al más bajo
+    # -----------------------------------------------
 
 # --- Bloque de ejemplo (ya no se usa directamente así) ---
 # if __name__ == '__main__':

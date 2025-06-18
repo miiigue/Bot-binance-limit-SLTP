@@ -117,14 +117,15 @@ def config_to_dict(config: configparser.ConfigParser) -> dict:
             try:
                 if section == 'SYMBOLS' and key == 'symbols_to_trade': # Mantener la lista como string
                     processed_val = val
-                elif val.lower() in ['true', 'false']:
+                # --- NUEVO: Manejo explícito de booleanos para la nueva estrategia ---
+                elif key in ['evaluate_support_strategy', 'evaluate_ma_filter', 'evaluate_open_interest_increase', 'enable_take_profit_pnl', 'enable_stop_loss_pnl', 'enable_trailing_rsi_stop', 'enable_price_trailing_stop', 'enable_pnl_trailing_stop', 'evaluate_rsi_delta', 'evaluate_volume_filter', 'evaluate_rsi_range', 'evaluate_downtrend_candles_block', 'evaluate_downtrend_levels_block', 'evaluate_required_uptrend']:
                     processed_val = config.getboolean(section, key)
                 elif '.' in val:
                     processed_val = config.getfloat(section, key)
                 else:
                     processed_val = config.getint(section, key)
-            except ValueError:
-                processed_val = val # Mantener como string si no
+            except (ValueError, AttributeError): # Añadido AttributeError para manejar casos como 'None'
+                processed_val = val # Mantener como string si no se puede convertir
             the_dict[section][key] = processed_val
     return the_dict
 
@@ -171,6 +172,15 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'open_interest_period': frontend_data.get('openInterestPeriod', '5m'),
             'evaluate_ma_filter': str(frontend_data.get('evaluateMaFilter', False)).lower(),
             'ma_period': str(frontend_data.get('maPeriod', 200)),
+
+            # --- NUEVO: Mapeo para la Estrategia de Soportes ---
+            'evaluate_support_strategy': str(frontend_data.get('evaluateSupportStrategy', False)).lower(),
+            'support_history_candles': str(frontend_data.get('supportHistoryCandles', 200)),
+            'support_pivot_window': str(frontend_data.get('supportPivotWindow', 5)),
+            'support_confirmations': str(frontend_data.get('supportConfirmations', 2)),
+            'support_level_tolerance_percent': str(frontend_data.get('supportLevelTolerancePercent', 0.5)),
+            'support_order_stop_loss_percent': str(frontend_data.get('supportOrderStopLossPercent', 2.0)),
+            'support_order_take_profit_percent': str(frontend_data.get('supportOrderTakeProfitPercent', 4.0)),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
