@@ -666,6 +666,15 @@ class TradingBot:
                                 self.logger.info(f"[{self.symbol}] Orden LIMIT de compra colocada en soporte {support_price}. Cantidad: {adjusted_qty}, ID: {order_result['orderId']}")
                                 # Registrar la orden activa
                                 self.active_support_orders[support_price] = order_result['orderId']
+                                
+                                # --- INICIO DE LA CORRECCIÓN ---
+                                # Actualizamos el estado del bot para que el frontend lo refleje
+                                self.pending_entry_order_id = order_result['orderId']
+                                self._update_state(BotState.WAITING_ENTRY_FILL)
+                                # --- FIN DE LA CORRECCIÓN ---
+
+                                # Si colocamos una orden, salimos del bucle para no colocar más en este ciclo.
+                                break
                             else:
                                 self.logger.error(f"[{self.symbol}] Fallo al colocar la orden LIMIT en el soporte {support_price}.")
 

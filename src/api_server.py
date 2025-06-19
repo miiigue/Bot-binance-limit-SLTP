@@ -311,8 +311,8 @@ def start_bot_workers():
         logger.info("Iniciando workers de bot...")
         for symbol_idx, symbol in enumerate(loaded_symbols_to_trade):
             logger.info(f"-> Preparando worker para {symbol}...")
-            # Usar loaded_trading_params
-            thread = threading.Thread(target=run_bot_worker, args=(symbol, loaded_trading_params, stop_event), name=f"Worker-{symbol}")
+            # Usar una COPIA de loaded_trading_params para cada hilo
+            thread = threading.Thread(target=run_bot_worker, args=(symbol, loaded_trading_params.copy(), stop_event), name=f"Worker-{symbol}")
             threads.append(thread)
             thread.start()
             if (symbol_idx + 1) < len(loaded_symbols_to_trade):

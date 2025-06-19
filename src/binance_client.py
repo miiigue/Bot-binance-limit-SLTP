@@ -9,6 +9,8 @@ import pandas as pd
 import time
 import os # Import the os module
 from decimal import Decimal
+import requests # <-- IMPORTAR REQUESTS
+from requests.adapters import HTTPAdapter # <-- IMPORTAR HTTPADAPTER
 
 # Importamos nuestra configuración y logger
 from .config_loader import load_config
@@ -56,11 +58,21 @@ def get_futures_client():
             base_url_to_use = futures_testnet_url
         else:
             logger.info("Inicializando cliente UMFutures en modo LIVE.")
-            # La librería por defecto usa fapi.binance.com, pero lo pasamos explícitamente por claridad
             base_url_to_use = futures_base_url
 
-        # Crear instancia del cliente UMFutures
+        # --- INICIO: Lógica para pool de conexiones ---
+        # Crear una sesión de requests para personalizar el pool de conexiones
+        session = requests.Session()
+        # Crear un adaptador con un pool más grande. 100 es un buen punto de partida.
+        adapter = HTTPAdapter(pool_connections=100, pool_maxsize=100)
+        # Montar este adaptador para todas las peticiones a la URL base de la API
+        session.mount(base_url_to_use, adapter)
+        # --- FIN: Lógica para pool de conexiones ---
+
+        # Crear instancia del cliente UMFutures, y LUEGO asignarle la sesión
         client = UMFutures(key=api_key, secret=api_secret, base_url=base_url_to_use)
+        # En lugar de reemplazar la sesión, modificamos la que el cliente ya tiene
+        client.session.mount(base_url_to_use, HTTPAdapter(pool_connections=100, pool_maxsize=100))
 
         # Intentar hacer una llamada simple para verificar la conexión y las claves API
         try:
