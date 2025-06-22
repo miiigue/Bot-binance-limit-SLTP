@@ -19,8 +19,12 @@ function App() {
   const [config, setConfig] = useState(null); // Estado para la configuración
   const [botsRunning, setBotsRunning] = useState(null); // null: desconocido, true: corriendo, false: detenidos
   const [initialLoadingError, setInitialLoadingError] = useState(null); // Para errores de carga inicial
-  // --- NUEVO ESTADO PARA DATOS DE LA CABECERA ---
-  const [headerPnlData, setHeaderPnlData] = useState({ totalPnl: 0, coinCount: 0 });
+  // --- ESTADO PARA DATOS DE LA CABECERA (ACTUALIZADO) ---
+  const [headerPnlData, setHeaderPnlData] = useState({ 
+    totalPnl: 0, 
+    coinCount: 0, 
+    coinsInPosition: 0 // <-- NUEVO CAMPO
+  });
   // ---------------------------------------------
 
   // --- NUEVO ESTADO PARA EL PNL AL INICIO DE LA SESIÓN ---
@@ -51,6 +55,12 @@ function App() {
   // --- NUEVO ESTADO PARA EL NOMBRE DE LA ESTRATEGIA ACTIVA EN EL FORMULARIO ---
   const [activeStrategyDisplayName, setActiveStrategyDisplayName] = useState('');
   // ------------------------------------------------------------------------
+
+  // --- NUEVA FUNCIÓN PARA ACTUALIZAR DATOS DE LA CABECERA ---
+  const handleStatusUpdate = useCallback((data) => {
+    setHeaderPnlData(prevData => ({ ...prevData, ...data }));
+  }, []);
+  // --------------------------------------------------------
 
   // --- FUNCIÓN PARA CARGAR ESTRATEGIAS DISPONIBLES ---
   const fetchAvailableStrategies = useCallback(async () => {
@@ -127,7 +137,13 @@ function App() {
                  pnlTrailingStopActivationUSDT: configData.pnlTrailingStopActivationUSDT !== undefined ? parseFloat(configData.pnlTrailingStopActivationUSDT) : 0.1,
                  pnlTrailingStopDropUSDT: configData.pnlTrailingStopDropUSDT !== undefined ? parseFloat(configData.pnlTrailingStopDropUSDT) : 0.05,
                  evaluateOpenInterestIncrease: configData.evaluateOpenInterestIncrease !== undefined ? configData.evaluateOpenInterestIncrease : true,
-                 openInterestPeriod: configData.openInterestPeriod || '5m'
+                 openInterestPeriod: configData.openInterestPeriod || '5m',
+                 support_order_stop_loss_percent: Number(configData.support_order_stop_loss_percent) || 0,
+                 support_order_take_profit_percent: Number(configData.support_order_take_profit_percent) || 0,
+                 support_enable_atr_trailing_stop: configData.support_enable_atr_trailing_stop || false,
+                 support_atr_period: Number(configData.support_atr_period) || 14,
+                 support_atr_multiplier: Number(configData.support_atr_multiplier) || 2.5,
+                 support_atr_activation_pnl_usdt: Number(configData.support_atr_activation_pnl_usdt) || 0.1,
             };
             setConfig(flatConfig);
             // --- NUEVO: Establecer nombre de estrategia activa desde config.ini ---
@@ -288,15 +304,6 @@ function App() {
   };
   // ------------------------------------------
 
-  // --- FUNCIÓN CALLBACK PARA ACTUALIZAR DATOS DE CABECERA ---
-  const handleStatusUpdateForHeader = useCallback((data) => {
-    setHeaderPnlData({
-      totalPnl: data.totalPnl,
-      coinCount: data.coinCount
-    });
-  }, []);
-  // ----------------------------------------------------
-
   useEffect(() => {
     if (timerActive) {
       intervalRef.current = setInterval(() => {
@@ -380,7 +387,7 @@ function App() {
         {/* PNL Info en el CENTRO */}
         <div className="flex-initial px-4"> {/* Volvemos al contenedor original no-flex para el PNL */}
           <div className="text-lg font-semibold text-center"> {/* Contenedor que centra todo el texto de PNL */}
-            <span>PNL {headerPnlData.coinCount} monedas = </span>
+            <span>PNL {headerPnlData.coinCount} monedas ({headerPnlData.coinsInPosition || 0}) = </span>
             <span
               className={`text-4xl ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-600' : 'text-black'}`}
             >
@@ -490,7 +497,7 @@ function App() {
                 botsRunning={botsRunning} 
                 onStart={handleStartBots} 
                 onShutdown={handleShutdown} 
-                onStatusUpdate={handleStatusUpdateForHeader}
+                onStatusUpdate={handleStatusUpdate}
             /> 
           </>
         )}

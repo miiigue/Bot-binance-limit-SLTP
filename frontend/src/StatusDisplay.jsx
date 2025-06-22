@@ -317,12 +317,12 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap text-sm">
                       <span className={`font-semibold ${getPnlColorClass(status.pnl)}`}>
-                        {formatPnl(status.pnl)}
+                      {formatPnl(status.pnl)}
                       </span>
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap text-sm">
                       <span className={`font-semibold ${getPnlColorClass(status.cumulative_pnl)}`}>
-                        {formatPnl(status.cumulative_pnl)}
+                      {formatPnl(status.cumulative_pnl)}
                       </span>
                     </td>
                      <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
@@ -400,7 +400,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                                    </div>
                                  );
                                })()}
-                             </div>
+                            </div>
                           ) : (
                             <p className="text-sm text-center text-gray-500 dark:text-gray-400">No trade history found for {status.symbol}.</p>
                           )

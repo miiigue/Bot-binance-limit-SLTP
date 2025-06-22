@@ -457,26 +457,26 @@ function ConfigForm({
               <option value="paper">Paper Trading (Simulación)</option>
               <option value="real">Real (con dinero real)</option>
             </select>
-          </div>
-          <div>
+              </div>
+              <div>
             <label htmlFor="positionSizeUSDT" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tamaño Posición (USDT)</label>
             <input type="number" name="positionSizeUSDT" id="positionSizeUSDT" value={formData.positionSizeUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="1"/>
           </div>
           <div className="md:col-span-3">
             <label htmlFor="symbolsToTrade" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Símbolos (separados por coma)</label>
             <textarea name="symbolsToTrade" id="symbolsToTrade" value={formData.symbolsToTrade} onChange={handleChange} rows={2} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="BTCUSDT,ETHUSDT"></textarea>
-          </div>
-        </div>
-      </fieldset>
+              </div>
+            </div>
+        </fieldset>
 
       <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
         <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Parámetros de ENTRADA</legend>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4"> 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4"> 
           <div>
             <label htmlFor="rsiInterval" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Intervalo Velas RSI</label>
             <input type="text" name="rsiInterval" id="rsiInterval" value={formData.rsiInterval} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 1m, 5m"/>
           </div>
-          <div>
+              <div>
             <label htmlFor="rsiPeriod" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Periodo RSI</label>
             <input type="number" name="rsiPeriod" id="rsiPeriod" value={formData.rsiPeriod} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="1"/>
           </div>
@@ -488,33 +488,33 @@ function ConfigForm({
             {renderLabelWithCheckbox("rsiEntryLevelLow", "RSI Límite Inferior", "evaluateRsiRange")}
             <input type="number" name="rsiEntryLevelLow" id="rsiEntryLevelLow" value={formData.rsiEntryLevelLow} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. Rango también afecta Límite Superior.</p>
-          </div>
-          <div>
+              </div>
+              <div>
             <label htmlFor="rsiEntryLevelHigh" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RSI Límite Superior</label>
             <input type="number" name="rsiEntryLevelHigh" id="rsiEntryLevelHigh" value={formData.rsiEntryLevelHigh} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-          </div>
-          <div>
+              </div>
+              <div>
             <label htmlFor="volumeSmaPeriod" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Periodo SMA Volumen</label>
             <input type="number" name="volumeSmaPeriod" id="volumeSmaPeriod" value={formData.volumeSmaPeriod} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-          </div>
-          <div>
+              </div>
+              <div>
             {renderLabelWithCheckbox("volumeFactor", "Factor Volumen Mínimo", "evaluateVolumeFilter")}
             <input type="number" name="volumeFactor" id="volumeFactor" value={formData.volumeFactor} onChange={handleChange} step="0.1" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-          </div>
-          <div>
+              </div>
+              <div>
             {renderLabelWithCheckbox("downtrendCheckCandles", "Velas Rojas para Bloquear", "evaluateDowntrendCandlesBlock")}
             <input type="number" name="downtrendCheckCandles" id="downtrendCheckCandles" value={formData.downtrendCheckCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-          </div>
-          <div>
+              </div>
+              <div>
             {renderLabelWithCheckbox("downtrendLevelCheck", "Nivel RSI para Bloquear", "evaluateDowntrendLevelsBlock")}
             <input type="number" name="downtrendLevelCheck" id="downtrendLevelCheck" value={formData.downtrendLevelCheck} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-          </div>
-          <div>
+              </div>
+              <div>
             {renderLabelWithCheckbox("requiredUptrendCandles", "Velas Verdes Requeridas", "evaluateRequiredUptrend")}
             <input type="number" name="requiredUptrendCandles" id="requiredUptrendCandles" value={formData.requiredUptrendCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-          </div>
-        </div>
-      </fieldset>
+              </div>
+            </div>
+        </fieldset>
 
       {/* --- Estrategia de Media Móvil --- */}
       <ConfigSection title="Filtro de Media Móvil (MA)" className="col-span-1">
@@ -613,47 +613,47 @@ function ConfigForm({
       {/* --- Trailing Stops --- */}
       <ConfigSection title="Trailing Stops" className="col-span-1 md:col-span-3">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div>
-            {renderLabelWithCheckbox("takeProfitUSDT", "Take Profit (USDT)", "enableTakeProfitPnl")}
-            <input type="number" name="takeProfitUSDT" id="takeProfitUSDT" value={formData.takeProfitUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
-          </div>
-          <div>
-            {renderLabelWithCheckbox("stopLossUSDT", "Stop Loss (USDT)", "enableStopLossPnl")}
+              <div>
+              {renderLabelWithCheckbox("takeProfitUSDT", "Take Profit (USDT)", "enableTakeProfitPnl")}
+              <input type="number" name="takeProfitUSDT" id="takeProfitUSDT" value={formData.takeProfitUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
+              </div>
+              <div>
+              {renderLabelWithCheckbox("stopLossUSDT", "Stop Loss (USDT)", "enableStopLossPnl")}
             <input type="number" name="stopLossUSDT" id="stopLossUSDT" value={formData.stopLossUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" max="0"/>
           </div>
-          <div>
-            <label htmlFor="rsiTarget" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RSI Objetivo Activación (Salida)</label>
-            <input type="number" name="rsiTarget" id="rsiTarget" value={formData.rsiTarget} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-          </div>
-          <div>
-            {renderLabelWithCheckbox("rsiThresholdDown", "RSI Drop Salida (Negativo)", "enableTrailingRsiStop")}
-            <input type="number" name="rsiThresholdDown" id="rsiThresholdDown" value={formData.rsiThresholdDown} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. Trailing RSI también afecta RSI Objetivo.</p>
-          </div>
-          <div>
-            {renderLabelWithCheckbox("priceTrailingStopDistanceUSDT", "Distancia Trailing Precio (USDT)", "enablePriceTrailingStop")}
-            <input
-              type="number"
-              name="priceTrailingStopDistanceUSDT"
-              id="priceTrailingStopDistanceUSDT"
-              value={formData.priceTrailingStopDistanceUSDT}
-              onChange={handleChange}
-              step="any"
-              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-              min="0"
-            />
-          </div>
-          <div>
+            <div>
+              <label htmlFor="rsiTarget" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RSI Objetivo Activación (Salida)</label>
+              <input type="number" name="rsiTarget" id="rsiTarget" value={formData.rsiTarget} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+              </div>
+              <div>
+              {renderLabelWithCheckbox("rsiThresholdDown", "RSI Drop Salida (Negativo)", "enableTrailingRsiStop")}
+              <input type="number" name="rsiThresholdDown" id="rsiThresholdDown" value={formData.rsiThresholdDown} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. Trailing RSI también afecta RSI Objetivo.</p>
+            </div>
+            <div>
+              {renderLabelWithCheckbox("priceTrailingStopDistanceUSDT", "Distancia Trailing Precio (USDT)", "enablePriceTrailingStop")}
+                <input
+                type="number"
+                name="priceTrailingStopDistanceUSDT"
+                id="priceTrailingStopDistanceUSDT"
+                value={formData.priceTrailingStopDistanceUSDT}
+                  onChange={handleChange}
+                  step="any"
+                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                min="0"
+                />
+              </div>
+              <div>
             <label htmlFor="priceTrailingStopActivationPnlUSDT" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Activación PNL para Trailing Precio (USDT)</label>
-            <input
-              type="number"
-              name="priceTrailingStopActivationPnlUSDT"
-              id="priceTrailingStopActivationPnlUSDT"
-              value={formData.priceTrailingStopActivationPnlUSDT}
-              onChange={handleChange}
+                <input
+                type="number"
+                name="priceTrailingStopActivationPnlUSDT"
+                id="priceTrailingStopActivationPnlUSDT"
+                value={formData.priceTrailingStopActivationPnlUSDT}
+                  onChange={handleChange}
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white"
-              step="any"
-            />
+                step="any"
+                />
           </div>
           <div>
             <ConfigItem 
@@ -687,33 +687,33 @@ function ConfigForm({
                   step="any"
                 />
             </ConfigItem>
-          </div>
-        </div>
+              </div>
+            </div>
       </ConfigSection>
 
-      <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
+        <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
         <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Otros Parámetros</legend>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-          <div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+              <div>
             <label htmlFor="cycleSleepSeconds" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ciclo de Segundos</label>
             <input type="number" name="cycleSleepSeconds" id="cycleSleepSeconds" value={formData.cycleSleepSeconds} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Pausa entre cada ciclo del bot.</p>
-          </div>
-          <div>
+              </div>
+              <div>
             <label htmlFor="orderTimeoutSeconds" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timeout de Orden (segundos)</label>
             <input type="number" name="orderTimeoutSeconds" id="orderTimeoutSeconds" value={formData.orderTimeoutSeconds} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Tiempo para cancelar una orden si no se completa.</p>
-          </div>
-        </div>
-      </fieldset>
+              </div>
+            </div>
+        </fieldset>
 
       <div className="pt-6">
         <button type="submit" disabled={isLoading} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50">
           {isLoading ? 'Guardando en config.ini...' : 'Guardar Configuración (para el Bot)'}
-        </button>
+          </button>
         {showSuccessMessage && <p className="mt-2 text-sm text-green-600 dark:text-green-400 text-center">¡Configuración (config.ini) guardada exitosamente!</p>}
         {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400 text-center">Error al guardar config.ini: {error}</p>}
-      </div>
+        </div>
 
       {/* --- Sección de Gestión de Estrategias --- */}
       <ConfigSection title="Gestión de Estrategias" className="bg-gray-50 dark:bg-gray-800/50">
@@ -793,7 +793,7 @@ function ConfigForm({
         </div>
       </ConfigSection>
       {/* --- Fin Sección de Gestión de Estrategias --- */}
-    </form>
+      </form>
   );
 }
 
