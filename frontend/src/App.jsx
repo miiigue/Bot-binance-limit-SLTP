@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ConfigForm from './ConfigForm'; // Importa el componente del formulario
 import StatusDisplay from './StatusDisplay'; // <-- Importar el nuevo componente
+import RiskDisplay from './RiskDisplay'; // <-- Importar el nuevo componente
 import './index.css'; // Importar el archivo CSS principal existente
 
 // --- FUNCIÓN PARA FORMATEAR EL TIEMPO TRANSCURRIDO (movida o copiada aquí) ---
@@ -499,6 +500,11 @@ function App() {
                 onShutdown={handleShutdown} 
                 onStatusUpdate={handleStatusUpdate}
             /> 
+
+            {/* Añadir el componente de riesgo aquí */}
+            <div className="mt-6">
+              <RiskDisplay />
+            </div>
           </>
         )}
       </div>

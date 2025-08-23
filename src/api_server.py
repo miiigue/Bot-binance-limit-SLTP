@@ -10,6 +10,8 @@ from flask_cors import CORS
 import threading
 import time # Necesario para sleep
 import logging # Necesario para get_logger y calculate_sleep
+from decimal import Decimal
+from threading import Lock # Necesario para el Lock del RiskManager
 
 # --- Quitar Workaround sys.path --- 
 # current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +25,7 @@ from src.logger_setup import setup_logging, get_logger
 from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol
 # Importar TradingBot y BotState para run_bot_worker
 from src.bot import TradingBot, BotState 
+from src.binance_client import get_account_balance_usdt
 
 # --- Definición de variables compartidas para la gestión de workers ---
 worker_statuses = {} # Ej: {'BTCUSDT': {'state': 'IN_POSITION', 'pnl': 5.2}, 'ETHUSDT': ...}
@@ -216,7 +219,12 @@ def run_bot_worker(symbol, trading_params, stop_event_ref):
         # Obtener sleep_duration aquí usando la función movida
         sleep_duration = get_sleep_seconds(trading_params)
         
-        bot_instance = TradingBot(symbol=symbol, trading_params=trading_params)
+        # Pasa el gestor de riesgo a la instancia del bot
+        bot_instance = TradingBot(symbol=symbol, trading_params=trading_params, risk_manager=risk_manager)
+        
+        # Guardar la instancia en un lugar accesible si es necesario
+        # (por ahora, la lógica principal está dentro del propio hilo)
+
         with status_lock:
              worker_statuses[symbol] = bot_instance.get_current_status() 
         logger.info(f"[{symbol}] Worker thread iniciado. Instancia de TradingBot creada. Tiempo de espera: {sleep_duration}s") # Usar sleep_duration
@@ -872,3 +880,80 @@ def list_strategies():
 # y el if __name__ == '__main__' no se necesitan aquí 
 # si api_server.py es solo para definir la app y sus rutas,
 # y es importado por run_bot.py 
+
+# --- NUEVO: Gestor de Riesgo ---
+class RiskManager:
+    def __init__(self, logger, initial_risk_percentage=Decimal('0.50')): # 50% por defecto
+        self.lock = Lock()
+        self.logger = logger # <-- CORRECCIÓN: Guardar el logger
+        self.total_balance = get_account_balance_usdt() or Decimal('0')
+        self.risk_percentage = initial_risk_percentage
+        self.max_exposure = self.total_balance * self.risk_percentage
+        self.current_exposure = Decimal('0')
+        self.logger.info(f"RiskManager inicializado. Saldo: {self.total_balance} USDT, % Riesgo: {self.risk_percentage:.2%}, Exposición Máxima: {self.max_exposure} USDT")
+
+    def update_balance(self):
+        with self.lock:
+            self.total_balance = get_account_balance_usdt() or self.total_balance
+            self.max_exposure = self.total_balance * self.risk_percentage
+            self.logger.info(f"Balance actualizado. Nuevo Saldo: {self.total_balance} USDT, Exposición Máxima: {self.max_exposure} USDT")
+
+    def can_open_position(self, position_size_usdt: Decimal) -> bool:
+        with self.lock:
+            if self.current_exposure + position_size_usdt <= self.max_exposure:
+                return True
+            else:
+                self.logger.warning(f"Apertura de posición rechazada. Exposición actual ({self.current_exposure}) + nueva ({position_size_usdt}) excede el máximo ({self.max_exposure}).")
+                return False
+
+    def add_exposure(self, size_usdt: Decimal):
+        with self.lock:
+            self.current_exposure += size_usdt
+            self.logger.info(f"Exposición añadida: {size_usdt}. Exposición total actual: {self.current_exposure}")
+
+    def remove_exposure(self, size_usdt: Decimal):
+        with self.lock:
+            self.current_exposure -= size_usdt
+            if self.current_exposure < 0:
+                self.current_exposure = Decimal('0')
+            self.logger.info(f"Exposición eliminada: {size_usdt}. Exposición total actual: {self.current_exposure}")
+
+    def set_risk_percentage(self, new_percentage: Decimal):
+        with self.lock:
+            if Decimal('0') <= new_percentage <= Decimal('1'):
+                self.risk_percentage = new_percentage
+                self.max_exposure = self.total_balance * self.risk_percentage
+                self.logger.info(f"Porcentaje de riesgo actualizado a {self.risk_percentage:.2%}. Nueva exposición máxima: {self.max_exposure} USDT")
+            else:
+                self.logger.error(f"Intento de establecer un porcentaje de riesgo inválido: {new_percentage}")
+
+    def get_status(self):
+        with self.lock:
+            return {
+                'total_balance': f"{self.total_balance:.2f}",
+                'risk_percentage': f"{self.risk_percentage:.2%}",
+                'max_exposure': f"{self.max_exposure:.2f}",
+                'current_exposure': f"{self.current_exposure:.2f}"
+            }
+
+risk_manager = RiskManager(logger=api_logger) # <-- CORRECCIÓN: Usar el nombre de variable correcto 'api_logger'
+# --------------------------------- 
+
+# --- Rutas de la API ---
+
+@app.route('/api/risk_config', methods=['GET', 'POST'])
+def handle_risk_config():
+    if request.method == 'POST':
+        data = request.get_json()
+        if data and 'risk_percentage' in data:
+            try:
+                # El frontend enviará un número (ej. 50), lo convertimos a Decimal (0.50)
+                percentage = Decimal(data['risk_percentage']) / Decimal('100')
+                risk_manager.set_risk_percentage(percentage)
+                return jsonify({'message': 'Risk percentage updated successfully.'}), 200
+            except Exception as e:
+                return jsonify({'error': f'Invalid value for risk_percentage: {e}'}), 400
+        return jsonify({'error': 'Missing or invalid risk_percentage in request body.'}), 400
+    
+    # GET request
+    return jsonify(risk_manager.get_status()), 200 

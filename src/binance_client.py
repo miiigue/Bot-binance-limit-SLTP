@@ -628,6 +628,33 @@ def get_open_interest_history(symbol: str, period: str, limit: int = 2) -> list[
         return None
 # --- FIN NUEVA FUNCIÓN ---
 
+def get_account_balance_usdt() -> Decimal | None:
+    """
+    Obtiene el saldo disponible en USDT de la cuenta de futuros.
+
+    Returns:
+        Decimal: El saldo disponible en USDT.
+        None: Si ocurre un error.
+    """
+    client = get_futures_client()
+    if not client:
+        logger = get_logger()
+        logger.error("No se pudo obtener el cliente de futuros para consultar el saldo.")
+        return None
+    
+    try:
+        account_info = client.account()
+        for asset in account_info['assets']:
+            if asset['asset'] == 'USDT':
+                # 'availableBalance' es el saldo que no está comprometido en órdenes o posiciones
+                return Decimal(asset['availableBalance'])
+        logger.warning("No se encontró el saldo para el asset USDT en la cuenta de futuros.")
+        return Decimal('0')
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error al obtener el saldo de la cuenta de futuros: {e}")
+        return None
+
 # Ejemplo de uso (no ejecutar directamente aquí)
 # if __name__ == '__main__':
 #     from logger_setup import setup_logging

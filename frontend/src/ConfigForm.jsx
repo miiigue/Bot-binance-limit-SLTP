@@ -90,6 +90,7 @@ function ConfigForm({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [riskPercentage, setRiskPercentage] = useState(50); // Estado para el % de riesgo
 
   // --- Estados para la gestión de estrategias ---
   const [strategyNameInput, setStrategyNameInput] = useState('');
@@ -110,6 +111,7 @@ function ConfigForm({
   useEffect(() => {
     const fetchInitialConfig = async () => {
       try {
+        // Cargar configuración principal del bot (config.ini)
         const response = await fetch('/api/config');
         if (!response.ok) {
           throw new Error(`No se pudo cargar la configuración inicial: ${response.statusText}`);
@@ -177,6 +179,15 @@ function ConfigForm({
           // Mapeo de [BINANCE]
           mode: configFromServer.BINANCE?.mode
         };
+
+        // Cargar configuración de riesgo
+        const riskResponse = await fetch('/api/risk_config');
+        if (riskResponse.ok) {
+          const riskData = await riskResponse.json();
+          // Extraer solo el número del string "50.00%"
+          const riskValue = parseFloat(riskData.risk_percentage.replace('%', ''));
+          setRiskPercentage(riskValue);
+        }
 
         // Filtrar claves undefined para no sobreescribir defaults innecesariamente
         Object.keys(mappedData).forEach(key => {
@@ -312,6 +323,26 @@ function ConfigForm({
   };
 
   // --- Funciones para Guardar y Cargar Estrategias ---
+  const handleSaveRisk = async () => {
+    try {
+      const response = await fetch('/api/risk_config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ risk_percentage: riskPercentage }),
+      });
+      if (response.ok) {
+        alert('Porcentaje de riesgo guardado exitosamente.');
+      } else {
+        const errorData = await response.json();
+        alert(`Error al guardar el riesgo: ${errorData.error || 'Error desconocido'}`);
+      }
+    } catch (error) {
+      alert(`Error de red al guardar el riesgo: ${error}`);
+    }
+  };
+
   const handleSaveCurrentStrategy = async () => {
     if (!strategyNameInput.trim()) {
       setSaveStrategyError("Por favor, introduce un nombre para la estrategia.");
@@ -468,6 +499,41 @@ function ConfigForm({
               </div>
             </div>
         </fieldset>
+
+      {/* --- NUEVA SECCIÓN DE GESTIÓN DE RIESGO --- */}
+      <ConfigSection title="Gestión de Riesgo Global">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <ConfigItem
+            labelText="Máximo % de Capital en Riesgo"
+            htmlFor="risk-percentage"
+            description="Porcentaje del balance total que puede estar en posiciones abiertas simultáneamente."
+          >
+            <div className="mt-1 flex rounded-md shadow-sm">
+              <NumberInput
+                id="risk-percentage"
+                name="risk-percentage"
+                value={riskPercentage}
+                onChange={(e) => setRiskPercentage(e.target.value)}
+                min="0"
+                max="100"
+              />
+              <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300">
+                %
+              </span>
+            </div>
+          </ConfigItem>
+          <div className="self-end pb-1">
+            <button
+              type="button"
+              onClick={handleSaveRisk}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+            >
+              Guardar Riesgo
+            </button>
+          </div>
+        </div>
+      </ConfigSection>
+      {/* ------------------------------------------- */}
 
       <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
         <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Parámetros de ENTRADA</legend>

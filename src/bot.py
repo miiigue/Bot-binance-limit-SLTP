@@ -56,14 +56,36 @@ class TradingBot:
     Diseñada para ser instanciada por cada símbolo a operar.
     Ahora usa órdenes LIMIT.
     """
-    def __init__(self, symbol: str, trading_params: dict):
+    def __init__(self, symbol: str, trading_params: dict, risk_manager):
         """
         Inicializa el bot para un símbolo específico.
         Lee parámetros, inicializa el cliente, obtiene información del símbolo y estado inicial.
         """
         self.symbol = symbol.upper()
+        self.risk_manager = risk_manager # <-- Guardar referencia al gestor de riesgo
+        self.state = BotState.INITIALIZING
+        self.in_position = False
+        self.is_running = False
+        self.last_known_pnl = 0.0
+        self.last_known_entry_price = 0.0
+        self.last_known_position_size = 0.0
+        self.last_error_message = None
+        self.entry_reason = ""
+        self.exit_reason = ""
+
+        # --- Variables de control de la estrategia (IDs de órdenes) ---
+        self.active_order_id = None
+        self.active_order_type = None
+        self.pending_entry_order_id = None
+        self.pending_exit_order_id = None
+        self.pending_tp_order_id = None
+        self.pending_sl_order_id = None
+
+        # CORRECCIÓN DEFINITIVA: Inicializar PNL histórico para evitar AttributeError
+        self.historical_pnl = Decimal('0')
+
         self.logger = get_logger()
-        self.params = trading_params # <-- STORE the params dictionary
+        self.params = trading_params
         self.logger.info(f"[{self.symbol}] Inicializando worker con parámetros RECIBIDOS: {self.params}")
         self.logger.info(f"[{self.symbol}] Inicializando worker con parámetros: {self.params}")
 
@@ -182,67 +204,49 @@ class TradingBot:
             self.logger.critical(f"[{self.symbol}] Error al procesar parámetros de trading recibidos: {e}", exc_info=True)
             raise ValueError(f"Parámetros de trading inválidos para {self.symbol}")
 
-        # Obtener información del símbolo (precisión, tick size) - usa self.symbol
+        # Obtener información del símbolo (precisiones, filtros, etc.)
         self.symbol_info = get_futures_symbol_info(self.symbol)
         if not self.symbol_info:
-            self.logger.critical(f"[{self.symbol}] No se pudo obtener información para el símbolo. Abortando worker.")
-            raise ValueError(f"Información de símbolo {self.symbol} no disponible")
+            raise ValueError(f"No se pudo obtener la información del símbolo para {self.symbol}")
 
+        self.price_precision = int(self.symbol_info.get('pricePrecision', 0))
         self.qty_precision = int(self.symbol_info.get('quantityPrecision', 0))
-        self.price_tick_size = None
-        for f in self.symbol_info.get('filters', []):
-            if f.get('filterType') == 'PRICE_FILTER':
-                self.price_tick_size = Decimal(f.get('tickSize', '0.00000001'))
-                break
+
+        # --- INICIO CORRECCIÓN: Extraer minQty, stepSize y tickSize de los filtros ---
+        self.min_qty = None
+        self.step_size = None
+        self.price_tick_size = None 
+
+        filters = self.symbol_info.get('filters', [])
+        for f in filters:
+            if f.get('filterType') == 'LOT_SIZE':
+                self.min_qty = Decimal(f.get('minQty', '0'))
+                self.step_size = Decimal(f.get('stepSize', '0'))
+                self.logger.info(f"[{self.symbol}] Filtros LOT_SIZE encontrados: minQty={self.min_qty}, stepSize={self.step_size}")
+            elif f.get('filterType') == 'PRICE_FILTER':
+                self.price_tick_size = Decimal(f.get('tickSize', '0'))
+                self.logger.info(f"[{self.symbol}] Filtro PRICE_FILTER encontrado: tickSize={self.price_tick_size}")
+        
+        if self.min_qty is None or self.step_size is None or self.min_qty == Decimal('0') or self.step_size == Decimal('0'):
+             self.logger.error(f"[{self.symbol}] No se encontraron los filtros LOT_SIZE válidos. El bot no podrá operar. minQty={self.min_qty}, stepSize={self.step_size}")
+             # Considerar poner el bot en estado de error aquí si es crítico
         if self.price_tick_size is None:
-             self.logger.warning(f"[{self.symbol}] No se encontró PRICE_FILTER tickSize, redondeo de precio puede ser impreciso.")
-
-        # La inicialización de DB y esquema es global, no se hace aquí
-
-        # Estado inicial del bot para ESTE símbolo
-        self.in_position = False
-        self.current_position = None
-        self.last_rsi_value = None
+            self.logger.warning(f"[{self.symbol}] No se encontró el filtro PRICE_FILTER. El ajuste de precio usará el default.")
+        # --- FIN CORRECCIÓN ---
         
-        # --- Nuevo estado para órdenes LIMIT pendientes ---
-        self.pending_entry_order_id = None  # Guarda el ID de la orden LIMIT BUY pendiente
-        self.pending_exit_order_id = None   # Guarda el ID de la orden LIMIT SELL pendiente
-        self.pending_order_timestamp = None # Guarda el time.time() cuando se creó la orden pendiente
-        # self.current_exit_reason = None # Movido arriba con otros estados internos
-        # --------------------------------------------------
-        
-        # self.last_known_pnl = None # Ya inicializado arriba
-        
-        self._check_initial_position() # Llama a get_futures_position con self.symbol
+        self._check_initial_position()
 
-        # --- LÓGICA DE ESTADO FINAL MODIFICADA ---
         # Si no estamos en un estado de error después de las verificaciones iniciales...
-        if self.current_state == BotState.INITIALIZING:
+        if self.state == BotState.INITIALIZING:
             # ...decidir el estado basado en si se encontró una posición.
             if self.in_position:
-                 self._update_state(BotState.IN_POSITION) # Estado correcto si hay posición
+                 self.state = BotState.IN_POSITION
                  self.logger.info(f"[{self.symbol}] Inicialización completa. Posición existente detectada. Transicionando a estado IN_POSITION.")
             else:
-                 self._update_state(BotState.IDLE) # Estado correcto si no hay posición
+                 self.state = BotState.IDLE
                  self.logger.info(f"[{self.symbol}] Inicialización completa. No hay posición. Transicionando a estado IDLE.")
-        # Si hubo un error antes, el estado ya será BotState.ERROR y no se cambia aquí.
-        # --- FIN DE LÓGICA MODIFICADA ---
 
         self.logger.info(f"[{self.symbol}] Worker inicializado exitosamente (Timeout Órdenes: {self.order_timeout_seconds}s).")
-
-        # --- NUEVA VARIABLE PARA TRAILING RSI STOP ---
-        self.rsi_peak_since_target = None # Almacenará el RSI más alto desde que rsi_target fue alcanzado
-        # --------------------------------------------
-
-        # --- Limpiar también estado de trailing de precio ---
-        self.price_peak_since_entry = None
-        self.price_trailing_stop_armed = False
-        # --- Limpiar también estado de trailing de PNL ---
-        self.pnl_peak_since_activation = None
-        self.pnl_trailing_stop_armed = False
-        # --- NUEVO: Limpiar estado de Open Interest ---
-        # self.previous_open_interest_usdt = None # <-- YA NO SE NECESITA
-        # ----------------------------------------------------
 
     def _check_initial_position(self):
         """Consulta a Binance si ya existe una posición para self.symbol."""
@@ -310,10 +314,31 @@ class TradingBot:
 
         # Limpiar el PnL conocido (aunque se recalculará si se entra en nueva posición)
 
-    def _adjust_quantity(self, quantity: Decimal) -> float:
-        """Ajusta la cantidad a la precisión requerida por self.symbol."""
-        adjusted_qty = quantity.quantize(Decimal('1e-' + str(self.qty_precision)), rounding=ROUND_DOWN)
-        self.logger.debug(f"[{self.symbol}] Cantidad original: {quantity:.8f}, Precisión: {self.qty_precision}, Cantidad ajustada: {adjusted_qty:.8f}")
+    def _adjust_quantity(self, quantity: Decimal) -> float | None:
+        """
+        Ajusta la cantidad a la precisión y reglas (minQty, stepSize) requeridas por el símbolo.
+        Devuelve None si la cantidad es demasiado pequeña para operar.
+        """
+        if self.min_qty is None or self.step_size is None:
+            self.logger.error(f"[{self.symbol}] No se han definido min_qty o step_size. No se puede ajustar la cantidad.")
+            return None
+
+        # 1. Verificar si la cantidad es mayor que la mínima permitida
+        if quantity < self.min_qty:
+            self.logger.warning(f"[{self.symbol}] Cantidad calculada ({quantity:.8f}) es menor que la mínima permitida ({self.min_qty:.8f}). No se creará la orden.")
+            return None
+
+        # 2. Ajustar la cantidad al step_size (tamaño del paso)
+        # La fórmula es: floor(quantity / stepSize) * stepSize
+        # Usamos ROUND_DOWN que equivale a floor para números positivos.
+        adjusted_qty = (quantity / self.step_size).quantize(Decimal('1'), rounding=ROUND_DOWN) * self.step_size
+        
+        # 3. Re-verificar que la cantidad ajustada no sea cero o menor que la mínima (caso borde)
+        if adjusted_qty < self.min_qty:
+            self.logger.warning(f"[{self.symbol}] Cantidad ajustada ({adjusted_qty:.8f}) es menor que la mínima permitida ({self.min_qty:.8f}). No se creará la orden.")
+            return None
+
+        self.logger.info(f"[{self.symbol}] Cantidad ajustada para la orden: {float(adjusted_qty):.8f} (Original: {float(quantity):.8f}, Min: {self.min_qty}, Step: {self.step_size})")
         return float(adjusted_qty)
 
     def _adjust_price(self, price: Decimal) -> Decimal:
@@ -638,51 +663,49 @@ class TradingBot:
                 confirmed_supports = self._find_confirmed_supports(klines_df)
                 
                 # --- GESTIÓN DE ÓRDENES DE SOPORTE ---
-                # 1. Cancelar órdenes en soportes que ya no existen
-                current_prices_with_orders = list(self.active_support_orders.keys())
-                for price_level in current_prices_with_orders:
-                    if price_level not in confirmed_supports:
-                        order_id_to_cancel = self.active_support_orders.pop(price_level)
-                        self.logger.info(f"[{self.symbol}] El soporte en {price_level} ya no es válido. Cancelando orden {order_id_to_cancel}.")
-                        cancel_futures_order(self.symbol, order_id_to_cancel)
                 
-                # 2. Colocar órdenes en nuevos soportes
+                # --- INICIO DE LA CORRECCIÓN: Lógica de "Solo el Mejor Soporte" ---
                 if confirmed_supports:
+                    # 1. Seleccionar el mejor soporte (el más alto/cercano al precio actual)
+                    best_support_price = max(confirmed_supports)
+                    self.logger.info(f"[{self.symbol}] Estrategia de Soportes: Mejor soporte válido encontrado en {best_support_price}.")
+
+                    # 2. Cancelar órdenes antiguas si no están en el mejor soporte
+                    current_prices_with_orders = list(self.active_support_orders.keys())
+                    for price_level in current_prices_with_orders:
+                        if price_level != best_support_price:
+                            order_id_to_cancel = self.active_support_orders.pop(price_level)
+                            self.logger.info(f"[{self.symbol}] El soporte en {price_level} ya no es el mejor. Cancelando orden {order_id_to_cancel}.")
+                            cancel_futures_order(self.symbol, order_id_to_cancel)
+                    
+                    # 3. Colocar una nueva orden solo si no hay ya una en el mejor soporte
                     current_market_price = klines_df['close'].iloc[-1]
-                    for support_price in confirmed_supports:
-                        # Solo colocar orden si está por debajo del precio actual (para evitar compras accidentales)
-                        # y si no hay ya una orden para este nivel
-                        if support_price < current_market_price and support_price not in self.active_support_orders:
-                            self.logger.info(f"[{self.symbol}] Nuevo soporte válido encontrado en {support_price}. Colocando orden LIMIT.")
-                            
-                            # Calcular cantidad basada en el tamaño de posición en USDT
-                            quantity = self.position_size_usdt / support_price
+                    if best_support_price < current_market_price and best_support_price not in self.active_support_orders:
+                        self.logger.info(f"[{self.symbol}] Intentando colocar orden en el mejor soporte: {best_support_price}.")
+                        
+                        # ¡AQUÍ LA COMPROBACIÓN DE RIESGO!
+                        if self.risk_manager.can_open_position(Decimal(str(self.position_size_usdt))):
+                            # Calcular cantidad
+                            quantity = self.position_size_usdt / best_support_price
                             adjusted_qty = self._adjust_quantity(quantity)
                             
-                            # Crear la orden LIMIT
-                            order_result = create_futures_limit_order(self.symbol, 'BUY', adjusted_qty, support_price)
-                            
-                            if order_result and 'orderId' in order_result:
-                                self.logger.info(f"[{self.symbol}] Orden LIMIT de compra colocada en soporte {support_price}. Cantidad: {adjusted_qty}, ID: {order_result['orderId']}")
-                                # Registrar la orden activa
-                                self.active_support_orders[support_price] = order_result['orderId']
+                            if adjusted_qty is not None and adjusted_qty > 0:
+                                order_result = create_futures_limit_order(self.symbol, 'BUY', adjusted_qty, best_support_price)
                                 
-                                # --- INICIO DE LA CORRECCIÓN ---
-                                # Actualizamos el estado del bot para que el frontend lo refleje
-                                self.pending_entry_order_id = order_result['orderId']
-                                self._update_state(BotState.WAITING_ENTRY_FILL)
-                                # --- FIN DE LA CORRECCIÓN ---
-
-                                # Si colocamos una orden, salimos del bucle para no colocar más en este ciclo.
-                                break
+                                if order_result and 'orderId' in order_result:
+                                    self.logger.info(f"[{self.symbol}] Orden LIMIT de compra colocada en {best_support_price}. ID: {order_result['orderId']}")
+                                    self.active_support_orders[best_support_price] = order_result['orderId']
+                                else:
+                                    self.logger.error(f"[{self.symbol}] Fallo al colocar la orden en el soporte {best_support_price}.")
                             else:
-                                self.logger.error(f"[{self.symbol}] Fallo al colocar la orden LIMIT en el soporte {support_price}.")
-
+                                self.logger.warning(f"[{self.symbol}] Cantidad inválida para el soporte {best_support_price}. No se colocará orden.")
+                        else:
+                            self.logger.warning(f"[{self.symbol}] APERTURA RECHAZADA por RiskManager. Exposición global excedida.")
+                # --- FIN DE LA CORRECCIÓN ---
 
             # --- LÓGICA ORIGINAL DE ESTRATEGIA (RSI, etc.) ---
             # Solo ejecutar si no estamos en una posición Y si la estrategia de soportes NO está activa
             # O si la estrategia de soportes SÍ está activa pero no queremos que sea exclusiva.
-            # Por ahora, las haremos exclusivas: si una está on, la otra está off.
             if not self.evaluate_support_strategy:
                 if not self.in_position:
                     if self.pending_entry_order_id:
@@ -1020,22 +1043,25 @@ class TradingBot:
         elif new_state != BotState.ERROR:
              self.last_error_message = None # Limpiar mensaje de error si salimos del estado ERROR
 
-    def get_current_status(self) -> dict:
-         """Devuelve el estado actual del bot y datos relevantes."""
-         status_data = {
-             'symbol': self.symbol,
-             'state': self.current_state.value,
-             'in_position': self.in_position,
-             'entry_price': float(self.current_position['entry_price']) if self.in_position and self.current_position else None,
-             'quantity': float(self.current_position['quantity']) if self.in_position and self.current_position else None,
-             'pnl': float(self.last_known_pnl) if self.in_position and self.last_known_pnl is not None else None,
-             'pending_entry_order_id': self.pending_entry_order_id,
-             'pending_exit_order_id': self.pending_exit_order_id, # Este es el ID de la orden de salida general (si se usara la lógica antigua)
-             'pending_tp_order_id': self.pending_tp_order_id,    # <-- NUEVO
-             'pending_sl_order_id': self.pending_sl_order_id,    # <-- NUEVO
-             'last_error': self.last_error_message
-         }
-         return status_data
+    def get_current_status(self):
+        """Devuelve un diccionario con el estado actual del bot para la API."""
+        return {
+            'symbol': self.symbol,
+            'state': self.state.value if self.state else "UNKNOWN",
+            'is_running': self.is_running,
+            'in_position': self.in_position,
+            'current_pnl': self.last_known_pnl,
+            'hist_pnl': self.historical_pnl, # Usar la nueva variable
+            'entry_price': self.last_known_entry_price,
+            'position_size': self.last_known_position_size,
+            'pending_entry_order_id': self.pending_entry_order_id,
+            'pending_exit_order_id': self.pending_exit_order_id,
+            'pending_tp_order_id': self.pending_tp_order_id,
+            'pending_sl_order_id': self.pending_sl_order_id,
+            'last_error': self.last_error_message,
+            'entry_reason': self.entry_reason,
+            'exit_reason': self.exit_reason,
+        }
 
     def _set_error_state(self, message: str):
         """Establece el estado del bot a ERROR y guarda el mensaje."""
@@ -1125,6 +1151,12 @@ class TradingBot:
         limit_sell_price_adjusted = self._adjust_price(price)
         quantity_to_sell = self._adjust_quantity(self.current_position['quantity'])
         
+        # CORRECCIÓN: Verificar si la cantidad es válida
+        if quantity_to_sell is None or quantity_to_sell <= 0:
+            self.logger.error(f"[{self.symbol}] Error crítico: la cantidad para cerrar la posición es inválida ({quantity_to_sell}). No se puede crear orden de salida.")
+            self._set_error_state("Invalid quantity for exit order.")
+            return
+
         # Calcular la precisión del precio para el log de forma segura
         price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
         self.logger.info(f"[{self.symbol}] Calculado para salida: Precio LIMIT SELL={limit_sell_price_adjusted:.{price_precision_log}f}, Cantidad={quantity_to_sell}")
@@ -1374,8 +1406,9 @@ class TradingBot:
                 limit_buy_price = self._adjust_price(best_ask_price)
                 quantity = self._adjust_quantity(self.position_size_usdt / limit_buy_price)
                 
-                if quantity <= 0:
-                    self.logger.error(f"[{self.symbol}] Cantidad calculada para la orden es cero o negativa ({quantity}). No se puede entrar.")
+                # CORRECCIÓN: La comprobación debe ser si es None
+                if quantity is None or quantity <= 0:
+                    self.logger.warning(f"[{self.symbol}] Cantidad calculada para la orden es inválida ({quantity}) después del ajuste. No se puede entrar.")
                     self._update_state(BotState.IDLE)
                     return
 
@@ -1531,6 +1564,13 @@ class TradingBot:
         self.price_peak_since_entry = filled_price # El precio de entrada es el primer pico
         self.price_trailing_stop_armed = False # Resetear al entrar en nueva posición
         # ----------------------------------------------
+
+        # --- ¡NUEVO! Notificar al gestor de riesgo sobre la nueva exposición ---
+        position_value_usdt = Decimal(str(filled_quantity)) * Decimal(str(filled_price))
+        self.risk_manager.add_exposure(position_value_usdt)
+        # -----------------------------------------------------------------
+
+        self._update_state(BotState.MONITORING)
 
     def _check_exit_conditions(self, klines_df: pd.DataFrame):
         """
@@ -1809,6 +1849,11 @@ class TradingBot:
         # _handle_successful_closure ya llama a _reset_state(), que limpia in_position y current_position.
         # El estado después de un cierre exitoso debe ser IDLE.
         self._update_state(BotState.IDLE)
+
+        # --- ¡NUEVO! Notificar al gestor de riesgo que la exposición ha terminado ---
+        position_value_usdt = Decimal(str(self.last_known_position_size)) * Decimal(str(self.last_known_entry_price))
+        self.risk_manager.remove_exposure(position_value_usdt)
+        # -------------------------------------------------------------------
 
     def _verify_position_status(self):
         """
