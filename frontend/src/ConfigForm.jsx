@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Tooltip from './Tooltip'; // Importar el nuevo componente
 
 // --- Definiciones de Componentes Auxiliares ---
 function ConfigSection({ title, className, children }) {
@@ -12,12 +13,15 @@ function ConfigSection({ title, className, children }) {
   );
 }
 
-function ConfigItem({ labelText, htmlFor, description, children }) {
+function ConfigItem({ labelText, htmlFor, description, tooltipText, children }) { // <--- 1. Aceptar tooltipText
   return (
     <div>
-      <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-        {labelText}
-      </label>
+      <div className="flex items-center"> {/* Contenedor para alinear etiqueta y tooltip */}
+        <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          {labelText}
+        </label>
+        {tooltipText && <Tooltip text={tooltipText} />} {/* <--- 2. Renderizar tooltip si existe */}
+      </div>
       {children}
       {description && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{description}</p>}
     </div>
@@ -76,6 +80,51 @@ const defaultConfigValues = {
   supportOrderStopLossPercent: 2.0,
   supportOrderTakeProfitPercent: 4.0,
 };
+
+// --- Objeto con los textos para cada tooltip ---
+const tooltipTexts = {
+  riskPercentage: "Porcentaje máximo del balance total que se permite arriesgar sumando el margen de todas las posiciones abiertas. Un 50% significa que el bot no abrirá nuevas posiciones si el margen total utilizado supera la mitad de tu balance.",
+  symbolsToTrade: "Lista de todos los pares de criptomonedas que el bot operará, separados por comas. Por ejemplo: BTCUSDT,ETHUSDT,BNBUSDT.",
+  mode: "Define si el bot operará en un entorno de simulación (Paper Trading) sin dinero real, o en el mercado real (Real) con tu capital.",
+  positionSizeUSDT: "El tamaño base de la posición en USDT que el bot intentará abrir. El margen real utilizado dependerá del apalancamiento.",
+  rsi_interval: "El intervalo de tiempo de las velas para los cálculos (ej. 1m, 5m, 15m, 1h). Afecta a todas las estrategias que usan velas.",
+  rsi_period: "Número de velas hacia atrás que se usan para calcular el RSI. Un valor más bajo reacciona más rápido a los cambios de precio.",
+  rsiThresholdUp: "RSI debe aumentar al menos este valor en la última vela para considerarse una señal de entrada. Filtra movimientos laterales.",
+  rsiEntryLevelLow: "Nivel de RSI por debajo del cual el bot considerará una posible compra. Usado en estrategias de 'sobreventa'.",
+  rsiEntryLevelHigh: "Nivel de RSI por encima del cual el bot considerará una posible compra en estrategias de 'momentum' o ruptura.",
+  volumeSmaPeriod: "Número de velas para calcular la media móvil simple (SMA) del volumen. Ayuda a identificar si el volumen actual es anómalo.",
+  volumeFactor: "Multiplicador para el volumen promedio. El volumen actual debe ser mayor que (SMA del Volumen * Factor) para ser una señal válida.",
+  downtrendCheckCandles: "Número de velas rojas consecutivas (tendencia bajista) que deben ocurrir para bloquear temporalmente las compras.",
+  downtrendLevelCheck: "Si el RSI ha caído este número de niveles (ej. de 50 a 45) en las últimas velas, bloquea temporalmente las compras.",
+  requiredUptrendCandles: "Número de velas verdes consecutivas requeridas antes de permitir una entrada. Confirma un cambio de tendencia a corto plazo.",
+  evaluateMaFilter: "Activa o desactiva el filtro de Media Móvil. Si está activo, el bot solo comprará si el precio está por encima de la media móvil seleccionada.",
+  maPeriod: "Número de velas que se usan para calcular la Media Móvil. Un valor más alto representa una tendencia a más largo plazo.",
+  evaluateSupportStrategy: "Activa o desactiva la estrategia de compra en niveles de soporte. Si está activa, el bot buscará soportes y colocará órdenes de compra en ellos, ignorando la estrategia RSI.",
+  supportHistoryCandles: "Número de velas históricas que el bot analizará para encontrar niveles de soporte.",
+  supportPivotWindow: "Número de velas a la izquierda y derecha de un punto bajo (pivote) para considerarlo un posible soporte.",
+  supportConfirmations: "Número mínimo de 'toques' o rebotes que debe tener un nivel para ser considerado un soporte válido.",
+  supportLevelTolerancePercent: "Porcentaje de tolerancia para agrupar precios cercanos en un único nivel de soporte. Un 0.5% agrupará precios que estén a menos de 0.5% de distancia.",
+  supportOrderStopLossPercent: "Porcentaje por debajo del precio de la orden de soporte donde se colocará el Stop Loss.",
+  supportOrderTakeProfitPercent: "Porcentaje por encima del precio de la orden de soporte donde se colocará el Take Profit.",
+  takeProfitUSDT: "Ganancia en USDT a la que el bot intentará cerrar la posición automáticamente para asegurar beneficios.",
+  stopLossUSDT: "Pérdida máxima en USDT (valor negativo) a la que el bot cerrará la posición para limitar las pérdidas (si está activado).",
+  rsiTarget: "Cuando el RSI alcanza este nivel después de una entrada, se activa el 'Trailing Stop por RSI' (si está habilitado).",
+  rsiThresholdDown: "Si el Trailing Stop por RSI está activo, y el RSI cae este valor (negativo) desde su punto más alto, la posición se cierra.",
+  priceTrailingStopDistanceUSDT: "Distancia en USDT que sigue al precio. Si el precio sube, el Stop Loss sube con él, manteniendo esta distancia.",
+  priceTrailingStopActivationPnlUSDT: "Ganancia en USDT que la posición debe alcanzar para que el 'Trailing Stop por Precio' se active.",
+  pnlTrailingStopActivationUSDT: "La ganancia en USDT a la que el Trailing Stop basado en PNL se 'arma' o activa. A partir de aquí, empezará a seguir el PNL.",
+  pnlTrailingStopDropUSDT: "La cantidad en USDT que el PNL debe caer desde su punto más alto (después de activarse) para que la posición se cierre.",
+  cycleSleepSeconds: "El tiempo en segundos que el bot espera entre cada ciclo de revisión de condiciones. Un valor más bajo es más rápido pero consume más recursos.",
+  orderTimeoutSeconds: "Tiempo máximo en segundos que una orden de entrada (LIMIT) permanecerá abierta. Si no se llena en este tiempo, se cancelará.",
+};
+
+
+const FormSection = ({ title, children }) => (
+  <div className="bg-gray-800 p-6 rounded-lg shadow-xl text-white mb-8">
+    <h2 className="text-2xl font-bold mb-6">{title}</h2>
+    {children}
+  </div>
+);
 
 function ConfigForm({ 
   initialConfig: propInitialConfig, 
@@ -482,23 +531,22 @@ function ConfigForm({
       <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
         <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">General</legend>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-          <div>
-            <label htmlFor="mode" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Modo de Operación</label>
+          <ConfigItem labelText="Modo de Operación" htmlFor="mode" tooltipText={tooltipTexts.mode}>
             <select id="mode" name="mode" value={formData.mode} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm">
               <option value="paper">Paper Trading (Simulación)</option>
               <option value="real">Real (con dinero real)</option>
             </select>
-              </div>
-              <div>
-            <label htmlFor="positionSizeUSDT" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tamaño Posición (USDT)</label>
+          </ConfigItem>
+          <ConfigItem labelText="Tamaño Posición (USDT)" htmlFor="positionSizeUSDT" tooltipText={tooltipTexts.positionSizeUSDT}>
             <input type="number" name="positionSizeUSDT" id="positionSizeUSDT" value={formData.positionSizeUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="1"/>
-          </div>
+          </ConfigItem>
           <div className="md:col-span-3">
-            <label htmlFor="symbolsToTrade" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Símbolos (separados por coma)</label>
-            <textarea name="symbolsToTrade" id="symbolsToTrade" value={formData.symbolsToTrade} onChange={handleChange} rows={2} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="BTCUSDT,ETHUSDT"></textarea>
-              </div>
-            </div>
-        </fieldset>
+            <ConfigItem labelText="Símbolos (separados por coma)" htmlFor="symbolsToTrade" tooltipText={tooltipTexts.symbolsToTrade}>
+              <textarea name="symbolsToTrade" id="symbolsToTrade" value={formData.symbolsToTrade} onChange={handleChange} rows={2} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="BTCUSDT,ETHUSDT"></textarea>
+            </ConfigItem>
+          </div>
+        </div>
+      </fieldset>
 
       {/* --- NUEVA SECCIÓN DE GESTIÓN DE RIESGO --- */}
       <ConfigSection title="Gestión de Riesgo Global">
@@ -507,6 +555,7 @@ function ConfigForm({
             labelText="Máximo % de Capital en Riesgo"
             htmlFor="risk-percentage"
             description="Porcentaje del balance total que puede estar en posiciones abiertas simultáneamente."
+            tooltipText={tooltipTexts.riskPercentage}
           >
             <div className="mt-1 flex rounded-md shadow-sm">
               <NumberInput
@@ -538,54 +587,68 @@ function ConfigForm({
       <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
         <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Parámetros de ENTRADA</legend>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4"> 
-          <div>
-            <label htmlFor="rsiInterval" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Intervalo Velas RSI</label>
+          <ConfigItem labelText="Intervalo Velas RSI" htmlFor="rsiInterval" tooltipText={tooltipTexts.rsi_interval}>
             <input type="text" name="rsiInterval" id="rsiInterval" value={formData.rsiInterval} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 1m, 5m"/>
-          </div>
-              <div>
-            <label htmlFor="rsiPeriod" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Periodo RSI</label>
+          </ConfigItem>
+          <ConfigItem labelText="Periodo RSI" htmlFor="rsiPeriod" tooltipText={tooltipTexts.rsi_period}>
             <input type="number" name="rsiPeriod" id="rsiPeriod" value={formData.rsiPeriod} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="1"/>
-          </div>
+          </ConfigItem>
           <div>
-            {renderLabelWithCheckbox("rsiThresholdUp", "RSI Cambio Positivo", "evaluateRsiDelta")}
+            <div className="flex items-center">
+              {renderLabelWithCheckbox("rsiThresholdUp", "RSI Cambio Positivo", "evaluateRsiDelta")}
+              <Tooltip text={tooltipTexts.rsiThresholdUp} />
+            </div>
             <input type="number" name="rsiThresholdUp" id="rsiThresholdUp" value={formData.rsiThresholdUp} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
           </div>
           <div>
-            {renderLabelWithCheckbox("rsiEntryLevelLow", "RSI Límite Inferior", "evaluateRsiRange")}
+            <div className="flex items-center">
+              {renderLabelWithCheckbox("rsiEntryLevelLow", "RSI Límite Inferior", "evaluateRsiRange")}
+              <Tooltip text={tooltipTexts.rsiEntryLevelLow} />
+            </div>
             <input type="number" name="rsiEntryLevelLow" id="rsiEntryLevelLow" value={formData.rsiEntryLevelLow} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. Rango también afecta Límite Superior.</p>
-              </div>
-              <div>
-            <label htmlFor="rsiEntryLevelHigh" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RSI Límite Superior</label>
+          </div>
+          <ConfigItem labelText="RSI Límite Superior" htmlFor="rsiEntryLevelHigh" tooltipText={tooltipTexts.rsiEntryLevelHigh}>
             <input type="number" name="rsiEntryLevelHigh" id="rsiEntryLevelHigh" value={formData.rsiEntryLevelHigh} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-              </div>
-              <div>
-            <label htmlFor="volumeSmaPeriod" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Periodo SMA Volumen</label>
+          </ConfigItem>
+          <ConfigItem labelText="Periodo SMA Volumen" htmlFor="volumeSmaPeriod" tooltipText={tooltipTexts.volumeSmaPeriod}>
             <input type="number" name="volumeSmaPeriod" id="volumeSmaPeriod" value={formData.volumeSmaPeriod} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-              </div>
-              <div>
-            {renderLabelWithCheckbox("volumeFactor", "Factor Volumen Mínimo", "evaluateVolumeFilter")}
-            <input type="number" name="volumeFactor" id="volumeFactor" value={formData.volumeFactor} onChange={handleChange} step="0.1" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-              </div>
-              <div>
-            {renderLabelWithCheckbox("downtrendCheckCandles", "Velas Rojas para Bloquear", "evaluateDowntrendCandlesBlock")}
-            <input type="number" name="downtrendCheckCandles" id="downtrendCheckCandles" value={formData.downtrendCheckCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-              </div>
-              <div>
-            {renderLabelWithCheckbox("downtrendLevelCheck", "Nivel RSI para Bloquear", "evaluateDowntrendLevelsBlock")}
-            <input type="number" name="downtrendLevelCheck" id="downtrendLevelCheck" value={formData.downtrendLevelCheck} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-              </div>
-              <div>
-            {renderLabelWithCheckbox("requiredUptrendCandles", "Velas Verdes Requeridas", "evaluateRequiredUptrend")}
-            <input type="number" name="requiredUptrendCandles" id="requiredUptrendCandles" value={formData.requiredUptrendCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-              </div>
+          </ConfigItem>
+          <div>
+            <div className="flex items-center">
+              {renderLabelWithCheckbox("volumeFactor", "Factor Volumen Mínimo", "evaluateVolumeFilter")}
+              <Tooltip text={tooltipTexts.volumeFactor} />
             </div>
-        </fieldset>
+            <input type="number" name="volumeFactor" id="volumeFactor" value={formData.volumeFactor} onChange={handleChange} step="0.1" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+          </div>
+          <div>
+            <div className="flex items-center">
+              {renderLabelWithCheckbox("downtrendCheckCandles", "Velas Rojas para Bloquear", "evaluateDowntrendCandlesBlock")}
+              <Tooltip text={tooltipTexts.downtrendCheckCandles} />
+            </div>
+            <input type="number" name="downtrendCheckCandles" id="downtrendCheckCandles" value={formData.downtrendCheckCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+          </div>
+          <div>
+            <div className="flex items-center">
+              {renderLabelWithCheckbox("downtrendLevelCheck", "Nivel RSI para Bloquear", "evaluateDowntrendLevelsBlock")}
+              <Tooltip text={tooltipTexts.downtrendLevelCheck} />
+            </div>
+            <input type="number" name="downtrendLevelCheck" id="downtrendLevelCheck" value={formData.downtrendLevelCheck} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+          </div>
+          <div>
+            <div className="flex items-center">
+              {renderLabelWithCheckbox("requiredUptrendCandles", "Velas Verdes Requeridas", "evaluateRequiredUptrend")}
+              <Tooltip text={tooltipTexts.requiredUptrendCandles} />
+            </div>
+            <input type="number" name="requiredUptrendCandles" id="requiredUptrendCandles" value={formData.requiredUptrendCandles} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+          </div>
+        </div>
+      </fieldset>
 
       {/* --- Estrategia de Media Móvil --- */}
       <ConfigSection title="Filtro de Media Móvil (MA)" className="col-span-1">
         <div className="space-y-4">
-          <ConfigItem labelText="Activar Filtro de Media Móvil">
+          <ConfigItem labelText="Activar Filtro de Media Móvil" tooltipText={tooltipTexts.evaluateMaFilter}>
             <Switch
               name="evaluateMaFilter"
               checked={formData.evaluateMaFilter}
@@ -594,7 +657,7 @@ function ConfigForm({
           </ConfigItem>
           {formData.evaluateMaFilter && (
             <>
-              <ConfigItem labelText="Período de la Media Móvil" htmlFor="maPeriod">
+              <ConfigItem labelText="Período de la Media Móvil" htmlFor="maPeriod" tooltipText={tooltipTexts.maPeriod}>
                 <NumberInput
                   id="maPeriod"
                   name="maPeriod"
@@ -610,7 +673,7 @@ function ConfigForm({
       {/* --- NUEVA SECCIÓN: Estrategia de Soportes Confirmados --- */}
       <ConfigSection title="Estrategia de Soportes Confirmados" className="col-span-1 md:col-span-2">
         <div className="space-y-4">
-          <ConfigItem labelText="Activar Estrategia de Soportes (Desactiva la Estrategia RSI)">
+          <ConfigItem labelText="Activar Estrategia de Soportes (Desactiva la Estrategia RSI)" tooltipText={tooltipTexts.evaluateSupportStrategy}>
             <Switch
               name="evaluateSupportStrategy"
               checked={formData.evaluateSupportStrategy}
@@ -620,7 +683,7 @@ function ConfigForm({
 
           {formData.evaluateSupportStrategy && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
-              <ConfigItem labelText="Velas de Historial" htmlFor="supportHistoryCandles" description="Nº de velas a analizar para encontrar soportes.">
+              <ConfigItem labelText="Velas de Historial" htmlFor="supportHistoryCandles" tooltipText={tooltipTexts.supportHistoryCandles}>
                 <NumberInput
                   id="supportHistoryCandles"
                   name="supportHistoryCandles"
@@ -628,7 +691,7 @@ function ConfigForm({
                   onChange={handleChange}
                 />
               </ConfigItem>
-              <ConfigItem labelText="Ventana de Pivote" htmlFor="supportPivotWindow" description="Nº de velas a cada lado para confirmar un valle (pivote).">
+              <ConfigItem labelText="Ventana de Pivote" htmlFor="supportPivotWindow" tooltipText={tooltipTexts.supportPivotWindow}>
                 <NumberInput
                   id="supportPivotWindow"
                   name="supportPivotWindow"
@@ -636,7 +699,7 @@ function ConfigForm({
                   onChange={handleChange}
                 />
               </ConfigItem>
-              <ConfigItem labelText="Confirmaciones Mínimas" htmlFor="supportConfirmations" description="Nº de toques (pivotes) para validar un soporte.">
+              <ConfigItem labelText="Confirmaciones Mínimas" htmlFor="supportConfirmations" tooltipText={tooltipTexts.supportConfirmations}>
                 <NumberInput
                   id="supportConfirmations"
                   name="supportConfirmations"
@@ -644,7 +707,7 @@ function ConfigForm({
                   onChange={handleChange}
                 />
               </ConfigItem>
-              <ConfigItem labelText="Tolerancia de Nivel (%)" htmlFor="supportLevelTolerancePercent" description="Porcentaje de diferencia para agrupar pivotes en un solo nivel.">
+              <ConfigItem labelText="Tolerancia de Nivel (%)" htmlFor="supportLevelTolerancePercent" tooltipText={tooltipTexts.supportLevelTolerancePercent}>
                 <NumberInput
                   id="supportLevelTolerancePercent"
                   name="supportLevelTolerancePercent"
@@ -653,7 +716,7 @@ function ConfigForm({
                   step={0.1}
                 />
               </ConfigItem>
-              <ConfigItem labelText="Stop Loss de Orden (%)" htmlFor="supportOrderStopLossPercent" description="Porcentaje de SL para las órdenes en soportes.">
+              <ConfigItem labelText="Stop Loss de Orden (%)" htmlFor="supportOrderStopLossPercent" tooltipText={tooltipTexts.supportOrderStopLossPercent}>
                 <NumberInput
                   id="supportOrderStopLossPercent"
                   name="supportOrderStopLossPercent"
@@ -662,7 +725,7 @@ function ConfigForm({
                   step={0.1}
                 />
               </ConfigItem>
-              <ConfigItem labelText="Take Profit de Orden (%)" htmlFor="supportOrderTakeProfitPercent" description="Porcentaje de TP para las órdenes en soportes.">
+              <ConfigItem labelText="Take Profit de Orden (%)" htmlFor="supportOrderTakeProfitPercent" tooltipText={tooltipTexts.supportOrderTakeProfitPercent}>
                 <NumberInput
                   id="supportOrderTakeProfitPercent"
                   name="supportOrderTakeProfitPercent"
@@ -680,24 +743,35 @@ function ConfigForm({
       <ConfigSection title="Trailing Stops" className="col-span-1 md:col-span-3">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
-              {renderLabelWithCheckbox("takeProfitUSDT", "Take Profit (USDT)", "enableTakeProfitPnl")}
+                <div className="flex items-center">
+                  {renderLabelWithCheckbox("takeProfitUSDT", "Take Profit (USDT)", "enableTakeProfitPnl")}
+                  <Tooltip text={tooltipTexts.takeProfitUSDT} />
+                </div>
               <input type="number" name="takeProfitUSDT" id="takeProfitUSDT" value={formData.takeProfitUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="0"/>
               </div>
               <div>
-              {renderLabelWithCheckbox("stopLossUSDT", "Stop Loss (USDT)", "enableStopLossPnl")}
+                <div className="flex items-center">
+                  {renderLabelWithCheckbox("stopLossUSDT", "Stop Loss (USDT)", "enableStopLossPnl")}
+                  <Tooltip text={tooltipTexts.stopLossUSDT} />
+                </div>
             <input type="number" name="stopLossUSDT" id="stopLossUSDT" value={formData.stopLossUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" max="0"/>
           </div>
-            <div>
-              <label htmlFor="rsiTarget" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RSI Objetivo Activación (Salida)</label>
+            <ConfigItem labelText="RSI Objetivo Activación (Salida)" htmlFor="rsiTarget" tooltipText={tooltipTexts.rsiTarget}>
               <input type="number" name="rsiTarget" id="rsiTarget" value={formData.rsiTarget} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
-              </div>
+            </ConfigItem>
               <div>
-              {renderLabelWithCheckbox("rsiThresholdDown", "RSI Drop Salida (Negativo)", "enableTrailingRsiStop")}
+                <div className="flex items-center">
+                  {renderLabelWithCheckbox("rsiThresholdDown", "RSI Drop Salida (Negativo)", "enableTrailingRsiStop")}
+                  <Tooltip text={tooltipTexts.rsiThresholdDown} />
+                </div>
               <input type="number" name="rsiThresholdDown" id="rsiThresholdDown" value={formData.rsiThresholdDown} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Eval. Trailing RSI también afecta RSI Objetivo.</p>
             </div>
             <div>
-              {renderLabelWithCheckbox("priceTrailingStopDistanceUSDT", "Distancia Trailing Precio (USDT)", "enablePriceTrailingStop")}
+              <div className="flex items-center">
+                {renderLabelWithCheckbox("priceTrailingStopDistanceUSDT", "Distancia Trailing Precio (USDT)", "enablePriceTrailingStop")}
+                <Tooltip text={tooltipTexts.priceTrailingStopDistanceUSDT} />
+              </div>
                 <input
                 type="number"
                 name="priceTrailingStopDistanceUSDT"
@@ -709,8 +783,7 @@ function ConfigForm({
                 min="0"
                 />
               </div>
-              <div>
-            <label htmlFor="priceTrailingStopActivationPnlUSDT" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Activación PNL para Trailing Precio (USDT)</label>
+              <ConfigItem labelText="Activación PNL para Trailing Precio (USDT)" htmlFor="priceTrailingStopActivationPnlUSDT" tooltipText={tooltipTexts.priceTrailingStopActivationPnlUSDT}>
                 <input
                 type="number"
                 name="priceTrailingStopActivationPnlUSDT"
@@ -720,12 +793,16 @@ function ConfigForm({
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white"
                 step="any"
                 />
-          </div>
+              </ConfigItem>
           <div>
             <ConfigItem 
               description="PNL mínimo en USDT que debe alcanzar la posición para armar este trailing stop por PNL."
+              tooltipText={tooltipTexts.pnlTrailingStopActivationUSDT}
             >
-              {renderLabelWithCheckbox("pnlTrailingStopActivationUSDT", "Activación PNL para Trailing PNL (USDT)", "enablePnlTrailingStop")}
+              <div className="flex items-center">
+                {renderLabelWithCheckbox("pnlTrailingStopActivationUSDT", "Activación PNL para Trailing PNL (USDT)", "enablePnlTrailingStop")}
+                <Tooltip text={tooltipTexts.pnlTrailingStopActivationUSDT} />
+              </div>
               <input
                 type="number"
                 id="pnlTrailingStopActivationUSDT"
@@ -741,6 +818,7 @@ function ConfigForm({
               labelText="Caída de PNL para Salir (USDT)" 
               htmlFor="pnlTrailingStopDropUSDT" 
               description="Si está armado, se sale si el PNL cae esta cantidad en USDT desde el PNL pico alcanzado."
+              tooltipText={tooltipTexts.pnlTrailingStopDropUSDT}
             >
                 <input
                 type="number"
@@ -760,16 +838,14 @@ function ConfigForm({
         <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
         <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Otros Parámetros</legend>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-              <div>
-            <label htmlFor="cycleSleepSeconds" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ciclo de Segundos</label>
+              <ConfigItem labelText="Ciclo de Segundos" htmlFor="cycleSleepSeconds" description="Pausa entre cada ciclo del bot." tooltipText={tooltipTexts.cycleSleepSeconds}>
             <input type="number" name="cycleSleepSeconds" id="cycleSleepSeconds" value={formData.cycleSleepSeconds} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Pausa entre cada ciclo del bot.</p>
-              </div>
-              <div>
-            <label htmlFor="orderTimeoutSeconds" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timeout de Orden (segundos)</label>
+              </ConfigItem>
+              <ConfigItem labelText="Timeout de Orden (segundos)" htmlFor="orderTimeoutSeconds" description="Tiempo para cancelar una orden si no se completa." tooltipText={tooltipTexts.orderTimeoutSeconds}>
             <input type="number" name="orderTimeoutSeconds" id="orderTimeoutSeconds" value={formData.orderTimeoutSeconds} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Tiempo para cancelar una orden si no se completa.</p>
-              </div>
+              </ConfigItem>
             </div>
         </fieldset>
 

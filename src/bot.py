@@ -84,6 +84,11 @@ class TradingBot:
         # CORRECCIÓN DEFINITIVA: Inicializar PNL histórico para evitar AttributeError
         self.historical_pnl = Decimal('0')
 
+        # --- INICIO CORRECCIÓN MARGEN ---
+        # Variable para almacenar el margen real de la posición actual
+        self.margin_for_current_position = Decimal('0')
+        # --- FIN CORRECCIÓN MARGEN ---
+
         self.logger = get_logger()
         self.params = trading_params
         self.logger.info(f"[{self.symbol}] Inicializando worker con parámetros RECIBIDOS: {self.params}")
@@ -260,6 +265,14 @@ class TradingBot:
                  if pos_amt > 0: # Solo LONG
                      self.logger.warning(f"[{self.symbol}] ¡Posición LONG existente encontrada! Cantidad: {pos_amt}, Precio Entrada: {entry_price}, PnL Inicial: {unrealized_pnl}")
                      self.in_position = True
+
+                     # --- INICIO DE LA CORRECCIÓN CRÍTICA (MARGEN REAL) ---
+                     initial_margin = Decimal(position_data.get('initialMargin', '0'))
+                     self.margin_for_current_position = initial_margin
+                     self.risk_manager.add_exposure(initial_margin)
+                     self.logger.info(f"[{self.symbol}] Notificando al RiskManager. Añadiendo MARGEN REAL {initial_margin} USDT a la exposición global por posición existente.")
+                     # --- FIN DE LA CORRECCIÓN CRÍTICA (MARGEN REAL) ---
+
                      self.current_position = {
                          'entry_price': entry_price,
                          'quantity': pos_amt,
@@ -1757,6 +1770,20 @@ class TradingBot:
 
         if status_val == 'FILLED':
             self.logger.info(f"[{self.symbol}] Orden de salida {self.pending_exit_order_id} LLENADA. Procesando...")
+            
+            # --- INICIO CORRECCIÓN PNL HISTÓRICO Y EXPOSICIÓN ---
+            self._update_open_position_pnl()
+            final_pnl_of_trade = self.last_known_pnl
+            if final_pnl_of_trade is not None:
+                self.historical_pnl += final_pnl_of_trade
+                self.logger.info(f"[{self.symbol}] PNL de la operación cerrada ({final_pnl_of_trade}) añadido al histórico. Total Histórico: {self.historical_pnl}")
+            
+            # Quitar el margen de la exposición
+            self.risk_manager.remove_exposure(self.margin_for_current_position)
+            self.logger.info(f"[{self.symbol}] Posición cerrada. Eliminando MARGEN {self.margin_for_current_position} USDT de la exposición.")
+            self.margin_for_current_position = Decimal('0') # Resetear
+            # --- FIN CORRECCIÓN PNL HISTÓRICO Y EXPOSICIÓN ---
+
             self._handle_filled_exit_order(order_status_response)
             return
 

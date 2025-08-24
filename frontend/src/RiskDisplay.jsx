@@ -47,6 +47,9 @@ const RiskDisplay = () => {
   const maxExpNum = parseFloat(max_exposure);
   const progressPercentage = maxExpNum > 0 ? (currentExpNum / maxExpNum) * 100 : 0;
   
+  // Limitar el ancho visual de la barra al 100% para evitar desbordamiento
+  const cappedProgressPercentage = Math.min(progressPercentage, 100);
+
   // Determinar el color de la barra de progreso
   let progressBarColor = 'bg-green-500';
   if (progressPercentage > 75) {
@@ -77,7 +80,7 @@ const RiskDisplay = () => {
         <div className="w-full bg-gray-700 rounded-full h-4">
           <div
             className={`h-4 rounded-full ${progressBarColor}`}
-            style={{ width: `${progressPercentage}%` }}
+            style={{ width: `${cappedProgressPercentage}%` }}
           ></div>
         </div>
       </div>
