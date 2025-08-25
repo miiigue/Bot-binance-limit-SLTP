@@ -11,6 +11,7 @@ import os # Import the os module
 from decimal import Decimal
 import requests # <-- IMPORTAR REQUESTS
 from requests.adapters import HTTPAdapter # <-- IMPORTAR HTTPADAPTER
+from datetime import datetime # <-- IMPORTAR DATETIME
 
 # Importamos nuestra configuración y logger
 from .config_loader import load_config
@@ -653,6 +654,64 @@ def get_account_balance_usdt() -> Decimal | None:
     except Exception as e:
         logger = get_logger()
         logger.error(f"Error al obtener el saldo de la cuenta de futuros: {e}")
+        return None
+
+def get_last_account_trade(symbol: str, start_time: datetime = None) -> dict | None:
+    """
+    Obtiene el último trade de la cuenta para un símbolo específico, opcionalmente
+    después de una hora de inicio.
+    """
+    logger = get_logger()
+    client = get_futures_client()
+    if not client:
+        return None
+
+    try:
+        # Convertir start_time a milisegundos si se proporciona
+        start_time_ms = int(start_time.timestamp() * 1000) if start_time else None
+        
+        # Obtener los trades más recientes. Limit=10 es un número razonable para buscar.
+        trades = client.get_account_trades(symbol=symbol, startTime=start_time_ms, limit=10)
+        
+        if trades:
+            # La API devuelve los trades más recientes al final, así que devolvemos el último.
+            last_trade = trades[-1]
+            logger.info(f"[{symbol}] Último trade encontrado después de {start_time}: {last_trade}")
+            return last_trade
+        else:
+            logger.warning(f"[{symbol}] No se encontraron trades en el historial después de {start_time}.")
+            return None
+    except Exception as e:
+        logger.error(f"[{symbol}] Error al obtener el último trade de la cuenta: {e}", exc_info=True)
+        return None
+
+def get_futures_position_information() -> list[dict] | None:
+    """
+    Obtiene la información de riesgo de TODAS las posiciones de la cuenta de futuros.
+    Es útil para una comprobación inicial de todas las posiciones abiertas.
+    """
+    logger = get_logger()
+    client = get_futures_client()
+    if not client:
+        logger.error("No se pudo obtener el cliente UMFutures para buscar la información de posiciones.")
+        return None
+
+    try:
+        # Usamos 'position_information' que devuelve info para todos los símbolos con posición o órdenes.
+        logger.debug("Consultando TODA la información de posiciones...")
+        positions = client.get_position_risk()
+
+        if not positions:
+            logger.info("No se encontró información de ninguna posición (respuesta vacía).")
+            return []
+
+        return positions
+
+    except ClientError as e:
+        logger.error(f"Error de API al obtener la información de posiciones: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
+        return None
+    except Exception as e:
+        logger.error(f"Error inesperado al obtener la información de posiciones: {e}", exc_info=True)
         return None
 
 # Ejemplo de uso (no ejecutar directamente aquí)

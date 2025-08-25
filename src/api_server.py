@@ -27,6 +27,55 @@ from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_sym
 from src.bot import TradingBot, BotState 
 from src.binance_client import get_account_balance_usdt
 
+# --- NUEVO: Gestor de Estadísticas de Sesión ---
+class SessionStateManager:
+    def __init__(self, logger):
+        self.logger = logger
+        self.lock = Lock()
+        self.session_realized_pnl = Decimal('0')
+        self.session_unrealized_pnl = Decimal('0')
+        self.session_pnl_high = Decimal('-Infinity')
+        self.session_pnl_low = Decimal('Infinity')
+        self.active_session = False
+
+    def start_session(self):
+        with self.lock:
+            self.logger.info("Iniciando nueva sesión de estadísticas.")
+            self.session_realized_pnl = Decimal('0')
+            self.session_unrealized_pnl = Decimal('0')
+            self.session_pnl_high = Decimal('0') # Iniciar en 0 para que no muestre -Infinity
+            self.session_pnl_low = Decimal('0')  # Iniciar en 0 para que no muestre Infinity
+            self.active_session = True
+
+    def stop_session(self):
+        with self.lock:
+            self.logger.info("Deteniendo sesión de estadísticas.")
+            self.active_session = False
+
+    def update_stats(self, realized_pnl: Decimal, unrealized_pnl: Decimal):
+        with self.lock:
+            if not self.active_session:
+                return
+
+            self.session_realized_pnl = realized_pnl
+            self.session_unrealized_pnl = unrealized_pnl
+            
+            current_total_pnl = self.session_realized_pnl + self.session_unrealized_pnl
+
+            if current_total_pnl > self.session_pnl_high:
+                self.session_pnl_high = current_total_pnl
+            
+            if current_total_pnl < self.session_pnl_low:
+                self.session_pnl_low = current_total_pnl
+
+    def get_stats(self):
+        with self.lock:
+            return {
+                "session_pnl": float(self.session_realized_pnl + self.session_unrealized_pnl),
+                "session_high": float(self.session_pnl_high) if self.session_pnl_high != Decimal('-Infinity') else 0.0,
+                "session_low": float(self.session_pnl_low) if self.session_pnl_low != Decimal('Infinity') else 0.0
+            }
+
 # --- Definición de variables compartidas para la gestión de workers ---
 worker_statuses = {} # Ej: {'BTCUSDT': {'state': 'IN_POSITION', 'pnl': 5.2}, 'ETHUSDT': ...}
 status_lock = threading.Lock() 
@@ -53,6 +102,9 @@ if not os.path.exists(STRATEGIES_PATH):
     except OSError as e:
         print(f"Error al crear el directorio de estrategias {STRATEGIES_PATH}: {e}")
 # -------------------------------------------
+
+# --- Instancia del Gestor de Sesión ---
+session_manager = None # Se inicializará después del logger
 
 # --- Funciones para calcular sleep (Movidas desde run_bot.py) ---
 def calculate_sleep_from_interval(interval_str: str) -> int:
@@ -105,6 +157,7 @@ def get_sleep_seconds(trading_params: dict) -> int:
 
 # --- Configuración Inicial ---
 api_logger = setup_logging(log_filename='api.log')
+session_manager = SessionStateManager(logger=api_logger) # Inicializar el gestor de sesión
 
 app = Flask(__name__) # Crear la aplicación Flask
 # Habilitar CORS para permitir peticiones desde el frontend (que corre en otro puerto)
@@ -204,94 +257,61 @@ def run_bot_worker(symbol, trading_params, stop_event_ref):
     
     bot_instance = None
     try:
-        # Asegurarse de que trading_params no esté vacío
         if not trading_params:
              logger.error(f"[{symbol}] No se proporcionaron parámetros de trading válidos al worker. Terminando.")
-             # Actualizar estado a Error
-             with status_lock:
-                  worker_statuses[symbol] = {
-                      'symbol': symbol, 'state': BotState.ERROR.value, 'last_error': "Missing trading parameters.",
-                      'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                      'pending_entry_order_id': None, 'pending_exit_order_id': None
-                  }
+             # No se puede actualizar worker_statuses aquí porque no hay instancia de bot
              return
-             
-        # Obtener sleep_duration aquí usando la función movida
+        
         sleep_duration = get_sleep_seconds(trading_params)
         
-        # Pasa el gestor de riesgo a la instancia del bot
         bot_instance = TradingBot(symbol=symbol, trading_params=trading_params, risk_manager=risk_manager)
+        bot_instance.reset_session_pnl() # <-- NUEVO: Resetear PNL de sesión al crear el bot
         
-        # Guardar la instancia en un lugar accesible si es necesario
-        # (por ahora, la lógica principal está dentro del propio hilo)
+        # --- CORRECCIÓN CRÍTICA: Comprobar posición inicial ANTES del bucle ---
+        try:
+            bot_instance._check_initial_position()
+            logger.info(f"[{symbol}] Comprobación de posición inicial finalizada.")
+        except Exception as e_init_pos:
+            logger.error(f"[{symbol}] Error crítico durante la comprobación de posición inicial: {e_init_pos}. El worker para este símbolo no continuará.", exc_info=True)
+            bot_instance._set_error_state(f"Initial position check failed: {e_init_pos}")
+            # Actualizar el estado una última vez antes de salir
+            with status_lock:
+                worker_statuses[symbol] = bot_instance
+            return # Detener la ejecución de este worker
+        # --- FIN DE LA CORRECCIÓN ---
 
         with status_lock:
-             worker_statuses[symbol] = bot_instance.get_current_status() 
-        logger.info(f"[{symbol}] Worker thread iniciado. Instancia de TradingBot creada. Tiempo de espera: {sleep_duration}s") # Usar sleep_duration
+             worker_statuses[symbol] = bot_instance
+        logger.info(f"[{symbol}] Worker thread iniciado. Instancia de TradingBot creada. Tiempo de espera: {sleep_duration}s")
     except (ValueError, ConnectionError) as init_error:
          logger.error(f"No se pudo inicializar la instancia de TradingBot para {symbol}: {init_error}. Terminando worker.", exc_info=True)
-         with status_lock:
-              worker_statuses[symbol] = {
-                  'symbol': symbol, 'state': BotState.ERROR.value, 'last_error': str(init_error),
-                  'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                  'pending_entry_order_id': None, 'pending_exit_order_id': None
-              }
+         # No se puede actualizar worker_statuses aquí porque no hay instancia de bot
          return
     except Exception as thread_error:
          logger.error(f"Error inesperado al crear instancia de TradingBot para {symbol}: {thread_error}. Terminando worker.", exc_info=True)
-         with status_lock:
-              worker_statuses[symbol] = {
-                  'symbol': symbol, 'state': BotState.ERROR.value, 
-                  'last_error': f"Unexpected init error: {thread_error}",
-                  'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                  'pending_entry_order_id': None, 'pending_exit_order_id': None
-              }
+         # No se puede actualizar worker_statuses aquí porque no hay instancia de bot
          return
-
-    # Ya no necesitamos get_sleep_seconds aquí si lo calculamos antes
 
     while not stop_event_ref.is_set():
         try:
             if bot_instance:
                 bot_instance.run_once()
-            if bot_instance:
-                with status_lock:
-                     worker_statuses[symbol] = bot_instance.get_current_status()
+            # La actualización de estado ahora se hace en el endpoint /api/status
         except Exception as cycle_error:
             logger.error(f"[{symbol}] Error inesperado en el ciclo principal del worker: {cycle_error}", exc_info=True)
             if bot_instance:
                 bot_instance._set_error_state(f"Unhandled exception in worker loop: {cycle_error}")
-                with status_lock:
-                     worker_statuses[symbol] = bot_instance.get_current_status()
-            else:
-                 # Si bot_instance es None aquí, hubo un error muy temprano
-                 with status_lock:
-                      if symbol not in worker_statuses or not isinstance(worker_statuses.get(symbol), dict):
-                           worker_statuses[symbol] = {} # Asegurar que existe como dict
-                           
-                      worker_statuses[symbol].update({
-                          'symbol': symbol, 'state': BotState.ERROR.value, 
-                          'last_error': f"Critical worker loop error before bot ready: {cycle_error}",
-                          'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                          'pending_entry_order_id': None, 'pending_exit_order_id': None
-                      })
-            # Continuar el bucle para permitir posible recuperación o apagado
             pass 
 
-        # Usar el sleep_duration calculado
         interrupted = stop_event_ref.wait(timeout=sleep_duration)
         if interrupted:
             logger.info(f"[{symbol}] Señal de parada recibida durante la espera.")
             break
 
     logger.info(f"[{symbol}] Worker thread terminado.")
-    # Actualizar estado final al detenerse
-    with status_lock:
-         # Asegurarse que la entrada existe y es un diccionario
-         if symbol not in worker_statuses or not isinstance(worker_statuses.get(symbol), dict):
-             worker_statuses[symbol] = {'symbol': symbol} # Crear entrada mínima
-         worker_statuses[symbol]['state'] = BotState.STOPPED.value
-# --- Fin de run_bot_worker ---
+    if bot_instance:
+        bot_instance.state = BotState.STOPPED
+    # La limpieza final del worker_statuses se hará en la función de apagado.
 
 
 # --- Función para iniciar los workers (Movida y Adaptada) ---
@@ -302,7 +322,7 @@ def start_bot_workers():
     with status_lock: # Proteger acceso a workers_started y threads
         if workers_started:
             logger.warning("start_bot_workers fue llamado pero los workers ya están iniciados.")
-            return False # Indicar que no se hizo nada
+            return False, "Los workers ya están corriendo." # Indicar que no se hizo nada
 
         worker_statuses.clear() # Clear previous statuses before starting new ones
         threads.clear() # Limpiar lista de hilos anterior
@@ -310,11 +330,11 @@ def start_bot_workers():
 
         if not loaded_symbols_to_trade:
             logger.error("No hay símbolos configurados para iniciar los workers.")
-            return False
+            return False, "No hay símbolos configurados para iniciar los workers."
             
         if not loaded_trading_params:
             logger.error("No hay parámetros de trading configurados para iniciar los workers.")
-            return False
+            return False, "No hay parámetros de trading configurados para iniciar los workers."
 
         logger.info("Iniciando workers de bot...")
         for symbol_idx, symbol in enumerate(loaded_symbols_to_trade):
@@ -330,7 +350,7 @@ def start_bot_workers():
         num_bot_threads = len(threads)
         workers_started = True # Marcar como iniciados
         logger.info(f"Todos los {num_bot_threads} workers de bot iniciados.")
-        return True # Indicar éxito
+        return True, "Todos los workers de bot iniciados." # Indicar éxito
 # --- Fin de start_bot_workers ---
 
 
@@ -564,63 +584,61 @@ def update_config_endpoint():
 
 @app.route('/api/status', methods=['GET'])
 def get_worker_status():
-    global workers_started # Necesitamos acceso al flag global
+    global workers_started
     logger = get_logger()
     logger.debug("API call received for /api/status")
     
-    try: # <--- INICIO DEL BLOQUE TRY GENERAL
+    try:
         all_symbols_status = []
-        # Usar los símbolos cargados al inicio
-        configured_symbols = loaded_symbols_to_trade 
+        configured_symbols = loaded_symbols_to_trade
         historical_pnl_data = get_cumulative_pnl_by_symbol()
 
-        logger.debug(f"Símbolos configurados (cargados al inicio): {configured_symbols}")
-        logger.debug(f"PnL histórico de DB: {historical_pnl_data}")
+        # --- NUEVO: Variables para agregados de sesión ---
+        total_session_pnl = Decimal('0')
+        total_unrealized_pnl = Decimal('0')
 
-        with status_lock: 
-            active_worker_details = dict(worker_statuses)
+        with status_lock:
+            # Hacemos una copia para evitar problemas de concurrencia
+            active_worker_instances = {symbol: worker.get_status() for symbol, worker in worker_statuses.items() if hasattr(worker, 'get_status')}
 
         for symbol in configured_symbols:
+            # Estado base si el worker no se ha reportado o no está corriendo
             status_entry = {
                 'symbol': symbol,
-                'state': BotState.STOPPED.value if not workers_started else 'Initializing', # Estado inicial antes de que el worker actualice
-                'in_position': False,
-                'entry_price': None,
-                'quantity': None,
-                'pnl': None,
-                'pending_entry_order_id': None,
-                'pending_exit_order_id': None,
-                'last_error': None,
-                'cumulative_pnl': historical_pnl_data.get(symbol, 0.0) # Only this key for historical PNL
+                'state': BotState.STOPPED.value if not workers_started else 'Initializing',
+                'historical_pnl': historical_pnl_data.get(symbol, 0.0),
+                'session_pnl': 0.0, # Valor por defecto
             }
 
-            if symbol in active_worker_details and workers_started:
-                active_status = active_worker_details[symbol]
-                if active_status.get('state') != BotState.STOPPED.value:
-                    status_entry.update(active_status)
-                    status_entry['symbol'] = symbol 
-                    status_entry['cumulative_pnl'] = historical_pnl_data.get(symbol, 0.0)
-                    for key_to_remove in ['hist_pnl', 'histPnl', 'historical_pnl', 'historicalPnl', 'cumulativePnl']:
-                        if key_to_remove in status_entry:
-                            del status_entry[key_to_remove]
-                elif active_status.get('state') == BotState.STOPPED.value:
-                    status_entry['state'] = BotState.STOPPED.value
-                    status_entry['cumulative_pnl'] = historical_pnl_data.get(symbol, 0.0)
-                    for key_to_remove in ['hist_pnl', 'histPnl', 'historical_pnl', 'historicalPnl', 'cumulativePnl']:
-                        if key_to_remove in status_entry:
-                            del status_entry[key_to_remove]
+            if symbol in active_worker_instances and workers_started:
+                # Si el worker está activo, usamos su estado completo
+                worker_data = active_worker_instances[symbol]
+                # Sobrescribimos el estado base con los datos reales
+                status_entry.update(worker_data)
+                # Nos aseguramos de que el PNL histórico de la DB (más fiable) prevalezca
+                status_entry['historical_pnl'] = historical_pnl_data.get(symbol, 0.0)
+
+                # --- NUEVO: Acumular PNLs para estadísticas de sesión ---
+                total_session_pnl += Decimal(str(worker_data.get('session_pnl', 0.0)))
+                if worker_data.get('in_position', False):
+                    total_unrealized_pnl += Decimal(str(worker_data.get('current_pnl', 0.0)))
             
             all_symbols_status.append(status_entry)
+
+        # --- NUEVO: Actualizar y obtener estadísticas de sesión ---
+        session_manager.update_stats(total_session_pnl, total_unrealized_pnl)
+        session_stats = session_manager.get_stats()
         
         response_data = {
             "bots_running": workers_started,
-            "statuses": all_symbols_status
+            "statuses": all_symbols_status,
+            "session_stats": session_stats # <-- NUEVO: Añadir estadísticas al response
         }
         
         logger.debug(f"Returning combined statuses. Bots running: {workers_started}")
         return jsonify(response_data)
 
-    except Exception as e: # <--- BLOQUE CATCH GENERAL
+    except Exception as e:
         logger.error(f"CRITICAL ERROR in /api/status endpoint: {e}", exc_info=True)
         return jsonify({"error": "Internal server error processing status.", "details": str(e)}), 500
 
@@ -633,6 +651,7 @@ def shutdown_bot():
          api_logger.warning("Señal de apagado recibida, pero los workers no estaban iniciados.")
          return jsonify({"message": "Workers no estaban corriendo."}), 200 # O un 4xx?
 
+    session_manager.stop_session() # <-- NUEVO: Detener la sesión
     stop_event.set() 
     api_logger.info("Esperando que los hilos de los workers terminen (join)...")
     
@@ -667,21 +686,21 @@ def start_bots_endpoint():
     
     if workers_started:
         logger.warning("Intento de iniciar workers cuando ya estaban corriendo.")
-        return jsonify({"error": "Bots ya están corriendo."}), 409 # 409 Conflict
+        return jsonify({"error": "Los bots ya están corriendo."}), 409 # 409 Conflict
 
-    # Llamar a la función que realmente inicia los hilos
-    success = start_bot_workers() 
+    # --- NUEVO: Iniciar una nueva sesión de estadísticas ---
+    session_manager.start_session()
+    # ----------------------------------------------------
+
+        # Llamar a la función que realmente inicia los hilos, que ahora puede devolver un mensaje de error
+    success, message = start_bot_workers() 
 
     if success:
-        return jsonify({"message": "Bots iniciados exitosamente."}), 200
+        return jsonify({"message": message or "Bots iniciados exitosamente."}), 200
     else:
-        logger.error("Fallo al iniciar los workers (ver logs anteriores).")
-        # Revisar si workers_started se quedó en False debido al fallo
-        if not workers_started:
-             return jsonify({"error": "Fallo al iniciar los bots (verificar configuración o logs)."}), 500 # Internal Server Error
-        else:
-             # Caso raro: la función falló pero el flag cambió? Devolver error igualmente.
-              return jsonify({"error": "Estado inconsistente al iniciar los bots."}), 500
+        logger.error(f"Fallo al iniciar los workers: {message}")
+        # Devolver el mensaje de error específico al frontend
+        return jsonify({"error": message or "Fallo al iniciar los bots (verificar configuración o logs)."}), 500
 # ------------------------------------------
 
 # Función para cargar configuración inicial (llamada desde run_bot.py)

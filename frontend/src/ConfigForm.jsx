@@ -139,6 +139,12 @@ function ConfigForm({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  
+  // --- ESTADOS MOVIDOS DESDE RiskDisplay ---
+  const [riskData, setRiskData] = useState(null);
+  const [riskError, setRiskError] = useState('');
+  // --- FIN ESTADOS MOVIDOS ---
+  
   const [riskPercentage, setRiskPercentage] = useState(50); // Estado para el % de riesgo
 
   // --- Estados para la gestión de estrategias ---
@@ -155,6 +161,31 @@ function ConfigForm({
   const [deleteStrategyError, setDeleteStrategyError] = useState(null);
   const [deleteStrategySuccess, setDeleteStrategySuccess] = useState(null);
   // -------------------------------------------------
+
+  // --- LÓGICA MOVIDA DESDE RiskDisplay ---
+  useEffect(() => {
+    const fetchRiskData = async () => {
+      try {
+        const response = await fetch('/api/risk_config');
+        if (!response.ok) {
+          throw new Error('La respuesta del servidor no fue OK');
+        }
+        const data = await response.json();
+        setRiskData(data);
+        setRiskError('');
+      } catch (err) {
+        setRiskError('Error al cargar los datos de riesgo. ¿Está el backend en funcionamiento?');
+        console.error(err);
+      }
+    };
+
+    fetchRiskData(); // Carga inicial
+    const intervalId = setInterval(fetchRiskData, 5000); // Refrescar cada 5 segundos
+
+    return () => clearInterval(intervalId); // Limpiar el intervalo al desmontar el componente
+  }, []);
+  // --- FIN LÓGICA MOVIDA ---
+
 
   // --- NUEVO: Cargar la configuración desde el backend al montar ---
   useEffect(() => {
@@ -228,15 +259,6 @@ function ConfigForm({
           // Mapeo de [BINANCE]
           mode: configFromServer.BINANCE?.mode
         };
-
-        // Cargar configuración de riesgo
-        const riskResponse = await fetch('/api/risk_config');
-        if (riskResponse.ok) {
-          const riskData = await riskResponse.json();
-          // Extraer solo el número del string "50.00%"
-          const riskValue = parseFloat(riskData.risk_percentage.replace('%', ''));
-          setRiskPercentage(riskValue);
-        }
 
         // Filtrar claves undefined para no sobreescribir defaults innecesariamente
         Object.keys(mappedData).forEach(key => {
@@ -540,6 +562,9 @@ function ConfigForm({
           <ConfigItem labelText="Tamaño Posición (USDT)" htmlFor="positionSizeUSDT" tooltipText={tooltipTexts.positionSizeUSDT}>
             <input type="number" name="positionSizeUSDT" id="positionSizeUSDT" value={formData.positionSizeUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="1"/>
           </ConfigItem>
+          <ConfigItem labelText="Intervalo de Velas General" htmlFor="rsiInterval" tooltipText={tooltipTexts.rsi_interval}>
+            <input type="text" name="rsiInterval" id="rsiInterval" value={formData.rsiInterval} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 1m, 5m"/>
+          </ConfigItem>
           <div className="md:col-span-3">
             <ConfigItem labelText="Símbolos (separados por coma)" htmlFor="symbolsToTrade" tooltipText={tooltipTexts.symbolsToTrade}>
               <textarea name="symbolsToTrade" id="symbolsToTrade" value={formData.symbolsToTrade} onChange={handleChange} rows={2} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="BTCUSDT,ETHUSDT"></textarea>
@@ -548,48 +573,91 @@ function ConfigForm({
         </div>
       </fieldset>
 
-      {/* --- NUEVA SECCIÓN DE GESTIÓN DE RIESGO --- */}
-      <ConfigSection title="Gestión de Riesgo Global">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <ConfigItem
-            labelText="Máximo % de Capital en Riesgo"
-            htmlFor="risk-percentage"
-            description="Porcentaje del balance total que puede estar en posiciones abiertas simultáneamente."
-            tooltipText={tooltipTexts.riskPercentage}
-          >
-            <div className="mt-1 flex rounded-md shadow-sm">
-              <NumberInput
-                id="risk-percentage"
-                name="risk-percentage"
-                value={riskPercentage}
-                onChange={(e) => setRiskPercentage(e.target.value)}
-                min="0"
-                max="100"
-              />
-              <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300">
-                %
-              </span>
+      {/* --- SECCIÓN UNIFICADA DE GESTIÓN DE RIESGO --- */}
+      <ConfigSection title="Monitor y Gestión de Riesgo Global">
+        {riskError && <p className="text-red-500 text-sm mb-4">{riskError}</p>}
+        {riskData ? (
+          <div className="space-y-4">
+            {/* Fila de Datos */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+              <div className="bg-gray-700 p-3 rounded-lg">
+                <h4 className="text-sm font-medium text-gray-400">Balance Total (USDT)</h4>
+                <p className="text-lg font-semibold text-white">{riskData.total_balance}</p>
+              </div>
+              <div className="bg-gray-700 p-3 rounded-lg">
+                <h4 className="text-sm font-medium text-gray-400">Máximo de Exposición</h4>
+                <p className="text-lg font-semibold text-white">{riskData.max_exposure} <span className="text-xs text-gray-400">({riskData.risk_percentage})</span></p>
+              </div>
+              <div className="bg-gray-700 p-3 rounded-lg">
+                <h4 className="text-sm font-medium text-gray-400">Exposición Actual</h4>
+                <p className="text-lg font-semibold text-white">{riskData.current_exposure}</p>
+              </div>
             </div>
-          </ConfigItem>
-          <div className="self-end pb-1">
-            <button
-              type="button"
-              onClick={handleSaveRisk}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
-            >
-              Guardar Riesgo
-            </button>
+
+            {/* Barra de Progreso */}
+            <div>
+              <div className="w-full bg-gray-600 rounded-full h-4 relative">
+                <div 
+                  className={`h-4 rounded-full transition-all duration-500 ${(() => {
+                    const maxExpNum = parseFloat(riskData.max_exposure);
+                    const currentExpNum = parseFloat(riskData.current_exposure);
+                    const progressPercentage = maxExpNum > 0 ? (currentExpNum / maxExpNum) * 100 : 0;
+                    if (progressPercentage > 90) return 'bg-red-500';
+                    if (progressPercentage > 70) return 'bg-yellow-500';
+                    return 'bg-green-500';
+                  })()}`}
+                  style={{ width: `${(() => {
+                    const maxExpNum = parseFloat(riskData.max_exposure);
+                    const currentExpNum = parseFloat(riskData.current_exposure);
+                    const progressPercentage = maxExpNum > 0 ? (currentExpNum / maxExpNum) * 100 : 0;
+                    return Math.min(progressPercentage, 100); // Capado al 100%
+                  })()}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Fila de Configuración */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-700">
+              <ConfigItem
+                labelText="Ajustar Máximo % de Capital en Riesgo"
+                htmlFor="risk-percentage"
+                tooltipText={tooltipTexts.riskPercentage}
+              >
+                <div className="mt-1 flex rounded-md shadow-sm">
+                  <NumberInput
+                    id="risk-percentage"
+                    name="risk-percentage"
+                    value={riskPercentage}
+                    onChange={(e) => setRiskPercentage(e.target.value)}
+                    min="0"
+                    max="100"
+                  />
+                  <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300">
+                    %
+                  </span>
+                </div>
+              </ConfigItem>
+              <div className="self-end pb-1">
+                <button
+                  type="button"
+                  onClick={handleSaveRisk}
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+                >
+                  Guardar Riesgo
+                </button>
+              </div>
+            </div>
+
           </div>
-        </div>
+        ) : (
+          <p className="text-center text-gray-400">Cargando datos del monitor de riesgo...</p>
+        )}
       </ConfigSection>
       {/* ------------------------------------------- */}
 
       <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
         <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Parámetros de ENTRADA</legend>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4"> 
-          <ConfigItem labelText="Intervalo Velas RSI" htmlFor="rsiInterval" tooltipText={tooltipTexts.rsi_interval}>
-            <input type="text" name="rsiInterval" id="rsiInterval" value={formData.rsiInterval} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 1m, 5m"/>
-          </ConfigItem>
           <ConfigItem labelText="Periodo RSI" htmlFor="rsiPeriod" tooltipText={tooltipTexts.rsi_period}>
             <input type="number" name="rsiPeriod" id="rsiPeriod" value={formData.rsiPeriod} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="1"/>
           </ConfigItem>
@@ -794,45 +862,53 @@ function ConfigForm({
                 step="any"
                 />
               </ConfigItem>
-          <div>
-            <ConfigItem 
-              description="PNL mínimo en USDT que debe alcanzar la posición para armar este trailing stop por PNL."
-              tooltipText={tooltipTexts.pnlTrailingStopActivationUSDT}
-            >
-              <div className="flex items-center">
-                {renderLabelWithCheckbox("pnlTrailingStopActivationUSDT", "Activación PNL para Trailing PNL (USDT)", "enablePnlTrailingStop")}
-                <Tooltip text={tooltipTexts.pnlTrailingStopActivationUSDT} />
+
+              {/* Contenedor reorganizado para poner los campos de Trailing PNL lado a lado */}
+              <div className="md:col-span-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  
+                  {/* Campo de Activación PNL */}
+                  <ConfigItem 
+                    description="PNL mínimo en USDT que debe alcanzar la posición para armar este trailing stop por PNL."
+                  >
+                    <div className="flex items-center">
+                      {renderLabelWithCheckbox("pnlTrailingStopActivationUSDT", "Activación PNL para Trailing PNL (USDT)", "enablePnlTrailingStop")}
+                      <Tooltip text={tooltipTexts.pnlTrailingStopActivationUSDT} />
+                    </div>
+                    <input
+                      type="number"
+                      id="pnlTrailingStopActivationUSDT"
+                      name="pnlTrailingStopActivationUSDT"
+                      value={formData.pnlTrailingStopActivationUSDT}
+                      onChange={handleChange}
+                      disabled={!formData.enablePnlTrailingStop}
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
+                      step="any"
+                    />
+                  </ConfigItem>
+
+                  {/* Campo de Caída de PNL */}
+                  <ConfigItem 
+                    labelText="Caída de PNL para Salir (USDT)" 
+                    htmlFor="pnlTrailingStopDropUSDT" 
+                    description="Si está armado, se sale si el PNL cae esta cantidad en USDT desde el PNL pico alcanzado."
+                    tooltipText={tooltipTexts.pnlTrailingStopDropUSDT}
+                  >
+                      <input
+                      type="number"
+                      id="pnlTrailingStopDropUSDT"
+                      name="pnlTrailingStopDropUSDT"
+                      value={formData.pnlTrailingStopDropUSDT}
+                      onChange={handleChange}
+                      disabled={!formData.enablePnlTrailingStop}
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
+                      step="any"
+                      />
+                  </ConfigItem>
+
+                </div>
               </div>
-              <input
-                type="number"
-                id="pnlTrailingStopActivationUSDT"
-                name="pnlTrailingStopActivationUSDT"
-                value={formData.pnlTrailingStopActivationUSDT}
-                onChange={handleChange}
-                disabled={!formData.enablePnlTrailingStop}
-                className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
-                step="any"
-              />
-            </ConfigItem>
-            <ConfigItem 
-              labelText="Caída de PNL para Salir (USDT)" 
-              htmlFor="pnlTrailingStopDropUSDT" 
-              description="Si está armado, se sale si el PNL cae esta cantidad en USDT desde el PNL pico alcanzado."
-              tooltipText={tooltipTexts.pnlTrailingStopDropUSDT}
-            >
-                <input
-                type="number"
-                id="pnlTrailingStopDropUSDT"
-                name="pnlTrailingStopDropUSDT"
-                value={formData.pnlTrailingStopDropUSDT}
-                  onChange={handleChange}
-                disabled={!formData.enablePnlTrailingStop}
-                className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
-                  step="any"
-                />
-            </ConfigItem>
-              </div>
-            </div>
+        </div>
       </ConfigSection>
 
         <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ConfigForm from './ConfigForm'; // Importa el componente del formulario
 import StatusDisplay from './StatusDisplay'; // <-- Importar el nuevo componente
-import RiskDisplay from './RiskDisplay'; // <-- Importar el nuevo componente
 import './index.css'; // Importar el archivo CSS principal existente
 
 // --- FUNCIÓN PARA FORMATEAR EL TIEMPO TRANSCURRIDO (movida o copiada aquí) ---
@@ -24,18 +23,21 @@ function App() {
   const [headerPnlData, setHeaderPnlData] = useState({ 
     totalPnl: 0, 
     coinCount: 0, 
-    coinsInPosition: 0 // <-- NUEVO CAMPO
+    coinsInPosition: 0,
+    // --- NUEVO: Añadir estadísticas de sesión ---
+    sessionStats: {
+      session_pnl: 0,
+      session_high: 0,
+      session_low: 0
+    }
   });
   // ---------------------------------------------
 
-  // --- NUEVO ESTADO PARA EL PNL AL INICIO DE LA SESIÓN ---
-  const [pnlAtSessionStart, setPnlAtSessionStart] = useState(null);
-  // ----------------------------------------------------
-
-  // --- NUEVOS ESTADOS PARA ALTO Y BAJO PNL DE SESIÓN ---
-  const [sessionPnlHigh, setSessionPnlHigh] = useState(null);
-  const [sessionPnlLow, setSessionPnlLow] = useState(null);
-  // -----------------------------------------------------
+  // --- ESTOS ESTADOS YA NO SON NECESARIOS, LOS GESTIONA EL BACKEND ---
+  // const [pnlAtSessionStart, setPnlAtSessionStart] = useState(null);
+  // const [sessionPnlHigh, setSessionPnlHigh] = useState(null);
+  // const [sessionPnlLow, setSessionPnlLow] = useState(null);
+  // -------------------------------------------------------------
 
   const [elapsedTime, setElapsedTime] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
@@ -57,8 +59,9 @@ function App() {
   const [activeStrategyDisplayName, setActiveStrategyDisplayName] = useState('');
   // ------------------------------------------------------------------------
 
-  // --- NUEVA FUNCIÓN PARA ACTUALIZAR DATOS DE LA CABECERA ---
+  // --- FUNCIÓN PARA ACTUALIZAR DATOS DE LA CABECERA (SIMPLIFICADA) ---
   const handleStatusUpdate = useCallback((data) => {
+    // data ahora contiene { totalPnl, coinCount, coinsInPosition, sessionStats }
     setHeaderPnlData(prevData => ({ ...prevData, ...data }));
   }, []);
   // --------------------------------------------------------
@@ -242,10 +245,10 @@ function App() {
       setTimerActive(true); // <--- ACTIVAR TEMPORIZADOR
 
       // --- GUARDAR PNL AL INICIO DE LA SESIÓN ---
-      setPnlAtSessionStart(headerPnlData.totalPnl);
+      // setPnlAtSessionStart(headerPnlData.totalPnl); // Eliminado
       // --- INICIALIZAR ALTO Y BAJO DE SESIÓN ---
-      setSessionPnlHigh(0);
-      setSessionPnlLow(0);
+      // setSessionPnlHigh(0); // Eliminado
+      // setSessionPnlLow(0); // Eliminado
       // ----------------------------------------
 
       // --- INICIAR CUENTA REGRESIVA ---
@@ -347,28 +350,21 @@ function App() {
   }, [isCountdownActive, config, countdown]); // Incluir countdown como dependencia para re-evaluar si se reinicia.
   // --------------------------------------------------------
 
-  // --- USEEFFECT PARA ACTUALIZAR ALTO Y BAJO PNL DE SESIÓN ---
-  useEffect(() => {
-    if (pnlAtSessionStart !== null) {
-      const currentSessionPnl = headerPnlData.totalPnl - pnlAtSessionStart;
-
-      setSessionPnlHigh(prevHigh => {
-        // prevHigh es 0 justo después de handleStartBots.
-        // Si prevHigh fuera null (caso inicial antes de cualquier sesión), lo trataríamos.
-        // Pero como lo seteamos a 0 en handleStartBots, esta comparación es segura.
-        return Math.max(prevHigh === null ? currentSessionPnl : prevHigh, currentSessionPnl);
-      });
-
-      setSessionPnlLow(prevLow => {
-        // prevLow es 0 justo después de handleStartBots.
-        return Math.min(prevLow === null ? currentSessionPnl : prevLow, currentSessionPnl);
-      });
-    }
-    // pnlAtSessionStart en las dependencias asegura que esto se re-evalúe si una nueva sesión comienza
-    // (aunque los valores de high/low se resetean en handleStartBots).
-    // headerPnlData.totalPnl asegura que se actualiza cuando el PNL total cambia.
-  }, [headerPnlData.totalPnl, pnlAtSessionStart]);
-  // -----------------------------------------------------------
+  // --- ESTE USEEFFECT YA NO ES NECESARIO, EL CÁLCULO SE HACE EN EL BACKEND ---
+  // useEffect(() => {
+  //   if (pnlAtSessionStart !== null) {
+  //     const currentSessionPnl = headerPnlData.totalPnl - pnlAtSessionStart;
+  //
+  //     setSessionPnlHigh(prevHigh => {
+  //       return Math.max(prevHigh === null ? currentSessionPnl : prevHigh, currentSessionPnl);
+  //     });
+  //
+  //     setSessionPnlLow(prevLow => {
+  //       return Math.min(prevLow === null ? currentSessionPnl : prevLow, currentSessionPnl);
+  //     });
+  //   }
+  // }, [headerPnlData.totalPnl, pnlAtSessionStart]);
+  // ---------------------------------------------------------------------
 
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
@@ -396,16 +392,16 @@ function App() {
             </span>
             <span className="text-lg"> USDT</span>
             
-            {/* PNL de Sesión (Actual, y luego Alto/Bajo) */}
-            {pnlAtSessionStart !== null && (
+            {/* PNL de Sesión (Actual, y luego Alto/Bajo) - AHORA USA DATOS DEL BACKEND */}
+            {botsRunning && headerPnlData.sessionStats && (
               <span className="ml-3 align-baseline" style={{ display: 'inline-block' }}> {/* Contenedor principal para Sesión y Alto/Bajo */}
                 {/* PNL de Sesión Actual - en línea */}
                 <span className="text-lg mr-4">
                   <span>Sesión: </span>
                   <span
-                    className={`font-semibold ${ (headerPnlData.totalPnl - pnlAtSessionStart) < 0 ? 'text-red-700 dark:text-red-500' : (headerPnlData.totalPnl - pnlAtSessionStart) > 0 ? 'text-green-700 dark:text-green-500' : 'text-black dark:text-white' }`}
+                    className={`font-semibold ${ (headerPnlData.sessionStats.session_pnl) < 0 ? 'text-red-700 dark:text-red-500' : (headerPnlData.sessionStats.session_pnl) > 0 ? 'text-green-700 dark:text-green-500' : 'text-black dark:text-white' }`}
                   >
-                    {`${(headerPnlData.totalPnl - pnlAtSessionStart).toFixed(5)}`}
+                    {`${(headerPnlData.sessionStats.session_pnl).toFixed(5)}`}
                   </span>
                   <span> USDT</span>
                 </span>
@@ -416,9 +412,9 @@ function App() {
                   <div>
                     <span className="mr-1">Alto:</span>
                     <span
-                      className={`font-semibold ${sessionPnlHigh < 0 ? 'text-red-600 dark:text-red-400' : sessionPnlHigh > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}
+                      className={`font-semibold ${headerPnlData.sessionStats.session_high < 0 ? 'text-red-600 dark:text-red-400' : headerPnlData.sessionStats.session_high > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}
                     >
-                      {`${sessionPnlHigh !== null ? sessionPnlHigh.toFixed(5) : '0.00000'}`}
+                      {`${headerPnlData.sessionStats.session_high.toFixed(5)}`}
                     </span>
                     <span> USDT</span>
                   </div>
@@ -427,9 +423,9 @@ function App() {
                   <div>
                     <span className="mr-1">Bajo:</span>
                     <span
-                      className={`font-semibold ${sessionPnlLow < 0 ? 'text-red-600 dark:text-red-400' : sessionPnlLow > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}
+                      className={`font-semibold ${headerPnlData.sessionStats.session_low < 0 ? 'text-red-600 dark:text-red-400' : headerPnlData.sessionStats.session_low > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}
                     >
-                      {`${sessionPnlLow !== null ? sessionPnlLow.toFixed(5) : '0.00000'}`}
+                      {`${headerPnlData.sessionStats.session_low.toFixed(5)}`}
                     </span>
                     <span> USDT</span>
                   </div>
@@ -500,11 +496,6 @@ function App() {
                 onShutdown={handleShutdown} 
                 onStatusUpdate={handleStatusUpdate}
             /> 
-
-            {/* Añadir el componente de riesgo aquí */}
-            <div className="mt-6">
-              <RiskDisplay />
-            </div>
           </>
         )}
       </div>
