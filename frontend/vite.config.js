@@ -6,11 +6,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      // Redirige todas las peticiones que empiecen con /api al servidor backend
       '/api': {
-        target: 'https://bot-binance-limit-sltp.onrender.com',
-        changeOrigin: true,
-        secure: false,
-      },
+        target: 'http://127.0.0.1:5002', // El puerto donde corre tu backend de Flask
+        changeOrigin: true, // Necesario para la redirección
+        secure: false,      // No necesitamos SSL en desarrollo
+      }
     },
   },
 }) 

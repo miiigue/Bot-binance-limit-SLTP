@@ -8,7 +8,12 @@ from binance.error import ClientError
 import pandas as pd
 import time
 import os # Import the os module
+from dotenv import load_dotenv
+load_dotenv()
 from decimal import Decimal
+import requests # <-- IMPORTAR REQUESTS
+from requests.adapters import HTTPAdapter # <-- IMPORTAR HTTPADAPTER
+from datetime import datetime # <-- IMPORTAR DATETIME
 
 # Importamos nuestra configuración y logger
 from .config_loader import load_config
@@ -16,52 +21,88 @@ from .logger_setup import get_logger
 
 # Variable global para el cliente de Binance Futures (para reutilizar la instancia)
 futures_client_instance = None
+_dual_side_position_cache = None
 
-def get_futures_client():
+def is_hedge_mode() -> bool:
+    """Verifica si la cuenta está en Modo Cobertura (Hedge Mode) o Modo Unidireccional (One-Way Mode)."""
+    global _dual_side_position_cache
+    if _dual_side_position_cache is not None:
+        return _dual_side_position_cache
+    client = get_futures_client()
+    if not client:
+        return False
+    try:
+        res = client.get_position_mode()
+        _dual_side_position_cache = bool(res.get('dualSidePosition', False))
+        logger = get_logger()
+        logger.info(f"Modo de posición en Binance detectado: {'Hedge Mode (Cobertura)' if _dual_side_position_cache else 'One-Way Mode (Unidireccional)'}")
+        return _dual_side_position_cache
+    except Exception as e:
+        logger = get_logger()
+        logger.warning(f"No se pudo consultar el modo de posición: {e}. Asumiendo One-Way Mode (Unidireccional).")
+        return False
+
+def reset_futures_client():
+    """Resetea la instancia global del cliente de Binance para forzar una reconexión con nueva configuración."""
+    global futures_client_instance, _dual_side_position_cache
+    futures_client_instance = None
+    _dual_side_position_cache = None
+
+def get_futures_client(force_reload: bool = False):
     """
     Crea y retorna una instancia del cliente UMFutures de Binance Futures,
     configurada según el archivo config.ini (modo live o paper/testnet).
-    Reutiliza la instancia si ya fue creada.
+    Reutiliza la instancia si ya fue creada, salvo que force_reload=True.
 
     Returns:
         binance.um_futures.UMFutures: Instancia del cliente UMFutures.
                                       Retorna None si la configuración falla o la conexión inicial falla.
     """
     global futures_client_instance
-    if futures_client_instance:
+    if futures_client_instance and not force_reload:
         return futures_client_instance
 
     logger = get_logger()
-    config = load_config()
+    load_dotenv(override=True)
+    config = load_config(force_reload=force_reload)
     if not config:
         logger.critical("No se pudo cargar la configuración para inicializar UMFutures Client.")
         return None
 
     try:
-        # Leer API keys desde variables de entorno
-        api_key = os.getenv('BINANCE_API_KEY')
-        api_secret = os.getenv('BINANCE_API_SECRET')
-        
         mode = config.get('BINANCE', 'MODE', fallback='paper').lower()
         futures_base_url = config.get('BINANCE', 'FUTURES_BASE_URL') # Live URL: https://fapi.binance.com
         futures_testnet_url = config.get('BINANCE', 'FUTURES_TESTNET_BASE_URL') # Testnet URL: https://testnet.binancefuture.com
 
-        if not api_key or not api_secret:
-            logger.critical("BINANCE_API_KEY o BINANCE_API_SECRET no están definidas como variables de entorno. Por favor, configúralas.")
-            return None
-
         base_url_to_use = ""
         if mode == 'paper' or mode == 'testnet':
-            logger.warning("Inicializando cliente UMFutures en modo TESTNET.")
+            api_key = os.getenv('BINANCE_TESTNET_API_KEY') or os.getenv('BINANCE_API_KEY')
+            api_secret = os.getenv('BINANCE_TESTNET_API_SECRET') or os.getenv('BINANCE_API_SECRET')
+            logger.warning("Inicializando cliente UMFutures en modo TESTNET (Simulación).")
             base_url_to_use = futures_testnet_url
         else:
-            logger.info("Inicializando cliente UMFutures en modo LIVE.")
-            # FORZADO: Usar un endpoint alternativo para evitar geobloqueos en plataformas como Render.
-            base_url_to_use = "https://fapi.binance.me"
-            logger.info(f"URL base de Futuros (Live) forzada a: {base_url_to_use}")
+            api_key = os.getenv('BINANCE_REAL_API_KEY') or os.getenv('BINANCE_API_KEY')
+            api_secret = os.getenv('BINANCE_REAL_API_SECRET') or os.getenv('BINANCE_API_SECRET')
+            logger.info("Inicializando cliente UMFutures en modo LIVE (Real).")
+            base_url_to_use = futures_base_url
 
-        # Crear instancia del cliente UMFutures
+        if not api_key or not api_secret:
+            logger.critical(f"Claves API no encontradas para el modo '{mode}'. Verifica tu archivo .env.")
+            return None
+
+        # --- INICIO: Lógica para pool de conexiones ---
+        # Crear una sesión de requests para personalizar el pool de conexiones
+        session = requests.Session()
+        # Crear un adaptador con un pool más grande. 100 es un buen punto de partida.
+        adapter = HTTPAdapter(pool_connections=100, pool_maxsize=100)
+        # Montar este adaptador para todas las peticiones a la URL base de la API
+        session.mount(base_url_to_use, adapter)
+        # --- FIN: Lógica para pool de conexiones ---
+
+        # Crear instancia del cliente UMFutures, y LUEGO asignarle la sesión
         client = UMFutures(key=api_key, secret=api_secret, base_url=base_url_to_use)
+        # En lugar de reemplazar la sesión, modificamos la que el cliente ya tiene
+        client.session.mount(base_url_to_use, HTTPAdapter(pool_connections=100, pool_maxsize=100))
 
         # Intentar hacer una llamada simple para verificar la conexión y las claves API
         try:
@@ -123,14 +164,7 @@ def get_historical_klines(symbol: str, interval: str, limit: int = 500):
         klines_df['open_time'] = pd.to_datetime(klines_df['open_time'], unit='ms')
         klines_df['close_time'] = pd.to_datetime(klines_df['close_time'], unit='ms')
         
-        # Intentar obtener Open Interest (aunque para 1m no es estándar y probablemente no funcionará bien)
-        # Por ahora, vamos a registrar que OI en 1m no es fiable.
-        # La API de Binance no ofrece OI Histórico en velas de 1m. Mínimo 5m.
-        # La llamada a mark_price_klines NO devuelve OI.
-        logger.warning(f"[{symbol}] Open Interest para velas de 1 minuto no está disponible de forma fiable a través de la API de Binance. El chequeo de OI podría no funcionar como se espera.")
-        klines_df['open_interest_usdt'] = Decimal('0') # Default a 0 ya que no lo podemos obtener fiablemente en 1m
-
-        # Mantener el cálculo de previous_close_price si se usa en otro lado
+        klines_df['open_interest_usdt'] = Decimal('0')
         klines_df['previous_close_price'] = klines_df['close'].shift(1)
 
 
@@ -201,15 +235,13 @@ def create_futures_market_order(symbol: str, side: str, quantity: float):
         return None
 
     # La nueva librería podría preferir pasar parámetros como un diccionario
-    # --- INICIO MODIFICACIÓN HEDGE MODE ---
-    position_side_to_use = 'LONG' # Como el bot solo maneja LONGs, siempre será LONG
-    # --- FIN MODIFICACIÓN HEDGE MODE ---
+    position_side_to_use = 'LONG' if is_hedge_mode() else 'BOTH'
     params = {
         'symbol': symbol,
         'side': side,
-        'type': 'MARKET', # Usar string 'MARKET'
-        'quantity': quantity, # La librería debería manejar el formato
-        'positionSide': position_side_to_use # Obligatorio para Hedge Mode
+        'type': 'MARKET',
+        'quantity': quantity,
+        'positionSide': position_side_to_use
     }
 
     logger.warning(f"Intentando crear orden de mercado: {side} {quantity} {symbol} (PositionSide={position_side_to_use}) con params: {params}")
@@ -352,22 +384,26 @@ def create_futures_limit_order(symbol: str, side: str, quantity: float, price: f
         logger.error(f"Lado inválido '{side}' para crear orden LIMIT.")
         return None
 
+    pos_side = 'LONG' if is_hedge_mode() else 'BOTH'
+    price_str = str(price)
+
     try:
-        logger.info(f"Intentando crear orden LIMIT {side} para {quantity} {symbol} @ {price}")
-        order = client.new_order(
-            symbol=symbol.upper(),
-            side=side,
-            type='LIMIT',
-            timeInForce='GTC',
-            quantity=quantity,
-            price=price,
-            positionSide='LONG'
-        )
+        logger.info(f"Intentando crear orden LIMIT {side} para {quantity} {symbol} @ {price_str} (positionSide={pos_side})")
+        params = {
+            'symbol': symbol.upper(),
+            'side': side,
+            'type': 'LIMIT',
+            'timeInForce': 'GTC',
+            'quantity': quantity,
+            'price': price_str,
+            'positionSide': pos_side
+        }
+        order = client.new_order(**params)
         logger.info(f"Orden LIMIT {side} creada para {symbol}. Respuesta API: {order}")
         # La respuesta contendrá el orderId, status ('NEW'), etc.
         return order
     except Exception as e:
-        logger.error(f"Error al crear orden LIMIT {side} para {symbol} @ {price}: {e}", exc_info=True)
+        logger.error(f"Error al crear orden LIMIT {side} para {symbol} @ {price_str}: {e}", exc_info=True)
         return None
 
 def get_order_status(symbol: str, order_id: int) -> dict | None:
@@ -437,19 +473,22 @@ def create_futures_take_profit_order(symbol: str, side: str, quantity: float, ta
         logger.error("Cliente de Binance no inicializado al intentar crear orden Take Profit.")
         return None
 
+    pos_side = 'LONG' if is_hedge_mode() else 'BOTH'
     params = {
         'symbol': symbol,
         'side': side,                    # 'BUY' o 'SELL'
         'type': 'TAKE_PROFIT_MARKET',    # Tipo de orden
-        'quantity': quantity,            # Cantidad a comprar/vender
         'stopPrice': take_profit_price,  # Precio de activación para TP
-        'closePosition': str(close_position).lower(), # 'true' o 'false'
-        'positionSide': 'LONG'           # Asumiendo que el bot solo opera LONG
-        # 'timeInForce': 'GTC', # No usualmente necesario para TAKE_PROFIT_MARKET con closePosition=true
+        'positionSide': pos_side
     }
-    logger.info(f"Intentando colocar orden TAKE_PROFIT_MARKET para {symbol}: Side={side}, Qty={quantity}, TP Price={take_profit_price}, ClosePos={close_position}")
+    if close_position:
+        params['closePosition'] = 'true'
+    else:
+        params['closePosition'] = 'false'
+        params['quantity'] = quantity
+
+    logger.info(f"Intentando colocar orden TAKE_PROFIT_MARKET para {symbol}: Side={side}, TP Price={take_profit_price}, ClosePos={close_position}, Params={params}")
     try:
-        # Usar client.new_order() que es el método estándar para crear órdenes
         order = client.new_order(**params)
         logger.info(f"Orden TAKE_PROFIT_MARKET creada: ID={order.get('orderId')}, Status={order.get('status')}")
         logger.debug(f"Respuesta completa de orden TP: {order}")
@@ -473,19 +512,22 @@ def create_futures_stop_loss_order(symbol: str, side: str, quantity: float, stop
         logger.error("Cliente de Binance no inicializado al intentar crear orden Stop Loss.")
         return None
 
+    pos_side = 'LONG' if is_hedge_mode() else 'BOTH'
     params = {
         'symbol': symbol,
         'side': side,                   # 'BUY' o 'SELL'
         'type': 'STOP_MARKET',          # Tipo de orden
-        'quantity': quantity,           # Cantidad a comprar/vender
         'stopPrice': stop_loss_price,   # Precio de activación para SL
-        'closePosition': str(close_position).lower(), # 'true' o 'false'
-        'positionSide': 'LONG'          # Asumiendo que el bot solo opera LONG
-        # 'timeInForce': 'GTC', # No usualmente necesario para STOP_MARKET con closePosition=true
+        'positionSide': pos_side
     }
-    logger.info(f"Intentando colocar orden STOP_MARKET para {symbol}: Side={side}, Qty={quantity}, SL Price={stop_loss_price}, ClosePos={close_position}")
+    if close_position:
+        params['closePosition'] = 'true'
+    else:
+        params['closePosition'] = 'false'
+        params['quantity'] = quantity
+
+    logger.info(f"Intentando colocar orden STOP_MARKET para {symbol}: Side={side}, SL Price={stop_loss_price}, ClosePos={close_position}, Params={params}")
     try:
-        # Usar client.new_order()
         order = client.new_order(**params)
         logger.info(f"Orden STOP_MARKET creada: ID={order.get('orderId')}, Status={order.get('status')}")
         logger.debug(f"Respuesta completa de orden SL: {order}")
@@ -616,6 +658,126 @@ def get_open_interest_history(symbol: str, period: str, limit: int = 2) -> list[
         logger.error(f"[{symbol}] Error inesperado al obtener historial de Open Interest para {symbol} ({period}): {e}", exc_info=True)
         return None
 # --- FIN NUEVA FUNCIÓN ---
+
+def get_account_balance_usdt() -> Decimal | None:
+    """
+    Obtiene el saldo total (wallet balance) en USDT de la cuenta de futuros.
+
+    Returns:
+        Decimal: El saldo total en USDT.
+        None: Si ocurre un error.
+    """
+    client = get_futures_client()
+    if not client:
+        logger = get_logger()
+        logger.error("No se pudo obtener el cliente de futuros para consultar el saldo.")
+        return None
+    
+    try:
+        account_info = client.account()
+        # Intentar obtener totalWalletBalance general de la cuenta
+        if 'totalWalletBalance' in account_info:
+            val = Decimal(str(account_info['totalWalletBalance']))
+            if val > 0:
+                return val
+
+        # Si no, buscar en la lista de assets el saldo de USDT
+        for asset in account_info.get('assets', []):
+            if asset['asset'] == 'USDT':
+                # Usar walletBalance (saldo total) o marginBalance
+                wb = Decimal(str(asset.get('walletBalance', asset.get('availableBalance', '0'))))
+                return wb
+        logger.warning("No se encontró el saldo para el asset USDT en la cuenta de futuros.")
+        return Decimal('0')
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error al obtener el saldo de la cuenta de futuros: {e}")
+        return None
+
+def get_last_account_trade(symbol: str, start_time: datetime = None) -> dict | None:
+    """
+    Obtiene el último trade de la cuenta para un símbolo específico, opcionalmente
+    después de una hora de inicio.
+    """
+    logger = get_logger()
+    client = get_futures_client()
+    if not client:
+        return None
+
+    try:
+        # Convertir start_time a milisegundos si se proporciona
+        start_time_ms = int(start_time.timestamp() * 1000) if start_time else None
+        
+        # Obtener los trades más recientes. Limit=10 es un número razonable para buscar.
+        trades = client.get_account_trades(symbol=symbol, startTime=start_time_ms, limit=10)
+        
+        if trades:
+            # La API devuelve los trades más recientes al final, así que devolvemos el último.
+            last_trade = trades[-1]
+            logger.info(f"[{symbol}] Último trade encontrado después de {start_time}: {last_trade}")
+            return last_trade
+        else:
+            logger.warning(f"[{symbol}] No se encontraron trades en el historial después de {start_time}.")
+            return None
+    except Exception as e:
+        logger.error(f"[{symbol}] Error al obtener el último trade de la cuenta: {e}", exc_info=True)
+        return None
+
+def get_futures_position_information() -> list[dict] | None:
+    """
+    Obtiene la información de riesgo de TODAS las posiciones de la cuenta de futuros.
+    Es útil para una comprobación inicial de todas las posiciones abiertas.
+    """
+    logger = get_logger()
+    client = get_futures_client()
+    if not client:
+        logger.error("No se pudo obtener el cliente UMFutures para buscar la información de posiciones.")
+        return None
+
+    try:
+        # Usamos 'position_information' que devuelve info para todos los símbolos con posición o órdenes.
+        logger.debug("Consultando TODA la información de posiciones...")
+        positions = client.get_position_risk()
+
+        if not positions:
+            logger.info("No se encontró información de ninguna posición (respuesta vacía).")
+            return []
+
+        return positions
+
+    except ClientError as e:
+        logger.error(f"Error de API al obtener la información de posiciones: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
+        return None
+    except Exception as e:
+        logger.error(f"Error inesperado al obtener la información de posiciones: {e}", exc_info=True)
+        return None
+
+def set_futures_leverage(symbol: str, leverage: int):
+    """
+    Configura el apalancamiento (leverage) para un símbolo específico en Binance Futures.
+    """
+    logger = get_logger()
+    client = get_futures_client()
+    if not client:
+        logger.error(f"[{symbol}] No se pudo obtener el cliente UMFutures para cambiar apalancamiento.")
+        return None
+
+    try:
+        leverage_int = int(leverage)
+        if leverage_int < 1:
+            logger.warning(f"[{symbol}] Apalancamiento inválido: {leverage}. Debe ser >= 1.")
+            return None
+        
+        response = client.change_leverage(symbol=symbol, leverage=leverage_int)
+        logger.info(f"[{symbol}] Apalancamiento configurado exitosamente a {leverage_int}x. Respuesta: {response}")
+        return response
+    except ClientError as e:
+        logger.error(f"[{symbol}] Error de API al configurar apalancamiento a {leverage}x: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
+        return None
+    except Exception as e:
+        logger.error(f"[{symbol}] Error inesperado al cambiar apalancamiento para {symbol}: {e}", exc_info=True)
+        return None
+
 
 # Ejemplo de uso (no ejecutar directamente aquí)
 # if __name__ == '__main__':

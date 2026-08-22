@@ -10,6 +10,8 @@ from flask_cors import CORS
 import threading
 import time # Necesario para sleep
 import logging # Necesario para get_logger y calculate_sleep
+from decimal import Decimal
+from threading import Lock # Necesario para el Lock del RiskManager
 
 # --- Quitar Workaround sys.path --- 
 # current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,11 +20,61 @@ import logging # Necesario para get_logger y calculate_sleep
 #     sys.path.insert(0, project_root)
 
 # Importar funciones y variables usando importaciones ABSOLUTAS (desde src)
-from src.config_loader import load_config, get_trading_symbols, CONFIG_FILE_PATH
+from src.config_loader import load_config, reload_config, get_trading_symbols, CONFIG_FILE_PATH
 from src.logger_setup import setup_logging, get_logger
-from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, init_db_schema
+from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol
 # Importar TradingBot y BotState para run_bot_worker
 from src.bot import TradingBot, BotState 
+from src.binance_client import get_account_balance_usdt, reset_futures_client
+
+# --- NUEVO: Gestor de Estadísticas de Sesión ---
+class SessionStateManager:
+    def __init__(self, logger):
+        self.logger = logger
+        self.lock = Lock()
+        self.session_realized_pnl = Decimal('0')
+        self.session_unrealized_pnl = Decimal('0')
+        self.session_pnl_high = Decimal('-Infinity')
+        self.session_pnl_low = Decimal('Infinity')
+        self.active_session = False
+
+    def start_session(self):
+        with self.lock:
+            self.logger.info("Iniciando nueva sesión de estadísticas.")
+            self.session_realized_pnl = Decimal('0')
+            self.session_unrealized_pnl = Decimal('0')
+            self.session_pnl_high = Decimal('0') # Iniciar en 0 para que no muestre -Infinity
+            self.session_pnl_low = Decimal('0')  # Iniciar en 0 para que no muestre Infinity
+            self.active_session = True
+
+    def stop_session(self):
+        with self.lock:
+            self.logger.info("Deteniendo sesión de estadísticas.")
+            self.active_session = False
+
+    def update_stats(self, realized_pnl: Decimal, unrealized_pnl: Decimal):
+        with self.lock:
+            if not self.active_session:
+                return
+
+            self.session_realized_pnl = realized_pnl
+            self.session_unrealized_pnl = unrealized_pnl
+            
+            current_total_pnl = self.session_realized_pnl + self.session_unrealized_pnl
+
+            if current_total_pnl > self.session_pnl_high:
+                self.session_pnl_high = current_total_pnl
+            
+            if current_total_pnl < self.session_pnl_low:
+                self.session_pnl_low = current_total_pnl
+
+    def get_stats(self):
+        with self.lock:
+            return {
+                "session_pnl": float(self.session_realized_pnl + self.session_unrealized_pnl),
+                "session_high": float(self.session_pnl_high) if self.session_pnl_high != Decimal('-Infinity') else 0.0,
+                "session_low": float(self.session_pnl_low) if self.session_pnl_low != Decimal('Infinity') else 0.0
+            }
 
 # --- Definición de variables compartidas para la gestión de workers ---
 worker_statuses = {} # Ej: {'BTCUSDT': {'state': 'IN_POSITION', 'pnl': 5.2}, 'ETHUSDT': ...}
@@ -50,6 +102,9 @@ if not os.path.exists(STRATEGIES_PATH):
     except OSError as e:
         print(f"Error al crear el directorio de estrategias {STRATEGIES_PATH}: {e}")
 # -------------------------------------------
+
+# --- Instancia del Gestor de Sesión ---
+session_manager = None # Se inicializará después del logger
 
 # --- Funciones para calcular sleep (Movidas desde run_bot.py) ---
 def calculate_sleep_from_interval(interval_str: str) -> int:
@@ -102,24 +157,11 @@ def get_sleep_seconds(trading_params: dict) -> int:
 
 # --- Configuración Inicial ---
 api_logger = setup_logging(log_filename='api.log')
-
-# --- INICIALIZAR LA BASE DE DATOS ANTES DE ARRANCAR ---
-from src.database import init_db_schema
-init_db_schema()
-# ---------------------------------------------------
+session_manager = SessionStateManager(logger=api_logger) # Inicializar el gestor de sesión
 
 app = Flask(__name__) # Crear la aplicación Flask
 # Habilitar CORS para permitir peticiones desde el frontend (que corre en otro puerto)
-CORS(app, resources={r"/api/*": {"origins": "https://frontend-bot-binance-limit.onrender.com"}})
-
-@app.route('/', methods=['GET'])
-def index():
-    """Ruta de bienvenida para verificar que el servidor está en línea."""
-    return jsonify({
-        "status": "online",
-        "message": "Welcome to the Trading Bot API. The server is running.",
-        "version": "1.0.0"
-    })
+CORS(app) 
 
 def config_to_dict(config: configparser.ConfigParser) -> dict:
     """Convierte un objeto ConfigParser a un diccionario anidado."""
@@ -131,14 +173,15 @@ def config_to_dict(config: configparser.ConfigParser) -> dict:
             try:
                 if section == 'SYMBOLS' and key == 'symbols_to_trade': # Mantener la lista como string
                     processed_val = val
-                elif val.lower() in ['true', 'false']:
+                # --- NUEVO: Manejo explícito de booleanos para la nueva estrategia ---
+                elif key in ['evaluate_support_strategy', 'evaluate_ma_filter', 'evaluate_open_interest_increase', 'enable_take_profit_pnl', 'enable_stop_loss_pnl', 'enable_trailing_rsi_stop', 'enable_price_trailing_stop', 'enable_pnl_trailing_stop', 'evaluate_rsi_delta', 'evaluate_volume_filter', 'evaluate_rsi_range', 'evaluate_downtrend_candles_block', 'evaluate_downtrend_levels_block', 'evaluate_required_uptrend']:
                     processed_val = config.getboolean(section, key)
                 elif '.' in val:
                     processed_val = config.getfloat(section, key)
                 else:
                     processed_val = config.getint(section, key)
-            except ValueError:
-                processed_val = val # Mantener como string si no
+            except (ValueError, AttributeError): # Añadido AttributeError para manejar casos como 'None'
+                processed_val = val # Mantener como string si no se puede convertir
             the_dict[section][key] = processed_val
     return the_dict
 
@@ -149,6 +192,7 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'mode': frontend_data.get('mode', 'paper'),
         },
         'TRADING': {
+            'leverage': str(frontend_data.get('leverage', 20)),
             'rsi_interval': frontend_data.get('rsiInterval', '5m'),
             'rsi_period': str(frontend_data.get('rsiPeriod', 14)),
             'rsi_threshold_up': str(frontend_data.get('rsiThresholdUp', 8)),
@@ -182,7 +226,18 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'pnl_trailing_stop_activation_usdt': str(frontend_data.get('pnlTrailingStopActivationUSDT', 0.1)),
             'pnl_trailing_stop_drop_usdt': str(frontend_data.get('pnlTrailingStopDropUSDT', 0.05)),
             'evaluate_open_interest_increase': str(frontend_data.get('evaluateOpenInterestIncrease', True)).lower(),
-            'open_interest_period': frontend_data.get('openInterestPeriod', '5m')
+            'open_interest_period': frontend_data.get('openInterestPeriod', '5m'),
+            'evaluate_ma_filter': str(frontend_data.get('evaluateMaFilter', False)).lower(),
+            'ma_period': str(frontend_data.get('maPeriod', 200)),
+
+            # --- NUEVO: Mapeo para la Estrategia de Soportes ---
+            'evaluate_support_strategy': str(frontend_data.get('evaluateSupportStrategy', False)).lower(),
+            'support_history_candles': str(frontend_data.get('supportHistoryCandles', 200)),
+            'support_pivot_window': str(frontend_data.get('supportPivotWindow', 5)),
+            'support_confirmations': str(frontend_data.get('supportConfirmations', 2)),
+            'support_level_tolerance_percent': str(frontend_data.get('supportLevelTolerancePercent', 0.5)),
+            'support_order_stop_loss_percent': str(frontend_data.get('supportOrderStopLossPercent', 2.0)),
+            'support_order_take_profit_percent': str(frontend_data.get('supportOrderTakeProfitPercent', 4.0)),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -203,132 +258,100 @@ def run_bot_worker(symbol, trading_params, stop_event_ref):
     
     bot_instance = None
     try:
-        # Asegurarse de que trading_params no esté vacío
         if not trading_params:
              logger.error(f"[{symbol}] No se proporcionaron parámetros de trading válidos al worker. Terminando.")
-             # Actualizar estado a Error
-             with status_lock:
-                  worker_statuses[symbol] = {
-                      'symbol': symbol, 'state': BotState.ERROR.value, 'last_error': "Missing trading parameters.",
-                      'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                      'pending_entry_order_id': None, 'pending_exit_order_id': None
-                  }
+             # No se puede actualizar worker_statuses aquí porque no hay instancia de bot
              return
-             
-        # Obtener sleep_duration aquí usando la función movida
+        
         sleep_duration = get_sleep_seconds(trading_params)
         
-        bot_instance = TradingBot(symbol=symbol, trading_params=trading_params)
+        bot_instance = TradingBot(symbol=symbol, trading_params=trading_params, risk_manager=risk_manager)
+        bot_instance.reset_session_pnl() # <-- NUEVO: Resetear PNL de sesión al crear el bot
+        
+        # --- CORRECCIÓN CRÍTICA: Comprobar posición inicial ANTES del bucle ---
+        try:
+            bot_instance._check_initial_position()
+            logger.info(f"[{symbol}] Comprobación de posición inicial finalizada.")
+        except Exception as e_init_pos:
+            logger.error(f"[{symbol}] Error crítico durante la comprobación de posición inicial: {e_init_pos}. El worker para este símbolo no continuará.", exc_info=True)
+            bot_instance._set_error_state(f"Initial position check failed: {e_init_pos}")
+            # Actualizar el estado una última vez antes de salir
+            with status_lock:
+                worker_statuses[symbol] = bot_instance
+            return # Detener la ejecución de este worker
+        # --- FIN DE LA CORRECCIÓN ---
+
         with status_lock:
-             worker_statuses[symbol] = bot_instance.get_current_status() 
-        logger.info(f"[{symbol}] Worker thread iniciado. Instancia de TradingBot creada. Tiempo de espera: {sleep_duration}s") # Usar sleep_duration
+             worker_statuses[symbol] = bot_instance
+        logger.info(f"[{symbol}] Worker thread iniciado. Instancia de TradingBot creada. Tiempo de espera: {sleep_duration}s")
     except (ValueError, ConnectionError) as init_error:
          logger.error(f"No se pudo inicializar la instancia de TradingBot para {symbol}: {init_error}. Terminando worker.", exc_info=True)
-         with status_lock:
-              worker_statuses[symbol] = {
-                  'symbol': symbol, 'state': BotState.ERROR.value, 'last_error': str(init_error),
-                  'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                  'pending_entry_order_id': None, 'pending_exit_order_id': None
-              }
+         # No se puede actualizar worker_statuses aquí porque no hay instancia de bot
          return
     except Exception as thread_error:
          logger.error(f"Error inesperado al crear instancia de TradingBot para {symbol}: {thread_error}. Terminando worker.", exc_info=True)
-         with status_lock:
-              worker_statuses[symbol] = {
-                  'symbol': symbol, 'state': BotState.ERROR.value, 
-                  'last_error': f"Unexpected init error: {thread_error}",
-                  'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                  'pending_entry_order_id': None, 'pending_exit_order_id': None
-              }
+         # No se puede actualizar worker_statuses aquí porque no hay instancia de bot
          return
-
-    # Ya no necesitamos get_sleep_seconds aquí si lo calculamos antes
 
     while not stop_event_ref.is_set():
         try:
             if bot_instance:
                 bot_instance.run_once()
-            if bot_instance:
-                with status_lock:
-                     worker_statuses[symbol] = bot_instance.get_current_status()
+            # La actualización de estado ahora se hace en el endpoint /api/status
         except Exception as cycle_error:
             logger.error(f"[{symbol}] Error inesperado en el ciclo principal del worker: {cycle_error}", exc_info=True)
             if bot_instance:
                 bot_instance._set_error_state(f"Unhandled exception in worker loop: {cycle_error}")
-                with status_lock:
-                     worker_statuses[symbol] = bot_instance.get_current_status()
-            else:
-                 # Si bot_instance es None aquí, hubo un error muy temprano
-                 with status_lock:
-                      if symbol not in worker_statuses or not isinstance(worker_statuses.get(symbol), dict):
-                           worker_statuses[symbol] = {} # Asegurar que existe como dict
-                           
-                      worker_statuses[symbol].update({
-                          'symbol': symbol, 'state': BotState.ERROR.value, 
-                          'last_error': f"Critical worker loop error before bot ready: {cycle_error}",
-                          'in_position': False, 'entry_price': None, 'quantity': None, 'pnl': None,
-                          'pending_entry_order_id': None, 'pending_exit_order_id': None
-                      })
-            # Continuar el bucle para permitir posible recuperación o apagado
             pass 
 
-        # Usar el sleep_duration calculado
         interrupted = stop_event_ref.wait(timeout=sleep_duration)
         if interrupted:
             logger.info(f"[{symbol}] Señal de parada recibida durante la espera.")
             break
 
     logger.info(f"[{symbol}] Worker thread terminado.")
-    # Actualizar estado final al detenerse
-    with status_lock:
-         # Asegurarse que la entrada existe y es un diccionario
-         if symbol not in worker_statuses or not isinstance(worker_statuses.get(symbol), dict):
-             worker_statuses[symbol] = {'symbol': symbol} # Crear entrada mínima
-         worker_statuses[symbol]['state'] = BotState.STOPPED.value
-# --- Fin de run_bot_worker ---
+    if bot_instance:
+        bot_instance.state = BotState.STOPPED
+    # La limpieza final del worker_statuses se hará en la función de apagado.
 
 
 # --- Función para iniciar los workers (Movida y Adaptada) ---
-def start_bot_workers(bot_configs):
-    global workers_started, threads
+def start_bot_workers():
+    global workers_started, threads, loaded_trading_params, loaded_symbols_to_trade
     logger = get_logger()
     
     with status_lock: # Proteger acceso a workers_started y threads
         if workers_started:
             logger.warning("start_bot_workers fue llamado pero los workers ya están iniciados.")
-            return False # Indicar que no se hizo nada
+            return False, "Los workers ya están corriendo." # Indicar que no se hizo nada
 
         worker_statuses.clear() # Clear previous statuses before starting new ones
         threads.clear() # Limpiar lista de hilos anterior
         stop_event.clear() # Asegurarse que el evento de parada no esté activo
 
-        # --- FIX: Obtener la lista de símbolos desde la configuración recibida ---
-        symbols_to_trade_str = bot_configs.get('symbolsToTrade', '')
-        symbols_to_trade = [s.strip() for s in symbols_to_trade_str.split(',') if s.strip()]
-
-        if not symbols_to_trade:
-            logger.error("No hay símbolos en la configuración recibida para iniciar los workers.")
-            return False
+        if not loaded_symbols_to_trade:
+            logger.error("No hay símbolos configurados para iniciar los workers.")
+            return False, "No hay símbolos configurados para iniciar los workers."
             
-        if not bot_configs:
+        if not loaded_trading_params:
             logger.error("No hay parámetros de trading configurados para iniciar los workers.")
-            return False
+            return False, "No hay parámetros de trading configurados para iniciar los workers."
 
         logger.info("Iniciando workers de bot...")
-        for symbol_idx, symbol in enumerate(symbols_to_trade):
+        for symbol_idx, symbol in enumerate(loaded_symbols_to_trade):
             logger.info(f"-> Preparando worker para {symbol}...")
-            # --- FIX: Pasar el diccionario de configuración COMPLETO a cada worker ---
-            thread = threading.Thread(target=run_bot_worker, args=(symbol, bot_configs, stop_event), name=f"Worker-{symbol}")
+            # Usar una COPIA de loaded_trading_params para cada hilo
+            thread = threading.Thread(target=run_bot_worker, args=(symbol, loaded_trading_params.copy(), stop_event), name=f"Worker-{symbol}")
             threads.append(thread)
             thread.start()
-            if (symbol_idx + 1) < len(symbols_to_trade):
+            if (symbol_idx + 1) < len(loaded_symbols_to_trade):
                  # Espera corta entre inicios de hilos para evitar sobrecarga inicial
                  time.sleep(1) 
         
         num_bot_threads = len(threads)
         workers_started = True # Marcar como iniciados
         logger.info(f"Todos los {num_bot_threads} workers de bot iniciados.")
-        return True # Indicar éxito
+        return True, "Todos los workers de bot iniciados." # Indicar éxito
 # --- Fin de start_bot_workers ---
 
 
@@ -348,6 +371,7 @@ def get_config_endpoint():
             # Esta es una simplificación; idealmente, los valores por defecto estarían centralizados
             default_frontend_config = {
                 "mode": "paper",
+                "leverage": 20,
                 "rsiInterval": "5m",
                 "rsiPeriod": 14,
                 "rsiThresholdUp": 8,
@@ -382,7 +406,8 @@ def get_config_endpoint():
                 "pnlTrailingStopDropUSDT": 0.05,
                 "evaluateOpenInterestIncrease": True, # Cambio de clave aquí
                 "openInterestPeriod": "5m", # <-- Clave para el frontend
-                "symbolsToTrade": ""
+                "symbolsToTrade": "",
+                "activeStrategyName": ""
             }
             return jsonify(default_frontend_config)
         
@@ -397,6 +422,7 @@ def get_config_endpoint():
         if 'TRADING' in config_dict:
             # Mapear claves de config.ini a las esperadas por el frontend
             for key_ini, key_frontend in [
+                ('leverage', 'leverage'),
                 ('rsi_interval', 'rsiInterval'),
                 ('rsi_period', 'rsiPeriod'),
                 ('rsi_threshold_up', 'rsiThresholdUp'),
@@ -430,13 +456,22 @@ def get_config_endpoint():
                 ('pnl_trailing_stop_activation_usdt', 'pnlTrailingStopActivationUSDT'),
                 ('pnl_trailing_stop_drop_usdt', 'pnlTrailingStopDropUSDT'),
                 ('evaluate_open_interest_increase', 'evaluateOpenInterestIncrease'), # Cambio de clave aquí
-                ('open_interest_period', 'openInterestPeriod') # <-- CAMBIO DE CLAVE AQUÍ para el frontend
+                ('open_interest_period', 'openInterestPeriod'), # <-- CAMBIO DE CLAVE AQUÍ para el frontend
+                ('evaluate_ma_filter', 'evaluateMaFilter'),
+                ('ma_period', 'maPeriod')
             ]:
                 if key_ini in config_dict['TRADING']:
                     frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
         
         if 'SYMBOLS' in config_dict:
             frontend_config['symbolsToTrade'] = config_dict['SYMBOLS'].get('symbols_to_trade', '')
+
+        # --- NUEVO: Leer nombre de estrategia activa ---
+        if 'STRATEGY_INFO' in config_dict:
+            frontend_config['activeStrategyName'] = config_dict['STRATEGY_INFO'].get('active_strategy_name', '')
+        else:
+            frontend_config['activeStrategyName'] = ''
+        # ---------------------------------------------
 
         # Asegurar que las globales también se actualizan si es la primera carga o si el archivo cambió
         loaded_trading_params = config_dict.get('TRADING', {})
@@ -471,6 +506,11 @@ def update_config_endpoint():
 
     logger.debug(f"Datos recibidos del frontend: {frontend_data}")
 
+    # --- NUEVO: Extraer active_strategy_name del payload ---
+    active_strategy_name_from_frontend = frontend_data.pop('activeStrategyName', '')
+    logger.info(f"[STRATEGY_DEBUG] active_strategy_name_from_frontend POPPED: '{active_strategy_name_from_frontend}'") # LOG POP
+    # ------------------------------------------------------
+
     # 1. Extraer la lista de símbolos del frontend_data
     symbols_string_raw = frontend_data.get('symbolsToTrade', '') # Usar la clave del estado de React
     # Limpiar y validar la lista de símbolos
@@ -489,6 +529,8 @@ def update_config_endpoint():
              config.read(CONFIG_FILE_PATH, encoding='utf-8')
         else:
              logger.warning(f"El archivo {CONFIG_FILE_PATH} no existía, se creará uno nuevo.")
+        
+        logger.info(f"[STRATEGY_DEBUG] Secciones en config DESPUÉS DE LEER config.ini: {config.sections()}") # LOG SECTIONS AFTER READ
 
         # 3. Actualizar el objeto config con los datos mapeados (BINANCE, TRADING)
         for section, keys in ini_other_data.items():
@@ -504,76 +546,107 @@ def update_config_endpoint():
         config.set('SYMBOLS', 'symbols_to_trade', symbols_to_save)
         logger.debug(f"Actualizando [SYMBOLS] symbols_to_trade = {symbols_to_save}")
 
+        logger.info(f"[STRATEGY_DEBUG] Secciones en config ANTES de procesar STRATEGY_INFO: {config.sections()}") # LOG SECTIONS BEFORE STRATEGY
+
+        # --- NUEVO: Guardar active_strategy_name en [STRATEGY_INFO] ---
+        if not config.has_section('STRATEGY_INFO'):
+            logger.info("[STRATEGY_DEBUG] La sección STRATEGY_INFO no existe, añadiéndola.")
+            config.add_section('STRATEGY_INFO')
+        else:
+            logger.info("[STRATEGY_DEBUG] La sección STRATEGY_INFO ya existe.")
+        
+        actual_name_to_save_in_ini = '' if active_strategy_name_from_frontend == 'Configuración Modificada' else active_strategy_name_from_frontend
+        logger.info(f"[STRATEGY_DEBUG] 'actual_name_to_save_in_ini' será: '{actual_name_to_save_in_ini}'")
+        config.set('STRATEGY_INFO', 'active_strategy_name', actual_name_to_save_in_ini)
+        logger.info(f"[STRATEGY_DEBUG] SET [STRATEGY_INFO] active_strategy_name = {actual_name_to_save_in_ini}")
+        
+        # Verificar si se estableció correctamente en el objeto config
+        if config.has_section('STRATEGY_INFO') and config.has_option('STRATEGY_INFO', 'active_strategy_name'):
+            retrieved_value = config.get('STRATEGY_INFO', 'active_strategy_name')
+            logger.info(f"[STRATEGY_DEBUG] VERIFICACIÓN POST-SET: config.get('STRATEGY_INFO', 'active_strategy_name') devolvió: '{retrieved_value}'")
+        else:
+            logger.error("[STRATEGY_DEBUG] ERROR DE VERIFICACIÓN POST-SET: STRATEGY_INFO o active_strategy_name no encontrados en el objeto config.")
+        # -------------------------------------------------------------
+
+        logger.info(f"[STRATEGY_DEBUG] Secciones en config ANTES DE ESCRIBIR en config.ini: {config.sections()}") # LOG SECTIONS BEFORE WRITE
+        if config.has_section('STRATEGY_INFO'):
+            logger.info(f"[STRATEGY_DEBUG] Contenido de [STRATEGY_INFO] en objeto config ANTES DE ESCRIBIR: {list(config.items('STRATEGY_INFO'))}")
+        else:
+            logger.info("[STRATEGY_DEBUG] La sección [STRATEGY_INFO] NO ESTÁ en el objeto config ANTES DE ESCRIBIR.")
+
         # 5. Escribir los cambios de vuelta al archivo config.ini
         with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as configfile:
             config.write(configfile)
         
-        logger.info(f"Archivo de configuración {CONFIG_FILE_PATH} actualizado exitosamente.")
+        # Recargar caché de configuración y resetear cliente de Binance para aplicar cambios en vivo
+        reload_config()
+        reset_futures_client()
+        load_initial_config()
+
+        logger.info(f"Archivo de configuración {CONFIG_FILE_PATH} actualizado exitosamente.") # Esta es la confirmación final
         return jsonify({"message": "Configuration updated successfully"}), 200
 
     except Exception as e:
-        logger.error(f"Error al escribir la configuración: {e}", exc_info=True)
+        logger.error(f"Error al escribir la configuración: {e}", exc_info=True) # Log de error
         return jsonify({"error": "Failed to write configuration"}), 500
 
 @app.route('/api/status', methods=['GET'])
 def get_worker_status():
-    global workers_started # Necesitamos acceso al flag global
+    global workers_started
     logger = get_logger()
     logger.debug("API call received for /api/status")
     
-    try: # <--- INICIO DEL BLOQUE TRY GENERAL
+    try:
         all_symbols_status = []
-        # Usar los símbolos cargados al inicio
-        configured_symbols = loaded_symbols_to_trade 
+        configured_symbols = loaded_symbols_to_trade
         historical_pnl_data = get_cumulative_pnl_by_symbol()
 
-        logger.debug(f"Símbolos configurados (cargados al inicio): {configured_symbols}")
-        logger.debug(f"PnL histórico de DB: {historical_pnl_data}")
+        # --- NUEVO: Variables para agregados de sesión ---
+        total_session_pnl = Decimal('0')
+        total_unrealized_pnl = Decimal('0')
 
-        with status_lock: 
-            active_worker_details = dict(worker_statuses)
+        with status_lock:
+            # Hacemos una copia para evitar problemas de concurrencia
+            active_worker_instances = {symbol: worker.get_status() for symbol, worker in worker_statuses.items() if hasattr(worker, 'get_status')}
 
         for symbol in configured_symbols:
+            # Estado base si el worker no se ha reportado o no está corriendo
             status_entry = {
                 'symbol': symbol,
-                'state': BotState.STOPPED.value if not workers_started else 'Initializing', # Estado inicial antes de que el worker actualice
-                'in_position': False,
-                'entry_price': None,
-                'quantity': None,
-                'pnl': None,
-                'pending_entry_order_id': None,
-                'pending_exit_order_id': None,
-                'last_error': None,
-                'cumulative_pnl': historical_pnl_data.get(symbol, 0.0) # Only this key for historical PNL
+                'state': BotState.STOPPED.value if not workers_started else 'Initializing',
+                'historical_pnl': historical_pnl_data.get(symbol, 0.0),
+                'session_pnl': 0.0, # Valor por defecto
             }
 
-            if symbol in active_worker_details and workers_started:
-                active_status = active_worker_details[symbol]
-                if active_status.get('state') != BotState.STOPPED.value:
-                    status_entry.update(active_status)
-                    status_entry['symbol'] = symbol 
-                    status_entry['cumulative_pnl'] = historical_pnl_data.get(symbol, 0.0)
-                    for key_to_remove in ['hist_pnl', 'histPnl', 'historical_pnl', 'historicalPnl', 'cumulativePnl']:
-                        if key_to_remove in status_entry:
-                            del status_entry[key_to_remove]
-                elif active_status.get('state') == BotState.STOPPED.value:
-                    status_entry['state'] = BotState.STOPPED.value
-                    status_entry['cumulative_pnl'] = historical_pnl_data.get(symbol, 0.0)
-                    for key_to_remove in ['hist_pnl', 'histPnl', 'historical_pnl', 'historicalPnl', 'cumulativePnl']:
-                        if key_to_remove in status_entry:
-                            del status_entry[key_to_remove]
+            if symbol in active_worker_instances and workers_started:
+                # Si el worker está activo, usamos su estado completo
+                worker_data = active_worker_instances[symbol]
+                # Sobrescribimos el estado base con los datos reales
+                status_entry.update(worker_data)
+                # Nos aseguramos de que el PNL histórico de la DB (más fiable) prevalezca
+                status_entry['historical_pnl'] = historical_pnl_data.get(symbol, 0.0)
+
+                # --- NUEVO: Acumular PNLs para estadísticas de sesión ---
+                total_session_pnl += Decimal(str(worker_data.get('session_pnl', 0.0)))
+                if worker_data.get('in_position', False):
+                    total_unrealized_pnl += Decimal(str(worker_data.get('current_pnl', 0.0)))
             
             all_symbols_status.append(status_entry)
+
+        # --- NUEVO: Actualizar y obtener estadísticas de sesión ---
+        session_manager.update_stats(total_session_pnl, total_unrealized_pnl)
+        session_stats = session_manager.get_stats()
         
         response_data = {
             "bots_running": workers_started,
-            "statuses": all_symbols_status
+            "statuses": all_symbols_status,
+            "session_stats": session_stats # <-- NUEVO: Añadir estadísticas al response
         }
         
         logger.debug(f"Returning combined statuses. Bots running: {workers_started}")
         return jsonify(response_data)
 
-    except Exception as e: # <--- BLOQUE CATCH GENERAL
+    except Exception as e:
         logger.error(f"CRITICAL ERROR in /api/status endpoint: {e}", exc_info=True)
         return jsonify({"error": "Internal server error processing status.", "details": str(e)}), 500
 
@@ -586,6 +659,7 @@ def shutdown_bot():
          api_logger.warning("Señal de apagado recibida, pero los workers no estaban iniciados.")
          return jsonify({"message": "Workers no estaban corriendo."}), 200 # O un 4xx?
 
+    session_manager.stop_session() # <-- NUEVO: Detener la sesión
     stop_event.set() 
     api_logger.info("Esperando que los hilos de los workers terminen (join)...")
     
@@ -614,25 +688,31 @@ def shutdown_bot():
 # --- NUEVO ENDPOINT PARA INICIAR LOS BOTS ---
 @app.route('/api/start_bots', methods=['POST'])
 def start_bots_endpoint():
-    """Endpoint para iniciar todos los workers de los bots."""
+    global workers_started
     logger = get_logger()
     logger.info("Recibida petición POST /api/start_bots")
     
-    # --- FIX: Obtener el JSON de la petición ---
-    # Usar request.get_json(force=True) para parsear el cuerpo aunque el Content-Type no sea application/json.
-    bot_configs = request.get_json(force=True)
-    if not bot_configs:
-        logger.error("La petición a /api/start_bots no contenía un cuerpo JSON o estaba vacío.")
-        return jsonify({"status": "error", "message": "Request body is missing or empty."}), 400
+    if workers_started:
+        logger.warning("Intento de iniciar workers cuando ya estaban corriendo.")
+        return jsonify({"error": "Los bots ya están corriendo."}), 409 # 409 Conflict
 
-    # Pasar la configuración recibida a la función que inicia los workers
-    success = start_bot_workers(bot_configs)
+    # --- NUEVO: Iniciar una nueva sesión de estadísticas ---
+    session_manager.start_session()
+    # ----------------------------------------------------
+
+    # Asegurar que se cargue la configuración más reciente desde config.ini
+    load_initial_config()
+
+    # Llamar a la función que realmente inicia los hilos, que ahora puede devolver un mensaje de error
+    success, message = start_bot_workers() 
 
     if success:
-        return jsonify({"status": "success", "message": "Todos los bots iniciados correctamente."})
+        return jsonify({"message": message or "Bots iniciados exitosamente."}), 200
     else:
-        logger.error("Fallo al iniciar los workers (ver logs anteriores).")
-        return jsonify({"status": "error", "message": "Fallo al iniciar los bots (verificar configuración o logs)."}), 500
+        logger.error(f"Fallo al iniciar los workers: {message}")
+        # Devolver el mensaje de error específico al frontend
+        return jsonify({"error": message or "Fallo al iniciar los bots (verificar configuración o logs)."}), 500
+# ------------------------------------------
 
 # Función para cargar configuración inicial (llamada desde run_bot.py)
 def load_initial_config():
@@ -809,47 +889,108 @@ def handle_specific_strategy(strategy_name: str):
 
 @app.route('/api/strategies', methods=['GET'])
 def list_strategies():
-    """Devuelve una lista de nombres de estrategias guardadas."""
-    if not os.path.exists(STRATEGIES_PATH):
-        return jsonify([]) # Devolver array vacío si el directorio no existe
-
+    logger = get_logger()
+    logger.info("Solicitud para listar estrategias guardadas.")
     try:
-        # Filtrar solo archivos .json y quitar la extensión
-        strategy_files = [f.replace('.json', '') for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
-        return jsonify(strategy_files)
+        if not os.path.exists(STRATEGIES_PATH):
+            # Si el directorio no existe (aunque debió crearse), devolver lista vacía
+            logger.warning(f"El directorio de estrategias {STRATEGIES_PATH} no existe. Devolviendo lista vacía.")
+            return jsonify([]), 200
+            
+        strategy_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
+        strategy_names = [os.path.splitext(f)[0] for f in strategy_files]
+        logger.info(f"Estrategias encontradas: {strategy_names}")
+        return jsonify(strategy_names), 200
     except Exception as e:
-        api_logger.error(f"Error al listar estrategias: {e}", exc_info=True)
-        return jsonify({"error": "No se pudieron listar las estrategias"}), 500
-
-@app.route('/api/strategies/set-active/<strategy_name>', methods=['POST'])
-def set_active_strategy(strategy_name: str):
-    """Actualiza el config.ini para establecer la estrategia activa."""
-    api_logger.info(f"Recibida solicitud para activar la estrategia: {strategy_name}")
-    try:
-        config = configparser.ConfigParser()
-        # Leer con UTF-8 para asegurar compatibilidad
-        config.read(CONFIG_FILE_PATH, encoding='utf-8')
-
-        # Si la sección [STRATEGY_INFO] no existe, la creamos
-        if not config.has_section('STRATEGY_INFO'):
-            config.add_section('STRATEGY_INFO')
-            api_logger.info("Sección [STRATEGY_INFO] no encontrada, creada en config.ini.")
-
-        # Establecer el nombre de la estrategia activa
-        config.set('STRATEGY_INFO', 'active_strategy_name', strategy_name)
-
-        # Guardar los cambios en el archivo
-        with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as configfile:
-            config.write(configfile)
-        
-        api_logger.info(f"Estrategia activa actualizada a '{strategy_name}' en {CONFIG_FILE_PATH}")
-        return jsonify({"message": f"Estrategia activa establecida a: {strategy_name}"}), 200
-
-    except Exception as e:
-        api_logger.error(f"Error al establecer la estrategia activa '{strategy_name}': {e}", exc_info=True)
-        return jsonify({"error": f"No se pudo establecer la estrategia activa: {e}"}), 500
+        logger.error(f"Error al listar estrategias: {e}", exc_info=True)
+        # Asegurar que se devuelve JSON en caso de error
+        return jsonify({"error": f"Error interno al listar estrategias: {str(e)}"}), 500
 
 # La función para correr Flask en un hilo (start_flask_app) 
 # y el if __name__ == '__main__' no se necesitan aquí 
 # si api_server.py es solo para definir la app y sus rutas,
 # y es importado por run_bot.py 
+
+# --- NUEVO: Gestor de Riesgo ---
+class RiskManager:
+    def __init__(self, logger, initial_risk_percentage=Decimal('0.50')): # 50% por defecto
+        self.lock = Lock()
+        self.logger = logger # <-- CORRECCIÓN: Guardar el logger
+        self.total_balance = get_account_balance_usdt() or Decimal('0')
+        self.risk_percentage = initial_risk_percentage
+        self.max_exposure = self.total_balance * self.risk_percentage
+        self.current_exposure = Decimal('0')
+        self.logger.info(f"RiskManager inicializado. Saldo: {self.total_balance} USDT, % Riesgo: {self.risk_percentage:.2%}, Exposición Máxima: {self.max_exposure} USDT")
+
+    def update_balance(self):
+        with self.lock:
+            self.total_balance = get_account_balance_usdt() or self.total_balance
+            self.max_exposure = self.total_balance * self.risk_percentage
+            self.logger.info(f"Balance actualizado. Nuevo Saldo: {self.total_balance} USDT, Exposición Máxima: {self.max_exposure} USDT")
+
+    def can_open_position(self, position_size_usdt: Decimal) -> bool:
+        with self.lock:
+            if self.current_exposure + position_size_usdt <= self.max_exposure:
+                return True
+            else:
+                self.logger.warning(f"Apertura de posición rechazada. Exposición actual ({self.current_exposure}) + nueva ({position_size_usdt}) excede el máximo ({self.max_exposure}).")
+                return False
+
+    def add_exposure(self, size_usdt: Decimal):
+        with self.lock:
+            self.current_exposure += size_usdt
+            self.logger.info(f"Exposición añadida: {size_usdt}. Exposición total actual: {self.current_exposure}")
+
+    def remove_exposure(self, size_usdt: Decimal):
+        with self.lock:
+            self.current_exposure -= size_usdt
+            if self.current_exposure < 0:
+                self.current_exposure = Decimal('0')
+            self.logger.info(f"Exposición eliminada: {size_usdt}. Exposición total actual: {self.current_exposure}")
+
+    def set_risk_percentage(self, new_percentage: Decimal):
+        with self.lock:
+            if Decimal('0') <= new_percentage <= Decimal('1'):
+                self.risk_percentage = new_percentage
+                self.max_exposure = self.total_balance * self.risk_percentage
+                self.logger.info(f"Porcentaje de riesgo actualizado a {self.risk_percentage:.2%}. Nueva exposición máxima: {self.max_exposure} USDT")
+            else:
+                self.logger.error(f"Intento de establecer un porcentaje de riesgo inválido: {new_percentage}")
+
+    def get_status(self):
+        with self.lock:
+            try:
+                new_bal = get_account_balance_usdt()
+                if new_bal is not None:
+                    self.total_balance = new_bal
+                    self.max_exposure = self.total_balance * self.risk_percentage
+            except Exception:
+                pass
+            return {
+                'total_balance': f"{self.total_balance:.2f}",
+                'risk_percentage': f"{self.risk_percentage:.2%}",
+                'max_exposure': f"{self.max_exposure:.2f}",
+                'current_exposure': f"{self.current_exposure:.2f}"
+            }
+
+risk_manager = RiskManager(logger=api_logger) # <-- CORRECCIÓN: Usar el nombre de variable correcto 'api_logger'
+# --------------------------------- 
+
+# --- Rutas de la API ---
+
+@app.route('/api/risk_config', methods=['GET', 'POST'])
+def handle_risk_config():
+    if request.method == 'POST':
+        data = request.get_json()
+        if data and 'risk_percentage' in data:
+            try:
+                # El frontend enviará un número (ej. 50), lo convertimos a Decimal (0.50)
+                percentage = Decimal(data['risk_percentage']) / Decimal('100')
+                risk_manager.set_risk_percentage(percentage)
+                return jsonify({'message': 'Risk percentage updated successfully.'}), 200
+            except Exception as e:
+                return jsonify({'error': f'Invalid value for risk_percentage: {e}'}), 400
+        return jsonify({'error': 'Missing or invalid risk_percentage in request body.'}), 400
+    
+    # GET request
+    return jsonify(risk_manager.get_status()), 200 

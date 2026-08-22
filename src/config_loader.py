@@ -16,30 +16,29 @@ CONFIG_FILE_PATH = os.path.join(PROJECT_ROOT, 'config.ini')
 # Evita leer el archivo múltiples veces
 _config_cache = None
 
-def load_config():
+def load_config(force_reload: bool = False):
     """
     Carga la configuración desde el archivo config.ini definido en CONFIG_FILE_PATH.
-    Utiliza un caché para evitar lecturas repetidas del archivo.
+    Utiliza un caché para evitar lecturas repetidas del archivo, salvo si force_reload=True.
 
     Returns:
         configparser.ConfigParser or None: El objeto ConfigParser cargado o None si ocurre un error.
     """
     global _config_cache
-    if _config_cache:
+    if _config_cache and not force_reload:
         return _config_cache
 
     if not os.path.exists(CONFIG_FILE_PATH):
-        # Usar print a stderr si el logger aún no está disponible
         print(f"ERROR CRÍTICO: El archivo de configuración '{CONFIG_FILE_PATH}' no existe.", file=sys.stderr)
         return None
 
     config = configparser.ConfigParser(
-        interpolation=None, # Deshabilitar interpolación para evitar errores con %
-        inline_comment_prefixes=(';', '#') # Permitir comentarios con ; y #
+        interpolation=None,
+        inline_comment_prefixes=(';', '#')
     )
     try:
         config.read(CONFIG_FILE_PATH, encoding='utf-8')
-        _config_cache = config # Guardar en caché antes de devolver
+        _config_cache = config
         return _config_cache
     except configparser.Error as e:
         print(f"ERROR CRÍTICO: Error al parsear el archivo de configuración '{CONFIG_FILE_PATH}': {e}", file=sys.stderr)
@@ -47,6 +46,10 @@ def load_config():
     except Exception as e:
         print(f"ERROR CRÍTICO: Error inesperado al leer '{CONFIG_FILE_PATH}': {e}", file=sys.stderr)
         return None
+
+def reload_config():
+    """Fuerza la recarga de la configuración desde config.ini."""
+    return load_config(force_reload=True)
 
 def get_trading_symbols() -> list[str]:
     """

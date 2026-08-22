@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import BotControls from './BotControls';
 
-const API_BASE_URL = 'https://bot-binance-limit-sltp.onrender.com'; // <--- URL DEL BACKEND
-
 // Clave para guardar/leer en localStorage
 const STATUS_CACHE_KEY = 'botStatusesCache';
 
@@ -22,6 +20,17 @@ const formatPnl = (pnl) => {
   const value = parseFloat(pnl);
   return isNaN(value) ? 'N/A' : `${value.toFixed(4)} USDT`;
 };
+
+// --- NUEVA FUNCIÓN HELPER PARA COLOR DE PNL ---
+const getPnlColorClass = (pnl) => {
+  if (pnl === null || pnl === undefined) return 'text-gray-500 dark:text-gray-400';
+  const value = parseFloat(pnl);
+  if (isNaN(value)) return 'text-gray-500 dark:text-gray-400';
+  if (value > 0) return 'text-green-500';
+  if (value < 0) return 'text-red-500';
+  return 'text-gray-500 dark:text-gray-400';
+};
+// ---------------------------------------------
 
 function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   // Intentar cargar el estado inicial desde localStorage, asegurando que sea un array válido
@@ -46,6 +55,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [startError, setStartError] = useState(null); // <-- NUEVO ESTADO PARA ERRORES DE INICIO
   // --- NUEVO ESTADO PARA FILAS EXPANDIDAS E HISTORIAL ---
   const [expandedRows, setExpandedRows] = useState({}); // { symbol: boolean }
   const [tradeHistories, setTradeHistories] = useState({}); // { symbol: [trade] }
@@ -55,13 +65,19 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   const [numTradesToShow, setNumTradesToShow] = useState(2); // Por defecto 2 trades
   // ------------------------------------------------------
 
+  // Modificamos onStart para que pueda manejar el error
+  const handleStart = async () => {
+    setStartError(null); // Limpiar error anterior al intentar iniciar de nuevo
+    const result = await onStart();
+    if (result && result.error) {
+      setStartError(result.error);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
-      // --- MODIFICADO: Construir la URL de la API ---
-      // const apiUrl = ''; // ESTA LÍNEA YA NO ES NECESARIA
-      // -------------------------------------------
       try {
-        const response = await fetch(`${API_BASE_URL}/api/status`);
+        const response = await fetch('/api/status');
         if (!response.ok) {
           // Si la respuesta no es OK, lanzar un error para ir al catch
           // Podríamos intentar leer un mensaje de error específico si la API lo envía
@@ -72,9 +88,9 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
           } catch (jsonError) { /* Ignorar si el cuerpo del error no es JSON */ }
           throw new Error(errorMsg); 
         }
-        const data = await response.json(); // data ahora es { bots_running: ..., statuses: [...] }
+        const data = await response.json(); // data ahora es { bots_running: ..., statuses: [...], session_stats: {...} }
         
-        // --- EXTRAER el array \'statuses\' de la respuesta --- 
+        // --- EXTRAER el array 'statuses' de la respuesta --- 
         if (data && Array.isArray(data.statuses)) {
             // --- NUEVO: Ordenar los statuses ---
             const sortedStatuses = [...data.statuses].sort((a, b) => { // Usar spread para no mutar el original si se usa en otro lado
@@ -98,22 +114,29 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
             // --- FIN NUEVO ORDENAMIENTO ---
 
             setStatuses(sortedStatuses); // Guardar el array ORDENADO
-            // --- LLAMAR A onStatusUpdate CON LOS DATOS ACTUALIZADOS (ahora usa sortedStatuses) ---\
+            // --- LLAMAR A onStatusUpdate CON LOS DATOS ACTUALIZADOS (ahora usa sortedStatuses) ---
             if (onStatusUpdate) {
-                const currentTotalPnl = sortedStatuses.reduce((acc, status) => { // Usar sortedStatuses
-                    const pnlValue = parseFloat(status.cumulative_pnl);
+                // CALCULO DE PNL HISTÓRICO TOTAL (SIN CAMBIOS)
+                const totalHistoricalPnl = sortedStatuses.reduce((acc, status) => {
+                    const pnlValue = parseFloat(status.historical_pnl); // Usar historical_pnl
                     if (!isNaN(pnlValue)) {
                         return acc + pnlValue;
                     }
                     return acc;
                 }, 0);
+
+                // NUEVO: CALCULAR MONEDAS EN POSICIÓN
+                const coinsInPos = sortedStatuses.filter(s => s.in_position).length;
+
                 onStatusUpdate({ 
-                    totalPnl: currentTotalPnl, 
-                    coinCount: sortedStatuses.length // Usar sortedStatuses
+                    totalPnl: totalHistoricalPnl, 
+                    coinCount: sortedStatuses.length,
+                    coinsInPosition: coinsInPos, // Pasar nuevo dato
+                    sessionStats: data.session_stats // <-- NUEVO: Pasar el objeto completo de estadísticas
                 });
             }
-            // ---------------------------------------------------------\
-             // Guardar los datos exitosos en localStorage (el array ORDENADO de statuses)\
+            // ---------------------------------------------------------
+             // Guardar los datos exitosos en localStorage (el array ORDENADO de statuses)
             try {
                 localStorage.setItem(STATUS_CACHE_KEY, JSON.stringify(sortedStatuses));
             } catch (e) {
@@ -150,15 +173,12 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   const fetchTradeHistory = async (symbol) => {
     if (loadingHistories[symbol]) return; // Evitar cargas múltiples
 
-    // --- MODIFICADO: Construir la URL de la API ---
-    // const apiUrl = ''; // ESTA LÍNEA YA NO ES NECESARIA
-    // -------------------------------------------
     setLoadingHistories(prev => ({ ...prev, [symbol]: true }));
     setHistoryErrors(prev => ({ ...prev, [symbol]: null }));
 
     try {
       // --- USAR numTradesToShow EN LA URL ---
-      const response = await fetch(`${API_BASE_URL}/api/trades/${symbol}?limit=${numTradesToShow}`);
+      const response = await fetch(`/api/trades/${symbol}?limit=${numTradesToShow}`);
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.error || `HTTP error! Status: ${response.status}`);
@@ -192,7 +212,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
 
   // --- CALCULAR EL TOTAL PNL HISTÓRICO ---
   const totalCumulativePnl = statuses.reduce((acc, status) => {
-    const pnlValue = parseFloat(status.cumulative_pnl);
+    const pnlValue = parseFloat(status.historical_pnl); // Usar historical_pnl
     if (!isNaN(pnlValue)) {
       return acc + pnlValue;
     }
@@ -203,12 +223,16 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   // --- LLAMAR A onStatusUpdate SI statuses CAMBIA (TAMBIÉN PARA DATOS INICIALES DE CACHÉ) ---
   useEffect(() => {
     if (onStatusUpdate) {
+        // NUEVO: CALCULAR MONEDAS EN POSICIÓN TAMBIÉN AQUÍ
+        const coinsInPos = statuses.filter(s => s.in_position).length;
         onStatusUpdate({ 
             totalPnl: totalCumulativePnl, 
-            coinCount: statuses.length 
+            coinCount: statuses.length,
+            coinsInPosition: coinsInPos // Pasar nuevo dato
+            // No pasamos sessionStats aquí porque este useEffect es solo para la caché local
         });
     }
-  }, [totalCumulativePnl, statuses.length, onStatusUpdate]); // Refined dependencies
+  }, [totalCumulativePnl, statuses, onStatusUpdate]); // Añadir statuses a la dependencia
   // -------------------------------------------------------------------------------------
 
   return (
@@ -217,11 +241,19 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
       
       <BotControls 
         botsRunning={botsRunning} 
-        onStart={onStart} 
+        onStart={handleStart} // Usar el nuevo manejador
         onShutdown={onShutdown} 
       />
       
-      {/* Mostrar el mensaje de error personalizado */}
+      {/* Mostrar el mensaje de error de inicio */}
+      {startError && (
+        <div className="my-4 p-3 bg-red-100 dark:bg-red-900/40 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
+          <p className="font-semibold">Error al iniciar los bots:</p>
+          <p className="text-sm">{startError}</p>
+        </div>
+      )}
+
+      {/* Mostrar el mensaje de error de conexión/API */}
       {error && <p className="text-yellow-600 dark:text-yellow-400 mb-4 font-medium">{error}</p>}
       <div className="overflow-x-auto">
         {/* --- NUEVO INPUT PARA NÚMERO DE TRADES --- */}
@@ -303,7 +335,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                     <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{status.symbol}</td>
                     <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                         status.state && typeof status.state === 'string' && status.state.toLowerCase().replace(/\\s+/g, '') === 'inposition' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                         status.state === 'IN_POSITION' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                          status.state === 'ERROR' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
                          status.state?.includes('WAITING') ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
                          status.state === 'Inactive' ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300' : /* Estilo para Inactivo */
@@ -312,11 +344,15 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                        {status.state || 'N/A'}
                      </span>
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                      {formatPnl(status.pnl)}
+                    <td className="px-3 py-3 whitespace-nowrap text-sm">
+                      <span className={`font-semibold ${getPnlColorClass(status.current_pnl)}`}>
+                      {status.in_position ? formatPnl(status.current_pnl) : 'N/A'}
+                      </span>
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                      {formatPnl(status.cumulative_pnl)}
+                    <td className="px-3 py-3 whitespace-nowrap text-sm">
+                      <span className={`font-semibold ${getPnlColorClass(status.historical_pnl)}`}>
+                      {formatPnl(status.historical_pnl)}
+                      </span>
                     </td>
                      <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                       {status.pending_entry_order_id ? 'SI' : ''}
@@ -369,7 +405,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                                       <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
                                       <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
                                       <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
-                                      <td className={`px-2 py-1 text-right whitespace-nowrap ${trade.pnl_usdt > 0 ? 'text-green-600 dark:text-green-400' : trade.pnl_usdt < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                      <td className={`px-2 py-1 text-right whitespace-nowrap ${getPnlColorClass(trade.pnl_usdt)}`}>
                                         {formatPnl(trade.pnl_usdt)}
                                       </td>
                                       <td className="px-2 py-1 whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.id}</td>
@@ -377,6 +413,22 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                                   ))}
                                 </tbody>
                               </table>
+                              {(() => {
+                                 const totalHistoryPnl = tradeHistories[status.symbol].reduce((acc, trade) => {
+                                   const pnl = parseFloat(trade.pnl_usdt);
+                                   return isNaN(pnl) ? acc : acc + pnl;
+                                 }, 0);
+                                 return (
+                                   <div className="mt-2 text-right pr-4">
+                                     <span className="font-bold text-sm text-gray-700 dark:text-gray-300">
+                                       Total PNL de la lista: 
+                                       <span className={`ml-2 ${getPnlColorClass(totalHistoryPnl)}`}>
+                                         {formatPnl(totalHistoryPnl)}
+                                       </span>
+                                     </span>
+                                   </div>
+                                 );
+                               })()}
                             </div>
                           ) : (
                             <p className="text-sm text-center text-gray-500 dark:text-gray-400">No trade history found for {status.symbol}.</p>

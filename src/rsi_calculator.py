@@ -35,31 +35,43 @@ def calculate_rsi(close_prices: pd.Series, period: int):
     # Verificar si hay suficientes datos para el cálculo
     # pandas_ta necesita al menos 'period' puntos para empezar a calcular.
     # Pediremos un poco más para estar seguros (por si acaso la librería tiene requisitos internos)
-    min_required_data = period + 5 # Un pequeño margen extra
+    min_required_data = period + 2
     if len(close_prices) < min_required_data:
         logger.warning(f"Datos insuficientes para calcular RSI con período {period}. "
                        f"Se necesitan {min_required_data} puntos, se tienen {len(close_prices)}.")
         return None
 
     try:
-        # --- Forma alternativa de llamar a pandas_ta --- 
-        # En lugar de close_prices.ta.rsi(...), usamos ta.rsi(close_prices, ...)
-        # Esto a veces funciona mejor si el accessor .ta no se registró correctamente.
+        close = close_prices.astype(float)
 
-        # Asegurar que close_prices sea de tipo float para evitar problemas de dtype con pandas-ta
-        close_prices_float = close_prices.astype(float)
-        rsi_series = ta.rsi(close=close_prices_float, length=period, fillna=False)
+        # 1. Intentar cálculo con pandas_ta si el método existe
+        try:
+            if hasattr(ta, 'rsi'):
+                rsi_series = ta.rsi(close=close, length=period)
+                if rsi_series is not None and not rsi_series.empty:
+                    return rsi_series
+            if hasattr(close, 'ta') and hasattr(close.ta, 'rsi'):
+                rsi_series = close.ta.rsi(length=period)
+                if rsi_series is not None and not rsi_series.empty:
+                    return rsi_series
+        except Exception:
+            pass
 
-        if rsi_series is None or rsi_series.empty:
-             logger.error("pandas_ta.rsi devolvió None o una Serie vacía.")
-             return None
+        # 2. Cálculo nativo matemático de Wilder's RSI (Exactamente el estándar de Binance / TradingView)
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
 
-        # logger.debug(f"RSI calculado para los últimos {len(rsi_series)} puntos. Último valor: {rsi_series.iloc[-1]:.2f}")
+        avg_gain = gain.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+
+        rs = avg_gain / avg_loss.replace(0, 1e-10)
+        rsi_series = 100.0 - (100.0 / (1.0 + rs))
+
         return rsi_series
 
     except Exception as e:
-        logger.error(f"Error inesperado al calcular RSI con pandas_ta: {e}", exc_info=True)
-        # exc_info=True añade el traceback del error al log, muy útil para depurar.
+        logger.error(f"Error inesperado al calcular RSI: {e}", exc_info=True)
         return None
 
 # --- Bloque de ejemplo para probar la función --- 
