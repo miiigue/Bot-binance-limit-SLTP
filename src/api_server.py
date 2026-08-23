@@ -25,7 +25,7 @@ from src.logger_setup import setup_logging, get_logger
 from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol
 # Importar TradingBot y BotState para run_bot_worker
 from src.bot import TradingBot, BotState 
-from src.binance_client import get_account_balance_usdt, reset_futures_client
+from src.binance_client import get_account_balance_usdt, reset_futures_client, get_futures_client
 
 # --- NUEVO: Gestor de Estadísticas de Sesión ---
 class SessionStateManager:
