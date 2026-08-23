@@ -557,11 +557,13 @@ function ConfigForm({
       <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
         <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">General</legend>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-4">
-          <ConfigItem labelText="Modo de Operación" htmlFor="mode" tooltipText={tooltipTexts.mode}>
-            <select id="mode" name="mode" value={formData.mode} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm">
-              <option value="paper">Paper Trading (Simulación)</option>
-              <option value="real">Real (con dinero real)</option>
-            </select>
+          <ConfigItem labelText="Entorno de Ejecución" htmlFor="mode">
+            <div className="mt-1 flex items-center px-3 py-2 border border-green-300 bg-green-50 dark:bg-green-950/40 dark:border-green-800 rounded-md shadow-sm">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500 mr-2 animate-pulse"></span>
+              <span className="text-xs font-bold text-green-800 dark:text-green-300 uppercase tracking-wide">
+                🛡️ Testnet / Simulación (Protegido)
+              </span>
+            </div>
           </ConfigItem>
           <ConfigItem labelText="Apalancamiento (Multiplicador x)" htmlFor="leverage" tooltipText={tooltipTexts.leverage}>
             <input type="number" name="leverage" id="leverage" value={formData.leverage} onChange={handleChange} min="1" max="125" step="1" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 3 (para 3x)"/>

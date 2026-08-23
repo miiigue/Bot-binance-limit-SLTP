@@ -276,16 +276,32 @@ class TradingBot:
             self._set_error_state("Failed to get position info on startup")
             return
 
-        position_data = next((p for p in position_info if p['symbol'] == self.symbol), None)
-        pos_amt_binance = Decimal(position_data.get('positionAmt', '0')) if position_data else Decimal('0')
+        # Buscar si entre las posiciones del símbolo hay alguna abierta (positionAmt != 0)
+        matching_positions = [p for p in position_info if p.get('symbol') == self.symbol]
+        position_data = None
+        for p in matching_positions:
+            try:
+                amt = Decimal(str(p.get('positionAmt', '0')))
+                if abs(amt) > Decimal('1e-9'):
+                    position_data = p
+                    break
+            except Exception:
+                continue
 
-        if pos_amt_binance != Decimal('0'):
-            entry_price_binance = Decimal(position_data.get('entryPrice', '0'))
-            unrealized_pnl_binance = Decimal(position_data.get('unRealizedProfit', '0'))
+        if not position_data and matching_positions:
+            position_data = matching_positions[0]
+
+        pos_amt_binance = Decimal(str(position_data.get('positionAmt', '0'))) if position_data else Decimal('0')
+
+        if abs(pos_amt_binance) > Decimal('1e-9'):
+            entry_price_binance = Decimal(str(position_data.get('entryPrice', '0')))
+            unrealized_pnl_binance = Decimal(str(position_data.get('unRealizedProfit', '0')))
 
             if pos_amt_binance > Decimal('0'):
-                self.logger.info(f"[{self.symbol}] Se encontró posición LONG existente. Sincronizando estado.")
+                pos_side = position_data.get('positionSide', 'LONG')
+                self.logger.info(f"[{self.symbol}] Se encontró posición {pos_side} existente: Cantidad={pos_amt_binance}, Entrada={entry_price_binance}, PnL={unrealized_pnl_binance}. Sincronizando estado.")
                 self.in_position = True
+                self.current_state = BotState.IN_POSITION
                 self.state = BotState.IN_POSITION
                 self.last_known_entry_price = entry_price_binance
                 self.last_known_position_size = pos_amt_binance
@@ -294,19 +310,22 @@ class TradingBot:
                     'entry_price': entry_price_binance,
                     'quantity': pos_amt_binance,
                     'entry_time': pd.Timestamp.now(tz='UTC'),
-                    'position_size_usdt': abs(entry_price_binance * pos_amt_binance)
+                    'position_size_usdt': abs(entry_price_binance * pos_amt_binance),
+                    'positionAmt': pos_amt_binance
                 }
-                initial_margin = Decimal(position_data.get('initialMargin', '0'))
+                initial_margin = Decimal(str(position_data.get('initialMargin', '0')))
                 self.margin_for_current_position = initial_margin
                 if initial_margin > 0:
                     self.risk_manager.add_exposure(initial_margin)
             else:
                 self.logger.warning(f"[{self.symbol}] Se encontró posición CORTA existente. El bot no la gestionará.")
                 self.in_position = False
+                self.current_state = BotState.IDLE
                 self.state = BotState.IDLE
         else:
             self.logger.info(f"[{self.symbol}] No se encontró posición existente.")
             self.in_position = False
+            self.current_state = BotState.IDLE
             self.state = BotState.IDLE
 
     def _update_open_position_pnl(self) -> bool:
@@ -321,28 +340,22 @@ class TradingBot:
         self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Verificando posición abierta en Binance...")
         position_data = get_futures_position(self.symbol)
 
-        if not position_data:
-            self.logger.warning(f"[{self.symbol}] _update_open_position_pnl: No se pudo obtener información de posición de Binance.")
-            # Si el bot pensaba que estaba en posición, se considera un cierre externo.
-            # _handle_external_closure_or_discrepancy es llamado y se espera que registre algo si es posible.
-            self._handle_external_closure_or_discrepancy(reason="pnl_update_no_pos_data_assumed_closed")
-            return False
+        pos_amt_binance = Decimal('0')
+        entry_price_binance = Decimal('0')
+        unrealized_pnl_binance = Decimal('0')
 
-        pos_amt_str = position_data.get('positionAmt', '0')
-        entry_price_str = position_data.get('entryPrice', '0')
-        unrealized_pnl_str = position_data.get('unRealizedProfit', '0')
-
-        try:
-            pos_amt_binance = Decimal(pos_amt_str)
-            entry_price_binance = Decimal(entry_price_str)
-            unrealized_pnl_binance = Decimal(unrealized_pnl_str)
-        except Exception as e:
-            self.logger.error(f"[{self.symbol}] _update_open_position_pnl: Error al convertir datos de posición de Binance a Decimal: {e}. Datos: {position_data}")
-            return True
+        if position_data:
+            try:
+                pos_amt_binance = Decimal(str(position_data.get('positionAmt', '0')))
+                entry_price_binance = Decimal(str(position_data.get('entryPrice', '0')))
+                unrealized_pnl_binance = Decimal(str(position_data.get('unRealizedProfit', '0')))
+            except Exception as e:
+                self.logger.error(f"[{self.symbol}] _update_open_position_pnl: Error al convertir datos de posición de Binance a Decimal: {e}. Datos: {position_data}")
+                return True
 
         # El bot pensaba que estaba en posición (self.in_position == True)
         if abs(pos_amt_binance) < Decimal('1e-9'): # Posición cerrada en Binance
-            self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Posición para {self.symbol} CERRADA en Binance (Cantidad: {pos_amt_binance}). El bot la tenía como ABIERTA.")
+            self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Posición para {self.symbol} CERRADA en Binance (Cantidad: {pos_amt_binance}). Procesando cierre y registrando PNL...")
             
             old_pos_data = self.current_position.copy() if self.current_position else {}
             old_entry_price = old_pos_data.get('entry_price')
@@ -733,7 +746,7 @@ class TradingBot:
         """
         Ejecuta un ciclo de la lógica del bot.
         """
-        self.logger.info(f"[{self.symbol}] --- Inicio run_once. Estado: {self.state.value} ---")
+        self.logger.info(f"[{self.symbol}] --- Inicio run_once. Estado: {self.current_state.value} ---")
         
         try:
             # 1. Obtener datos de mercado
@@ -743,19 +756,25 @@ class TradingBot:
 
             # 2. Actualizar PNL si ya estamos en posición
             if self.in_position:
-                self._update_open_position_pnl()
+                is_still_open = self._update_open_position_pnl()
+                if not is_still_open:
+                    self.logger.info(f"[{self.symbol}] Posición cerrada en Binance. Pasando a IDLE.")
+                    return
 
             # 3. Lógica de decisión principal
             
-            # CASO A: Si estamos en posición, la única tarea es gestionar la salida.
+            # CASO A: Si estamos en posición, gestionar salida o evaluar condiciones de salida
             if self.in_position:
-                self._check_pending_exit_order()
+                if self.pending_exit_order_id:
+                    self._check_pending_exit_order()
+                else:
+                    self._check_exit_conditions(klines_df)
             
-            # CASO B: Si hay una orden de entrada pendiente, la gestionamos.
-            elif self.active_order_id and self.active_order_type == 'ENTRY':
+            # CASO B: Si hay una orden de entrada pendiente, gestionamos su llenado o timeout
+            elif self.pending_entry_order_id:
                 self._check_pending_entry_order()
 
-            # CASO C: Si no hay posición ni orden, buscamos una nueva entrada.
+            # CASO C: Si no hay posición ni orden pendiente, buscamos una nueva entrada
             else:
                 if self.evaluate_support_strategy:
                     # Usar estrategia de soportes si está activada
@@ -770,12 +789,10 @@ class TradingBot:
 
     def _get_market_data(self):
         """Función auxiliar para obtener y validar los datos de klines."""
-        if self.state in [BotState.ERROR, BotState.WAITING_ENTRY_FILL, BotState.WAITING_EXIT_FILL]:
-            self.logger.debug(f"[{self.symbol}] Saltando obtención de datos en estado {self.state.value}")
+        if self.current_state in [BotState.ERROR, BotState.WAITING_ENTRY_FILL, BotState.WAITING_EXIT_FILL]:
+            self.logger.debug(f"[{self.symbol}] Saltando obtención de datos en estado {self.current_state.value}")
             return None
 
-        self.state = BotState.FETCHING_DATA
-        
         limit_needed = max(self.rsi_period + 15, self.volume_sma_period + 10, 50)
         if self.evaluate_ma_filter:
             limit_needed = max(limit_needed, self.ma_period + 10)
@@ -789,7 +806,7 @@ class TradingBot:
 
         if klines_df is None or klines_df.empty:
             self.logger.warning(f"[{self.symbol}] No se pudieron obtener klines. Saltando ciclo.")
-            self.state = BotState.IDLE
+            self._update_state(BotState.IDLE)
             return None
         
         return klines_df
@@ -1044,16 +1061,18 @@ class TradingBot:
 
     def get_current_status(self):
         """Devuelve un diccionario con el estado actual del bot para la API."""
+        st = self.current_state.value if hasattr(self, 'current_state') and self.current_state else (self.state.value if hasattr(self, 'state') and self.state else "UNKNOWN")
         return {
-             'symbol': self.symbol,
-            'state': self.state.value if self.state else "UNKNOWN",
-            'is_running': self.is_running,
-             'in_position': self.in_position,
-            'current_pnl': self.last_known_pnl,
-            'hist_pnl': self.historical_pnl, # Usar la nueva variable
-            'entry_price': self.last_known_entry_price,
-            'position_size': self.last_known_position_size,
-             'pending_entry_order_id': self.pending_entry_order_id,
+            'symbol': self.symbol,
+            'state': st,
+            'is_running': self.is_running if hasattr(self, 'is_running') else True,
+            'in_position': self.in_position,
+            'current_pnl': float(self.last_known_pnl) if self.last_known_pnl is not None else 0.0,
+            'hist_pnl': float(self.historical_pnl) if self.historical_pnl is not None else 0.0,
+            'session_pnl': float(self.session_pnl) if hasattr(self, 'session_pnl') and self.session_pnl is not None else 0.0,
+            'entry_price': float(self.last_known_entry_price) if self.last_known_entry_price is not None else None,
+            'position_size': float(self.last_known_position_size) if self.last_known_position_size is not None else None,
+            'pending_entry_order_id': self.pending_entry_order_id,
             'pending_exit_order_id': self.pending_exit_order_id,
             'pending_tp_order_id': self.pending_tp_order_id,
             'pending_sl_order_id': self.pending_sl_order_id,
@@ -1061,6 +1080,79 @@ class TradingBot:
             'entry_reason': self.entry_reason,
             'exit_reason': self.exit_reason,
         }
+
+    def get_status(self):
+        return self.get_current_status()
+
+    def close_position_now(self, reason: str = "Cierre Manual") -> bool:
+        """
+        Cierra de inmediato la posición activa a precio de mercado en Binance,
+        cancela órdenes pendientes y actualiza el estado a IDLE.
+        """
+        self.logger.info(f"[{self.symbol}] Solicitud de cierre manual de posición. Razón: '{reason}'")
+        
+        # 1. Cancelar cualquier TP / SL u orden de salida pendiente
+        self._cancel_active_tp_sl_orders()
+        if self.pending_exit_order_id:
+            try:
+                from src.binance_client import cancel_futures_order
+                cancel_futures_order(self.symbol, self.pending_exit_order_id)
+                self.pending_exit_order_id = None
+            except Exception as e:
+                self.logger.warning(f"[{self.symbol}] Error al cancelar orden de salida pendiente {self.pending_exit_order_id}: {e}")
+
+        # 2. Consultar posición real en Binance
+        pos_data = get_futures_position(self.symbol)
+        pos_amt = Decimal('0')
+        pos_side = 'LONG'
+        if pos_data:
+            pos_amt = Decimal(str(pos_data.get('positionAmt', '0')))
+            pos_side = pos_data.get('positionSide', 'LONG')
+        elif self.in_position and self.current_position:
+            pos_amt = Decimal(str(self.current_position.get('quantity', '0')))
+        
+        if abs(pos_amt) < Decimal('1e-9'):
+            self.logger.info(f"[{self.symbol}] No hay posición activa para cerrar en Binance.")
+            self._reset_state()
+            self._update_state(BotState.IDLE)
+            return True
+
+        # 3. Determinar lado de la orden de mercado de cierre
+        close_side = 'SELL' if pos_amt > Decimal('0') else 'BUY'
+        adjusted_qty = self._adjust_quantity(abs(pos_amt))
+        if adjusted_qty is None or adjusted_qty <= 0:
+            self.logger.error(f"[{self.symbol}] Cantidad no válida para cerrar posición: {pos_amt}")
+            return False
+
+        # 4. Enviar orden a mercado a Binance
+        self.logger.info(f"[{self.symbol}] Enviando orden MARKET {close_side} {adjusted_qty} (PositionSide={pos_side}) para cerrar posición...")
+        order_resp = create_futures_market_order(
+            symbol=self.symbol,
+            side=close_side,
+            quantity=adjusted_qty,
+            position_side=pos_side
+        )
+
+        if not order_resp:
+            self.logger.error(f"[{self.symbol}] Falló la orden de mercado para cerrar la posición.")
+            return False
+
+        self.logger.info(f"[{self.symbol}] Posición cerrada a mercado exitosamente en Binance: {order_resp.get('orderId')}")
+        
+        # 5. Registrar cierre y resetear
+        close_price = Decimal(str(order_resp.get('avgPrice', order_resp.get('price', '0'))))
+        if close_price == Decimal('0') and self.last_known_entry_price:
+            close_price = self.last_known_entry_price
+        
+        self.current_exit_reason = reason
+        self._handle_successful_closure(
+            close_price=close_price,
+            quantity_closed=abs(pos_amt),
+            reason=reason,
+            close_timestamp=datetime.now(),
+            binance_order_id_of_closure=str(order_resp.get('orderId', ''))
+        )
+        return True
 
     def _set_error_state(self, message: str):
         """Establece el estado del bot a ERROR y guarda el mensaje."""

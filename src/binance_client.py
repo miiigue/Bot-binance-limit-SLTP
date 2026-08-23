@@ -48,15 +48,16 @@ def reset_futures_client():
     futures_client_instance = None
     _dual_side_position_cache = None
 
+TESTNET_BASE_URL = "https://testnet.binancefuture.com"
+
 def get_futures_client(force_reload: bool = False):
     """
     Crea y retorna una instancia del cliente UMFutures de Binance Futures,
-    configurada según el archivo config.ini (modo live o paper/testnet).
-    Reutiliza la instancia si ya fue creada, salvo que force_reload=True.
+    configurada EXCLUSIVAMENTE para el entorno de simulación (Testnet).
+    Cualquier intento de conectar a producción será bloqueado con una excepción crítica.
 
     Returns:
-        binance.um_futures.UMFutures: Instancia del cliente UMFutures.
-                                      Retorna None si la configuración falla o la conexión inicial falla.
+        binance.um_futures.UMFutures: Instancia del cliente UMFutures (Testnet).
     """
     global futures_client_instance
     if futures_client_instance and not force_reload:
@@ -64,65 +65,53 @@ def get_futures_client(force_reload: bool = False):
 
     logger = get_logger()
     load_dotenv(override=True)
-    config = load_config(force_reload=force_reload)
-    if not config:
-        logger.critical("No se pudo cargar la configuración para inicializar UMFutures Client.")
-        return None
 
     try:
-        mode = config.get('BINANCE', 'MODE', fallback='paper').lower()
-        futures_base_url = config.get('BINANCE', 'FUTURES_BASE_URL') # Live URL: https://fapi.binance.com
-        futures_testnet_url = config.get('BINANCE', 'FUTURES_TESTNET_BASE_URL') # Testnet URL: https://testnet.binancefuture.com
+        # --- GUARDA DE SEGURIDAD ESTRICTA: Hard-lock a Testnet ---
+        base_url_to_use = TESTNET_BASE_URL
+        
+        # Verificación de seguridad activa
+        if "testnet" not in base_url_to_use.lower() or "fapi.binance.com" in base_url_to_use.lower():
+            err_msg = "BLOQUEO DE SEGURIDAD: Intento de conexión a servidores reales de Binance detectado. Operación abortada."
+            logger.critical(err_msg)
+            raise RuntimeError(err_msg)
 
-        base_url_to_use = ""
-        if mode == 'paper' or mode == 'testnet':
-            api_key = os.getenv('BINANCE_TESTNET_API_KEY') or os.getenv('BINANCE_API_KEY')
-            api_secret = os.getenv('BINANCE_TESTNET_API_SECRET') or os.getenv('BINANCE_API_SECRET')
-            logger.warning("Inicializando cliente UMFutures en modo TESTNET (Simulación).")
-            base_url_to_use = futures_testnet_url
-        else:
-            api_key = os.getenv('BINANCE_REAL_API_KEY') or os.getenv('BINANCE_API_KEY')
-            api_secret = os.getenv('BINANCE_REAL_API_SECRET') or os.getenv('BINANCE_API_SECRET')
-            logger.info("Inicializando cliente UMFutures en modo LIVE (Real).")
-            base_url_to_use = futures_base_url
+        api_key = os.getenv('BINANCE_TESTNET_API_KEY') or os.getenv('BINANCE_API_KEY')
+        api_secret = os.getenv('BINANCE_TESTNET_API_SECRET') or os.getenv('BINANCE_API_SECRET')
 
         if not api_key or not api_secret:
-            logger.critical(f"Claves API no encontradas para el modo '{mode}'. Verifica tu archivo .env.")
+            logger.critical("Claves API de Testnet no encontradas. Verifica tu archivo .env.")
             return None
 
-        # --- INICIO: Lógica para pool de conexiones ---
-        # Crear una sesión de requests para personalizar el pool de conexiones
-        session = requests.Session()
-        # Crear un adaptador con un pool más grande. 100 es un buen punto de partida.
-        adapter = HTTPAdapter(pool_connections=100, pool_maxsize=100)
-        # Montar este adaptador para todas las peticiones a la URL base de la API
-        session.mount(base_url_to_use, adapter)
-        # --- FIN: Lógica para pool de conexiones ---
+        logger.warning(f"Inicializando cliente UMFutures EXCLUSIVAMENTE en TESTNET (Simulación): {base_url_to_use}")
 
-        # Crear instancia del cliente UMFutures, y LUEGO asignarle la sesión
+        # Configurar pool de conexiones
+        session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=100, pool_maxsize=100)
+        session.mount(base_url_to_use, adapter)
+
         client = UMFutures(key=api_key, secret=api_secret, base_url=base_url_to_use)
-        # En lugar de reemplazar la sesión, modificamos la que el cliente ya tiene
         client.session.mount(base_url_to_use, HTTPAdapter(pool_connections=100, pool_maxsize=100))
 
-        # Intentar hacer una llamada simple para verificar la conexión y las claves API
+        # Verificar conexión con Testnet
         try:
-            logger.info(f"Verificando conexión con Futures API ({base_url_to_use}) usando time()...")
+            logger.info(f"Verificando conexión con Futures Testnet ({base_url_to_use}) usando time()...")
             server_time = client.time()
-            logger.info(f"Conexión con Binance Futures {('Testnet' if mode != 'live' else 'Live')} exitosa. Hora del servidor: {server_time}")
+            logger.info(f"Conexión con Binance Futures Testnet exitosa. Hora del servidor: {server_time}")
             futures_client_instance = client
             return futures_client_instance
 
         except ClientError as e:
-            # Capturar errores específicos de la librería
-            logger.critical(f"Error de API al conectar con Binance Futures ({('Testnet' if mode != 'live' else 'Live')}): Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
-            logger.critical("Verifica tus API keys, permisos, si la URL base es correcta y si Binance está operativo.")
+            logger.critical(f"Error de API al conectar con Binance Futures Testnet: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
+            logger.critical("Verifica tus claves API de Testnet (demo.binance.com / testnet.binancefuture.com).")
             return None
         except Exception as e:
-            logger.critical(f"Error inesperado al verificar conexión con Binance Futures: {e}")
+            logger.critical(f"Error inesperado al verificar conexión con Binance Futures Testnet: {e}")
             return None
 
     except Exception as e:
         logger.critical(f"Error inesperado durante la inicialización de UMFutures Client: {e}")
+        return None
         return None
 
 def get_historical_klines(symbol: str, interval: str, limit: int = 500):
@@ -216,7 +205,7 @@ def get_futures_symbol_info(symbol: str):
         logger.error(f"Error inesperado al obtener exchange_info: {e}", exc_info=True)
         return None
 
-def create_futures_market_order(symbol: str, side: str, quantity: float):
+def create_futures_market_order(symbol: str, side: str, quantity: float, position_side: str | None = None):
     """
     Crea una orden de mercado de futuros (MARKET).
     (Adaptado para binance-futures-connector)
@@ -234,8 +223,7 @@ def create_futures_market_order(symbol: str, side: str, quantity: float):
         logger.error(f"Cantidad inválida para la orden: {quantity}. Debe ser positiva.")
         return None
 
-    # La nueva librería podría preferir pasar parámetros como un diccionario
-    position_side_to_use = 'LONG' if is_hedge_mode() else 'BOTH'
+    position_side_to_use = position_side if position_side else ('LONG' if is_hedge_mode() else 'BOTH')
     params = {
         'symbol': symbol,
         'side': side,
@@ -280,28 +268,29 @@ def get_futures_position(symbol: str):
             logger.info(f"No se encontró información de posición/riesgo para {symbol} (respuesta vacía).")
             return None
 
-        # position_risk devuelve una lista incluso para un símbolo
-        position_info = positions[0]
+        # Buscar la posición activa con cantidad distinta de cero (soporte completo para Hedge Mode y One-Way)
+        active_position = None
+        for p in positions:
+            try:
+                amt = float(p.get('positionAmt', '0'))
+                if abs(amt) > 1e-9:
+                    active_position = p
+                    break
+            except (ValueError, TypeError):
+                continue
 
-        position_amt_str = position_info.get('positionAmt', '0')
-        try:
-            position_amt = float(position_amt_str)
-        except ValueError:
-            logger.error(f"Valor inválido para positionAmt: {position_amt_str} para {symbol}.")
-            return None
-
-        # La lógica para verificar si la posición está abierta es la misma
-        if abs(position_amt) > 1e-9:
+        if active_position is not None:
+            position_info = active_position
+            position_amt = float(position_info.get('positionAmt', '0'))
             entry_price = float(position_info.get('entryPrice', '0'))
-            leverage = int(position_info.get('leverage', '0')) # Leverage viene como string
+            leverage = int(position_info.get('leverage', '0'))
             pnl = float(position_info.get('unRealizedProfit', '0'))
+            pos_side = position_info.get('positionSide', 'BOTH')
 
-            logger.info(f"Posición encontrada para {symbol}: Cantidad={position_amt:.8f}, Precio Entrada={entry_price:.4f}, PnL no realizado={pnl:.4f}, Leverage={leverage}x")
-            # Devolvemos el diccionario para mantener compatibilidad con el bot
-            # Puede que necesitemos ajustar las claves si TradingBot accede a algo específico no presente aquí
+            logger.info(f"Posición encontrada para {symbol} ({pos_side}): Cantidad={position_amt:.8f}, Precio Entrada={entry_price:.4f}, PnL no realizado={pnl:.4f}, Leverage={leverage}x")
             return position_info
         else:
-            logger.debug(f"No hay posición abierta para {symbol} (Cantidad = {position_amt:.8f}).")
+            logger.debug(f"No hay posición abierta para {symbol}.")
             return None
 
     except ClientError as e:

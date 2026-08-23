@@ -59,10 +59,19 @@ function App() {
   const [activeStrategyDisplayName, setActiveStrategyDisplayName] = useState('');
   // ------------------------------------------------------------------------
 
-  // --- FUNCIÓN PARA ACTUALIZAR DATOS DE LA CABECERA (SIMPLIFICADA) ---
+  // --- FUNCIÓN PARA ACTUALIZAR DATOS DE LA CABECERA (SIMPLIFICADA Y SINCRONIZADA) ---
   const handleStatusUpdate = useCallback((data) => {
-    // data ahora contiene { totalPnl, coinCount, coinsInPosition, sessionStats }
     setHeaderPnlData(prevData => ({ ...prevData, ...data }));
+    if (data?.sessionStats) {
+      if (data.sessionStats.active_session) {
+        setTimerActive(true);
+        if (data.sessionStats.elapsed_seconds !== undefined) {
+          setElapsedTime(data.sessionStats.elapsed_seconds);
+        }
+      } else {
+        setTimerActive(false);
+      }
+    }
   }, []);
   // --------------------------------------------------------
 
@@ -371,8 +380,11 @@ function App() {
       <div className="sticky top-0 z-50 bg-yellow-400 text-black p-3 shadow-md flex items-center justify-between">
         {/* Título a la izquierda */}
         <div className="flex-1 min-w-0"> {/* Contenedor para el título y nombre de estrategia */}
-          <div className="text-xl font-bold truncate">
-            BOT BINANCE LIMIT-SLTP
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-bold truncate">BOT BINANCE LIMIT-SLTP</span>
+            <span className="bg-green-800 text-white text-xs px-2 py-0.5 rounded font-mono font-semibold shadow">
+              🛡️ TESTNET DEMO
+            </span>
           </div>
           {activeStrategyDisplayName && (
             <div className="text-sm font-semibold text-blue-800 truncate"> {/* Nombre de la estrategia en nueva línea */}
@@ -459,7 +471,7 @@ function App() {
         </div>
         
       </div>
-      <div className="container mx-auto p-4 md:p-8 max-w-5xl">
+      <div className="w-full px-4 md:px-8 py-6 max-w-full">
         {/* Mostrar error de carga inicial si existe */} 
         {initialLoadingError && (
           <div className="mb-6 p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-200 rounded-lg">

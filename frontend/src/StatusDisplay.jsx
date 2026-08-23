@@ -63,6 +63,34 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
   const [historyErrors, setHistoryErrors] = useState({}); // { symbol: string | null }
   // --- NUEVO ESTADO PARA EL NÚMERO DE TRADES A MOSTRAR ---
   const [numTradesToShow, setNumTradesToShow] = useState(2); // Por defecto 2 trades
+  const [closingSymbols, setClosingSymbols] = useState({}); // { symbol: boolean }
+
+  const handleCloseSinglePosition = async (e, symbol) => {
+    e.stopPropagation();
+    if (!window.confirm(`¿Cerrar posición de ${symbol} a precio de mercado en Binance?`)) return;
+    
+    setClosingSymbols(prev => ({ ...prev, [symbol]: true }));
+    try {
+      const resp = await fetch(`/api/close_position/${symbol}`, { method: 'POST' });
+      const data = await resp.json();
+      if (resp.ok) {
+        // Refrescar inmediatamente
+        const statusResp = await fetch('/api/status');
+        if (statusResp.ok) {
+          const statusData = await statusResp.json();
+          if (statusData && Array.isArray(statusData.statuses)) {
+            setStatuses(statusData.statuses);
+          }
+        }
+      } else {
+        alert(`Error al cerrar ${symbol}: ${data.error || 'Error desconocido'}`);
+      }
+    } catch (err) {
+      alert(`Error de red al cerrar ${symbol}: ${err.message}`);
+    } finally {
+      setClosingSymbols(prev => ({ ...prev, [symbol]: false }));
+    }
+  };
   // ------------------------------------------------------
 
   // Modificamos onStart para que pueda manejar el error
@@ -115,26 +143,31 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
 
             setStatuses(sortedStatuses); // Guardar el array ORDENADO
             // --- LLAMAR A onStatusUpdate CON LOS DATOS ACTUALIZADOS (ahora usa sortedStatuses) ---
-            if (onStatusUpdate) {
-                // CALCULO DE PNL HISTÓRICO TOTAL (SIN CAMBIOS)
+                // CALCULO DE PNL TOTAL (Histórico cerrado + Flotante no realizado actual)
                 const totalHistoricalPnl = sortedStatuses.reduce((acc, status) => {
-                    const pnlValue = parseFloat(status.historical_pnl); // Usar historical_pnl
-                    if (!isNaN(pnlValue)) {
-                        return acc + pnlValue;
+                    const pnlValue = parseFloat(status.historical_pnl);
+                    return !isNaN(pnlValue) ? acc + pnlValue : acc;
+                }, 0);
+
+                const totalCurrentUnrealizedPnl = sortedStatuses.reduce((acc, status) => {
+                    if (status.in_position) {
+                        const pnlValue = parseFloat(status.current_pnl);
+                        return !isNaN(pnlValue) ? acc + pnlValue : acc;
                     }
                     return acc;
                 }, 0);
 
-                // NUEVO: CALCULAR MONEDAS EN POSICIÓN
+                // Monedas en posición
                 const coinsInPos = sortedStatuses.filter(s => s.in_position).length;
 
                 onStatusUpdate({ 
                     totalPnl: totalHistoricalPnl, 
+                    historicalPnl: totalHistoricalPnl,
+                    unrealizedPnl: totalCurrentUnrealizedPnl,
                     coinCount: sortedStatuses.length,
-                    coinsInPosition: coinsInPos, // Pasar nuevo dato
-                    sessionStats: data.session_stats // <-- NUEVO: Pasar el objeto completo de estadísticas
+                    coinsInPosition: coinsInPos,
+                    sessionStats: data.session_stats
                 });
-            }
             // ---------------------------------------------------------
              // Guardar los datos exitosos en localStorage (el array ORDENADO de statuses)
             try {
@@ -331,8 +364,22 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                         {expandedRows[status.symbol] ? '▼' : '▶'} {/* Flecha abajo/derecha */}
                       </button>
                     </td>
-                    {/* --- Resto de las celdas (sin cambios) --- */}
-                    <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{status.symbol}</td>
+                    {/* --- Símbolo con botón de cierre X compacto a la izquierda si está en posición --- */}
+                    <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                      <div className="flex items-center space-x-2">
+                        {status.in_position && (
+                          <button
+                            onClick={(e) => handleCloseSinglePosition(e, status.symbol)}
+                            disabled={closingSymbols[status.symbol]}
+                            className="w-5 h-5 flex-shrink-0 flex items-center justify-center text-xs font-extrabold text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-full shadow transition-transform transform active:scale-95 disabled:bg-gray-400"
+                            title={`Cerrar posición de ${status.symbol} a mercado en Binance`}
+                          >
+                            {closingSymbols[status.symbol] ? '..' : '✕'}
+                          </button>
+                        )}
+                        <span>{status.symbol}</span>
+                      </div>
+                    </td>
                     <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                          status.state === 'IN_POSITION' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :

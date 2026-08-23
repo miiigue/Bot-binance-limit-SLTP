@@ -34,23 +34,26 @@ class SessionStateManager:
         self.lock = Lock()
         self.session_realized_pnl = Decimal('0')
         self.session_unrealized_pnl = Decimal('0')
-        self.session_pnl_high = Decimal('-Infinity')
-        self.session_pnl_low = Decimal('Infinity')
+        self.session_pnl_high = Decimal('0')
+        self.session_pnl_low = Decimal('0')
         self.active_session = False
+        self.session_start_time = None
 
     def start_session(self):
         with self.lock:
             self.logger.info("Iniciando nueva sesión de estadísticas.")
             self.session_realized_pnl = Decimal('0')
             self.session_unrealized_pnl = Decimal('0')
-            self.session_pnl_high = Decimal('0') # Iniciar en 0 para que no muestre -Infinity
-            self.session_pnl_low = Decimal('0')  # Iniciar en 0 para que no muestre Infinity
+            self.session_pnl_high = Decimal('0')
+            self.session_pnl_low = Decimal('0')
             self.active_session = True
+            self.session_start_time = time.time()
 
     def stop_session(self):
         with self.lock:
             self.logger.info("Deteniendo sesión de estadísticas.")
             self.active_session = False
+            self.session_start_time = None
 
     def update_stats(self, realized_pnl: Decimal, unrealized_pnl: Decimal):
         with self.lock:
@@ -70,10 +73,13 @@ class SessionStateManager:
 
     def get_stats(self):
         with self.lock:
+            elapsed = int(time.time() - self.session_start_time) if (self.active_session and self.session_start_time) else 0
             return {
                 "session_pnl": float(self.session_realized_pnl + self.session_unrealized_pnl),
                 "session_high": float(self.session_pnl_high) if self.session_pnl_high != Decimal('-Infinity') else 0.0,
-                "session_low": float(self.session_pnl_low) if self.session_pnl_low != Decimal('Infinity') else 0.0
+                "session_low": float(self.session_pnl_low) if self.session_pnl_low != Decimal('Infinity') else 0.0,
+                "elapsed_seconds": elapsed,
+                "active_session": self.active_session
             }
 
 # --- Definición de variables compartidas para la gestión de workers ---
@@ -189,7 +195,7 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
     """Mapea los datos del frontend a la estructura esperada por configparser para [TRADING] y [BINANCE]."""
     config_output = {
         'BINANCE': {
-            'mode': frontend_data.get('mode', 'paper'),
+            'mode': 'paper',
         },
         'TRADING': {
             'leverage': str(frontend_data.get('leverage', 20)),
@@ -336,6 +342,12 @@ def start_bot_workers():
         if not loaded_trading_params:
             logger.error("No hay parámetros de trading configurados para iniciar los workers.")
             return False, "No hay parámetros de trading configurados para iniciar los workers."
+
+        # --- PRE-FLIGHT SANITY CHECK: Seguridad Estricta de Testnet ---
+        client = get_futures_client()
+        if not client or "testnet" not in str(getattr(client, 'base_url', '')).lower():
+            logger.critical("BLOQUEO DE SEGURIDAD: Conexión con Binance Testnet no verificada. Inicio abortado.")
+            return False, "Bloqueo de seguridad: No se pudo verificar la conexión exclusiva con Binance Testnet."
 
         logger.info("Iniciando workers de bot...")
         for symbol_idx, symbol in enumerate(loaded_symbols_to_trade):
@@ -713,6 +725,95 @@ def start_bots_endpoint():
         # Devolver el mensaje de error específico al frontend
         return jsonify({"error": message or "Fallo al iniciar los bots (verificar configuración o logs)."}), 500
 # ------------------------------------------
+
+# --- NUEVOS ENDPOINTS: CIERRE MANUAL INDIVIDUAL Y GLOBAL DE POSICIONES ---
+@app.route('/api/close_position/<symbol>', methods=['POST'])
+def close_position_endpoint(symbol):
+    symbol = symbol.upper().strip()
+    logger = get_logger()
+    logger.warning(f"Solicitud para cerrar posición de {symbol} recibida en la API.")
+    
+    worker = None
+    with status_lock:
+        worker = worker_statuses.get(symbol)
+    
+    if worker and hasattr(worker, 'close_position_now'):
+        try:
+            success = worker.close_position_now(reason="Cierre Manual Panel Web")
+            if success:
+                return jsonify({"message": f"Posición de {symbol} cerrada exitosamente."}), 200
+            else:
+                return jsonify({"error": f"No se pudo cerrar la posición de {symbol}."}), 500
+        except Exception as e:
+            logger.error(f"Error al cerrar posición de {symbol}: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+    else:
+        try:
+            from src.binance_client import get_futures_position, create_futures_market_order
+            pos = get_futures_position(symbol)
+            if not pos:
+                return jsonify({"message": f"No hay posición abierta para {symbol}."}), 200
+            
+            amt = float(pos.get('positionAmt', '0'))
+            if abs(amt) < 1e-9:
+                return jsonify({"message": f"No hay posición abierta para {symbol}."}), 200
+            
+            side = 'SELL' if amt > 0 else 'BUY'
+            pos_side = pos.get('positionSide', 'LONG')
+            order = create_futures_market_order(symbol, side=side, quantity=abs(amt), position_side=pos_side)
+            if order:
+                return jsonify({"message": f"Posición de {symbol} cerrada exitosamente a mercado en Binance."}), 200
+            else:
+                return jsonify({"error": f"Error al ejecutar orden de cierre para {symbol}."}), 500
+        except Exception as e:
+            logger.error(f"Error al cerrar posición externa de {symbol}: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+
+@app.route('/api/close_all_positions', methods=['POST'])
+def close_all_positions_endpoint():
+    logger = get_logger()
+    logger.warning("🚨 Solicitud GLOBAL para CERRAR TODAS LAS POSICIONES recibida en la API.")
+    
+    results = {}
+    
+    # 1. Cerrar a través de los workers activos
+    active_workers = {}
+    with status_lock:
+        active_workers = dict(worker_statuses)
+    
+    for symbol, worker in active_workers.items():
+        if hasattr(worker, 'close_position_now') and getattr(worker, 'in_position', False):
+            try:
+                ok = worker.close_position_now(reason="Cierre Manual Global")
+                results[symbol] = "Cerrada" if ok else "Fallo"
+            except Exception as e:
+                logger.error(f"Error cerrando {symbol} en worker: {e}")
+                results[symbol] = f"Error: {e}"
+    
+    # 2. Verificar si quedó alguna posición huérfana en Binance
+    try:
+        from src.binance_client import get_futures_position_information, create_futures_market_order
+        all_positions = get_futures_position_information() or []
+        for p in all_positions:
+            sym = p.get('symbol')
+            try:
+                amt = float(p.get('positionAmt', '0'))
+                if abs(amt) > 1e-9:
+                    side = 'SELL' if amt > 0 else 'BUY'
+                    pos_side = p.get('positionSide', 'LONG')
+                    order = create_futures_market_order(sym, side=side, quantity=abs(amt), position_side=pos_side)
+                    results[sym] = "Cerrada (Binance)" if order else "Fallo (Binance)"
+            except Exception as e:
+                logger.error(f"Error cerrando posición Binance {sym}: {e}")
+                results[sym] = f"Error: {e}"
+    except Exception as e:
+        logger.error(f"Error consultando posiciones generales de Binance: {e}")
+    
+    return jsonify({
+        "message": "Operación de cierre masivo ejecutada.",
+        "results": results
+    }), 200
+# ------------------------------------------------------------------------
 
 # Función para cargar configuración inicial (llamada desde run_bot.py)
 def load_initial_config():

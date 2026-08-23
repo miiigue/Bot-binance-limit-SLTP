@@ -34,23 +34,44 @@ function BotControls({ botsRunning, onStart, onShutdown }) {
     setIsActionPending(false);
   };
 
+  const handleCloseAllClick = async () => {
+    if (!window.confirm("⚠️ ¿Estás seguro de que deseas CERRAR TODAS LAS POSICIONES ABIERTAS a precio de mercado en Binance?")) return;
+    setIsActionPending(true);
+    setActionMessage('Cerrando todas las posiciones a mercado en Binance...');
+    try {
+      const resp = await fetch('/api/close_all_positions', { method: 'POST' });
+      const data = await resp.json();
+      if (resp.ok) {
+        setActionMessage('✅ Todas las posiciones fueron cerradas exitosamente.');
+        setTimeout(() => setActionMessage(''), 5000);
+      } else {
+        setActionMessage(`Error: ${data.error || 'No se pudieron cerrar todas las posiciones'}`);
+        setTimeout(() => setActionMessage(''), 5000);
+      }
+    } catch (err) {
+      setActionMessage(`Error de conexión: ${err.message}`);
+      setTimeout(() => setActionMessage(''), 5000);
+    }
+    setIsActionPending(false);
+  };
+
   // Determinar el estado de los botones
   const startDisabled = botsRunning === null || botsRunning === true || isActionPending;
   const shutdownDisabled = botsRunning === null || botsRunning === false || isActionPending;
 
   return (
     <div className="mb-4">
-      <div className="flex justify-center space-x-4">
+      <div className="flex flex-wrap justify-center gap-4">
         <button
           onClick={handleStartClick}
           disabled={startDisabled}
           className={`px-5 py-2 font-semibold rounded-md text-white transition-colors duration-150 ease-in-out 
             ${startDisabled 
               ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' 
-              : 'bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2'}
+              : 'bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2'}
           `}
         >
-          {isActionPending && !botsRunning ? 'Iniciando...' : 'Iniciar Todos los Bots'}
+          {isActionPending && !botsRunning ? 'Iniciando...' : '▶ Iniciar Todos los Bots'}
         </button>
         <button
           onClick={handleShutdownClick}
@@ -58,14 +79,25 @@ function BotControls({ botsRunning, onStart, onShutdown }) {
           className={`px-5 py-2 font-semibold rounded-md text-white transition-colors duration-150 ease-in-out 
             ${shutdownDisabled 
               ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' 
-              : 'bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2'}
+              : 'bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2'}
           `}
         >
-          {isActionPending && botsRunning ? 'Apagando...' : 'Apagar Todos los Bots'}
+          {isActionPending && botsRunning ? 'Apagando...' : '⏹ Apagar Todos los Bots'}
+        </button>
+        <button
+          onClick={handleCloseAllClick}
+          disabled={isActionPending}
+          className={`px-5 py-2 font-semibold rounded-md text-white transition-colors duration-150 ease-in-out shadow-md
+            ${isActionPending 
+              ? 'bg-gray-400 cursor-not-allowed' 
+              : 'bg-red-600 hover:bg-red-700 active:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2'}
+          `}
+        >
+          🚨 Cerrar Todas las Posiciones
         </button>
       </div>
       {actionMessage && (
-         <p className={`text-sm text-center mt-3 ${actionMessage.includes('Error') ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
+         <p className={`text-sm font-medium text-center mt-3 ${actionMessage.includes('Error') ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
            {actionMessage}
          </p>
       )}
