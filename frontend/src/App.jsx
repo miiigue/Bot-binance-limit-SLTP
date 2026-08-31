@@ -75,6 +75,9 @@ function App() {
 
   const handleStatusUpdate = useCallback((data) => {
     setHeaderPnlData(prevData => ({ ...prevData, ...data }));
+    if (data?.bots_running !== undefined) {
+      setBotsRunning(data.bots_running);
+    }
 
     if (data?.sessionStats) {
       if (data.sessionStats.elapsed_seconds !== undefined) {

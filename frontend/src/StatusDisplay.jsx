@@ -166,7 +166,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     unrealizedPnl: totalCurrentUnrealizedPnl,
                     coinCount: sortedStatuses.length,
                     coinsInPosition: coinsInPos,
-                    sessionStats: data.session_stats
+                    sessionStats: data.session_stats,
+                    bots_running: data.bots_running
                 });
             // ---------------------------------------------------------
              // Guardar los datos exitosos en localStorage (el array ORDENADO de statuses)
