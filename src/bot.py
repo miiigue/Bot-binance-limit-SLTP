@@ -102,66 +102,100 @@ class TradingBot:
         self.tp_price = None
         self.entry_reason = ""
         self.exit_reason = ""
-        self.downtrend_check_candles = trading_params.get('downtrend_check_candles', 0) # <-- Nuevo atributo
-        self.downtrend_level_check = int(trading_params.get('downtrend_level_check', 0)) # <-- NUEVO: Para el check de niveles, asegurando tipo int
-        self.required_uptrend_candles = int(trading_params.get('required_uptrend_candles', 0)) # <-- NUEVO PARÁMETRO
-        self.rsi_at_entry = None # <-- NUEVO: Para guardar el RSI al momento de la entrada
-        self.rsi_target = float(self.params.get('rsi_target', 50.0)) # Nuevo campo para RSI objetivo
-        self.rsi_objetivo_activado = False  # <-- MOVIDO AQUÍ: Indica si el objetivo ya fue alcanzado
-        self.rsi_objetivo_alcanzado_en = None  # <-- MOVIDO AQUÍ: Guarda el valor de RSI cuando se alcanzó el objetivo
-        self.rsi_peak_since_target = None # Almacenará el RSI más alto desde que rsi_target fue alcanzado
-        self.previous_rsi_value = None # <-- NUEVO: Para guardar el RSI de la vela anterior
+        def _safe_int(val, default):
+            if val is None or str(val).strip() == '':
+                return default
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return default
+
+        def _safe_float(val, default):
+            if val is None or str(val).strip() == '':
+                return default
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return default
+
+        def _safe_decimal(val, default_str):
+            if val is None or str(val).strip() == '':
+                return Decimal(default_str)
+            try:
+                return Decimal(str(val))
+            except Exception:
+                return Decimal(default_str)
+
+        self.downtrend_check_candles = _safe_int(trading_params.get('downtrend_check_candles'), 0)
+        self.downtrend_level_check = _safe_int(trading_params.get('downtrend_level_check'), 0)
+        self.required_uptrend_candles = _safe_int(trading_params.get('required_uptrend_candles'), 0)
+        self.rsi_at_entry = None
+        self.rsi_target = _safe_float(self.params.get('rsi_target'), 50.0)
+        self.rsi_objetivo_activado = False
+        self.rsi_objetivo_alcanzado_en = None
+        self.rsi_peak_since_target = None
+        self.previous_rsi_value = None
         # --- NUEVO: IDs para órdenes TP/SL ---
         self.pending_tp_order_id = None
         self.pending_sl_order_id = None
-        self.evaluate_rsi_delta = trading_params.get('evaluate_rsi_delta', True) # <-- NUEVO: Leer el parámetro
-        self.evaluate_volume_filter = trading_params.get('evaluate_volume_filter', True) # <-- NUEVO: Leer parámetro de filtro de volumen
+        self.evaluate_rsi_delta = str(trading_params.get('evaluate_rsi_delta', 'True')).lower() == 'true' if isinstance(trading_params.get('evaluate_rsi_delta'), str) else bool(trading_params.get('evaluate_rsi_delta', True))
+        self.evaluate_volume_filter = str(trading_params.get('evaluate_volume_filter', 'True')).lower() == 'true' if isinstance(trading_params.get('evaluate_volume_filter'), str) else bool(trading_params.get('evaluate_volume_filter', True))
         # --- Cargar todos los nuevos parámetros de control ---
-        self.evaluate_rsi_range = trading_params.get('evaluate_rsi_range', True)
-        self.evaluate_downtrend_candles_block = trading_params.get('evaluate_downtrend_candles_block', True)
-        self.evaluate_downtrend_levels_block = trading_params.get('evaluate_downtrend_levels_block', True)
-        self.evaluate_required_uptrend = trading_params.get('evaluate_required_uptrend', True)
-        self.enable_take_profit_pnl = trading_params.get('enable_take_profit_pnl', True)
-        self.enable_stop_loss_pnl = trading_params.get('enable_stop_loss_pnl', True)
-        self.enable_trailing_rsi_stop = trading_params.get('enable_trailing_rsi_stop', True)
+        self.evaluate_rsi_range = str(trading_params.get('evaluate_rsi_range', 'True')).lower() == 'true' if isinstance(trading_params.get('evaluate_rsi_range'), str) else bool(trading_params.get('evaluate_rsi_range', True))
+        self.evaluate_downtrend_candles_block = str(trading_params.get('evaluate_downtrend_candles_block', 'True')).lower() == 'true' if isinstance(trading_params.get('evaluate_downtrend_candles_block'), str) else bool(trading_params.get('evaluate_downtrend_candles_block', True))
+        self.evaluate_downtrend_levels_block = str(trading_params.get('evaluate_downtrend_levels_block', 'True')).lower() == 'true' if isinstance(trading_params.get('evaluate_downtrend_levels_block'), str) else bool(trading_params.get('evaluate_downtrend_levels_block', True))
+        self.evaluate_required_uptrend = str(trading_params.get('evaluate_required_uptrend', 'True')).lower() == 'true' if isinstance(trading_params.get('evaluate_required_uptrend'), str) else bool(trading_params.get('evaluate_required_uptrend', True))
+        self.enable_take_profit_pnl = str(trading_params.get('enable_take_profit_pnl', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_take_profit_pnl'), str) else bool(trading_params.get('enable_take_profit_pnl', True))
+        self.enable_stop_loss_pnl = str(trading_params.get('enable_stop_loss_pnl', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_stop_loss_pnl'), str) else bool(trading_params.get('enable_stop_loss_pnl', True))
+        self.enable_trailing_rsi_stop = str(trading_params.get('enable_trailing_rsi_stop', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_trailing_rsi_stop'), str) else bool(trading_params.get('enable_trailing_rsi_stop', True))
         # --- AÑADIDO: Parámetros para Filtro de Media Móvil ---
         self.evaluate_ma_filter = str(trading_params.get('evaluate_ma_filter', 'False')).lower() == 'true'
         self.ma_type = 'EMA' # Hardcodeado a EMA como default
-        self.ma_period = int(trading_params.get('ma_period', 200))
+        self.ma_period = _safe_int(trading_params.get('ma_period'), 200)
         # ----------------------------------------------------
         # --- NUEVOS PARÁMETROS Y ESTADO PARA TRAILING STOP DE PRECIO ---
-        self.enable_price_trailing_stop = trading_params.get('enable_price_trailing_stop', True)
-        self.price_trailing_stop_distance_usdt = Decimal(str(trading_params.get('price_trailing_stop_distance_usdt', '0.05')))
-        self.price_trailing_stop_activation_pnl_usdt = Decimal(str(trading_params.get('price_trailing_stop_activation_pnl_usdt', '0.02')))
+        self.enable_price_trailing_stop = str(trading_params.get('enable_price_trailing_stop', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_price_trailing_stop'), str) else bool(trading_params.get('enable_price_trailing_stop', True))
+        self.price_trailing_stop_distance_usdt = _safe_decimal(trading_params.get('price_trailing_stop_distance_usdt'), '0.05')
+        self.price_trailing_stop_activation_pnl_usdt = _safe_decimal(trading_params.get('price_trailing_stop_activation_pnl_usdt'), '0.02')
         self.price_peak_since_entry = None # Precio más alto desde la entrada
         self.price_trailing_stop_armed = False # Si el PNL de activación se ha alcanzado
         # --- NUEVOS PARÁMETROS Y ESTADO PARA TRAILING STOP DE PNL ---
-        self.enable_pnl_trailing_stop = trading_params.get('enable_pnl_trailing_stop', True)
-        self.pnl_trailing_stop_activation_usdt = Decimal(str(trading_params.get('pnl_trailing_stop_activation_usdt', '0.1')))
-        self.pnl_trailing_stop_drop_usdt = Decimal(str(trading_params.get('pnl_trailing_stop_drop_usdt', '0.05')))
+        self.enable_pnl_trailing_stop = str(trading_params.get('enable_pnl_trailing_stop', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_pnl_trailing_stop'), str) else bool(trading_params.get('enable_pnl_trailing_stop', True))
+        self.pnl_trailing_stop_activation_usdt = _safe_decimal(trading_params.get('pnl_trailing_stop_activation_usdt'), '0.1')
+        self.pnl_trailing_stop_drop_usdt = _safe_decimal(trading_params.get('pnl_trailing_stop_drop_usdt'), '0.05')
         self.pnl_peak_since_activation = None # PNL más alto desde que el PNL trailing stop se armó
         self.pnl_trailing_stop_armed = False # Si el PNL trailing stop está armado
         # --- NUEVO: Para Open Interest ---
         self.evaluate_open_interest_increase = str(trading_params.get('evaluate_open_interest_increase', 'True')).lower() == 'true'
-        self.open_interest_period = trading_params.get('open_interest_period', '5m') # <-- NUEVO: Leer el período para OI
+        self.open_interest_period = trading_params.get('open_interest_period', '5m') or '5m'
         # -------------------------------------------------------------
         
         # --- NUEVO: PARÁMETROS PARA ESTRATEGIA DE SOPORTES ---
         self.evaluate_support_strategy = str(trading_params.get('evaluate_support_strategy', 'False')).lower() == 'true'
-        self.support_history_candles = int(trading_params.get('support_history_candles', 200))
-        self.support_pivot_window = int(trading_params.get('support_pivot_window', 5))
-        self.support_confirmations = int(trading_params.get('support_confirmations', 2))
-        self.support_level_tolerance_percent = float(trading_params.get('support_level_tolerance_percent', 0.5))
-        self.support_order_stop_loss_percent = float(trading_params.get('support_order_stop_loss_percent', 2.0))
-        self.support_order_take_profit_percent = float(trading_params.get('support_order_take_profit_percent', 4.0))
+        self.support_history_candles = _safe_int(trading_params.get('support_history_candles'), 200)
+        self.support_pivot_window = _safe_int(trading_params.get('support_pivot_window'), 5)
+        self.support_confirmations = _safe_int(trading_params.get('support_confirmations'), 2)
+        self.support_level_tolerance_percent = _safe_float(trading_params.get('support_level_tolerance_percent'), 0.5)
+        self.support_order_stop_loss_percent = _safe_float(trading_params.get('support_order_stop_loss_percent'), 2.0)
+        self.support_order_take_profit_percent = _safe_float(trading_params.get('support_order_take_profit_percent'), 4.0)
         # --- FIN PARÁMETROS DE SOPORTES ---
+        
+        # --- NUEVO: PARÁMETROS Y ESTADO PARA RE-ENTRADAS Y ÓRDENES DE SEGURIDAD (DCA) ---
+        self.enable_dca_reentry = str(trading_params.get('enable_dca_reentry', 'False')).lower() == 'true'
+        self.dca_reentry_mode = str(trading_params.get('dca_reentry_mode', 'fixed_percent')).lower()
+        self.dca_price_drop_percent = _safe_float(trading_params.get('dca_price_drop_percent'), 1.5)
+        self.dca_max_reentries = _safe_int(trading_params.get('dca_max_reentries'), 2)
+        self.dca_volume_multiplier = _safe_float(trading_params.get('dca_volume_multiplier'), 1.0)
+        
+        self.reentries_done = 0
+        self.pending_reentry_order_id = None
+        self.pending_reentry_price = None
+        self.pending_reentry_qty = None
+        # --- FIN PARÁMETROS DCA ---
         
         # --- NUEVO: ESTADO PARA ÓRDENES DE SOPORTE ---
         self.active_support_orders = {} # {price_level: order_id}
         # ---------------------------------------------
-        
-        # -------------------------------------------------------------
-        # --------------------------------------------------
 
         # Cliente Binance (se inicializa una vez por bot)
         self.client = get_futures_client()
@@ -173,23 +207,23 @@ class TradingBot:
 
         # Extraer parámetros necesarios de self.params (usando .get con defaults)
         try:
-            self.rsi_interval = str(self.params.get('rsi_interval', '5m'))
-            self.rsi_period = int(self.params.get('rsi_period', 14))
-            self.rsi_threshold_up = float(self.params.get('rsi_threshold_up', 1.5))
-            self.rsi_threshold_down = float(self.params.get('rsi_threshold_down', -1.0))
-            self.rsi_entry_level_low = float(self.params.get('rsi_entry_level_low', 25.0))
-            self.rsi_entry_level_high = float(self.params.get('rsi_entry_level_high', 75.0))
+            self.rsi_interval = str(self.params.get('rsi_interval') or '5m')
+            self.rsi_period = _safe_int(self.params.get('rsi_period'), 14)
+            self.rsi_threshold_up = _safe_float(self.params.get('rsi_threshold_up'), 1.5)
+            self.rsi_threshold_down = _safe_float(self.params.get('rsi_threshold_down'), -1.0)
+            self.rsi_entry_level_low = _safe_float(self.params.get('rsi_entry_level_low'), 25.0)
+            self.rsi_entry_level_high = _safe_float(self.params.get('rsi_entry_level_high'), 75.0)
             # --- Leer parámetros de volumen --- 
-            self.volume_sma_period = int(self.params.get('volume_sma_period', 20))
-            self.volume_factor = float(self.params.get('volume_factor', 1.5))
+            self.volume_sma_period = _safe_int(self.params.get('volume_sma_period'), 20)
+            self.volume_factor = _safe_float(self.params.get('volume_factor'), 1.5)
             # ----------------------------------
-            self.position_size_usdt = Decimal(str(self.params.get('position_size_usdt', '50')))
-            self.take_profit_usdt = Decimal(str(self.params.get('take_profit_usdt', '0')))
-            self.stop_loss_usdt = Decimal(str(self.params.get('stop_loss_usdt', '0')))
-            self.leverage = int(self.params.get('leverage', 20))
+            self.position_size_usdt = _safe_decimal(self.params.get('position_size_usdt'), '50')
+            self.take_profit_usdt = _safe_decimal(self.params.get('take_profit_usdt'), '0')
+            self.stop_loss_usdt = _safe_decimal(self.params.get('stop_loss_usdt'), '0')
+            self.leverage = _safe_int(self.params.get('leverage'), 20)
             
             # --- Nuevo parámetro para timeout de órdenes LIMIT ---
-            self.order_timeout_seconds = int(self.params.get('order_timeout_seconds', 60))
+            self.order_timeout_seconds = _safe_int(self.params.get('order_timeout_seconds'), 60)
             if self.order_timeout_seconds < 0:
                 self.logger.warning(f"[{self.symbol}] ORDER_TIMEOUT_SECONDS ({self.order_timeout_seconds}) debe ser >= 0. Usando 60.")
                 self.order_timeout_seconds = 60
@@ -202,9 +236,6 @@ class TradingBot:
             if self.volume_sma_period <= 0:
                  self.logger.warning(f"[{self.symbol}] VOLUME_SMA_PERIOD ({self.volume_sma_period}) debe ser positivo. Usando 20.")
                  self.volume_sma_period = 20
-            # if self.volume_factor <= 0: # Comentado para permitir volume_factor = 0 desde config
-            #     self.logger.warning(f"[{self.symbol}] VOLUME_FACTOR ({self.volume_factor}) debe ser positivo. Usando 1.5.")
-            #     self.volume_factor = 1.5
             if self.take_profit_usdt < 0:
                  self.logger.warning(f"[{self.symbol}] TAKE_PROFIT_USDT ({self.take_profit_usdt}) debe ser positivo o cero. Usando 0.")
                  self.take_profit_usdt = Decimal('0')
@@ -402,17 +433,21 @@ class TradingBot:
                     close_reason = "Cierre Externo (Trade no encontrado)"
             
             # 3. Guardar en la base de datos
-            save_trade_to_db(
+            open_ts_for_db = old_entry_time.to_pydatetime() if isinstance(old_entry_time, (pd.Timestamp, datetime)) and hasattr(old_entry_time, 'to_pydatetime') else (old_entry_time if isinstance(old_entry_time, datetime) else datetime.utcnow())
+            close_ts_for_db = final_close_timestamp.to_pydatetime() if isinstance(final_close_timestamp, (pd.Timestamp, datetime)) and hasattr(final_close_timestamp, 'to_pydatetime') else (final_close_timestamp if isinstance(final_close_timestamp, datetime) else datetime.utcnow())
+            pos_size_calc = float(old_entry_price * old_quantity) if (old_entry_price and old_quantity) else 0.0
+
+            record_trade(
                 symbol=self.symbol,
-                open_timestamp=old_entry_time,
-                close_timestamp=final_close_timestamp,
-                entry_reason=self.entry_reason,
-                close_reason=close_reason,
+                trade_type='LONG',
+                open_timestamp=open_ts_for_db,
+                close_timestamp=close_ts_for_db,
                 open_price=float(old_entry_price) if old_entry_price else 0.0,
-                close_price=float(final_close_price),
+                close_price=float(final_close_price) if final_close_price else 0.0,
                 quantity=float(old_quantity) if old_quantity else 0.0,
+                position_size_usdt=pos_size_calc,
                 pnl_usdt=float(final_pnl),
-                # Asegurarse de tener todos los parámetros necesarios
+                close_reason=close_reason
             )
             self.logger.info(f"[{self.symbol}] Trade CERRADO y guardado en DB. Razón: {close_reason}, PNL: {final_pnl:.4f}")
             
@@ -746,36 +781,52 @@ class TradingBot:
         """
         Ejecuta un ciclo de la lógica del bot.
         """
-        self.logger.info(f"[{self.symbol}] --- Inicio run_once. Estado: {self.current_state.value} ---")
+        self.logger.info(f"[{self.symbol}] --- Inicio run_once. Estado: {self.current_state.value} (in_position={self.in_position}, pending_entry={self.pending_entry_order_id}) ---")
         
         try:
-            # 1. Obtener datos de mercado
-            klines_df = self._get_market_data()
-            if klines_df is None:
-                return # Salir del ciclo si no hay datos
+            # 1. Si hay una orden de entrada pendiente, verificar de inmediato si fue FILLED o CANCELED
+            if self.pending_entry_order_id:
+                self._check_pending_entry_order()
 
-            # 2. Actualizar PNL si ya estamos en posición
+            # 2. Sincronización proactiva con Binance: si el bot cree no estar en posición ni tener orden pendiente,
+            # verificar si existe una posición abierta real en Binance para sincronizarla automáticamente
+            if not self.in_position and not self.pending_entry_order_id:
+                self._verify_position_status()
+
+            # 3. Si estamos en posición activa:
             if self.in_position:
+                # 3a. Chequear si se ejecutó alguna orden TP o SL en Binance
+                tp_sl_handled = self._check_tp_sl_order_status()
+                if tp_sl_handled:
+                    self.logger.info(f"[{self.symbol}] Orden TP/SL procesada en este ciclo.")
+                    return
+
+                # 3b. Actualizar el PNL en vivo y verificar si la posición continúa abierta
                 is_still_open = self._update_open_position_pnl()
                 if not is_still_open:
                     self.logger.info(f"[{self.symbol}] Posición cerrada en Binance. Pasando a IDLE.")
                     return
 
-            # 3. Lógica de decisión principal
-            
-            # CASO A: Si estamos en posición, gestionar salida o evaluar condiciones de salida
-            if self.in_position:
+                # 3c. Si hay una orden de salida manual o de mercado pendiente, verificarla
                 if self.pending_exit_order_id:
                     self._check_pending_exit_order()
-                else:
-                    self._check_exit_conditions(klines_df)
-            
-            # CASO B: Si hay una orden de entrada pendiente, gestionamos su llenado o timeout
-            elif self.pending_entry_order_id:
-                self._check_pending_entry_order()
+                    return
 
-            # CASO C: Si no hay posición ni orden pendiente, buscamos una nueva entrada
-            else:
+                # 3d. Obtener velas para evaluar Trailing Stop o condiciones de salida técnicas
+                klines_df = self._get_market_data()
+                if klines_df is not None and not klines_df.empty:
+                    # Evaluar re-entradas DCA si el precio cae
+                    self._evaluate_dca_reentry(klines_df)
+                    # Evaluar condiciones de salida
+                    self._check_exit_conditions(klines_df)
+                return
+
+            # 4. Si no hay posición ni orden pendiente, buscar nueva entrada
+            if not self.in_position and not self.pending_entry_order_id:
+                klines_df = self._get_market_data()
+                if klines_df is None or klines_df.empty:
+                    return
+
                 if self.evaluate_support_strategy:
                     # Usar estrategia de soportes si está activada
                     self._execute_support_strategy(klines_df)
@@ -789,8 +840,8 @@ class TradingBot:
 
     def _get_market_data(self):
         """Función auxiliar para obtener y validar los datos de klines."""
-        if self.current_state in [BotState.ERROR, BotState.WAITING_ENTRY_FILL, BotState.WAITING_EXIT_FILL]:
-            self.logger.debug(f"[{self.symbol}] Saltando obtención de datos en estado {self.current_state.value}")
+        if self.current_state == BotState.ERROR:
+            self.logger.debug(f"[{self.symbol}] Saltando obtención de datos en estado ERROR")
             return None
 
         limit_needed = max(self.rsi_period + 15, self.volume_sma_period + 10, 50)
@@ -806,7 +857,6 @@ class TradingBot:
 
         if klines_df is None or klines_df.empty:
             self.logger.warning(f"[{self.symbol}] No se pudieron obtener klines. Saltando ciclo.")
-            self._update_state(BotState.IDLE)
             return None
         
         return klines_df
@@ -843,8 +893,9 @@ class TradingBot:
 
                 # 3b. Si no hay una orden ya en el mejor soporte, intentar colocar una
                 if best_support not in self.active_support_orders:
+                    notional_order_usdt = Decimal(str(self.position_size_usdt)) * Decimal(str(self.leverage))
                     if self.risk_manager.can_open_position(Decimal(str(self.position_size_usdt))):
-                        quantity = self.position_size_usdt / best_support
+                        quantity = notional_order_usdt / best_support
                         adj_qty = self._adjust_quantity(quantity)
                         if adj_qty and adj_qty > 0:
                             result = create_futures_limit_order(self.symbol, 'BUY', adj_qty, best_support)
@@ -1029,6 +1080,17 @@ class TradingBot:
             self.logger.info(f"[{self.symbol}] ResetState: Intentando cancelar orden SL pendiente {self.pending_sl_order_id}.")
             cancel_futures_order(self.symbol, self.pending_sl_order_id)
             self.pending_sl_order_id = None
+        # --- NUEVO: Cancelar y limpiar órdenes de re-entrada DCA pendientes ---
+        if self.pending_reentry_order_id:
+            self.logger.info(f"[{self.symbol}] ResetState: Cancelando orden de re-entrada DCA pendiente {self.pending_reentry_order_id}.")
+            try:
+                cancel_futures_order(self.symbol, self.pending_reentry_order_id)
+            except Exception as e:
+                self.logger.warning(f"[{self.symbol}] Error cancelando orden DCA en reset_state: {e}")
+            self.pending_reentry_order_id = None
+            self.pending_reentry_price = None
+            self.pending_reentry_qty = None
+        self.reentries_done = 0
         # ---------------------------------------------------
         # self.last_rsi_value = None # Podríamos mantenerlo o resetearlo
         self.rsi_objetivo_activado = False
@@ -1053,6 +1115,7 @@ class TradingBot:
         if self.current_state != new_state:
              self.logger.debug(f"[{self.symbol}] State changed from {self.current_state.value} to {new_state.value}")
              self.current_state = new_state
+             self.state = new_state
         if new_state == BotState.ERROR and error_message:
              self.last_error_message = error_message
              self.logger.error(f"[{self.symbol}] Error detail: {error_message}")
@@ -1486,6 +1549,11 @@ class TradingBot:
             # ---------------------------------------------------------------------
 
             if entry_signal:
+                if self.risk_manager and not self.risk_manager.can_open_position(Decimal(str(self.position_size_usdt))):
+                    self.logger.warning(f"[{self.symbol}] SEÑAL DE ENTRADA ({self.entry_reason}) detectada pero BLOQUEADA por el Gestor de Riesgo (Exposición máxima alcanzada).")
+                    self._update_state(BotState.IDLE)
+                    return
+
                  # Calcular precio y cantidad para la orden LIMIT BUY
                 # Para precio LIMIT, podemos usar el precio actual o el mejor ASK del order book
                 best_ask_price = self._get_best_entry_price('BUY') 
@@ -1495,7 +1563,8 @@ class TradingBot:
                     return
                 
                 limit_buy_price = self._adjust_price(best_ask_price)
-                quantity = self._adjust_quantity(Decimal(str(self.position_size_usdt)) / limit_buy_price)
+                notional_order_usdt = Decimal(str(self.position_size_usdt)) * Decimal(str(self.leverage))
+                quantity = self._adjust_quantity(notional_order_usdt / limit_buy_price)
                 
                 # CORRECCIÓN: La comprobación debe ser si es None
                 if quantity is None or quantity <= 0:
@@ -1804,8 +1873,8 @@ class TradingBot:
                     self.logger.info(f"[{self.symbol}] Chequeo Salida TRAILING RSI (Habilitado): Actual RSI ({self.last_rsi_value:.2f}) vs Umbral Salida Dinámico ({trailing_rsi_exit_level:.2f} = Pico {self.rsi_peak_since_target:.2f} + Drop {self.rsi_threshold_down})")
                     if self.last_rsi_value <= trailing_rsi_exit_level:
                         self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING RSI STOP) DETECTADA (Habilitado): RSI Actual ({self.last_rsi_value:.2f}) <= Umbral ({trailing_rsi_exit_level:.2f})")
-                    exit_signal = True
-                    self.exit_reason = f"Trailing_RSI_Stop (Actual={self.last_rsi_value:.2f}, Pico={self.rsi_peak_since_target:.2f}, Drop={self.rsi_threshold_down})"
+                        exit_signal = True
+                        self.exit_reason = f"Trailing_RSI_Stop (Actual={self.last_rsi_value:.2f}, Pico={self.rsi_peak_since_target:.2f}, Drop={self.rsi_threshold_down})"
             elif not exit_signal: # Si no hay señal de salida aún y el Trailing RSI está deshabilitado
                  self.logger.info(f"[{self.symbol}] Salida por Trailing RSI Stop DESHABILITADA.")
 
@@ -1990,6 +2059,8 @@ class TradingBot:
                             'positionAmt': pos_amt
                         }
                     self.last_known_pnl = unrealized_pnl
+                    self.last_known_entry_price = entry_price
+                    self.last_known_position_size = pos_amt
                     self._update_state(BotState.IN_POSITION)
                     # Limpiar órdenes pendientes si encontramos posición activa inesperadamente
                     if self.pending_entry_order_id or self.pending_exit_order_id:
@@ -2461,6 +2532,120 @@ class TradingBot:
         Evalúa las condiciones de entrada para la estrategia principal (RSI, etc.).
         """
         self._check_entry_conditions(klines_df)
+
+    # --- Lógica del Sistema de Re-entradas y Órdenes de Seguridad (DCA) ---
+    def _check_pending_reentry_order(self):
+        """
+        Verifica el estado de una orden de re-entrada DCA colocada en Binance.
+        """
+        if not self.pending_reentry_order_id:
+            return
+
+        try:
+            order_info = get_futures_order(self.symbol, self.pending_reentry_order_id)
+            if not order_info:
+                return
+
+            status = order_info.get('status')
+            if status == 'FILLED':
+                self.reentries_done += 1
+                self.logger.info(f"[{self.symbol}] 🎉 RE-ENTRADA DCA #{self.reentries_done} EJECUTADA exitosamente @ {self.pending_reentry_price}. Posición promediada.")
+                self.pending_reentry_order_id = None
+                self.pending_reentry_price = None
+                self.pending_reentry_qty = None
+
+                # Actualizar datos de la posición promediada desde Binance
+                pos_data = get_futures_position(self.symbol)
+                if pos_data and self.current_position:
+                    pos_amt = Decimal(str(pos_data.get('positionAmt', '0')))
+                    entry_p = Decimal(str(pos_data.get('entryPrice', '0')))
+                    if abs(pos_amt) > Decimal('1e-9'):
+                        self.current_position['entry_price'] = entry_p
+                        self.current_position['quantity'] = pos_amt
+                        self.current_position['position_size_usdt'] = abs(entry_p * pos_amt)
+                        self.last_known_entry_price = entry_p
+                        self.last_known_position_size = pos_amt
+                        self.logger.info(f"[{self.symbol}] Posición promediada actualizada: Nuevo Precio Promedio={entry_p}, Cantidad Total={pos_amt}")
+            elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
+                self.logger.info(f"[{self.symbol}] Orden de Re-entrada DCA cancelada o expirada ({status}). Limpiando ID pendiente.")
+                self.pending_reentry_order_id = None
+                self.pending_reentry_price = None
+                self.pending_reentry_qty = None
+        except Exception as e:
+            self.logger.error(f"[{self.symbol}] Error verificando orden de re-entrada DCA {self.pending_reentry_order_id}: {e}", exc_info=True)
+
+    def _evaluate_dca_reentry(self, klines_df: pd.DataFrame):
+        """
+        Evalúa si el precio ha caído lo suficiente para colocar una orden de re-entrada (DCA).
+        """
+        if not self.enable_dca_reentry:
+            return
+
+        if not self.in_position or not self.current_position:
+            return
+
+        if self.reentries_done >= self.dca_max_reentries:
+            self.logger.debug(f"[{self.symbol}] Re-entradas DCA máximas alcanzadas ({self.reentries_done}/{self.dca_max_reentries}).")
+            return
+
+        # Si ya hay una orden colocada esperando ejecución, verificar su estado
+        if self.pending_reentry_order_id:
+            self._check_pending_reentry_order()
+            return
+
+        entry_price = self.current_position.get('entry_price', Decimal('0'))
+        if entry_price <= Decimal('0'):
+            return
+
+        current_market_price = Decimal(str(klines_df['close'].iloc[-1]))
+        target_reentry_price = None
+
+        if self.dca_reentry_mode == 'next_support':
+            # Modo: Siguiente Soporte Confirmado
+            confirmed_supports = self._find_support_levels(klines_df)
+            lower_supports = [s for s in confirmed_supports if s < (entry_price * Decimal('0.998'))]
+            if lower_supports:
+                target_reentry_price = max(lower_supports)
+                self.logger.info(f"[{self.symbol}] Re-entrada DCA por Soporte: detectado soporte en {target_reentry_price}")
+        else:
+            # Modo: Porcentaje Fijo de Caída
+            drop_factor = Decimal('1') - (Decimal(str(self.dca_price_drop_percent)) / Decimal('100'))
+            target_reentry_price = entry_price * drop_factor
+
+        if target_reentry_price and target_reentry_price > Decimal('0'):
+            # Solo colocar orden si el precio objetivo está por debajo del precio de mercado actual
+            if target_reentry_price >= current_market_price:
+                target_reentry_price = current_market_price * Decimal('0.999')
+
+            # Calcular tamaño de la orden con el multiplicador de volumen
+            base_size = Decimal(str(self.position_size_usdt))
+            multiplier = Decimal(str(self.dca_volume_multiplier)) if Decimal(str(self.dca_volume_multiplier)) > Decimal('0') else Decimal('1.0')
+            order_margin_usdt = base_size * (multiplier ** Decimal(str(self.reentries_done + 1)))
+
+            # Validar con el RiskManager global
+            if self.risk_manager and not self.risk_manager.can_open_position(order_margin_usdt):
+                self.logger.warning(f"[{self.symbol}] Re-entrada DCA denegada por RiskManager (Margen requerido: {order_margin_usdt:.2f} USDT).")
+                return
+
+            notional_order_usdt = order_margin_usdt * Decimal(str(self.leverage))
+            adj_price = self._adjust_price(target_reentry_price)
+            if not adj_price or adj_price <= Decimal('0'):
+                return
+
+            quantity = notional_order_usdt / adj_price
+            adj_qty = self._adjust_quantity(quantity)
+
+            if adj_qty and adj_qty > Decimal('0'):
+                self.logger.info(f"[{self.symbol}] Colocando Orden de Re-entrada DCA #{self.reentries_done + 1} en {adj_price} (Margen: {order_margin_usdt:.2f} USDT, Cantidad: {adj_qty}).")
+                result = create_futures_limit_order(self.symbol, 'BUY', adj_qty, adj_price)
+                if result and 'orderId' in result:
+                    self.pending_reentry_order_id = result['orderId']
+                    self.pending_reentry_price = adj_price
+                    self.pending_reentry_qty = adj_qty
+                    self.logger.info(f"[{self.symbol}] 🛡️ Orden de Re-entrada DCA #{self.reentries_done + 1} colocada con ID {result['orderId']}.")
+                else:
+                    self.logger.error(f"[{self.symbol}] Fallo al colocar orden de re-entrada DCA en {adj_price}.")
+    # ---------------------------------------------------------------------
 
 # --- Bloque de ejemplo (ya no se usa directamente así) ---
 # if __name__ == '__main__':

@@ -22,8 +22,7 @@ from threading import Lock # Necesario para el Lock del RiskManager
 # Importar funciones y variables usando importaciones ABSOLUTAS (desde src)
 from src.config_loader import load_config, reload_config, get_trading_symbols, CONFIG_FILE_PATH
 from src.logger_setup import setup_logging, get_logger
-from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol
-# Importar TradingBot y BotState para run_bot_worker
+from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, clear_trade_history, get_all_recent_trades
 from src.bot import TradingBot, BotState 
 from src.binance_client import get_account_balance_usdt, reset_futures_client, get_futures_client
 
@@ -54,6 +53,16 @@ class SessionStateManager:
             self.logger.info("Deteniendo sesión de estadísticas.")
             self.active_session = False
             self.session_start_time = None
+
+    def reset_stats(self):
+        with self.lock:
+            self.logger.info("Reiniciando estadísticas de sesión a cero.")
+            self.session_realized_pnl = Decimal('0')
+            self.session_unrealized_pnl = Decimal('0')
+            self.session_pnl_high = Decimal('0')
+            self.session_pnl_low = Decimal('0')
+            if self.active_session:
+                self.session_start_time = time.time()
 
     def update_stats(self, realized_pnl: Decimal, unrealized_pnl: Decimal):
         with self.lock:
@@ -193,29 +202,35 @@ def config_to_dict(config: configparser.ConfigParser) -> dict:
 
 def map_frontend_trading_binance(frontend_data: dict) -> dict:
     """Mapea los datos del frontend a la estructura esperada por configparser para [TRADING] y [BINANCE]."""
+    def _val(key, default):
+        val = frontend_data.get(key)
+        if val is None or str(val).strip() == '':
+            return str(default)
+        return str(val)
+
     config_output = {
         'BINANCE': {
             'mode': 'paper',
         },
         'TRADING': {
-            'leverage': str(frontend_data.get('leverage', 20)),
-            'rsi_interval': frontend_data.get('rsiInterval', '5m'),
-            'rsi_period': str(frontend_data.get('rsiPeriod', 14)),
-            'rsi_threshold_up': str(frontend_data.get('rsiThresholdUp', 8)),
-            'rsi_threshold_down': str(frontend_data.get('rsiThresholdDown', -8)),
-            'rsi_entry_level_low': str(frontend_data.get('rsiEntryLevelLow', 25)),
-            'rsi_entry_level_high': str(frontend_data.get('rsiEntryLevelHigh', 75)),
-            'rsi_target': str(frontend_data.get('rsiTarget', 50)),
-            'volume_sma_period': str(frontend_data.get('volumeSmaPeriod', 20)),
-            'volume_factor': str(frontend_data.get('volumeFactor', 1.5)),
-            'downtrend_check_candles': str(frontend_data.get('downtrendCheckCandles', 3)),
-            'downtrend_level_check': str(frontend_data.get('downtrend_level_check', 5)),
-            'required_uptrend_candles': str(frontend_data.get('requiredUptrendCandles', 0)),
-            'position_size_usdt': str(frontend_data.get('positionSizeUSDT', 50)),
-            'stop_loss_usdt': str(frontend_data.get('stopLossUSDT', 20)),
-            'take_profit_usdt': str(frontend_data.get('takeProfitUSDT', 30)),
-            'cycle_sleep_seconds': str(frontend_data.get('cycleSleepSeconds', 5)),
-            'order_timeout_seconds': str(frontend_data.get('orderTimeoutSeconds', 10)),
+            'leverage': _val('leverage', 20),
+            'rsi_interval': _val('rsiInterval', '5m'),
+            'rsi_period': _val('rsiPeriod', 14),
+            'rsi_threshold_up': _val('rsiThresholdUp', 8),
+            'rsi_threshold_down': _val('rsiThresholdDown', -8),
+            'rsi_entry_level_low': _val('rsiEntryLevelLow', 25),
+            'rsi_entry_level_high': _val('rsiEntryLevelHigh', 75),
+            'rsi_target': _val('rsiTarget', 50),
+            'volume_sma_period': _val('volumeSmaPeriod', 20),
+            'volume_factor': _val('volumeFactor', 1.5),
+            'downtrend_check_candles': _val('downtrendCheckCandles', 3),
+            'downtrend_level_check': _val('downtrend_level_check', 5),
+            'required_uptrend_candles': _val('requiredUptrendCandles', 0),
+            'position_size_usdt': _val('positionSizeUSDT', 50),
+            'stop_loss_usdt': _val('stopLossUSDT', 20),
+            'take_profit_usdt': _val('takeProfitUSDT', 30),
+            'cycle_sleep_seconds': _val('cycleSleepSeconds', 5),
+            'order_timeout_seconds': _val('orderTimeoutSeconds', 10),
             'evaluate_rsi_delta': str(frontend_data.get('evaluateRsiDelta', True)).lower(),
             'evaluate_volume_filter': str(frontend_data.get('evaluateVolumeFilter', True)).lower(),
             'evaluate_rsi_range': str(frontend_data.get('evaluateRsiRange', True)).lower(),
@@ -226,34 +241,36 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'enable_stop_loss_pnl': str(frontend_data.get('enableStopLossPnl', True)).lower(),
             'enable_trailing_rsi_stop': str(frontend_data.get('enableTrailingRsiStop', True)).lower(),
             'enable_price_trailing_stop': str(frontend_data.get('enablePriceTrailingStop', True)).lower(),
-            'price_trailing_stop_distance_usdt': str(frontend_data.get('priceTrailingStopDistanceUSDT', 0.05)),
-            'price_trailing_stop_activation_pnl_usdt': str(frontend_data.get('priceTrailingStopActivationPnlUSDT', 0.02)),
+            'price_trailing_stop_distance_usdt': _val('priceTrailingStopDistanceUSDT', 0.05),
+            'price_trailing_stop_activation_pnl_usdt': _val('priceTrailingStopActivationPnlUSDT', 0.02),
             'enable_pnl_trailing_stop': str(frontend_data.get('enablePnlTrailingStop', True)).lower(),
-            'pnl_trailing_stop_activation_usdt': str(frontend_data.get('pnlTrailingStopActivationUSDT', 0.1)),
-            'pnl_trailing_stop_drop_usdt': str(frontend_data.get('pnlTrailingStopDropUSDT', 0.05)),
+            'pnl_trailing_stop_activation_usdt': _val('pnlTrailingStopActivationUSDT', 0.1),
+            'pnl_trailing_stop_drop_usdt': _val('pnlTrailingStopDropUSDT', 0.05),
             'evaluate_open_interest_increase': str(frontend_data.get('evaluateOpenInterestIncrease', True)).lower(),
-            'open_interest_period': frontend_data.get('openInterestPeriod', '5m'),
+            'open_interest_period': _val('openInterestPeriod', '5m'),
             'evaluate_ma_filter': str(frontend_data.get('evaluateMaFilter', False)).lower(),
-            'ma_period': str(frontend_data.get('maPeriod', 200)),
+            'ma_period': _val('maPeriod', 200),
 
             # --- NUEVO: Mapeo para la Estrategia de Soportes ---
             'evaluate_support_strategy': str(frontend_data.get('evaluateSupportStrategy', False)).lower(),
-            'support_history_candles': str(frontend_data.get('supportHistoryCandles', 200)),
-            'support_pivot_window': str(frontend_data.get('supportPivotWindow', 5)),
-            'support_confirmations': str(frontend_data.get('supportConfirmations', 2)),
-            'support_level_tolerance_percent': str(frontend_data.get('supportLevelTolerancePercent', 0.5)),
-            'support_order_stop_loss_percent': str(frontend_data.get('supportOrderStopLossPercent', 2.0)),
-            'support_order_take_profit_percent': str(frontend_data.get('supportOrderTakeProfitPercent', 4.0)),
+            'support_history_candles': _val('supportHistoryCandles', 200),
+            'support_pivot_window': _val('supportPivotWindow', 5),
+            'support_confirmations': _val('supportConfirmations', 2),
+            'support_level_tolerance_percent': _val('supportLevelTolerancePercent', 0.5),
+            'support_order_stop_loss_percent': _val('supportOrderStopLossPercent', 2.0),
+            'support_order_take_profit_percent': _val('supportOrderTakeProfitPercent', 4.0),
+
+            # --- NUEVO: Mapeo para Re-entradas DCA ---
+            'enable_dca_reentry': str(frontend_data.get('enableDcaReentry', False)).lower(),
+            'dca_reentry_mode': _val('dcaReentryMode', 'fixed_percent'),
+            'dca_price_drop_percent': _val('dcaPriceDropPercent', 1.5),
+            'dca_max_reentries': _val('dcaMaxReentries', 2),
+            'dca_volume_multiplier': _val('dcaVolumeMultiplier', 1.0),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
         }
     }
-    if 'TRADING' in config_output and 'rsi_period' in config_output['TRADING']:
-        try:
-            config_output['TRADING']['rsi_period'] = int(config_output['TRADING']['rsi_period'])
-        except ValueError:
-            pass 
     return config_output
 
 # --- Función run_bot_worker (Movida desde run_bot.py) ---
@@ -418,6 +435,20 @@ def get_config_endpoint():
                 "pnlTrailingStopDropUSDT": 0.05,
                 "evaluateOpenInterestIncrease": True, # Cambio de clave aquí
                 "openInterestPeriod": "5m", # <-- Clave para el frontend
+                "evaluateMaFilter": False,
+                "maPeriod": 200,
+                "evaluateSupportStrategy": False,
+                "supportHistoryCandles": 200,
+                "supportPivotWindow": 5,
+                "supportConfirmations": 2,
+                "supportLevelTolerancePercent": 0.5,
+                "supportOrderStopLossPercent": 2.0,
+                "supportOrderTakeProfitPercent": 4.0,
+                "enableDcaReentry": False,
+                "dcaReentryMode": "fixed_percent",
+                "dcaPriceDropPercent": 1.5,
+                "dcaMaxReentries": 2,
+                "dcaVolumeMultiplier": 1.0,
                 "symbolsToTrade": "",
                 "activeStrategyName": ""
             }
@@ -470,7 +501,19 @@ def get_config_endpoint():
                 ('evaluate_open_interest_increase', 'evaluateOpenInterestIncrease'), # Cambio de clave aquí
                 ('open_interest_period', 'openInterestPeriod'), # <-- CAMBIO DE CLAVE AQUÍ para el frontend
                 ('evaluate_ma_filter', 'evaluateMaFilter'),
-                ('ma_period', 'maPeriod')
+                ('ma_period', 'maPeriod'),
+                ('evaluate_support_strategy', 'evaluateSupportStrategy'),
+                ('support_history_candles', 'supportHistoryCandles'),
+                ('support_pivot_window', 'supportPivotWindow'),
+                ('support_confirmations', 'supportConfirmations'),
+                ('support_level_tolerance_percent', 'supportLevelTolerancePercent'),
+                ('support_order_stop_loss_percent', 'supportOrderStopLossPercent'),
+                ('support_order_take_profit_percent', 'supportOrderTakeProfitPercent'),
+                ('enable_dca_reentry', 'enableDcaReentry'),
+                ('dca_reentry_mode', 'dcaReentryMode'),
+                ('dca_price_drop_percent', 'dcaPriceDropPercent'),
+                ('dca_max_reentries', 'dcaMaxReentries'),
+                ('dca_volume_multiplier', 'dcaVolumeMultiplier')
             ]:
                 if key_ini in config_dict['TRADING']:
                     frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
@@ -840,43 +883,42 @@ def load_initial_config():
     # Convertir explícitamente los parámetros a sus tipos correctos
     loaded_trading_params = {}
     for key, value_str in temp_trading_params.items():
-        original_value = value_str # Guardar para logs en caso de error
+        original_value = value_str
         try:
-            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_level_check', 'required_uptrend_candles']:
-                loaded_trading_params[key] = int(value_str)
+            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations']:
+                if value_str is None or str(value_str).strip() == '':
+                    loaded_trading_params[key] = 20 if 'period' in key else 0
+                else:
+                    loaded_trading_params[key] = int(value_str)
             elif key in ['rsi_threshold_up', 'rsi_threshold_down', 'rsi_entry_level_low', 'rsi_entry_level_high',
                          'rsi_target',
                          'volume_factor', 'position_size_usdt', 'stop_loss_usdt', 'take_profit_usdt',
                          'price_trailing_stop_distance_usdt',
-                         'price_trailing_stop_activation_pnl_usdt']:
-                loaded_trading_params[key] = float(value_str)
-            elif key == 'evaluate_rsi_delta':
-                loaded_trading_params[key] = value_str.lower() == 'true'
-            elif key == 'evaluate_volume_filter':
-                loaded_trading_params[key] = value_str.lower() == 'true'
-            elif key == 'evaluate_rsi_range':
-                loaded_trading_params[key] = value_str.lower() == 'true'
-            elif key == 'evaluate_downtrend_candles_block':
-                loaded_trading_params[key] = value_str.lower() == 'true'
-            elif key == 'evaluate_downtrend_levels_block':
-                loaded_trading_params[key] = value_str.lower() == 'true'
-            elif key == 'evaluate_required_uptrend':
-                loaded_trading_params[key] = value_str.lower() == 'true'
-            elif key == 'enable_take_profit_pnl':
-                loaded_trading_params[key] = value_str.lower() == 'true'
-            elif key == 'enable_stop_loss_pnl':
-                loaded_trading_params[key] = value_str.lower() == 'true'
-            elif key == 'enable_trailing_rsi_stop':
-                loaded_trading_params[key] = value_str.lower() == 'true'
-            elif key == 'enable_price_trailing_stop':
-                loaded_trading_params[key] = value_str.lower() == 'true'
-            elif key == 'enable_pnl_trailing_stop':
-                loaded_trading_params[key] = value_str.lower() == 'true'
+                         'price_trailing_stop_activation_pnl_usdt',
+                         'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt',
+                         'support_level_tolerance_percent', 'support_order_stop_loss_percent', 'support_order_take_profit_percent']:
+                if value_str is None or str(value_str).strip() == '':
+                    loaded_trading_params[key] = 0.0
+                else:
+                    loaded_trading_params[key] = float(value_str)
+            elif key in ['evaluate_rsi_delta', 'evaluate_volume_filter', 'evaluate_rsi_range',
+                         'evaluate_downtrend_candles_block', 'evaluate_downtrend_levels_block',
+                         'evaluate_required_uptrend', 'enable_take_profit_pnl', 'enable_stop_loss_pnl',
+                         'enable_trailing_rsi_stop', 'enable_price_trailing_stop', 'enable_pnl_trailing_stop',
+                         'evaluate_open_interest_increase', 'evaluate_ma_filter', 'evaluate_support_strategy']:
+                loaded_trading_params[key] = str(value_str).lower() == 'true'
             else:
-                loaded_trading_params[key] = value_str # Mantener como string si no es uno de los conocidos numéricos
-        except ValueError:
-            logger.error(f"Error al convertir el parámetro de TRADING '{key}' con valor '{original_value}' a su tipo numérico esperado. Usando string o fallback si aplica.")
-            loaded_trading_params[key] = original_value # Mantener el valor original como string si falla la conversión
+                loaded_trading_params[key] = value_str
+        except (ValueError, TypeError):
+            logger.warning(f"Aviso al convertir parámetro de TRADING '{key}' con valor '{original_value}'. Usando fallback.")
+            if key in ['rsi_period', 'volume_sma_period']:
+                loaded_trading_params[key] = 20
+            elif key in ['cycle_sleep_seconds']:
+                loaded_trading_params[key] = 5
+            elif key in ['order_timeout_seconds']:
+                loaded_trading_params[key] = 10
+            else:
+                loaded_trading_params[key] = original_value
 
     logger.info(f"Configuración inicial cargada: {len(loaded_symbols_to_trade)} símbolos, Params procesados: {loaded_trading_params}")
     return True
@@ -909,6 +951,109 @@ def get_symbol_trade_history(symbol: str):
         logger.error(f"Error inesperado al obtener historial de trades para {symbol}: {e}", exc_info=True)
         return jsonify({"error": f"Failed to retrieve trade history for {symbol}"}), 500
 # --- FIN NUEVO ENDPOINT ---
+
+@app.route('/api/all_trades', methods=['GET'])
+def get_all_trades_endpoint():
+    """Endpoint para obtener los últimos trades de todos los símbolos para gráficos de rendimiento y curvas de capital."""
+    logger = get_logger()
+    limit_param = request.args.get('limit', default=200, type=int)
+    if limit_param < 1:
+        limit_param = 200
+    try:
+        trades = get_all_recent_trades(limit=limit_param)
+        return jsonify({"trades": trades})
+    except Exception as e:
+        logger.error(f"Error al obtener historial general de trades: {e}", exc_info=True)
+        return jsonify({"error": str(e), "trades": []}), 500
+
+# --- ENDPOINT PARA EXPLORADOR Y RADAR DE MERCADO CON CACHÉ ---
+_market_data_cache = {
+    'timestamp': 0,
+    'data': []
+}
+_market_data_lock = Lock()
+
+@app.route('/api/market_data', methods=['GET'])
+def get_market_data_endpoint():
+    """Devuelve los tickers 24h de Binance Futures para el explorador y radar de mercado con caché de 30s."""
+    global _market_data_cache
+    now = time.time()
+    with _market_data_lock:
+        if now - _market_data_cache['timestamp'] < 30 and _market_data_cache['data']:
+            return jsonify(_market_data_cache['data'])
+    
+    try:
+        client = get_futures_client()
+        if not client:
+            return jsonify(_market_data_cache.get('data', [])), 200
+        
+        tickers = client.ticker_24hr_price_change()
+        formatted = []
+        if isinstance(tickers, list):
+            for t in tickers:
+                sym = t.get('symbol', '')
+                if sym.endswith('USDT'):
+                    try:
+                        formatted.append({
+                            'symbol': sym,
+                            'price': float(t.get('lastPrice', 0)),
+                            'priceChangePercent': float(t.get('priceChangePercent', 0)),
+                            'quoteVolume': float(t.get('quoteVolume', 0)),
+                            'highPrice': float(t.get('highPrice', 0)),
+                            'lowPrice': float(t.get('lowPrice', 0))
+                        })
+                    except (ValueError, TypeError):
+                        continue
+        
+        # Ordenar por volumen descendente por defecto
+        formatted.sort(key=lambda x: x['quoteVolume'], reverse=True)
+        
+        with _market_data_lock:
+            _market_data_cache['timestamp'] = now
+            _market_data_cache['data'] = formatted
+            
+        return jsonify(formatted)
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error al obtener datos de mercado en /api/market_data: {e}")
+        return jsonify(_market_data_cache.get('data', [])), 200
+
+# --- ENDPOINT PARA REINICIAR HISTORIAL DE TRADES Y PNL ---
+@app.route('/api/trades/reset', methods=['POST'])
+def reset_trade_history():
+    """Endpoint para reiniciar el historial de trades y el PnL acumulado."""
+    logger = get_logger()
+    logger.info("Recibida petición POST /api/trades/reset para limpiar historial de operaciones...")
+    try:
+        # 1. Limpiar base de datos SQLite
+        success = clear_trade_history()
+        if not success:
+            return jsonify({"error": "No se pudo limpiar la base de datos de trades."}), 500
+
+        # 2. Resetear variables de PnL en workers activos
+        with status_lock:
+            for symbol, bot_instance in list(worker_statuses.items()):
+                try:
+                    if hasattr(bot_instance, 'historical_pnl'):
+                        bot_instance.historical_pnl = Decimal('0')
+                    if hasattr(bot_instance, 'session_pnl'):
+                        bot_instance.session_pnl = Decimal('0')
+                    if hasattr(bot_instance, 'reset_session_pnl'):
+                        bot_instance.reset_session_pnl()
+                except Exception as e:
+                    logger.warning(f"No se pudo resetear PnL en bot_instance de {symbol}: {e}")
+
+        # 3. Resetear estadísticas de sesión global
+        if session_manager:
+            session_manager.reset_stats()
+
+        logger.info("Historial de trades y PnL reiniciados exitosamente a 0.00.")
+        return jsonify({"success": True, "message": "Historial de PnL y operaciones reiniciado correctamente."}), 200
+
+    except Exception as e:
+        logger.error(f"Error inesperado al reiniciar historial de trades: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
+# --------------------------------------------------------
 
 # --- NUEVOS ENDPOINTS PARA ESTRATEGIAS ---
 
@@ -991,20 +1136,31 @@ def handle_specific_strategy(strategy_name: str):
 @app.route('/api/strategies', methods=['GET'])
 def list_strategies():
     logger = get_logger()
-    logger.info("Solicitud para listar estrategias guardadas.")
+    logger.info("Solicitud para listar estrategias guardadas con resumen.")
     try:
         if not os.path.exists(STRATEGIES_PATH):
-            # Si el directorio no existe (aunque debió crearse), devolver lista vacía
             logger.warning(f"El directorio de estrategias {STRATEGIES_PATH} no existe. Devolviendo lista vacía.")
             return jsonify([]), 200
             
         strategy_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
-        strategy_names = [os.path.splitext(f)[0] for f in strategy_files]
-        logger.info(f"Estrategias encontradas: {strategy_names}")
-        return jsonify(strategy_names), 200
+        results = []
+        for f in strategy_files:
+            strategy_name = os.path.splitext(f)[0]
+            full_path = os.path.join(STRATEGIES_PATH, f)
+            config_data = {}
+            try:
+                with open(full_path, 'r', encoding='utf-8') as sf:
+                    config_data = json.load(sf)
+            except Exception as e:
+                logger.warning(f"No se pudo leer config para {strategy_name}: {e}")
+            results.append({
+                "name": strategy_name,
+                "config": config_data
+            })
+            
+        return jsonify(results), 200
     except Exception as e:
         logger.error(f"Error al listar estrategias: {e}", exc_info=True)
-        # Asegurar que se devuelve JSON en caso de error
         return jsonify({"error": f"Error interno al listar estrategias: {str(e)}"}), 500
 
 # La función para correr Flask en un hilo (start_flask_app) 
@@ -1016,7 +1172,7 @@ def list_strategies():
 class RiskManager:
     def __init__(self, logger, initial_risk_percentage=Decimal('0.50')): # 50% por defecto
         self.lock = Lock()
-        self.logger = logger # <-- CORRECCIÓN: Guardar el logger
+        self.logger = logger
         self.total_balance = get_account_balance_usdt() or Decimal('0')
         self.risk_percentage = initial_risk_percentage
         self.max_exposure = self.total_balance * self.risk_percentage
@@ -1029,25 +1185,44 @@ class RiskManager:
             self.max_exposure = self.total_balance * self.risk_percentage
             self.logger.info(f"Balance actualizado. Nuevo Saldo: {self.total_balance} USDT, Exposición Máxima: {self.max_exposure} USDT")
 
+    def get_current_exposure(self) -> Decimal:
+        """Calcula en tiempo real la suma exacta del margen en riesgo en todas las posiciones abiertas activas."""
+        total_exp = Decimal('0')
+        try:
+            with status_lock:
+                for symbol, bot_instance in list(worker_statuses.items()):
+                    if hasattr(bot_instance, 'in_position') and bot_instance.in_position:
+                        margin = getattr(bot_instance, 'margin_for_current_position', None)
+                        if margin is not None and margin > Decimal('0'):
+                            total_exp += Decimal(str(margin))
+                        elif hasattr(bot_instance, 'current_position') and bot_instance.current_position:
+                            entry_p = Decimal(str(bot_instance.current_position.get('entry_price', 0)))
+                            qty = Decimal(str(bot_instance.current_position.get('quantity', 0)))
+                            lev = Decimal(str(getattr(bot_instance, 'leverage', 1)))
+                            if lev > 0:
+                                total_exp += (entry_p * qty) / lev
+                            else:
+                                total_exp += entry_p * qty
+                        elif hasattr(bot_instance, 'position_size_usdt'):
+                            total_exp += Decimal(str(bot_instance.position_size_usdt))
+        except Exception as e:
+            self.logger.warning(f"Error calculando exposición actual en RiskManager: {e}")
+        return total_exp
+
     def can_open_position(self, position_size_usdt: Decimal) -> bool:
         with self.lock:
-            if self.current_exposure + position_size_usdt <= self.max_exposure:
+            current_exp = self.get_current_exposure()
+            if current_exp + position_size_usdt <= self.max_exposure:
                 return True
             else:
-                self.logger.warning(f"Apertura de posición rechazada. Exposición actual ({self.current_exposure}) + nueva ({position_size_usdt}) excede el máximo ({self.max_exposure}).")
+                self.logger.warning(f"Apertura de posición rechazada. Exposición actual ({current_exp:.2f} USDT) + nueva ({position_size_usdt:.2f} USDT) excede el máximo permitido ({self.max_exposure:.2f} USDT).")
                 return False
 
     def add_exposure(self, size_usdt: Decimal):
-        with self.lock:
-            self.current_exposure += size_usdt
-            self.logger.info(f"Exposición añadida: {size_usdt}. Exposición total actual: {self.current_exposure}")
+        pass # Se calcula dinámicamente en tiempo real para evitar desincronización y fugas de memoria
 
     def remove_exposure(self, size_usdt: Decimal):
-        with self.lock:
-            self.current_exposure -= size_usdt
-            if self.current_exposure < 0:
-                self.current_exposure = Decimal('0')
-            self.logger.info(f"Exposición eliminada: {size_usdt}. Exposición total actual: {self.current_exposure}")
+        pass # Se calcula dinámicamente en tiempo real para evitar desincronización y fugas de memoria
 
     def set_risk_percentage(self, new_percentage: Decimal):
         with self.lock:
@@ -1067,11 +1242,15 @@ class RiskManager:
                     self.max_exposure = self.total_balance * self.risk_percentage
             except Exception:
                 pass
+
+            real_exp = self.get_current_exposure()
+            self.current_exposure = real_exp
+
             return {
                 'total_balance': f"{self.total_balance:.2f}",
                 'risk_percentage': f"{self.risk_percentage:.2%}",
                 'max_exposure': f"{self.max_exposure:.2f}",
-                'current_exposure': f"{self.current_exposure:.2f}"
+                'current_exposure': f"{real_exp:.2f}"
             }
 
 risk_manager = RiskManager(logger=api_logger) # <-- CORRECCIÓN: Usar el nombre de variable correcto 'api_logger'

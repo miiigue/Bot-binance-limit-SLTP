@@ -483,7 +483,10 @@ def create_futures_take_profit_order(symbol: str, side: str, quantity: float, ta
         logger.debug(f"Respuesta completa de orden TP: {order}")
         return order
     except ClientError as e:
-        logger.error(f"Error de API al colocar la orden TAKE_PROFIT_MARKET para {symbol} @ {take_profit_price}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}", exc_info=True)
+        if e.error_code == -4120:
+            logger.warning(f"[{symbol}] Nota: Órdenes TAKE_PROFIT_MARKET nativas no soportadas en este endpoint (-4120). La salida será gestionada por el monitor de software del bot.")
+        else:
+            logger.error(f"Error de API al colocar la orden TAKE_PROFIT_MARKET para {symbol} @ {take_profit_price}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
         return None
     except Exception as e:
         logger.error(f"Error al colocar la orden TAKE_PROFIT_MARKET para {symbol} @ {take_profit_price}: {e}", exc_info=True)
@@ -522,7 +525,10 @@ def create_futures_stop_loss_order(symbol: str, side: str, quantity: float, stop
         logger.debug(f"Respuesta completa de orden SL: {order}")
         return order
     except ClientError as e:
-        logger.error(f"Error de API al colocar la orden STOP_MARKET para {symbol} @ {stop_loss_price}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}", exc_info=True)
+        if e.error_code == -4120:
+            logger.warning(f"[{symbol}] Nota: Órdenes STOP_MARKET nativas no soportadas en este endpoint (-4120). La salida será gestionada por el monitor de software del bot.")
+        else:
+            logger.error(f"Error de API al colocar la orden STOP_MARKET para {symbol} @ {stop_loss_price}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
         return None
     except Exception as e:
         logger.error(f"Error al colocar la orden STOP_MARKET para {symbol} @ {stop_loss_price}: {e}", exc_info=True)

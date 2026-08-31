@@ -32,7 +32,7 @@ const getPnlColorClass = (pnl) => {
 };
 // ---------------------------------------------
 
-function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
+function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSelectSymbolForChart }) {
   // Intentar cargar el estado inicial desde localStorage, asegurando que sea un array válido
   const [statuses, setStatuses] = useState(() => {
     const cachedData = localStorage.getItem(STATUS_CACHE_KEY);
@@ -289,35 +289,54 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
       {/* Mostrar el mensaje de error de conexión/API */}
       {error && <p className="text-yellow-600 dark:text-yellow-400 mb-4 font-medium">{error}</p>}
       <div className="overflow-x-auto">
-        {/* --- NUEVO INPUT PARA NÚMERO DE TRADES --- */}
-        <div className="my-4 flex items-center">
-          <label htmlFor="numTradesToShowInput" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-            Mostrar últimos trades:
-          </label>
-          <input
-            type="number"
-            id="numTradesToShowInput"
-            value={numTradesToShow}
-            onChange={(e) => {
-              const val = parseInt(e.target.value, 10);
-              if (val > 0) { // Solo actualizar si es un número positivo
-                setNumTradesToShow(val);
-                // Opcional: Recargar historiales visibles si el número cambia
-                // Object.keys(expandedRows).forEach(symbol => {
-                //   if (expandedRows[symbol]) fetchTradeHistory(symbol);
-                // });
-              } else if (e.target.value === '') { // Permitir borrar para escribir nuevo número
-                setNumTradesToShow('');
+        {/* --- BARRA DE OPCIONES DE TRADES & RESET --- */}
+        <div className="my-4 flex flex-wrap items-center justify-between gap-3 bg-gray-50 dark:bg-gray-800/60 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center">
+            <label htmlFor="numTradesToShowInput" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+              Mostrar últimos trades:
+            </label>
+            <input
+              type="number"
+              id="numTradesToShowInput"
+              value={numTradesToShow}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (val > 0) {
+                  setNumTradesToShow(val);
+                } else if (e.target.value === '') {
+                  setNumTradesToShow('');
+                }
+              }}
+              onBlur={(e) => {
+                if (e.target.value === '' || parseInt(e.target.value, 10) <= 0) {
+                  setNumTradesToShow(2);
+                }
+              }}
+              className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-center font-bold"
+              min="1"
+            />
+          </div>
+
+          <button
+            onClick={async () => {
+              if (!window.confirm("⚠️ ¿Deseas reiniciar el historial de trades y poner el PnL a 0.00 USDT?")) return;
+              try {
+                const res = await fetch('/api/trades/reset', { method: 'POST' });
+                if (res.ok) {
+                  setTradeHistories({});
+                  alert("✅ Historial de trades reiniciado con éxito.");
+                } else {
+                  alert("Error al reiniciar trades.");
+                }
+              } catch (e) {
+                alert(`Error: ${e.message}`);
               }
             }}
-            onBlur={(e) => { // Si el input queda vacío o inválido al perder foco, resetear a 2
-              if (e.target.value === '' || parseInt(e.target.value, 10) <= 0) {
-                setNumTradesToShow(2);
-              }
-            }}
-            className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            min="1"
-          />
+            className="text-xs font-semibold px-3 py-1.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-300 border border-red-700/50 transition-colors flex items-center shadow-sm"
+            title="Borra el registro de trades pasados de la base de datos"
+          >
+            🗑️ Vaciar Historial de Trades & PnL
+          </button>
         </div>
         {/* ----------------------------------------- */}
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -378,6 +397,17 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate }) {
                           </button>
                         )}
                         <span>{status.symbol}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onSelectSymbolForChart) onSelectSymbolForChart(status.symbol);
+                          }}
+                          className="px-1.5 py-0.5 text-[11px] bg-yellow-400/20 hover:bg-yellow-400/40 text-yellow-600 dark:text-yellow-400 border border-yellow-400/40 rounded transition shadow-sm font-semibold"
+                          title={`Ver gráfico en vivo de ${status.symbol}`}
+                        >
+                          📊
+                        </button>
                       </div>
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">

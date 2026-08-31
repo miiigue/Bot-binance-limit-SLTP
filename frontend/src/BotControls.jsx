@@ -55,17 +55,38 @@ function BotControls({ botsRunning, onStart, onShutdown }) {
     setIsActionPending(false);
   };
 
+  const handleResetTradesClick = async () => {
+    if (!window.confirm("⚠️ ¿Estás seguro de que deseas REINICIAR TODO EL HISTORIAL DE GANANCIAS Y TRADES?\n\nEsto pondrá el PnL acumulado a 0.00 USDT y borrará los registros de operaciones anteriores para comenzar una nueva etapa limpia.")) return;
+    setIsActionPending(true);
+    setActionMessage('Reiniciando historial de trades y PnL...');
+    try {
+      const resp = await fetch('/api/trades/reset', { method: 'POST' });
+      const data = await resp.json();
+      if (resp.ok) {
+        setActionMessage('✅ Historial de PnL reiniciado a 0.00 USDT con éxito.');
+        setTimeout(() => setActionMessage(''), 5000);
+      } else {
+        setActionMessage(`Error: ${data.error || 'No se pudo reiniciar el historial'}`);
+        setTimeout(() => setActionMessage(''), 5000);
+      }
+    } catch (err) {
+      setActionMessage(`Error de conexión: ${err.message}`);
+      setTimeout(() => setActionMessage(''), 5000);
+    }
+    setIsActionPending(false);
+  };
+
   // Determinar el estado de los botones
   const startDisabled = botsRunning === null || botsRunning === true || isActionPending;
   const shutdownDisabled = botsRunning === null || botsRunning === false || isActionPending;
 
   return (
     <div className="mb-4">
-      <div className="flex flex-wrap justify-center gap-4">
+      <div className="flex flex-wrap justify-center gap-3">
         <button
           onClick={handleStartClick}
           disabled={startDisabled}
-          className={`px-5 py-2 font-semibold rounded-md text-white transition-colors duration-150 ease-in-out 
+          className={`px-4 py-2 text-sm font-semibold rounded-md text-white transition-colors duration-150 ease-in-out shadow-sm
             ${startDisabled 
               ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' 
               : 'bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2'}
@@ -76,7 +97,7 @@ function BotControls({ botsRunning, onStart, onShutdown }) {
         <button
           onClick={handleShutdownClick}
           disabled={shutdownDisabled}
-          className={`px-5 py-2 font-semibold rounded-md text-white transition-colors duration-150 ease-in-out 
+          className={`px-4 py-2 text-sm font-semibold rounded-md text-white transition-colors duration-150 ease-in-out shadow-sm
             ${shutdownDisabled 
               ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' 
               : 'bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2'}
@@ -87,13 +108,25 @@ function BotControls({ botsRunning, onStart, onShutdown }) {
         <button
           onClick={handleCloseAllClick}
           disabled={isActionPending}
-          className={`px-5 py-2 font-semibold rounded-md text-white transition-colors duration-150 ease-in-out shadow-md
+          className={`px-4 py-2 text-sm font-semibold rounded-md text-white transition-colors duration-150 ease-in-out shadow-sm
             ${isActionPending 
               ? 'bg-gray-400 cursor-not-allowed' 
               : 'bg-red-600 hover:bg-red-700 active:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2'}
           `}
         >
           🚨 Cerrar Todas las Posiciones
+        </button>
+        <button
+          onClick={handleResetTradesClick}
+          disabled={isActionPending}
+          title="Borra los trades antiguos de la base de datos y reinicia el contador de PnL a cero"
+          className={`px-4 py-2 text-sm font-semibold rounded-md text-white transition-colors duration-150 ease-in-out shadow-sm border border-amber-600/50
+            ${isActionPending 
+              ? 'bg-gray-400 cursor-not-allowed' 
+              : 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2'}
+          `}
+        >
+          🔄 Reiniciar Historial PnL
         </button>
       </div>
       {actionMessage && (

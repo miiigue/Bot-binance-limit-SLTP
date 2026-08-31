@@ -1,67 +1,86 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import ConfigForm from './ConfigForm'; // Importa el componente del formulario
-import StatusDisplay from './StatusDisplay'; // <-- Importar el nuevo componente
-import './index.css'; // Importar el archivo CSS principal existente
+import ConfigForm from './ConfigForm';
+import StatusDisplay from './StatusDisplay';
+import TradingViewChart from './TradingViewChart';
+import PnLPerformanceChart from './PnLPerformanceChart';
+import MarketExplorer from './MarketExplorer';
+import ToastContainer from './ToastContainer';
+import { isSoundEnabled, setSoundEnabled, playProfitSound, playEntrySound, playLossSound } from './soundEffects';
+import './index.css';
 
-// --- FUNCIÓN PARA FORMATEAR EL TIEMPO TRANSCURRIDO (movida o copiada aquí) ---
 const formatElapsedTime = (totalSeconds) => {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-
   const pad = (num) => String(num).padStart(2, '0');
-
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 };
-// -----------------------------------------------------------------------------
 
 function App() {
-  const [config, setConfig] = useState(null); // Estado para la configuración
-  const [botsRunning, setBotsRunning] = useState(null); // null: desconocido, true: corriendo, false: detenidos
-  const [initialLoadingError, setInitialLoadingError] = useState(null); // Para errores de carga inicial
-  // --- ESTADO PARA DATOS DE LA CABECERA (ACTUALIZADO) ---
+  const [config, setConfig] = useState(null);
+  const [botsRunning, setBotsRunning] = useState(null);
+  const [initialLoadingError, setInitialLoadingError] = useState(null);
+
   const [headerPnlData, setHeaderPnlData] = useState({ 
     totalPnl: 0, 
     coinCount: 0, 
     coinsInPosition: 0,
-    // --- NUEVO: Añadir estadísticas de sesión ---
     sessionStats: {
       session_pnl: 0,
       session_high: 0,
       session_low: 0
     }
   });
-  // ---------------------------------------------
-
-  // --- ESTOS ESTADOS YA NO SON NECESARIOS, LOS GESTIONA EL BACKEND ---
-  // const [pnlAtSessionStart, setPnlAtSessionStart] = useState(null);
-  // const [sessionPnlHigh, setSessionPnlHigh] = useState(null);
-  // const [sessionPnlLow, setSessionPnlLow] = useState(null);
-  // -------------------------------------------------------------
 
   const [elapsedTime, setElapsedTime] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
   const intervalRef = useRef(null);
 
-  // --- NUEVOS ESTADOS PARA LA CUENTA REGRESIVA ---
   const [countdown, setCountdown] = useState(0);
   const [isCountdownActive, setIsCountdownActive] = useState(false);
   const countdownIntervalRef = useRef(null);
-  // ---------------------------------------------
 
-  // --- NUEVOS ESTADOS PARA GESTIÓN DE ESTRATEGIAS ---
   const [availableStrategies, setAvailableStrategies] = useState([]);
   const [isLoadingStrategies, setIsLoadingStrategies] = useState(false);
   const [strategyError, setStrategyError] = useState(null);
-  // ---------------------------------------------------
-
-  // --- NUEVO ESTADO PARA EL NOMBRE DE LA ESTRATEGIA ACTIVA EN EL FORMULARIO ---
   const [activeStrategyDisplayName, setActiveStrategyDisplayName] = useState('');
-  // ------------------------------------------------------------------------
 
-  // --- FUNCIÓN PARA ACTUALIZAR DATOS DE LA CABECERA (SIMPLIFICADA Y SINCRONIZADA) ---
+  // Pestañas: 'monitor', 'config', 'chart', 'performance', 'radar'
+  const [activeTab, setActiveTab] = useState('monitor');
+  const [chartSelectedSymbol, setChartSelectedSymbol] = useState('SOLUSDT');
+
+  // Sistema de Audio y Notificaciones Toast
+  const [soundOn, setSoundOn] = useState(() => isSoundEnabled());
+  const [toasts, setToasts] = useState([]);
+  const lastPnlRef = useRef(null);
+  const lastInPosCoinsRef = useRef(null);
+
+  const addToast = useCallback((title, message, type = 'info') => {
+    const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
+    const time = new Date().toLocaleTimeString();
+    setToasts(prev => [...prev.slice(-4), { id, title, message, type, time }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 6000);
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const handleToggleSound = () => {
+    const next = !soundOn;
+    setSoundOn(next);
+    setSoundEnabled(next);
+    if (next) {
+      playEntrySound();
+      addToast('🔊 Sonido Activado', 'Efectos sonoros de trading habilitados.', 'info');
+    }
+  };
+
   const handleStatusUpdate = useCallback((data) => {
     setHeaderPnlData(prevData => ({ ...prevData, ...data }));
+
     if (data?.sessionStats) {
       if (data.sessionStats.active_session) {
         setTimerActive(true);
@@ -71,11 +90,34 @@ function App() {
       } else {
         setTimerActive(false);
       }
-    }
-  }, []);
-  // --------------------------------------------------------
 
-  // --- FUNCIÓN PARA CARGAR ESTRATEGIAS DISPONIBLES ---
+      // Detección de eventos para alertas sonoras y notificaciones
+      if (lastPnlRef.current !== null && data.sessionStats.session_pnl !== undefined) {
+        const diff = data.sessionStats.session_pnl - lastPnlRef.current;
+        if (diff > 0.05) {
+          playProfitSound();
+          addToast('🎉 Take Profit Alcanzado!', `+${diff.toFixed(4)} USDT ganados en la sesión.`, 'success');
+        } else if (diff < -0.30) {
+          playLossSound();
+          addToast('🛑 Stop Loss Ejecutado', `${diff.toFixed(4)} USDT en la sesión.`, 'error');
+        }
+      }
+      if (data.sessionStats.session_pnl !== undefined) {
+        lastPnlRef.current = data.sessionStats.session_pnl;
+      }
+    }
+
+    if (lastInPosCoinsRef.current !== null && data?.coinsInPosition !== undefined) {
+      if (data.coinsInPosition > lastInPosCoinsRef.current) {
+        playEntrySound();
+        addToast('🔵 Nueva Posición Abierta', `El bot abrió una operación (${data.coinsInPosition} en curso).`, 'info');
+      }
+    }
+    if (data?.coinsInPosition !== undefined) {
+      lastInPosCoinsRef.current = data.coinsInPosition;
+    }
+  }, [addToast]);
+
   const fetchAvailableStrategies = useCallback(async () => {
     setIsLoadingStrategies(true);
     setStrategyError(null);
@@ -90,353 +132,159 @@ function App() {
     } catch (error) {
       console.error("Error fetching strategies:", error);
       setStrategyError(error.message);
-      setAvailableStrategies([]); // Limpiar en caso de error
+      setAvailableStrategies([]);
+    } finally {
+      setIsLoadingStrategies(false);
     }
-    setIsLoadingStrategies(false);
   }, []);
-  // ---------------------------------------------------
 
-  // --- NUEVA FUNCIÓN CALLBACK PARA ACTUALIZAR EL NOMBRE DE LA ESTRATEGIA --- 
-  const handleStrategyNameChange = useCallback((name) => {
-    setActiveStrategyDisplayName(name || ''); // Si name es null/undefined, usar ''
-  }, []);
-  // --------------------------------------------------------------------
-
-  // Efecto para la carga inicial de configuración y estado
   useEffect(() => {
-    const fetchInitialData = async () => {
-        setInitialLoadingError(null); // Resetear error
-        try {
-            // Intentar obtener la configuración primero
-            const configResponse = await fetch('/api/config');
-            if (!configResponse.ok) {
-                throw new Error(`Error al cargar configuración: ${configResponse.status}`);
-            }
-            const configData = await configResponse.json();
-            // Aplanar configuración como antes...
-            const flatConfig = {
-                 apiKey: configData.apiKey || '',
-                 apiSecret: configData.apiSecret || '',
-                 mode: configData.mode || 'paper',
-                 rsiInterval: configData.rsiInterval || '1m',
-                 rsiPeriod: configData.rsiPeriod || 14,
-                 rsiThresholdUp: configData.rsiThresholdUp || 1.5,
-                 rsiThresholdDown: configData.rsiThresholdDown || -1.0,
-                 rsiEntryLevelLow: configData.rsiEntryLevelLow || 30,
-                 rsiEntryLevelHigh: configData.rsiEntryLevelHigh || 75,
-                 rsiTarget: configData.rsiTarget || 50,
-                 positionSizeUSDT: configData.positionSizeUSDT || 50,
-                 stopLossUSDT: configData.stopLossUSDT || 0,
-                 takeProfitUSDT: configData.takeProfitUSDT || 0,
-                 cycleSleepSeconds: configData.cycleSleepSeconds || 60,
-                 volumeSmaPeriod: configData.volumeSmaPeriod || 20,
-                 volumeFactor: configData.volumeFactor || 1.5,
-                 orderTimeoutSeconds: configData.orderTimeoutSeconds || 60,
-                 requiredUptrendCandles: configData.requiredUptrendCandles || 0,
-                 symbolsToTrade: configData.symbolsToTrade || '',
-                 evaluateRsiDelta: configData.evaluateRsiDelta !== undefined ? configData.evaluateRsiDelta : true,
-                 evaluateVolumeFilter: configData.evaluateVolumeFilter !== undefined ? configData.evaluateVolumeFilter : true,
-                 evaluateRsiRange: configData.evaluateRsiRange !== undefined ? configData.evaluateRsiRange : true,
-                 evaluateDowntrendCandlesBlock: configData.evaluateDowntrendCandlesBlock !== undefined ? configData.evaluateDowntrendCandlesBlock : true,
-                 evaluateDowntrendLevelsBlock: configData.evaluateDowntrendLevelsBlock !== undefined ? configData.evaluateDowntrendLevelsBlock : true,
-                 evaluateRequiredUptrend: configData.evaluateRequiredUptrend !== undefined ? configData.evaluateRequiredUptrend : true,
-                 enableTakeProfitPnl: configData.enableTakeProfitPnl !== undefined ? configData.enableTakeProfitPnl : true,
-                 enableStopLossPnl: configData.enableStopLossPnl !== undefined ? configData.enableStopLossPnl : true,
-                 enableTrailingRsiStop: configData.enableTrailingRsiStop !== undefined ? configData.enableTrailingRsiStop : true,
-                 enablePriceTrailingStop: configData.enablePriceTrailingStop !== undefined ? configData.enablePriceTrailingStop : true,
-                 priceTrailingStopDistanceUSDT: configData.priceTrailingStopDistanceUSDT !== undefined ? parseFloat(configData.priceTrailingStopDistanceUSDT) : 0.05,
-                 priceTrailingStopActivationPnlUSDT: configData.priceTrailingStopActivationPnlUSDT !== undefined ? parseFloat(configData.priceTrailingStopActivationPnlUSDT) : 0.02,
-                 enablePnlTrailingStop: configData.enablePnlTrailingStop !== undefined ? configData.enablePnlTrailingStop : true,
-                 pnlTrailingStopActivationUSDT: configData.pnlTrailingStopActivationUSDT !== undefined ? parseFloat(configData.pnlTrailingStopActivationUSDT) : 0.1,
-                 pnlTrailingStopDropUSDT: configData.pnlTrailingStopDropUSDT !== undefined ? parseFloat(configData.pnlTrailingStopDropUSDT) : 0.05,
-                 evaluateOpenInterestIncrease: configData.evaluateOpenInterestIncrease !== undefined ? configData.evaluateOpenInterestIncrease : true,
-                 openInterestPeriod: configData.openInterestPeriod || '5m',
-                 support_order_stop_loss_percent: Number(configData.support_order_stop_loss_percent) || 0,
-                 support_order_take_profit_percent: Number(configData.support_order_take_profit_percent) || 0,
-                 support_enable_atr_trailing_stop: configData.support_enable_atr_trailing_stop || false,
-                 support_atr_period: Number(configData.support_atr_period) || 14,
-                 support_atr_multiplier: Number(configData.support_atr_multiplier) || 2.5,
-                 support_atr_activation_pnl_usdt: Number(configData.support_atr_activation_pnl_usdt) || 0.1,
-            };
-            setConfig(flatConfig);
-            // --- NUEVO: Establecer nombre de estrategia activa desde config.ini ---
-            setActiveStrategyDisplayName(configData.activeStrategyName || '');
-            // ------------------------------------------------------------------
-            console.log("Configuración inicial cargada.", flatConfig);
-            if (configData.activeStrategyName) {
-                console.log("Nombre de estrategia activa cargado desde config.ini:", configData.activeStrategyName);
-            }
-
-            // --- INICIALIZAR COUNTDOWN CON VALOR DE CONFIGURACIÓN ---
-            if (flatConfig.cycleSleepSeconds) {
-              setCountdown(parseInt(flatConfig.cycleSleepSeconds, 10));
-            }
-            // ----------------------------------------------------
-
-            // Cargar estrategias disponibles después de la config
-            await fetchAvailableStrategies(); // <--- LLAMAR AQUÍ
-
-            // Ahora, obtener el estado general (que incluye si los bots están corriendo)
-            const statusResponse = await fetch('/api/status');
-            if (!statusResponse.ok) {
-                 // Si la config cargó pero el estado falla, aún podemos mostrar config
-                 console.warn("Configuración cargada, pero falló la carga inicial del estado de los bots.");
-                 setBotsRunning(false); // Asumir que no corren si el estado falla
-                 // No lanzar error aquí para permitir que ConfigForm se muestre
-            } else {
-                const statusData = await statusResponse.json();
-                setBotsRunning(statusData.bots_running); // Establecer estado basado en la respuesta
-                console.log("Estado inicial de bots cargado. Corriendo:", statusData.bots_running);
-            }
-            
-        } catch (error) {
-            console.error("Error crítico durante la carga inicial:", error);
-            setInitialLoadingError(`Error al cargar datos iniciales: ${error.message}. Intenta recargar o revisa el servidor.`);
-            setConfig(null); // No mostrar config si hay error crítico
-            setBotsRunning(false); // Asumir que no corren
-        }
-    };
-
-    fetchInitialData();
-}, []);
-
-  const handleSave = (newConfigFromForm) => {
-    // --- NUEVO: Añadir activeStrategyDisplayName al payload para la API ---
-    const configToSendToApi = {
-      ...newConfigFromForm,
-      activeStrategyName: activeStrategyDisplayName 
-    };
-    console.log('Sending updated config to API (with activeStrategyName):', configToSendToApi);
-    // -----------------------------------------------------------------
-
-    // Devolver una promesa para que se pueda esperar si es necesario
-    return fetch('/api/config', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(configToSendToApi), // <--- USAR EL OBJETO COMBINADO
-    })
-    .then(response => {
+    const fetchConfig = async () => {
+      try {
+        const response = await fetch('/api/config');
         if (!response.ok) {
-          return response.json().then(errData => {
-              throw new Error(errData.error || `HTTP error! status: ${response.status}`);
-          });
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-        return response.json();
-    })
-    .then(data => {
-        console.log('API response after save:', data);
-        alert(data.message || 'Configuration saved! Podría requerir reiniciar los bots para aplicar todos los cambios.');
-        // Recargar la config después de guardar para asegurar consistencia?
-        // Podría ser buena idea, o simplemente informar al usuario.
-        // fetchInitialData(); // Opcional: Recargar todo
-        return true; // Indicar éxito
-    })
-    .catch(error => {
-        console.error('Error saving configuration:', error);
-        alert(`Error saving configuration: ${error.message}`);
-        return false; // Indicar fallo
-    });
+        const data = await response.json();
+        setConfig(data);
+        if (data && data.cycleSleepSeconds) {
+          setCountdown(parseInt(data.cycleSleepSeconds, 10));
+        }
+      } catch (error) {
+        console.error("Error fetching initial configuration:", error);
+        setInitialLoadingError("No se pudo cargar la configuración inicial. Asegúrate de que el servidor backend esté corriendo.");
+      }
+    };
+
+    fetchConfig();
+    fetchAvailableStrategies();
+  }, [fetchAvailableStrategies]);
+
+  const handleSave = async (newConfig) => {
+    try {
+      const response = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Error desconocido del servidor" }));
+        throw new Error(errorData.error || `HTTP error ${response.status}`);
+      }
+      const savedConfig = await response.json();
+      setConfig(savedConfig);
+      addToast('✓ Configuración Guardada', 'Los parámetros se han actualizado exitosamente.', 'success');
+      return { success: true };
+    } catch (error) {
+      console.error("Error saving configuration:", error);
+      addToast('Error al Guardar', error.message, 'error');
+      return { error: error.message };
+    }
   };
-  
-  // --- Funciones para INICIAR y DETENER bots --- 
+
   const handleStartBots = async () => {
     try {
       const response = await fetch('/api/start_bots', { method: 'POST' });
-      const data = await response.json(); // Intentar leer JSON siempre
       if (!response.ok) {
-        throw new Error(data.error || `Error HTTP ${response.status}`);
+        const errorData = await response.json().catch(() => ({ error: "Error desconocido" }));
+        throw new Error(errorData.error || `HTTP error ${response.status}`);
       }
-      console.log("Start bots response:", data);
-      setBotsRunning(true); // Actualizar estado local
-      setElapsedTime(0); // <--- REINICIAR TIEMPO A 0
-      setTimerActive(true); // <--- ACTIVAR TEMPORIZADOR
-
-      // --- GUARDAR PNL AL INICIO DE LA SESIÓN ---
-      // setPnlAtSessionStart(headerPnlData.totalPnl); // Eliminado
-      // --- INICIALIZAR ALTO Y BAJO DE SESIÓN ---
-      // setSessionPnlHigh(0); // Eliminado
-      // setSessionPnlLow(0); // Eliminado
-      // ----------------------------------------
-
-      // --- INICIAR CUENTA REGRESIVA ---
-      if (config && config.cycleSleepSeconds) {
-        setCountdown(parseInt(config.cycleSleepSeconds, 10));
-        setIsCountdownActive(true);
-      }
-      // -----------------------------
-      return true; // Éxito
+      setBotsRunning(true);
+      playEntrySound();
+      addToast('🚀 Bots Iniciados', 'Todos los workers están analizando el mercado.', 'success');
+      return { success: true };
     } catch (error) {
-      console.error('Error starting bots:', error);
-      // El mensaje de error se maneja en BotControls
-      setBotsRunning(false); // Asegurarse de que el estado refleje el fallo
-      setTimerActive(false);
-      setIsCountdownActive(false); // <--- DETENER CUENTA REGRESIVA EN ERROR
-      return false; // Fallo
+      console.error("Error starting bots:", error);
+      addToast('Error al Iniciar Bots', error.message, 'error');
+      return { error: error.message };
     }
   };
 
   const handleShutdown = async () => {
     try {
       const response = await fetch('/api/shutdown', { method: 'POST' });
-      const data = await response.json(); // Intentar leer JSON siempre
-       if (!response.ok) {
-        // Incluso si falla, asumimos que el intento de apagar significa que ya no corren
-        console.warn("Respuesta no OK de shutdown, pero actualizando UI a no corriendo.");
-        // throw new Error(data.message || `Error HTTP ${response.status}`); // Opcional: lanzar error
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Error desconocido" }));
+        throw new Error(errorData.error || `HTTP error ${response.status}`);
       }
-      console.log('Shutdown API response:', data);
-      setBotsRunning(false); // Actualizar estado local
-      setTimerActive(false); // <--- DETENER TEMPORIZADOR
-
-      // --- DETENER Y RESETEAR CUENTA REGRESIVA ---
-      setIsCountdownActive(false);
-      if (config && config.cycleSleepSeconds) {
-        setCountdown(parseInt(config.cycleSleepSeconds, 10));
-      }
-      // ----------------------------------------
-      // --- RESETEAR PNL EN CABECERA AL DETENER BOTS ---
-      // setHeaderPnlData({ totalPnl: headerPnlData.totalPnl, coinCount: 0 }); // Mantener PNL histórico, pero 0 monedas activas si así se decide.
-      // O resetear completamente si se prefiere:
-      // setHeaderPnlData({ totalPnl: 0, coinCount: 0 }); // Esto resetearía el PNL histórico en cabecera
-      // Por ahora, dejaremos que StatusDisplay siga actualizando el PnL histórico incluso si los bots se detienen.
-      // El coinCount se actualizará desde StatusDisplay según los workers que realmente estén listados.
-      // --- NO RESETEAR PNL AL INICIO DE SESIÓN AL DETENER ---
-      // No se toca pnlAtSessionStart aquí para que persista.
-      // ---------------------------------------------
-      return true; // Considerar éxito para la UI incluso si hubo error leve
+      setBotsRunning(false);
+      addToast('🛑 Bots Detenidos', 'Todos los procesos han sido pausados.', 'info');
+      return { success: true };
     } catch (error) {
-      console.error('Error sending shutdown signal:', error);
-      // El mensaje de error se maneja en BotControls
-       setBotsRunning(false); // Asegurarse de que el estado refleje el fallo
-      setTimerActive(false);
-      setIsCountdownActive(false); // <--- DETENER CUENTA REGRESIVA EN ERROR
-      return false; // Fallo
+      console.error("Error stopping bots:", error);
+      addToast('Error al Detener Bots', error.message, 'error');
+      return { error: error.message };
     }
   };
-  // ------------------------------------------
 
-  useEffect(() => {
-    if (timerActive) {
-      intervalRef.current = setInterval(() => {
-        setElapsedTime(prevTime => prevTime + 1);
-      }, 1000);
-    } else {
-      clearInterval(intervalRef.current);
-    }
-    return () => {
-      clearInterval(intervalRef.current);
-    };
-  }, [timerActive]);
+  const handleStrategyNameChange = (displayName) => {
+    setActiveStrategyDisplayName(displayName);
+  };
 
-  // --- USEEFFECT PARA LA LÓGICA DE LA CUENTA REGRESIVA ---
-  useEffect(() => {
-    if (isCountdownActive && config && config.cycleSleepSeconds) {
-      const cycleDuration = parseInt(config.cycleSleepSeconds, 10);
-      if (countdown <= 0) { // Si llega a 0 (o es negativo por alguna razón)
-        setCountdown(cycleDuration); // Reiniciar al valor de la config
-      }
-      
-      countdownIntervalRef.current = setInterval(() => {
-        setCountdown(prevCountdown => {
-          if (prevCountdown <= 1) { // Si está en 1, el próximo será 0, así que reinicia
-            return cycleDuration;
-          }
-          return prevCountdown - 1;
-        });
-      }, 1000);
-    } else {
-      clearInterval(countdownIntervalRef.current);
-      // Si se detiene, pero tenemos config, resetear countdown a su valor base
-      if (config && config.cycleSleepSeconds) {
-        setCountdown(parseInt(config.cycleSleepSeconds, 10));
-      }
-    }
-    return () => {
-      clearInterval(countdownIntervalRef.current);
-    };
-  }, [isCountdownActive, config, countdown]); // Incluir countdown como dependencia para re-evaluar si se reinicia.
-  // --------------------------------------------------------
-
-  // --- ESTE USEEFFECT YA NO ES NECESARIO, EL CÁLCULO SE HACE EN EL BACKEND ---
-  // useEffect(() => {
-  //   if (pnlAtSessionStart !== null) {
-  //     const currentSessionPnl = headerPnlData.totalPnl - pnlAtSessionStart;
-  //
-  //     setSessionPnlHigh(prevHigh => {
-  //       return Math.max(prevHigh === null ? currentSessionPnl : prevHigh, currentSessionPnl);
-  //     });
-  //
-  //     setSessionPnlLow(prevLow => {
-  //       return Math.min(prevLow === null ? currentSessionPnl : prevLow, currentSessionPnl);
-  //     });
-  //   }
-  // }, [headerPnlData.totalPnl, pnlAtSessionStart]);
-  // ---------------------------------------------------------------------
+  const handleSelectSymbolForChart = (sym) => {
+    setChartSelectedSymbol(sym);
+    setActiveTab('chart');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
+      {/* Cabecera Amarilla Sticky */}
       <div className="sticky top-0 z-50 bg-yellow-400 text-black p-3 shadow-md flex items-center justify-between">
-        {/* Título a la izquierda */}
-        <div className="flex-1 min-w-0"> {/* Contenedor para el título y nombre de estrategia */}
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-xl font-bold truncate">BOT BINANCE LIMIT-SLTP</span>
             <span className="bg-green-800 text-white text-xs px-2 py-0.5 rounded font-mono font-semibold shadow">
               🛡️ TESTNET DEMO
             </span>
+            <button
+              type="button"
+              onClick={handleToggleSound}
+              className={`ml-2 px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 shadow-sm ${
+                soundOn ? 'bg-emerald-950 text-emerald-300' : 'bg-gray-800 text-gray-400'
+              }`}
+              title={soundOn ? 'Silenciar sonidos' : 'Activar alertas sonoras'}
+            >
+              <span>{soundOn ? '🔊 ON' : '🔇 OFF'}</span>
+            </button>
           </div>
           {activeStrategyDisplayName && (
-            <div className="text-sm font-semibold text-blue-800 truncate"> {/* Nombre de la estrategia en nueva línea */}
+            <div className="text-sm font-semibold text-blue-800 truncate">
               ({activeStrategyDisplayName})
             </div>
           )}
         </div>
         
-        {/* PNL Info en el CENTRO */}
-        <div className="flex-initial px-4"> {/* Volvemos al contenedor original no-flex para el PNL */}
-          <div className="text-lg font-semibold text-center"> {/* Contenedor que centra todo el texto de PNL */}
+        {/* PNL Info Central */}
+        <div className="flex-initial px-4">
+          <div className="text-lg font-semibold text-center">
             <span>PNL {headerPnlData.coinCount} monedas ({headerPnlData.coinsInPosition || 0}) = </span>
-            <span
-              className={`text-4xl ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-600' : 'text-black'}`}
-            >
+            <span className={`text-4xl ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-600' : 'text-black'}`}>
               {headerPnlData.totalPnl.toFixed(5)}
             </span>
             <span className="text-lg"> USDT</span>
             
-            {/* PNL de Sesión (Actual, y luego Alto/Bajo) - AHORA USA DATOS DEL BACKEND */}
             {botsRunning && headerPnlData.sessionStats && (
-              <span className="ml-3 align-baseline" style={{ display: 'inline-block' }}> {/* Contenedor principal para Sesión y Alto/Bajo */}
-                {/* PNL de Sesión Actual - en línea */}
+              <span className="ml-3 align-baseline" style={{ display: 'inline-block' }}>
                 <span className="text-lg mr-4">
                   <span>Sesión: </span>
-                  <span
-                    className={`font-semibold ${ (headerPnlData.sessionStats.session_pnl) < 0 ? 'text-red-700 dark:text-red-500' : (headerPnlData.sessionStats.session_pnl) > 0 ? 'text-green-700 dark:text-green-500' : 'text-black dark:text-white' }`}
-                  >
+                  <span className={`font-semibold ${(headerPnlData.sessionStats.session_pnl) < 0 ? 'text-red-700 dark:text-red-500' : (headerPnlData.sessionStats.session_pnl) > 0 ? 'text-green-700 dark:text-green-500' : 'text-black dark:text-white'}`}>
                     {`${(headerPnlData.sessionStats.session_pnl).toFixed(5)}`}
                   </span>
                   <span> USDT</span>
                 </span>
 
-                {/* Bloque para Alto y Bajo - en línea, pero con divs internos para apilar Alto/Bajo */}
                 <span className="text-xs leading-tight" style={{ display: 'inline-block', verticalAlign: 'middle'}}>
-                  {/* Alto de Sesión */}
                   <div>
                     <span className="mr-1">Alto:</span>
-                    <span
-                      className={`font-semibold ${headerPnlData.sessionStats.session_high < 0 ? 'text-red-600 dark:text-red-400' : headerPnlData.sessionStats.session_high > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}
-                    >
+                    <span className={`font-semibold ${headerPnlData.sessionStats.session_high < 0 ? 'text-red-600 dark:text-red-400' : headerPnlData.sessionStats.session_high > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}>
                       {`${headerPnlData.sessionStats.session_high.toFixed(5)}`}
                     </span>
                     <span> USDT</span>
                   </div>
-                  
-                  {/* Bajo de Sesión */}
                   <div>
                     <span className="mr-1">Bajo:</span>
-                    <span
-                      className={`font-semibold ${headerPnlData.sessionStats.session_low < 0 ? 'text-red-600 dark:text-red-400' : headerPnlData.sessionStats.session_low > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}
-                    >
+                    <span className={`font-semibold ${headerPnlData.sessionStats.session_low < 0 ? 'text-red-600 dark:text-red-400' : headerPnlData.sessionStats.session_low > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}>
                       {`${headerPnlData.sessionStats.session_low.toFixed(5)}`}
                     </span>
                     <span> USDT</span>
@@ -447,9 +295,8 @@ function App() {
           </div>
         </div>
         
-        {/* Temporizadores a la derecha */}
-        <div className="flex-1 flex items-center justify-end space-x-6 min-w-0"> {/* Contenedor para temporizadores, empujados a la derecha */} 
-          {/* --- TIEMPO ACTIVO --- */}
+        {/* Temporizadores */}
+        <div className="flex-1 flex items-center justify-end space-x-6 min-w-0">
           {(botsRunning !== null) && (
             <div className="text-lg">
               <span className="font-semibold">Tiempo Activo: </span>
@@ -458,8 +305,6 @@ function App() {
               </span>
             </div>
           )}
-
-          {/* --- TEMPORIZADOR DE CUENTA REGRESIVA (SIGUIENTE CICLO) --- */}
           {botsRunning && config && (
             <div className="text-lg">
               <span className="font-semibold">Siguiente Ciclo: </span>
@@ -469,10 +314,94 @@ function App() {
             </div>
           )}
         </div>
-        
       </div>
+
+      {/* --- BARRA DE NAVEGACIÓN POR PESTAÑAS (5 Pestañas) --- */}
+      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 md:px-8 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-sm sticky top-[62px] z-40">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Pestaña 1: Monitor en Vivo */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('monitor')}
+            className={`px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
+              activeTab === 'monitor'
+                ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+            }`}
+          >
+            <span>🖥️</span> Monitor en Vivo
+            {headerPnlData.coinsInPosition > 0 && (
+              <span className="text-xs bg-emerald-500 text-white font-mono px-1.5 py-0.2 rounded-full shadow">
+                {headerPnlData.coinsInPosition} en posición
+              </span>
+            )}
+          </button>
+
+          {/* Pestaña 2: Configuración y Estrategias */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('config')}
+            className={`px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
+              activeTab === 'config'
+                ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+            }`}
+          >
+            <span>⚙️</span> Configuración y Estrategias
+          </button>
+
+          {/* Pestaña 3: Mosaico de Gráficos TradingView */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('chart')}
+            className={`px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
+              activeTab === 'chart'
+                ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+            }`}
+          >
+            <span>📊</span> Mosaico de Gráficos (TradingView)
+          </button>
+
+          {/* Pestaña 4: Rendimiento & PnL */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('performance')}
+            className={`px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
+              activeTab === 'performance'
+                ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+            }`}
+          >
+            <span>📈</span> Rendimiento & PnL
+          </button>
+
+          {/* Pestaña 5: Radar y Escáner de Mercado */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('radar')}
+            className={`px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
+              activeTab === 'radar'
+                ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+            }`}
+          >
+            <span>📡</span> Radar de Mercado
+          </button>
+        </div>
+
+        {/* Indicador de Monedas configuradas */}
+        {config?.symbolsToTrade && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 hidden md:flex">
+            <span>🪙 Monedas:</span>
+            <span className="font-semibold text-gray-700 dark:text-gray-300 font-mono">
+              {config.symbolsToTrade.split(',').filter(Boolean).length} pares
+            </span>
+          </div>
+        )}
+      </div>
+
       <div className="w-full px-4 md:px-8 py-6 max-w-full">
-        {/* Mostrar error de carga inicial si existe */} 
         {initialLoadingError && (
           <div className="mb-6 p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-200 rounded-lg">
              <p className="font-semibold text-center">Error de Carga</p>
@@ -480,39 +409,68 @@ function App() {
            </div>
         )}
 
-        {/* Solo mostrar controles y status si no hubo error crítico inicial */} 
         {!initialLoadingError && (
           <>
-             {/* La sección BotControls fue movida a StatusDisplay */}
-             {/* Asegurarse que no queden restos aquí */}
+            {/* PESTAÑA 1: Monitor en Vivo */}
+            <div className={activeTab === 'monitor' ? 'block' : 'hidden'}>
+              <StatusDisplay 
+                  botsRunning={botsRunning} 
+                  onStart={handleStartBots} 
+                  onShutdown={handleShutdown} 
+                  onStatusUpdate={handleStatusUpdate}
+                  onSelectSymbolForChart={handleSelectSymbolForChart}
+              /> 
+            </div>
 
-            {/* -- Sección de Configuración -- */}
-            {config ? (
-                <ConfigForm 
-                  initialConfig={config} 
-                  onSave={handleSave} 
-                  availableStrategies={availableStrategies}
-                  onRefreshStrategies={fetchAvailableStrategies}
-                  isLoadingStrategies={isLoadingStrategies}
-                  strategyError={strategyError}
-                  onStrategyNameChange={handleStrategyNameChange}
-                />
-            ) : (
-                <p className="text-center">(Loading configuration...)</p>
+            {/* PESTAÑA 2: Configuración y Estrategias */}
+            <div className={activeTab === 'config' ? 'block' : 'hidden'}>
+              {config ? (
+                  <ConfigForm 
+                    initialConfig={config} 
+                    onSave={handleSave} 
+                    availableStrategies={availableStrategies}
+                    onRefreshStrategies={fetchAvailableStrategies}
+                    isLoadingStrategies={isLoadingStrategies}
+                    strategyError={strategyError}
+                    onStrategyNameChange={handleStrategyNameChange}
+                  />
+              ) : (
+                  <p className="text-center">(Loading configuration...)</p>
+              )}
+            </div>
+
+            {/* PESTAÑA 3: Mosaico de Gráficos TradingView */}
+            {activeTab === 'chart' && (
+              <TradingViewChart
+                selectedSymbol={chartSelectedSymbol}
+                symbolsList={config?.symbolsToTrade ? config.symbolsToTrade.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : []}
+                onSelectSymbol={(sym) => setChartSelectedSymbol(sym)}
+              />
             )}
 
-            {/* -- Sección de Estado (sin cambios, ya pasa props) -- */}
-            <StatusDisplay 
-                botsRunning={botsRunning} 
-                onStart={handleStartBots} 
-                onShutdown={handleShutdown} 
-                onStatusUpdate={handleStatusUpdate}
-            /> 
+            {/* PESTAÑA 4: Rendimiento Financiero y Curva de PnL */}
+            {activeTab === 'performance' && (
+              <PnLPerformanceChart
+                symbolsList={config?.symbolsToTrade ? config.symbolsToTrade.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : []}
+              />
+            )}
+
+            {/* PESTAÑA 5: Radar y Escáner de Mercado */}
+            {activeTab === 'radar' && (
+              <MarketExplorer
+                config={config}
+                onSaveConfig={handleSave}
+                onSelectSymbolForChart={handleSelectSymbolForChart}
+              />
+            )}
           </>
         )}
       </div>
+
+      {/* Contenedor de Notificaciones Toast Flotantes */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );
 }
 
-export default App; 
+export default App;

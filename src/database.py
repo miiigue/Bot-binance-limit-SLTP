@@ -244,6 +244,40 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
     return trades
 # --- FIN NUEVA FUNCIÓN ---
 
+def get_all_recent_trades(limit: int = 200) -> list[dict]:
+    """
+    Recupera los últimos N trades cerrados en orden cronológico ascendente (del más antiguo al más reciente)
+    para alimentar gráficos de rendimiento y curvas de capital (Equity Curve).
+    """
+    logger = get_logger()
+    conn = None
+    trades = []
+    try:
+        conn = sqlite3.connect(DATABASE_FILE)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        query = """
+        SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
+               open_price, close_price, quantity, position_size_usdt,
+               pnl_usdt, close_reason, parameters
+        FROM (
+            SELECT * FROM trades
+            ORDER BY id DESC
+            LIMIT ?
+        )
+        ORDER BY id ASC
+        """
+        cursor.execute(query, (limit,))
+        rows = cursor.fetchall()
+        trades = [dict(row) for row in rows]
+    except sqlite3.Error as e:
+        logger.error(f"Error al obtener todos los trades recientes en DB: {e}", exc_info=True)
+    finally:
+        if conn:
+            conn.close()
+    return trades
+
 # --- NUEVAS FUNCIONES ---
 def check_if_binance_trade_exists(binance_trade_id: Union[int, None]) -> bool: # <-- CAMBIO AQUÍ
     """Verifica si un trade con el binance_trade_id especificado ya existe en la base de datos."""
@@ -286,9 +320,28 @@ def get_trade_by_binance_id(binance_trade_id: Union[int, None]) -> Union[dict, N
     except sqlite3.Error as e:
         logger.error(f"Error al obtener trade por Binance ID {binance_trade_id}: {e}", exc_info=True)
         return None
+def clear_trade_history() -> bool:
+    """Elimina todos los trades de la base de datos y resetea el contador."""
+    logger = get_logger()
+    conn = None
+    try:
+        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM trades")
+        try:
+            cursor.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
+        except sqlite3.Error:
+            pass
+        conn.commit()
+        logger.info("Historial de trades eliminado exitosamente de la base de datos.")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Error al limpiar historial de trades en DB: {e}", exc_info=True)
+        return False
     finally:
         if conn:
             conn.close()
+
 # --- FIN NUEVAS FUNCIONES ---
 
 # Ejemplo de uso (actualizado para SQLite)
