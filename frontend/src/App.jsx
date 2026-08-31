@@ -33,12 +33,7 @@ function App() {
   });
 
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [timerActive, setTimerActive] = useState(false);
-  const intervalRef = useRef(null);
-
   const [countdown, setCountdown] = useState(0);
-  const [isCountdownActive, setIsCountdownActive] = useState(false);
-  const countdownIntervalRef = useRef(null);
 
   const [availableStrategies, setAvailableStrategies] = useState([]);
   const [isLoadingStrategies, setIsLoadingStrategies] = useState(false);
@@ -82,13 +77,8 @@ function App() {
     setHeaderPnlData(prevData => ({ ...prevData, ...data }));
 
     if (data?.sessionStats) {
-      if (data.sessionStats.active_session) {
-        setTimerActive(true);
-        if (data.sessionStats.elapsed_seconds !== undefined) {
-          setElapsedTime(data.sessionStats.elapsed_seconds);
-        }
-      } else {
-        setTimerActive(false);
+      if (data.sessionStats.elapsed_seconds !== undefined) {
+        setElapsedTime(data.sessionStats.elapsed_seconds);
       }
 
       // Detección de eventos para alertas sonoras y notificaciones
@@ -229,179 +219,163 @@ function App() {
 
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
-      {/* Cabecera Amarilla Sticky */}
-      <div className="sticky top-0 z-50 bg-yellow-400 text-black p-3 shadow-md flex items-center justify-between">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-xl font-bold truncate">BOT BINANCE LIMIT-SLTP</span>
-            <span className="bg-green-800 text-white text-xs px-2 py-0.5 rounded font-mono font-semibold shadow">
-              🛡️ TESTNET DEMO
-            </span>
+      {/* HEADER UNIFICADO FIJO (Elimina vibraciones y saltos de pantalla) */}
+      <header className="sticky top-0 z-50 shadow-md">
+        {/* 1. Barra Amarilla Principal */}
+        <div className="bg-yellow-400 text-black px-4 py-2.5 flex items-center justify-between border-b border-yellow-500/40">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-bold truncate">BOT BINANCE LIMIT-SLTP</span>
+              <span className="bg-green-800 text-white text-[10px] px-2 py-0.5 rounded font-mono font-semibold shadow">
+                🛡️ TESTNET DEMO
+              </span>
+              <button
+                type="button"
+                onClick={handleToggleSound}
+                className={`ml-2 px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 shadow-sm ${
+                  soundOn ? 'bg-emerald-950 text-emerald-300' : 'bg-gray-800 text-gray-400'
+                }`}
+                title={soundOn ? 'Silenciar sonidos' : 'Activar alertas sonoras'}
+              >
+                <span>{soundOn ? '🔊 ON' : '🔇 OFF'}</span>
+              </button>
+            </div>
+            {activeStrategyDisplayName && (
+              <div className="text-xs font-semibold text-blue-900 truncate">
+                ({activeStrategyDisplayName})
+              </div>
+            )}
+          </div>
+          
+          {/* PNL Info Central */}
+          <div className="flex-initial px-3">
+            <div className="text-base font-semibold text-center flex items-center gap-2">
+              <span>PNL {headerPnlData.coinCount} monedas ({headerPnlData.coinsInPosition || 0}) = </span>
+              <span className={`text-2xl font-mono font-bold ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-700' : 'text-black'}`}>
+                {headerPnlData.totalPnl.toFixed(5)}
+              </span>
+              <span className="text-xs font-semibold">USDT</span>
+              
+              {botsRunning && headerPnlData.sessionStats && (
+                <span className="ml-2 text-xs flex items-center gap-2 bg-yellow-500/50 px-2 py-0.5 rounded font-mono">
+                  <span>Sesión:</span>
+                  <span className={`font-bold ${(headerPnlData.sessionStats.session_pnl) < 0 ? 'text-red-700' : (headerPnlData.sessionStats.session_pnl) > 0 ? 'text-green-800' : 'text-black'}`}>
+                    {`${(headerPnlData.sessionStats.session_pnl).toFixed(4)}`} USDT
+                  </span>
+                </span>
+              )}
+            </div>
+          </div>
+          
+          {/* Temporizadores a la Derecha */}
+          <div className="flex-1 flex items-center justify-end space-x-3 min-w-0">
+            {botsRunning && (
+              <div className="text-xs flex items-center gap-1.5 whitespace-nowrap">
+                <span className="font-semibold text-gray-800">Activo:</span>
+                <span className="font-mono font-bold bg-yellow-500 text-black px-2 py-0.5 rounded text-xs shadow-sm">
+                  {formatElapsedTime(elapsedTime)}
+                </span>
+              </div>
+            )}
+            {botsRunning && config && (
+              <div className="text-xs flex items-center gap-1.5 whitespace-nowrap">
+                <span className="font-semibold text-gray-800">Ciclo:</span>
+                <span className="font-mono font-bold bg-yellow-500 text-black px-2 py-0.5 rounded text-xs shadow-sm">
+                  {formatElapsedTime(countdown)}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 2. Barra de Navegación por Pestañas */}
+        <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 md:px-8 py-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            {/* Pestaña 1: Monitor en Vivo */}
             <button
               type="button"
-              onClick={handleToggleSound}
-              className={`ml-2 px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 shadow-sm ${
-                soundOn ? 'bg-emerald-950 text-emerald-300' : 'bg-gray-800 text-gray-400'
+              onClick={() => setActiveTab('monitor')}
+              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+                activeTab === 'monitor'
+                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
               }`}
-              title={soundOn ? 'Silenciar sonidos' : 'Activar alertas sonoras'}
             >
-              <span>{soundOn ? '🔊 ON' : '🔇 OFF'}</span>
+              <span>🖥️</span> Monitor en Vivo
+              {headerPnlData.coinsInPosition > 0 && (
+                <span className="text-[10px] bg-emerald-500 text-white font-mono px-1.5 py-0.2 rounded-full shadow">
+                  {headerPnlData.coinsInPosition} en pos
+                </span>
+              )}
+            </button>
+
+            {/* Pestaña 2: Configuración y Estrategias */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('config')}
+              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+                activeTab === 'config'
+                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+              }`}
+            >
+              <span>⚙️</span> Configuración y Estrategias
+            </button>
+
+            {/* Pestaña 3: Mosaico de Gráficos TradingView */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('chart')}
+              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+                activeTab === 'chart'
+                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+              }`}
+            >
+              <span>📊</span> Mosaico de Gráficos (TradingView)
+            </button>
+
+            {/* Pestaña 4: Rendimiento & PnL */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('performance')}
+              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+                activeTab === 'performance'
+                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+              }`}
+            >
+              <span>📈</span> Rendimiento & PnL
+            </button>
+
+            {/* Pestaña 5: Radar y Escáner de Mercado */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('radar')}
+              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+                activeTab === 'radar'
+                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+              }`}
+            >
+              <span>📡</span> Radar de Mercado
             </button>
           </div>
-          {activeStrategyDisplayName && (
-            <div className="text-sm font-semibold text-blue-800 truncate">
-              ({activeStrategyDisplayName})
-            </div>
-          )}
-        </div>
-        
-        {/* PNL Info Central */}
-        <div className="flex-initial px-4">
-          <div className="text-lg font-semibold text-center">
-            <span>PNL {headerPnlData.coinCount} monedas ({headerPnlData.coinsInPosition || 0}) = </span>
-            <span className={`text-4xl ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-600' : 'text-black'}`}>
-              {headerPnlData.totalPnl.toFixed(5)}
-            </span>
-            <span className="text-lg"> USDT</span>
-            
-            {botsRunning && headerPnlData.sessionStats && (
-              <span className="ml-3 align-baseline" style={{ display: 'inline-block' }}>
-                <span className="text-lg mr-4">
-                  <span>Sesión: </span>
-                  <span className={`font-semibold ${(headerPnlData.sessionStats.session_pnl) < 0 ? 'text-red-700 dark:text-red-500' : (headerPnlData.sessionStats.session_pnl) > 0 ? 'text-green-700 dark:text-green-500' : 'text-black dark:text-white'}`}>
-                    {`${(headerPnlData.sessionStats.session_pnl).toFixed(5)}`}
-                  </span>
-                  <span> USDT</span>
-                </span>
 
-                <span className="text-xs leading-tight" style={{ display: 'inline-block', verticalAlign: 'middle'}}>
-                  <div>
-                    <span className="mr-1">Alto:</span>
-                    <span className={`font-semibold ${headerPnlData.sessionStats.session_high < 0 ? 'text-red-600 dark:text-red-400' : headerPnlData.sessionStats.session_high > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}>
-                      {`${headerPnlData.sessionStats.session_high.toFixed(5)}`}
-                    </span>
-                    <span> USDT</span>
-                  </div>
-                  <div>
-                    <span className="mr-1">Bajo:</span>
-                    <span className={`font-semibold ${headerPnlData.sessionStats.session_low < 0 ? 'text-red-600 dark:text-red-400' : headerPnlData.sessionStats.session_low > 0 ? 'text-green-600 dark:text-green-400' : 'text-black dark:text-white'}`}>
-                      {`${headerPnlData.sessionStats.session_low.toFixed(5)}`}
-                    </span>
-                    <span> USDT</span>
-                  </div>
-                </span>
-              </span>
-            )}
-          </div>
-        </div>
-        
-        {/* Temporizadores */}
-        <div className="flex-1 flex items-center justify-end space-x-6 min-w-0">
-          {(botsRunning !== null) && (
-            <div className="text-lg">
-              <span className="font-semibold">Tiempo Activo: </span>
-              <span className="text-xl font-mono bg-yellow-500 text-black px-2 py-1 rounded">
-                {formatElapsedTime(elapsedTime)}
-              </span>
-            </div>
-          )}
-          {botsRunning && config && (
-            <div className="text-lg">
-              <span className="font-semibold">Siguiente Ciclo: </span>
-              <span className="text-xl font-mono bg-yellow-500 text-black px-2 py-1 rounded">
-                {formatElapsedTime(countdown)}
+          {/* Indicador de Monedas configuradas */}
+          {config?.symbolsToTrade && (
+            <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 hidden lg:flex">
+              <span>🪙 Monedas:</span>
+              <span className="font-semibold text-gray-700 dark:text-gray-300 font-mono">
+                {config.symbolsToTrade.split(',').filter(Boolean).length} pares
               </span>
             </div>
           )}
         </div>
-      </div>
+      </header>
 
-      {/* --- BARRA DE NAVEGACIÓN POR PESTAÑAS (5 Pestañas) --- */}
-      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 md:px-8 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-sm sticky top-[62px] z-40">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Pestaña 1: Monitor en Vivo */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('monitor')}
-            className={`px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
-              activeTab === 'monitor'
-                ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
-            }`}
-          >
-            <span>🖥️</span> Monitor en Vivo
-            {headerPnlData.coinsInPosition > 0 && (
-              <span className="text-xs bg-emerald-500 text-white font-mono px-1.5 py-0.2 rounded-full shadow">
-                {headerPnlData.coinsInPosition} en posición
-              </span>
-            )}
-          </button>
-
-          {/* Pestaña 2: Configuración y Estrategias */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('config')}
-            className={`px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
-              activeTab === 'config'
-                ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
-            }`}
-          >
-            <span>⚙️</span> Configuración y Estrategias
-          </button>
-
-          {/* Pestaña 3: Mosaico de Gráficos TradingView */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('chart')}
-            className={`px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
-              activeTab === 'chart'
-                ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
-            }`}
-          >
-            <span>📊</span> Mosaico de Gráficos (TradingView)
-          </button>
-
-          {/* Pestaña 4: Rendimiento & PnL */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('performance')}
-            className={`px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
-              activeTab === 'performance'
-                ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
-            }`}
-          >
-            <span>📈</span> Rendimiento & PnL
-          </button>
-
-          {/* Pestaña 5: Radar y Escáner de Mercado */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('radar')}
-            className={`px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
-              activeTab === 'radar'
-                ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
-            }`}
-          >
-            <span>📡</span> Radar de Mercado
-          </button>
-        </div>
-
-        {/* Indicador de Monedas configuradas */}
-        {config?.symbolsToTrade && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 hidden md:flex">
-            <span>🪙 Monedas:</span>
-            <span className="font-semibold text-gray-700 dark:text-gray-300 font-mono">
-              {config.symbolsToTrade.split(',').filter(Boolean).length} pares
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div className="w-full px-4 md:px-8 py-6 max-w-full">
+      {/* CONTENIDO PRINCIPAL */}
+      <main className="w-full px-4 md:px-8 py-6 max-w-full">
         {initialLoadingError && (
           <div className="mb-6 p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-200 rounded-lg">
              <p className="font-semibold text-center">Error de Carga</p>
@@ -465,7 +439,7 @@ function App() {
             )}
           </>
         )}
-      </div>
+      </main>
 
       {/* Contenedor de Notificaciones Toast Flotantes */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
