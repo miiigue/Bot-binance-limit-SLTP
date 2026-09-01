@@ -606,24 +606,37 @@ class TradingBot:
             return None, None
 
         tp_price = None
+        # 1. Take Profit por PnL en USDT
         if self.take_profit_usdt > Decimal('0'):
-            # take_profit_usdt es el PNL deseado. Precio TP = Precio Entrada + (PNL Deseado / Cantidad)
             profit_per_unit = self.take_profit_usdt / quantity
             tp_price_calculated = entry_price + profit_per_unit
             tp_price = self._adjust_price(tp_price_calculated)
-            self.logger.info(f"[{self.symbol}] Precio TP calculado: {tp_price_calculated:.8f} -> Ajustado: {tp_price:.8f} (Base: Entrada={entry_price}, TP_USDT={self.take_profit_usdt}, Cant={quantity})")
+            self.logger.info(f"[{self.symbol}] Precio TP calculado (USDT): {tp_price_calculated:.8f} -> Ajustado: {tp_price:.8f} (Base: Entrada={entry_price}, TP_USDT={self.take_profit_usdt})")
+        # 2. Take Profit por Porcentaje (ej: Estrategia de Soportes)
+        elif self.support_order_take_profit_percent > 0:
+            tp_pct = Decimal(str(self.support_order_take_profit_percent)) / Decimal('100')
+            tp_price_calculated = entry_price * (Decimal('1') + tp_pct)
+            tp_price = self._adjust_price(tp_price_calculated)
+            self.logger.info(f"[{self.symbol}] Precio TP calculado (+{self.support_order_take_profit_percent}%): {tp_price_calculated:.8f} -> Ajustado: {tp_price:.8f}")
 
         sl_price = None
+        # 1. Stop Loss por PnL en USDT
         if self.stop_loss_usdt != Decimal('0'):
             sl_amount_usdt = abs(self.stop_loss_usdt)
-            loss_per_unit = sl_amount_usdt / quantity # Monto en USDT por unidad
+            loss_per_unit = sl_amount_usdt / quantity
             sl_price_calculated = entry_price - loss_per_unit
             sl_price = self._adjust_price(sl_price_calculated)
-            self.logger.info(f"[{self.symbol}] Precio SL calculado: {sl_price_calculated:.8f} -> Ajustado: {sl_price:.8f} (Base: Entrada={entry_price}, SL_USDT={sl_amount_usdt}, Cant={quantity})")
-            # Asegurarse que el SL no sea igual o mayor que el precio de entrada para un LONG
-            if sl_price >= entry_price:
-                self.logger.warning(f"[{self.symbol}] Precio SL calculado ({sl_price}) es >= precio de entrada ({entry_price}). SL no se colocará o será inefectivo. Revisar parámetros.")
-                sl_price = None # No colocar SL si es inválido
+            self.logger.info(f"[{self.symbol}] Precio SL calculado (USDT): {sl_price_calculated:.8f} -> Ajustado: {sl_price:.8f} (Base: Entrada={entry_price}, SL_USDT={sl_amount_usdt})")
+        # 2. Stop Loss por Porcentaje (ej: Estrategia de Soportes)
+        elif self.support_order_stop_loss_percent > 0:
+            sl_pct = Decimal(str(self.support_order_stop_loss_percent)) / Decimal('100')
+            sl_price_calculated = entry_price * (Decimal('1') - sl_pct)
+            sl_price = self._adjust_price(sl_price_calculated)
+            self.logger.info(f"[{self.symbol}] Precio SL calculado (-{self.support_order_stop_loss_percent}%): {sl_price_calculated:.8f} -> Ajustado: {sl_price:.8f}")
+
+        if sl_price and sl_price >= entry_price:
+            self.logger.warning(f"[{self.symbol}] Precio SL calculado ({sl_price}) es >= precio de entrada ({entry_price}). SL no se colocará.")
+            sl_price = None
 
         return tp_price, sl_price
 
@@ -647,7 +660,7 @@ class TradingBot:
         tp_price_dec, sl_price_dec = self._calculate_tp_sl_prices()
 
         # Colocar orden Take Profit
-        if self.enable_take_profit_pnl and tp_price_dec and self.take_profit_usdt > Decimal('0'):
+        if self.enable_take_profit_pnl and tp_price_dec and (self.take_profit_usdt > Decimal('0') or self.support_order_take_profit_percent > 0):
             tp_price_str = f"{tp_price_dec:.{self.price_tick_size.as_tuple().exponent * -1}f}"
             self.logger.info(f"[{self.symbol}] Intentando colocar orden TAKE_PROFIT_MARKET @ {tp_price_str} para cantidad {quantity_float} (Habilitado)")
             tp_order_result = create_futures_take_profit_order(
@@ -666,7 +679,7 @@ class TradingBot:
             self.logger.info(f"[{self.symbol}] Colocación de orden Take Profit DESHABILITADA por configuración (enable_take_profit_pnl=False).")
 
         # Colocar orden Stop Loss
-        if self.enable_stop_loss_pnl and sl_price_dec and self.stop_loss_usdt != Decimal('0'):
+        if self.enable_stop_loss_pnl and sl_price_dec and (self.stop_loss_usdt != Decimal('0') or self.support_order_stop_loss_percent > 0):
             sl_price_str = f"{sl_price_dec:.{self.price_tick_size.as_tuple().exponent * -1}f}"
             self.logger.info(f"[{self.symbol}] Intentando colocar orden STOP_MARKET @ {sl_price_str} para cantidad {quantity_float} (Habilitado)")
             sl_order_result = create_futures_stop_loss_order(
@@ -876,6 +889,10 @@ class TradingBot:
                     order_id = self.active_support_orders.pop(price_level)
                     self.logger.info(f"[{self.symbol}] Cancelando orden {order_id} en soporte ahora inválido de {price_level}.")
                     cancel_futures_order(self.symbol, order_id)
+                    if self.pending_entry_order_id == order_id:
+                        self.pending_entry_order_id = None
+                        self.pending_order_timestamp = None
+                        self._update_state(BotState.IDLE)
 
             # 2. Obtener y confirmar nuevos niveles de soporte
             confirmed_supports = self._find_support_levels(klines_df)
@@ -890,6 +907,10 @@ class TradingBot:
                         order_id = self.active_support_orders.pop(price_level)
                         self.logger.info(f"[{self.symbol}] Cancelando orden {order_id} en {price_level} porque no es el mejor soporte ({best_support}).")
                         cancel_futures_order(self.symbol, order_id)
+                        if self.pending_entry_order_id == order_id:
+                            self.pending_entry_order_id = None
+                            self.pending_order_timestamp = None
+                            self._update_state(BotState.IDLE)
 
                 # 3b. Si no hay una orden ya en el mejor soporte, intentar colocar una
                 if best_support not in self.active_support_orders:
@@ -901,6 +922,9 @@ class TradingBot:
                             result = create_futures_limit_order(self.symbol, 'BUY', adj_qty, best_support)
                             if result and 'orderId' in result:
                                 self.active_support_orders[best_support] = result['orderId']
+                                self.pending_entry_order_id = result['orderId']
+                                self.pending_order_timestamp = time.time()
+                                self._update_state(BotState.WAITING_ENTRY_FILL)
                                 self.logger.info(f"[{self.symbol}] Nueva orden de soporte colocada en {best_support} con ID {result['orderId']}.")
                             else:
                                 self.logger.error(f"[{self.symbol}] Fallo al colocar orden en soporte {best_support}.")
@@ -915,7 +939,11 @@ class TradingBot:
                     self.logger.info(f"[{self.symbol}] No hay soportes confirmados. Limpiando {len(self.active_support_orders)} órdenes activas.")
                     for price, order_id in list(self.active_support_orders.items()):
                         cancel_futures_order(self.symbol, order_id)
+                        if self.pending_entry_order_id == order_id:
+                            self.pending_entry_order_id = None
+                            self.pending_order_timestamp = None
                     self.active_support_orders.clear()
+                    self._update_state(BotState.IDLE)
 
         except Exception as e:
             self.logger.error(f"[{self.symbol}] Error en _execute_support_strategy: {e}", exc_info=True)
@@ -1754,25 +1782,41 @@ class TradingBot:
 
             exit_signal = False
 
-            # 1. Take Profit (MODIFICADO)
+            # 1. Take Profit (por USDT o por Porcentaje)
             if self.enable_take_profit_pnl:
                 if self.take_profit_usdt > 0 and self.last_known_pnl is not None and self.last_known_pnl >= self.take_profit_usdt:
-                    self.logger.warning(f"[{self.symbol}] CONDICIÓN DE TAKE PROFIT (PnL) ALCANZADA (Habilitado). PnL={self.last_known_pnl:.4f} >= TP={self.take_profit_usdt}")
+                    self.logger.warning(f"[{self.symbol}] CONDICIÓN DE TAKE PROFIT (PnL USDT) ALCANZADA. PnL={self.last_known_pnl:.4f} >= TP={self.take_profit_usdt}")
                     exit_signal = True
                     self.exit_reason = f"take_profit_pnl_reached ({self.last_known_pnl:.4f})"
+                elif self.support_order_take_profit_percent > 0 and self.current_position:
+                    entry_p = self.current_position.get('entry_price', Decimal('0'))
+                    current_p = Decimal(str(klines_df['close'].iloc[-1]))
+                    target_tp = entry_p * (Decimal('1') + Decimal(str(self.support_order_take_profit_percent)) / Decimal('100'))
+                    if current_p >= target_tp:
+                        self.logger.warning(f"[{self.symbol}] CONDICIÓN DE TAKE PROFIT (+{self.support_order_take_profit_percent}%) ALCANZADA. Precio Actual={current_p} >= Objetivo={target_tp}")
+                        exit_signal = True
+                        self.exit_reason = f"take_profit_percent_reached (+{self.support_order_take_profit_percent}%)"
             else:
-                self.logger.info(f"[{self.symbol}] Salida por Take Profit (PnL) DESHABILITADA.")
+                self.logger.info(f"[{self.symbol}] Salida por Take Profit DESHABILITADA.")
 
-            # 2. Stop Loss (MODIFICADO)
+            # 2. Stop Loss (por USDT o por Porcentaje)
             if not exit_signal and self.enable_stop_loss_pnl:
                 if self.stop_loss_usdt != 0 and self.last_known_pnl is not None:
                     max_allowed_loss = -abs(Decimal(str(self.stop_loss_usdt)))
                     if self.last_known_pnl <= max_allowed_loss:
-                        self.logger.warning(f"[{self.symbol}] CONDICIÓN DE STOP LOSS (PnL) ALCANZADA (Habilitado). PnL={self.last_known_pnl:.4f} <= SL={max_allowed_loss}")
+                        self.logger.warning(f"[{self.symbol}] CONDICIÓN DE STOP LOSS (PnL USDT) ALCANZADA. PnL={self.last_known_pnl:.4f} <= SL={max_allowed_loss}")
                         exit_signal = True
                         self.exit_reason = f"stop_loss_pnl_reached ({self.last_known_pnl:.4f})"
+                elif self.support_order_stop_loss_percent > 0 and self.current_position:
+                    entry_p = self.current_position.get('entry_price', Decimal('0'))
+                    current_p = Decimal(str(klines_df['close'].iloc[-1]))
+                    target_sl = entry_p * (Decimal('1') - Decimal(str(self.support_order_stop_loss_percent)) / Decimal('100'))
+                    if current_p <= target_sl:
+                        self.logger.warning(f"[{self.symbol}] CONDICIÓN DE STOP LOSS (-{self.support_order_stop_loss_percent}%) ALCANZADA. Precio Actual={current_p} <= Objetivo={target_sl}")
+                        exit_signal = True
+                        self.exit_reason = f"stop_loss_percent_reached (-{self.support_order_stop_loss_percent}%)"
             elif not exit_signal: 
-                self.logger.info(f"[{self.symbol}] Salida por Stop Loss (PnL) DESHABILITADA.")
+                self.logger.info(f"[{self.symbol}] Salida por Stop Loss DESHABILITADA.")
 
             # --- INICIO NUEVA LÓGICA: TRAILING STOP POR PRECIO ---
             if not exit_signal and self.enable_price_trailing_stop:
@@ -2062,13 +2106,17 @@ class TradingBot:
                     self.last_known_entry_price = entry_price
                     self.last_known_position_size = pos_amt
                     self._update_state(BotState.IN_POSITION)
-                    # Limpiar órdenes pendientes si encontramos posición activa inesperadamente
                     if self.pending_entry_order_id or self.pending_exit_order_id:
                         self.logger.warning(f"[{self.symbol}] Posición activa encontrada durante _verify_position_status, pero había órdenes pendientes. Limpiando IDs de órdenes pendientes.")
                         self.pending_entry_order_id = None
                         self.pending_exit_order_id = None
                         self.pending_order_timestamp = None
                         self.current_exit_reason = None
+
+                    # Asegurar que la posición abierta tenga órdenes protectoras de TP/SL en Binance
+                    if not self.pending_tp_order_id and not self.pending_sl_order_id:
+                        self.logger.info(f"[{self.symbol}] Posición activa verificada sin órdenes TP/SL pendientes. Colocando órdenes de protección...")
+                        self._place_tp_sl_orders()
 
                 else: # Es SHORT
                     self.logger.warning(f"[{self.symbol}] Verificación: Posición SHORT inesperada encontrada ({pos_amt}).")
@@ -2566,6 +2614,27 @@ class TradingBot:
                         self.last_known_entry_price = entry_p
                         self.last_known_position_size = pos_amt
                         self.logger.info(f"[{self.symbol}] Posición promediada actualizada: Nuevo Precio Promedio={entry_p}, Cantidad Total={pos_amt}")
+
+                        # Cancelar órdenes anteriores de TP y SL en Binance para actualizar al nuevo promedio
+                        if self.pending_tp_order_id:
+                            self.logger.info(f"[{self.symbol}] Cancelando orden TP anterior {self.pending_tp_order_id} tras DCA.")
+                            try:
+                                cancel_futures_order(self.symbol, self.pending_tp_order_id)
+                            except Exception as cancel_err:
+                                self.logger.warning(f"[{self.symbol}] Error al cancelar TP anterior: {cancel_err}")
+                            self.pending_tp_order_id = None
+
+                        if self.pending_sl_order_id:
+                            self.logger.info(f"[{self.symbol}] Cancelando orden SL anterior {self.pending_sl_order_id} tras DCA.")
+                            try:
+                                cancel_futures_order(self.symbol, self.pending_sl_order_id)
+                            except Exception as cancel_err:
+                                self.logger.warning(f"[{self.symbol}] Error al cancelar SL anterior: {cancel_err}")
+                            self.pending_sl_order_id = None
+
+                        # Colocar nuevas órdenes TP/SL ajustadas al nuevo precio promedio y cantidad
+                        self.logger.info(f"[{self.symbol}] Re-colocando órdenes TP/SL para la posición promediada.")
+                        self._place_tp_sl_orders()
             elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
                 self.logger.info(f"[{self.symbol}] Orden de Re-entrada DCA cancelada o expirada ({status}). Limpiando ID pendiente.")
                 self.pending_reentry_order_id = None
