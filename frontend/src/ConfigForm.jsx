@@ -467,7 +467,7 @@ function ConfigForm({
         });
         
         setFormData(prevData => ({ ...prevData, ...mappedData }));
-        if (onStrategyNameChange && mappedData.activeStrategyName) {
+        if (onStrategyNameChange && mappedData.activeStrategyName && mappedData.activeStrategyName !== 'N/A') {
             onStrategyNameChange(mappedData.activeStrategyName);
         }
 
@@ -477,41 +477,31 @@ function ConfigForm({
       }
     };
 
-    fetchInitialConfig();
-  }, [onStrategyNameChange]); // Dependencia para que se ejecute una vez
-  // -------------------------------------------------------------
+    if (!propInitialConfig) {
+      fetchInitialConfig();
+    }
+  }, [propInitialConfig, onStrategyNameChange]);
 
   useEffect(() => {
     if (propInitialConfig) {
       const newFormData = { ...defaultConfigValues }; 
 
-      // Copiar todos los valores de propInitialConfig al nuevo estado del formulario
-      // Esto manejará la mayoría de las claves, incluyendo las que ya están en camelCase
       for (const key in propInitialConfig) {
         if (Object.prototype.hasOwnProperty.call(propInitialConfig, key)) {
           newFormData[key] = propInitialConfig[key];
         }
       }
 
-      // Mapeo específico para claves que difieren o necesitan conversión especial
-      // Para 'downtrendLevelCheck' (campo numérico del formulario):
-      // Debe tomar su valor de 'downtrend_level_check' (snake_case desde el backend).
       if (propInitialConfig.downtrend_level_check !== undefined) {
         newFormData.downtrendLevelCheck = propInitialConfig.downtrend_level_check;
       }
-      // No hay necesidad de la condición 'else if (propInitialConfig.evaluateDowntrendLevelsBlock !== undefined)' aquí
-      // para 'newFormData.downtrendLevelCheck', ya que 'evaluateDowntrendLevelsBlock'
-      // es para el checkbox y ya se habrá copiado a 'newFormData.evaluateDowntrendLevelsBlock' en el bucle anterior si existe.
-
-      // Si el backend enviara 'evaluate_downtrend_levels_block' (snake_case) y el form usa 'evaluateDowntrendLevelsBlock' (camelCase)
-      // el bucle anterior ya lo manejaría si 'propInitialConfig' tuviera la clave correcta del backend.
-      // El backend ya envía 'evaluateDowntrendLevelsBlock', así que el bucle es suficiente.
 
       setFormData(newFormData);
-      if (onStrategyNameChange) {
-        onStrategyNameChange('');
+
+      const stratName = propInitialConfig.activeStrategyName || propInitialConfig.active_strategy_name;
+      if (onStrategyNameChange && stratName && stratName !== 'N/A') {
+        onStrategyNameChange(stratName);
       }
-      console.log("ConfigForm recibió propInitialConfig y actualizó formData:", newFormData);
     }
   }, [propInitialConfig, onStrategyNameChange]);
 

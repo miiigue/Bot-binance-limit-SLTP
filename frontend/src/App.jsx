@@ -210,9 +210,9 @@ function App() {
     }
   };
 
-  const handleStrategyNameChange = (displayName) => {
-    setActiveStrategyDisplayName(displayName);
-  };
+  const handleStrategyNameChange = useCallback((displayName) => {
+    setActiveStrategyDisplayName(displayName || '');
+  }, []);
 
   const handleSelectSymbolForChart = (sym) => {
     setChartSelectedSymbol(sym);
@@ -243,11 +243,9 @@ function App() {
                 <span>{soundOn ? '🔊 ON' : '🔇 OFF'}</span>
               </button>
             </div>
-            {activeStrategyDisplayName && (
-              <div className="text-xs font-semibold text-blue-900 truncate">
-                ({activeStrategyDisplayName})
-              </div>
-            )}
+            <div className="text-xs font-semibold text-blue-900 truncate min-h-[16px]">
+              {activeStrategyDisplayName ? `(${activeStrategyDisplayName})` : ''}
+            </div>
           </div>
           
           {/* PNL Info Central */}
