@@ -47,7 +47,7 @@ function App() {
   // Sistema de Audio y Notificaciones Toast
   const [soundOn, setSoundOn] = useState(() => isSoundEnabled());
   const [toasts, setToasts] = useState([]);
-  const lastPnlRef = useRef(null);
+  const lastClosedPnlRef = useRef(null);
   const lastInPosCoinsRef = useRef(null);
 
   const addToast = useCallback((title, message, type = 'info') => {
@@ -83,21 +83,25 @@ function App() {
       if (data.sessionStats.elapsed_seconds !== undefined) {
         setElapsedTime(data.sessionStats.elapsed_seconds);
       }
+    }
 
-      // Detección de eventos para alertas sonoras y notificaciones
-      if (lastPnlRef.current !== null && data.sessionStats.session_pnl !== undefined) {
-        const diff = data.sessionStats.session_pnl - lastPnlRef.current;
-        if (diff > 0.05) {
-          playProfitSound();
-          addToast('🎉 Take Profit Alcanzado!', `+${diff.toFixed(4)} USDT ganados en la sesión.`, 'success');
-        } else if (diff < -0.30) {
-          playLossSound();
-          addToast('🛑 Stop Loss Ejecutado', `${diff.toFixed(4)} USDT en la sesión.`, 'error');
-        }
+    // Detección de eventos: SOLO disparar cuando un trade REALMENTE se cierra (PnL realizado definitivo)
+    const currentClosedPnl = data?.historicalPnl !== undefined 
+      ? Number(data.historicalPnl)
+      : (data?.sessionStats?.session_realized_pnl !== undefined ? Number(data.sessionStats.session_realized_pnl) : null);
+
+    if (lastClosedPnlRef.current !== null && currentClosedPnl !== null) {
+      const diff = currentClosedPnl - lastClosedPnlRef.current;
+      if (diff > 0.005) {
+        playProfitSound();
+        addToast('🎉 Take Profit Confirmado!', `+${diff.toFixed(4)} USDT asegurados en balance.`, 'success');
+      } else if (diff < -0.005) {
+        playLossSound();
+        addToast('🛑 Stop Loss Ejecutado', `${diff.toFixed(4)} USDT.`, 'error');
       }
-      if (data.sessionStats.session_pnl !== undefined) {
-        lastPnlRef.current = data.sessionStats.session_pnl;
-      }
+    }
+    if (currentClosedPnl !== null) {
+      lastClosedPnlRef.current = currentClosedPnl;
     }
 
     if (lastInPosCoinsRef.current !== null && data?.coinsInPosition !== undefined) {

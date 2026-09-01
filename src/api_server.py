@@ -85,6 +85,8 @@ class SessionStateManager:
             elapsed = int(time.time() - self.session_start_time) if (self.active_session and self.session_start_time) else 0
             return {
                 "session_pnl": float(self.session_realized_pnl + self.session_unrealized_pnl),
+                "session_realized_pnl": float(self.session_realized_pnl),
+                "session_unrealized_pnl": float(self.session_unrealized_pnl),
                 "session_high": float(self.session_pnl_high) if self.session_pnl_high != Decimal('-Infinity') else 0.0,
                 "session_low": float(self.session_pnl_low) if self.session_pnl_low != Decimal('Infinity') else 0.0,
                 "elapsed_seconds": elapsed,
