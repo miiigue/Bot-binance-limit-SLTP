@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import BotControls from './BotControls';
 
 // Clave para guardar/leer en localStorage
 const STATUS_CACHE_KEY = 'botStatusesCache';
@@ -271,13 +270,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
 
   return (
     <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 mt-6">
-      <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Bot Status</h2>
-      
-      <BotControls 
-        botsRunning={botsRunning} 
-        onStart={handleStart} // Usar el nuevo manejador
-        onShutdown={onShutdown} 
-      />
+      <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Estado y Monitoreo de Bots</h2>
       
       {/* Mostrar el mensaje de error de inicio */}
       {startError && (

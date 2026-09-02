@@ -4,6 +4,7 @@ import StatusDisplay from './StatusDisplay';
 import TradingViewChart from './TradingViewChart';
 import PnLPerformanceChart from './PnLPerformanceChart';
 import MarketExplorer from './MarketExplorer';
+import BotControls from './BotControls';
 import ToastContainer from './ToastContainer';
 import { isSoundEnabled, setSoundEnabled, playProfitSound, playEntrySound, playLossSound } from './soundEffects';
 import './index.css';
@@ -367,15 +368,25 @@ function App() {
             </button>
           </div>
 
-          {/* Indicador de Monedas configuradas */}
-          {config?.symbolsToTrade && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 hidden lg:flex">
-              <span>🪙 Monedas:</span>
-              <span className="font-semibold text-gray-700 dark:text-gray-300 font-mono">
-                {config.symbolsToTrade.split(',').filter(Boolean).length} pares
-              </span>
-            </div>
-          )}
+          {/* CONTROLES GLOBALES DE OPERACIÓN (SIEMPRE DISPONIBLES EN TODAS LAS PESTAÑAS) */}
+          <div className="flex items-center gap-2">
+            <BotControls 
+              botsRunning={botsRunning}
+              onStart={handleStartBots}
+              onShutdown={handleShutdown}
+              addToast={addToast}
+            />
+
+            {/* Indicador de Monedas configuradas */}
+            {config?.symbolsToTrade && (
+              <div className="text-xs text-gray-500 dark:text-gray-400 items-center gap-1 hidden xl:flex pl-2 border-l border-gray-200 dark:border-gray-800">
+                <span>🪙</span>
+                <span className="font-semibold text-gray-700 dark:text-gray-300 font-mono">
+                  {config.symbolsToTrade.split(',').filter(Boolean).length} pares
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

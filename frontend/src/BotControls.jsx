@@ -1,141 +1,147 @@
 import React, { useState } from 'react';
 
-// --- Componente para los botones de control (sin título) ---
-function BotControls({ botsRunning, onStart, onShutdown }) {
+function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
   const [isActionPending, setIsActionPending] = useState(false);
-  const [actionMessage, setActionMessage] = useState('');
+
+  const notify = (title, message, type = 'info') => {
+    if (addToast) {
+      addToast(title, message, type);
+    } else {
+      alert(`${title}: ${message}`);
+    }
+  };
 
   const handleStartClick = async () => {
     setIsActionPending(true);
-    setActionMessage('Iniciando bots...');
-    const success = await onStart(); // Llama a la función pasada por props
-    if (!success) {
-      setActionMessage('Error al iniciar bots. Revisa los logs del servidor.');
-      // Mantener el mensaje de error por un tiempo
-      setTimeout(() => setActionMessage(''), 5000);
-    } else {
-       setActionMessage(''); // Limpiar mensaje en éxito
+    try {
+      const result = await onStart();
+      if (result && result.error) {
+        notify('Error al Iniciar', result.error, 'error');
+      } else {
+        notify('🚀 Bots Iniciados', 'Todos los workers están analizando el mercado.', 'success');
+      }
+    } catch (e) {
+      notify('Error al Iniciar', e.message, 'error');
+    } finally {
+      setIsActionPending(false);
     }
-    setIsActionPending(false);
   };
 
   const handleShutdownClick = async () => {
     if (!window.confirm("¿Estás seguro de que deseas apagar todos los bots?")) return;
     setIsActionPending(true);
-    setActionMessage('Enviando señal de apagado...');
-    const success = await onShutdown(); // Llama a la función pasada por props
-    if (!success) {
-      setActionMessage('Error al enviar señal de apagado. Revisa los logs.');
-       setTimeout(() => setActionMessage(''), 5000);
-    } else {
-      setActionMessage('Apagado solicitado.'); // Mensaje temporal
-      setTimeout(() => setActionMessage(''), 3000);
+    try {
+      const result = await onShutdown();
+      if (result && result.error) {
+        notify('Error al Apagar', result.error, 'error');
+      } else {
+        notify('⏹️ Bots Apagados', 'Se envió la señal de detención a los workers.', 'info');
+      }
+    } catch (e) {
+      notify('Error al Apagar', e.message, 'error');
+    } finally {
+      setIsActionPending(false);
     }
-    setIsActionPending(false);
   };
 
   const handleCloseAllClick = async () => {
     if (!window.confirm("⚠️ ¿Estás seguro de que deseas CERRAR TODAS LAS POSICIONES ABIERTAS a precio de mercado en Binance?")) return;
     setIsActionPending(true);
-    setActionMessage('Cerrando todas las posiciones a mercado en Binance...');
     try {
       const resp = await fetch('/api/close_all_positions', { method: 'POST' });
       const data = await resp.json();
       if (resp.ok) {
-        setActionMessage('✅ Todas las posiciones fueron cerradas exitosamente.');
-        setTimeout(() => setActionMessage(''), 5000);
+        notify('🚨 Posiciones Cerradas', 'Todas las posiciones abiertas se cerraron a mercado.', 'warning');
       } else {
-        setActionMessage(`Error: ${data.error || 'No se pudieron cerrar todas las posiciones'}`);
-        setTimeout(() => setActionMessage(''), 5000);
+        notify('Error al Cerrar Posiciones', data.error || 'No se pudieron cerrar.', 'error');
       }
     } catch (err) {
-      setActionMessage(`Error de conexión: ${err.message}`);
-      setTimeout(() => setActionMessage(''), 5000);
+      notify('Error de Conexión', err.message, 'error');
+    } finally {
+      setIsActionPending(false);
     }
-    setIsActionPending(false);
   };
 
   const handleResetTradesClick = async () => {
-    if (!window.confirm("⚠️ ¿Estás seguro de que deseas REINICIAR TODO EL HISTORIAL DE GANANCIAS Y TRADES?\n\nEsto pondrá el PnL acumulado a 0.00 USDT y borrará los registros de operaciones anteriores para comenzar una nueva etapa limpia.")) return;
+    if (!window.confirm("⚠️ ¿Estás seguro de que deseas REINICIAR TODO EL HISTORIAL DE GANANCIAS Y TRADES?\n\nEsto pondrá el PnL acumulado a 0.00 USDT y borrará los registros antiguos para empezar una nueva etapa limpia.")) return;
     setIsActionPending(true);
-    setActionMessage('Reiniciando historial de trades y PnL...');
     try {
       const resp = await fetch('/api/trades/reset', { method: 'POST' });
       const data = await resp.json();
       if (resp.ok) {
-        setActionMessage('✅ Historial de PnL reiniciado a 0.00 USDT con éxito.');
-        setTimeout(() => setActionMessage(''), 5000);
+        notify('🔄 Historial Reiniciado', 'El historial de trades y PnL se restableció a 0.00 USDT.', 'success');
       } else {
-        setActionMessage(`Error: ${data.error || 'No se pudo reiniciar el historial'}`);
-        setTimeout(() => setActionMessage(''), 5000);
+        notify('Error al Reiniciar', data.error || 'No se pudo reiniciar el historial.', 'error');
       }
     } catch (err) {
-      setActionMessage(`Error de conexión: ${err.message}`);
-      setTimeout(() => setActionMessage(''), 5000);
+      notify('Error de Conexión', err.message, 'error');
+    } finally {
+      setIsActionPending(false);
     }
-    setIsActionPending(false);
   };
 
-  // Determinar el estado de los botones
   const startDisabled = botsRunning === null || botsRunning === true || isActionPending;
   const shutdownDisabled = botsRunning === null || botsRunning === false || isActionPending;
 
   return (
-    <div className="mb-4">
-      <div className="flex flex-wrap justify-center gap-3">
-        <button
-          onClick={handleStartClick}
-          disabled={startDisabled}
-          className={`px-4 py-2 text-sm font-semibold rounded-md text-white transition-colors duration-150 ease-in-out shadow-sm
-            ${startDisabled 
-              ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' 
-              : 'bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2'}
-          `}
-        >
-          {isActionPending && !botsRunning ? 'Iniciando...' : '▶ Iniciar Todos los Bots'}
-        </button>
-        <button
-          onClick={handleShutdownClick}
-          disabled={shutdownDisabled}
-          className={`px-4 py-2 text-sm font-semibold rounded-md text-white transition-colors duration-150 ease-in-out shadow-sm
-            ${shutdownDisabled 
-              ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' 
-              : 'bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2'}
-          `}
-        >
-          {isActionPending && botsRunning ? 'Apagando...' : '⏹ Apagar Todos los Bots'}
-        </button>
-        <button
-          onClick={handleCloseAllClick}
-          disabled={isActionPending}
-          className={`px-4 py-2 text-sm font-semibold rounded-md text-white transition-colors duration-150 ease-in-out shadow-sm
-            ${isActionPending 
-              ? 'bg-gray-400 cursor-not-allowed' 
-              : 'bg-red-600 hover:bg-red-700 active:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2'}
-          `}
-        >
-          🚨 Cerrar Todas las Posiciones
-        </button>
-        <button
-          onClick={handleResetTradesClick}
-          disabled={isActionPending}
-          title="Borra los trades antiguos de la base de datos y reinicia el contador de PnL a cero"
-          className={`px-4 py-2 text-sm font-semibold rounded-md text-white transition-colors duration-150 ease-in-out shadow-sm border border-amber-600/50
-            ${isActionPending 
-              ? 'bg-gray-400 cursor-not-allowed' 
-              : 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2'}
-          `}
-        >
-          🔄 Reiniciar Historial PnL
-        </button>
-      </div>
-      {actionMessage && (
-         <p className={`text-sm font-medium text-center mt-3 ${actionMessage.includes('Error') ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-           {actionMessage}
-         </p>
-      )}
+    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+      {/* Botón 1: Iniciar */}
+      <button
+        type="button"
+        onClick={handleStartClick}
+        disabled={startDisabled}
+        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
+          startDisabled
+            ? 'bg-gray-800 text-gray-500 cursor-not-allowed opacity-50 border border-gray-700'
+            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/30'
+        }`}
+        title="Iniciar todos los workers de trading configurados"
+      >
+        <span className="text-sm">▶</span>
+        <span className="hidden sm:inline">Iniciar Bots</span>
+      </button>
+
+      {/* Botón 2: Apagar */}
+      <button
+        type="button"
+        onClick={handleShutdownClick}
+        disabled={shutdownDisabled}
+        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
+          shutdownDisabled
+            ? 'bg-gray-800 text-gray-500 cursor-not-allowed opacity-50 border border-gray-700'
+            : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-900/30'
+        }`}
+        title="Pausar o apagar todos los bots"
+      >
+        <span className="text-sm">⏹</span>
+        <span className="hidden sm:inline">Apagar Bots</span>
+      </button>
+
+      {/* Botón 3: Cerrar Todas las Posiciones */}
+      <button
+        type="button"
+        onClick={handleCloseAllClick}
+        disabled={isActionPending}
+        className="px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-600/90 hover:bg-amber-500 text-white shadow-sm border border-amber-500/40 transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        title="EMERGENCIA: Cierra inmediatamente todas las posiciones abiertas en Binance a precio de mercado"
+      >
+        <span className="text-sm">🚨</span>
+        <span className="hidden md:inline">Cerrar Todo</span>
+      </button>
+
+      {/* Botón 4: Reiniciar Historial PnL */}
+      <button
+        type="button"
+        onClick={handleResetTradesClick}
+        disabled={isActionPending}
+        className="px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Reinicia el registro histórico de operaciones y PnL acumulado a cero"
+      >
+        <span className="text-xs">🔄</span>
+        <span className="hidden xl:inline">Reset PnL</span>
+      </button>
     </div>
   );
 }
 
-export default BotControls; 
+export default BotControls;
