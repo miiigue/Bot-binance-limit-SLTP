@@ -817,86 +817,46 @@ function ConfigForm({
         </div>
       </fieldset>
 
-      {/* --- SECCIÓN UNIFICADA DE GESTIÓN DE RIESGO --- */}
-      <ConfigSection title="Monitor y Gestión de Riesgo Global">
-        {riskError && <p className="text-red-500 text-sm mb-4">{riskError}</p>}
-        {riskData ? (
-          <div className="space-y-4">
-            {/* Fila de Datos */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-              <div className="bg-gray-700 p-3 rounded-lg">
-                <h4 className="text-sm font-medium text-gray-400">Balance Total (USDT)</h4>
-                <p className="text-lg font-semibold text-white">{riskData.total_balance}</p>
-              </div>
-              <div className="bg-gray-700 p-3 rounded-lg">
-                <h4 className="text-sm font-medium text-gray-400">Máximo de Exposición</h4>
-                <p className="text-lg font-semibold text-white">{riskData.max_exposure} <span className="text-xs text-gray-400">({riskData.risk_percentage})</span></p>
-              </div>
-              <div className="bg-gray-700 p-3 rounded-lg">
-                <h4 className="text-sm font-medium text-gray-400">Exposición Actual</h4>
-                <p className="text-lg font-semibold text-white">{riskData.current_exposure}</p>
-              </div>
-            </div>
-
-            {/* Barra de Progreso */}
+      {/* --- GESTIÓN DE RIESGO GLOBAL (COMPACTA) --- */}
+      <div className="bg-gradient-to-r from-gray-900 via-indigo-950/40 to-gray-900 border border-indigo-900/60 rounded-xl p-4 shadow-sm my-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center space-x-3">
+            <span className="text-xl p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">🛡️</span>
             <div>
-              <div className="w-full bg-gray-600 rounded-full h-4 relative">
-                <div 
-                  className={`h-4 rounded-full transition-all duration-500 ${(() => {
-                    const maxExpNum = parseFloat(riskData.max_exposure);
-                    const currentExpNum = parseFloat(riskData.current_exposure);
-                    const progressPercentage = maxExpNum > 0 ? (currentExpNum / maxExpNum) * 100 : 0;
-                    if (progressPercentage > 90) return 'bg-red-500';
-                    if (progressPercentage > 70) return 'bg-yellow-500';
-                    return 'bg-green-500';
-                  })()}`}
-                  style={{ width: `${(() => {
-                    const maxExpNum = parseFloat(riskData.max_exposure);
-                    const currentExpNum = parseFloat(riskData.current_exposure);
-                    const progressPercentage = maxExpNum > 0 ? (currentExpNum / maxExpNum) * 100 : 0;
-                    return Math.min(progressPercentage, 100);
-                  })()}%` }}
-                ></div>
-              </div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                Gestión de Riesgo Global de la Cartera
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                  Límite: {riskPercentage}%
+                </span>
+              </h4>
+              <p className="text-xs text-gray-400">
+                El monitor de balance, márgenes en vivo y ranking por moneda se encuentran en la pestaña <strong className="text-indigo-300">📈 Rendimiento & PnL</strong>.
+              </p>
             </div>
-
-            {/* Fila de Configuración */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-700">
-              <ConfigItem
-                labelText="Ajustar Máximo % de Capital en Riesgo"
-                htmlFor="risk-percentage"
-                tooltipKey="riskPercentage"
-              >
-                <div className="mt-1 flex rounded-md shadow-sm">
-                  <NumberInput
-                    id="risk-percentage"
-                    name="risk-percentage"
-                    value={riskPercentage}
-                    onChange={(e) => setRiskPercentage(e.target.value)}
-                    min="0"
-                    max="100"
-                  />
-                  <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300">
-                    %
-                  </span>
-                </div>
-              </ConfigItem>
-              <div className="self-end pb-1">
-                <button
-                  type="button"
-                  onClick={handleSaveRisk}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
-                >
-                  Guardar Riesgo
-                </button>
-              </div>
-            </div>
-
           </div>
-        ) : (
-          <p className="text-center text-gray-400">Cargando datos del monitor de riesgo...</p>
-        )}
-      </ConfigSection>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="relative w-20">
+              <NumberInput
+                id="risk-percentage"
+                name="risk-percentage"
+                value={riskPercentage}
+                onChange={(e) => setRiskPercentage(e.target.value)}
+                min="1"
+                max="100"
+              />
+              <span className="absolute inset-y-0 right-2 flex items-center text-xs text-gray-400 pointer-events-none font-bold">%</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveRisk}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition active:scale-95 whitespace-nowrap"
+            >
+              Guardar Riesgo
+            </button>
+          </div>
+        </div>
+      </div>
       {/* ------------------------------------------- */}
 
       {/* ======================================================== */}

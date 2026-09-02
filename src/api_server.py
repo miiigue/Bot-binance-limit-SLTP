@@ -1245,14 +1245,18 @@ class RiskManager:
             except Exception:
                 pass
 
-            real_exp = self.get_current_exposure()
-            self.current_exposure = real_exp
+            free_margin = max(Decimal('0'), self.total_balance - real_exp)
+            exp_pct = (real_exp / self.total_balance * Decimal('100')) if self.total_balance > Decimal('0') else Decimal('0')
 
             return {
                 'total_balance': f"{self.total_balance:.2f}",
                 'risk_percentage': f"{self.risk_percentage:.2%}",
+                'risk_percentage_raw': float(self.risk_percentage * Decimal('100')),
                 'max_exposure': f"{self.max_exposure:.2f}",
-                'current_exposure': f"{real_exp:.2f}"
+                'current_exposure': f"{real_exp:.2f}",
+                'free_margin': f"{free_margin:.2f}",
+                'exposure_percentage': f"{exp_pct:.1f}%",
+                'exposure_percentage_raw': float(exp_pct)
             }
 
 risk_manager = RiskManager(logger=api_logger) # <-- CORRECCIÓN: Usar el nombre de variable correcto 'api_logger'
