@@ -119,8 +119,8 @@ function StrategyRadar({ config }) {
     };
   }, [
     simulatedPrice,
-    notionalValue,
-    marginUSDT,
+    positionSizeUSDT,
+    estimatedMargin,
     isSupportStrategy,
     supportTPPercent,
     supportSLPercent,
