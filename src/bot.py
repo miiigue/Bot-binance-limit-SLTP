@@ -51,6 +51,7 @@ class BotState(Enum):
     CANCELING_ORDER = "Canceling Order"
     ERROR = "Error State"
     STOPPED = "Stopped" # <-- Nuevo estado
+    PAUSED = "Paused" # <-- Estado de pausa individual
 # ------------------------------------
 
 class TradingBot:
@@ -293,6 +294,7 @@ class TradingBot:
                  self.state = BotState.IDLE
                  self.logger.info(f"[{self.symbol}] Inicialización completa. No hay posición. Transicionando a estado IDLE.")
 
+        self.is_paused = False
         self.logger.info(f"[{self.symbol}] Worker inicializado exitosamente (Timeout Órdenes: {self.order_timeout_seconds}s).")
 
     def _check_initial_position(self):
@@ -839,6 +841,16 @@ class TradingBot:
 
             # 4. Si no hay posición ni orden pendiente, buscar nueva entrada
             if not self.in_position and not self.pending_entry_order_id:
+                if getattr(self, 'is_paused', False):
+                    # Si el bot está pausado por el usuario, cancelar cualquier orden de soporte activa y omitir entradas
+                    if self.active_support_orders:
+                        for price, order_id in list(self.active_support_orders.items()):
+                            cancel_futures_order(self.symbol, order_id)
+                        self.active_support_orders.clear()
+                    self._update_state(BotState.PAUSED)
+                    self.logger.info(f"[{self.symbol}] ⏸️ Bot en pausa individual. Omitiendo búsqueda de nuevas entradas.")
+                    return
+
                 klines_df = self._get_market_data()
                 if klines_df is None or klines_df.empty:
                     return
@@ -2477,16 +2489,26 @@ class TradingBot:
         """
         Recopila y devuelve un diccionario con el estado actual del bot.
         """
+        lev = int(getattr(self, 'leverage', 20) or 20)
+        entry_p = float(self.last_known_entry_price or 0)
+        pos_s = float(self.last_known_position_size or 0)
+        pos_val = abs(entry_p * pos_s) if self.in_position else 0.0
+        marg_usdt = (pos_val / lev) if (self.in_position and lev > 0) else 0.0
+
         return {
             "symbol": self.symbol,
             "state": self.state.value if self.state else "N/A",
             "is_running": self.is_running,
+            "is_paused": getattr(self, 'is_paused', False),
             "in_position": self.in_position,
             "current_pnl": self.last_known_pnl if self.in_position else 0.0,
             "historical_pnl": float(self.historical_pnl),
             "session_pnl": float(self.session_pnl), # <-- NUEVO: Reportar PNL de sesión
             "entry_price": self.last_known_entry_price,
             "position_size": self.last_known_position_size,
+            "leverage": lev,
+            "position_value_usdt": round(pos_val, 2),
+            "margin_usdt": round(marg_usdt, 2),
             "pending_entry_order_id": self.pending_entry_order_id,
             "pending_exit_order_id": self.pending_exit_order_id,
             "pending_tp_order_id": self.pending_tp_order_id,

@@ -63,6 +63,29 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
   // --- NUEVO ESTADO PARA EL NÚMERO DE TRADES A MOSTRAR ---
   const [numTradesToShow, setNumTradesToShow] = useState(2); // Por defecto 2 trades
   const [closingSymbols, setClosingSymbols] = useState({}); // { symbol: boolean }
+  const [pausingSymbols, setPausingSymbols] = useState({}); // { symbol: boolean }
+
+  const handleTogglePause = async (e, symbol) => {
+    e.stopPropagation();
+    setPausingSymbols(prev => ({ ...prev, [symbol]: true }));
+    try {
+      const resp = await fetch(`/api/bot/${symbol}/toggle_pause`, { method: 'POST' });
+      const data = await resp.json();
+      if (resp.ok) {
+        setStatuses(prev => prev.map(s => s.symbol === symbol ? {
+          ...s,
+          is_paused: data.is_paused,
+          state: data.is_paused ? (s.in_position ? s.state : 'Paused') : (s.state === 'Paused' ? 'Idle (Waiting Cycle)' : s.state)
+        } : s));
+      } else {
+        alert(`Error al cambiar estado de ${symbol}: ${data.error || 'Error desconocido'}`);
+      }
+    } catch (err) {
+      alert(`Error de red al pausar/reanudar ${symbol}: ${err.message}`);
+    } finally {
+      setPausingSymbols(prev => ({ ...prev, [symbol]: false }));
+    }
+  };
 
   const handleCloseSinglePosition = async (e, symbol) => {
     e.stopPropagation();
@@ -339,19 +362,21 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               {/* --- NUEVA COLUMNA VACÍA PARA EL BOTÓN DE EXPANDIR --- */}
               <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-10"></th>
               <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Symbol</th>
-              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">State</th>
+              <th scope="col" className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Control</th>
+              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Estado</th>
+              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Posición & Margen</th>
               <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Current PnL</th>
               <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Hist. PnL</th>
-               <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+               <th scope="col" className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Pending Entry ID
               </th>
-               <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+               <th scope="col" className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Pending Exit ID
               </th>
-              <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th scope="col" className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Pending TP ID
               </th>
-              <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th scope="col" className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Pending SL ID
               </th>
               <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -404,17 +429,77 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                         </button>
                       </div>
                     </td>
+
+                    {/* --- BOTÓN DE PAUSA RÁPIDA (FEATURE 2) --- */}
+                    <td className="px-3 py-3 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={(e) => handleTogglePause(e, status.symbol)}
+                        disabled={pausingSymbols[status.symbol]}
+                        className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all active:scale-95 shadow-sm flex items-center justify-center gap-1 mx-auto ${
+                          status.is_paused
+                            ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                            : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
+                        }`}
+                        title={status.is_paused ? 'Bot pausado para este par. Clic para reactivar.' : 'Bot activo para este par. Clic para pausar.'}
+                      >
+                        {pausingSymbols[status.symbol] ? (
+                          <span className="animate-spin text-xs">⏳</span>
+                        ) : status.is_paused ? (
+                          <><span>⏸️</span><span>Pausado</span></>
+                        ) : (
+                          <><span>🟢</span><span>Activo</span></>
+                        )}
+                      </button>
+                    </td>
+
+                    {/* --- ESTADO --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                          status.state === 'IN_POSITION' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                         status.state === 'Paused' || status.is_paused ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-500/30' :
                          status.state === 'ERROR' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
                          status.state?.includes('WAITING') ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                         status.state === 'Inactive' ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300' : /* Estilo para Inactivo */
+                         status.state === 'Inactive' ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300' :
                          'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
                      }`}>
-                       {status.state || 'N/A'}
+                       {status.is_paused && status.state !== 'IN_POSITION' ? '⏸️ Pausado' : (status.state || 'N/A')}
                      </span>
                     </td>
+
+                    {/* --- POSICIÓN & MARGEN (FEATURE 1) --- */}
+                    <td className="px-3 py-3 whitespace-nowrap text-xs">
+                      {status.in_position ? (
+                        <div className="flex flex-col space-y-0.5">
+                          <div className="flex items-center gap-1">
+                            <span className="font-bold text-gray-900 dark:text-white font-mono text-xs">
+                              ${Number(status.position_value_usdt || Math.abs((status.entry_price || 0) * (status.position_size || 0))).toFixed(2)} USDT
+                            </span>
+                            <span className="text-[10px] text-gray-400 font-mono">
+                              ({status.position_size} {status.symbol?.replace('USDT', '')})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[11px] font-semibold text-emerald-500 dark:text-emerald-400 font-mono">
+                              Margen: ~${Number(status.margin_usdt || ((status.position_value_usdt || 50) / (status.leverage || 20))).toFixed(2)} USDT
+                            </span>
+                            <span className="text-[10px] px-1 py-0.2 rounded bg-gray-800 text-amber-400 font-bold border border-gray-700 font-mono">
+                              {status.leverage || 20}x
+                            </span>
+                          </div>
+                          {status.entry_price && (
+                            <span className="text-[10px] text-gray-500 font-mono">
+                              Entrada: ${parseFloat(status.entry_price).toFixed(4)}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-500 text-xs italic">
+                          Sin posición
+                        </span>
+                      )}
+                    </td>
+
                     <td className="px-3 py-3 whitespace-nowrap text-sm">
                       <span className={`font-semibold ${getPnlColorClass(status.current_pnl)}`}>
                       {status.in_position ? formatPnl(status.current_pnl) : 'N/A'}
@@ -425,16 +510,16 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       {formatPnl(status.historical_pnl)}
                       </span>
                     </td>
-                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300 text-center">
                       {status.pending_entry_order_id ? 'SI' : ''}
                     </td>
-                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300 text-center">
                       {status.pending_exit_order_id ? 'SI' : ''}
                     </td>
-                    <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                    <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300 text-center">
                       {status.pending_tp_order_id ? 'SI' : ''}
                     </td>
-                    <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                    <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300 text-center">
                       {status.pending_sl_order_id ? 'SI' : ''}
                     </td>
                     <td className="px-3 py-3 text-sm text-red-600 dark:text-red-400 truncate">
@@ -445,7 +530,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                   {expandedRows[status.symbol] && (
                     <tr id={`history-${status.symbol}`}>
                       {/* Celda que ocupa todo el ancho */}
-                      <td colSpan="10" className="px-2 py-2 bg-gray-50 dark:bg-gray-750">
+                      <td colSpan="12" className="px-2 py-2 bg-gray-50 dark:bg-gray-750">
                         {loadingHistories[status.symbol] && (
                           <p className="text-sm text-center text-gray-500 dark:text-gray-400">Loading history...</p>
                         )}

@@ -95,6 +95,7 @@ class SessionStateManager:
 
 # --- Definición de variables compartidas para la gestión de workers ---
 worker_statuses = {} # Ej: {'BTCUSDT': {'state': 'IN_POSITION', 'pnl': 5.2}, 'ETHUSDT': ...}
+paused_symbols = set() # Monedas pausadas individualmente por el usuario
 status_lock = threading.Lock() 
 stop_event = threading.Event() # Evento global para detener todos los hilos
 threads = [] # Lista para guardar las instancias de los hilos de los workers
@@ -291,6 +292,7 @@ def run_bot_worker(symbol, trading_params, stop_event_ref):
         sleep_duration = get_sleep_seconds(trading_params)
         
         bot_instance = TradingBot(symbol=symbol, trading_params=trading_params, risk_manager=risk_manager)
+        bot_instance.is_paused = (symbol in paused_symbols)
         bot_instance.reset_session_pnl() # <-- NUEVO: Resetear PNL de sesión al crear el bot
         
         # --- CORRECCIÓN CRÍTICA: Comprobar posición inicial ANTES del bucle ---
@@ -668,9 +670,11 @@ def get_worker_status():
 
         for symbol in configured_symbols:
             # Estado base si el worker no se ha reportado o no está corriendo
+            is_symbol_paused = (symbol in paused_symbols)
             status_entry = {
                 'symbol': symbol,
-                'state': BotState.STOPPED.value if not workers_started else 'Initializing',
+                'state': BotState.STOPPED.value if not workers_started else ('Paused' if is_symbol_paused else 'Initializing'),
+                'is_paused': is_symbol_paused,
                 'historical_pnl': historical_pnl_data.get(symbol, 0.0),
                 'session_pnl': 0.0, # Valor por defecto
             }
@@ -680,6 +684,7 @@ def get_worker_status():
                 worker_data = active_worker_instances[symbol]
                 # Sobrescribimos el estado base con los datos reales
                 status_entry.update(worker_data)
+                status_entry['is_paused'] = is_symbol_paused or worker_data.get('is_paused', False)
                 # Nos aseguramos de que el PNL histórico de la DB (más fiable) prevalezca
                 status_entry['historical_pnl'] = historical_pnl_data.get(symbol, 0.0)
 
@@ -812,7 +817,36 @@ def close_position_endpoint(symbol):
                 return jsonify({"error": f"Error al ejecutar orden de cierre para {symbol}."}), 500
         except Exception as e:
             logger.error(f"Error al cerrar posición externa de {symbol}: {e}", exc_info=True)
-            return jsonify({"error": str(e)}), 500
+@app.route('/api/bot/<symbol>/toggle_pause', methods=['POST'])
+def toggle_bot_pause(symbol):
+    global paused_symbols
+    symbol = symbol.upper().strip()
+    logger = get_logger()
+    
+    with status_lock:
+        worker = worker_statuses.get(symbol)
+        current_paused = (symbol in paused_symbols)
+        if worker and hasattr(worker, 'is_paused'):
+            current_paused = worker.is_paused
+
+        new_paused = not current_paused
+        if new_paused:
+            paused_symbols.add(symbol)
+        else:
+            paused_symbols.discard(symbol)
+
+        if worker:
+            worker.is_paused = new_paused
+            if not new_paused and getattr(worker, 'state', None) == BotState.PAUSED:
+                worker.state = BotState.IDLE
+
+        action_msg = "pausado" if new_paused else "reanudado"
+        logger.info(f"Bot {symbol} ha sido {action_msg} individualmente.")
+        return jsonify({
+            "symbol": symbol,
+            "is_paused": new_paused,
+            "message": f"Bot {symbol} {action_msg} correctamente."
+        }), 200
 
 @app.route('/api/close_all_positions', methods=['POST'])
 def close_all_positions_endpoint():
