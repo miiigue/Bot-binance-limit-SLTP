@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import StrategyRadar from './StrategyRadar';
 
 const MarketExplorer = ({ config, onSaveConfig, onSelectSymbolForChart }) => {
   const [coins, setCoins] = useState([]);
@@ -100,9 +99,6 @@ const MarketExplorer = ({ config, onSaveConfig, onSelectSymbolForChart }) => {
 
   return (
     <div className="space-y-6">
-      {/* 🧭 Radar de Estrategia y Simulador de Escenarios */}
-      {config && <StrategyRadar config={config} />}
-
       {/* 📡 Explorador y Escáner de Mercado Binance */}
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-lg p-5 transition-all">
         {/* Cabecera */}
