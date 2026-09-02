@@ -469,25 +469,25 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
 
                     {/* --- POSICIÓN & MARGEN (FEATURE 1) --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-xs">
-                      {status.in_position ? (
+                      {status?.in_position ? (
                         <div className="flex flex-col space-y-0.5">
                           <div className="flex items-center gap-1">
                             <span className="font-bold text-gray-900 dark:text-white font-mono text-xs">
-                              ${Number(status.position_value_usdt || Math.abs((status.entry_price || 0) * (status.position_size || 0))).toFixed(2)} USDT
+                              ${(Number(status?.position_value_usdt) || Math.abs((Number(status?.entry_price) || 0) * (Number(status?.position_size) || 0))).toFixed(2)} USDT
                             </span>
                             <span className="text-[10px] text-gray-400 font-mono">
-                              ({status.position_size} {status.symbol?.replace('USDT', '')})
+                              ({status?.position_size || 0} {String(status?.symbol || '').replace('USDT', '')})
                             </span>
                           </div>
                           <div className="flex items-center gap-1">
                             <span className="text-[11px] font-semibold text-emerald-500 dark:text-emerald-400 font-mono">
-                              Margen: ~${Number(status.margin_usdt || ((status.position_value_usdt || 50) / (status.leverage || 20))).toFixed(2)} USDT
+                              Margen: ~${(Number(status?.margin_usdt) || ((Number(status?.position_value_usdt) || 50) / (Number(status?.leverage) || 20))).toFixed(2)} USDT
                             </span>
                             <span className="text-[10px] px-1 py-0.2 rounded bg-gray-800 text-amber-400 font-bold border border-gray-700 font-mono">
-                              {status.leverage || 20}x
+                              {status?.leverage || 20}x
                             </span>
                           </div>
-                          {status.entry_price && (
+                          {status?.entry_price && !isNaN(parseFloat(status.entry_price)) && (
                             <span className="text-[10px] text-gray-500 font-mono">
                               Entrada: ${parseFloat(status.entry_price).toFixed(4)}
                             </span>

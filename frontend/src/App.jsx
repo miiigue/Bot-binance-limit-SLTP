@@ -256,17 +256,17 @@ function App() {
           {/* PNL Info Central */}
           <div className="flex-initial px-3">
             <div className="text-base font-semibold text-center flex items-center gap-2">
-              <span>PNL {headerPnlData.coinCount} monedas ({headerPnlData.coinsInPosition || 0}) = </span>
-              <span className={`text-2xl font-mono font-bold ${headerPnlData.totalPnl < 0 ? 'text-red-600' : headerPnlData.totalPnl > 0 ? 'text-green-700' : 'text-black'}`}>
-                {headerPnlData.totalPnl.toFixed(5)}
+              <span>PNL {headerPnlData?.coinCount || 0} monedas ({headerPnlData?.coinsInPosition || 0}) = </span>
+              <span className={`text-2xl font-mono font-bold ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-red-600' : (Number(headerPnlData?.totalPnl) || 0) > 0 ? 'text-green-700' : 'text-black'}`}>
+                {(Number(headerPnlData?.totalPnl) || 0).toFixed(5)}
               </span>
               <span className="text-xs font-semibold">USDT</span>
               
-              {botsRunning && headerPnlData.sessionStats && (
+              {botsRunning && headerPnlData?.sessionStats && (
                 <span className="ml-2 text-xs flex items-center gap-2 bg-yellow-500/50 px-2 py-0.5 rounded font-mono">
                   <span>Sesión:</span>
-                  <span className={`font-bold ${(headerPnlData.sessionStats.session_pnl) < 0 ? 'text-red-700' : (headerPnlData.sessionStats.session_pnl) > 0 ? 'text-green-800' : 'text-black'}`}>
-                    {`${(headerPnlData.sessionStats.session_pnl).toFixed(4)}`} USDT
+                  <span className={`font-bold ${(Number(headerPnlData.sessionStats.session_pnl) || 0) < 0 ? 'text-red-700' : (Number(headerPnlData.sessionStats.session_pnl) || 0) > 0 ? 'text-green-800' : 'text-black'}`}>
+                    {`${(Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(4)}`} USDT
                   </span>
                 </span>
               )}
