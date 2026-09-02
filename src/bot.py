@@ -135,6 +135,7 @@ class TradingBot:
         self.rsi_objetivo_alcanzado_en = None
         self.rsi_peak_since_target = None
         self.previous_rsi_value = None
+        self.last_rsi_value = None
         # --- NUEVO: IDs para órdenes TP/SL ---
         self.pending_tp_order_id = None
         self.pending_sl_order_id = None
@@ -660,7 +661,8 @@ class TradingBot:
         tp_price_dec, sl_price_dec = self._calculate_tp_sl_prices()
 
         # Colocar orden Take Profit
-        if self.enable_take_profit_pnl and tp_price_dec and (self.take_profit_usdt > Decimal('0') or self.support_order_take_profit_percent > 0):
+        tp_enabled = self.enable_take_profit_pnl or (self.support_order_take_profit_percent > 0)
+        if tp_enabled and tp_price_dec and (self.take_profit_usdt > Decimal('0') or self.support_order_take_profit_percent > 0):
             tp_price_str = f"{tp_price_dec:.{self.price_tick_size.as_tuple().exponent * -1}f}"
             self.logger.info(f"[{self.symbol}] Intentando colocar orden TAKE_PROFIT_MARKET @ {tp_price_str} para cantidad {quantity_float} (Habilitado)")
             tp_order_result = create_futures_take_profit_order(
@@ -675,11 +677,12 @@ class TradingBot:
                 self.logger.info(f"[{self.symbol}] Orden TAKE_PROFIT_MARKET {self.pending_tp_order_id} colocada @ {tp_price_str}.")
             else:
                 self.logger.error(f"[{self.symbol}] Fallo al colocar la orden TAKE_PROFIT_MARKET @ {tp_price_str}. Respuesta: {tp_order_result}")
-        elif not self.enable_take_profit_pnl:
-            self.logger.info(f"[{self.symbol}] Colocación de orden Take Profit DESHABILITADA por configuración (enable_take_profit_pnl=False).")
+        elif not tp_enabled:
+            self.logger.info(f"[{self.symbol}] Colocación de orden Take Profit DESHABILITADA por configuración.")
 
         # Colocar orden Stop Loss
-        if self.enable_stop_loss_pnl and sl_price_dec and (self.stop_loss_usdt != Decimal('0') or self.support_order_stop_loss_percent > 0):
+        sl_enabled = self.enable_stop_loss_pnl or (self.support_order_stop_loss_percent > 0)
+        if sl_enabled and sl_price_dec and (self.stop_loss_usdt != Decimal('0') or self.support_order_stop_loss_percent > 0):
             sl_price_str = f"{sl_price_dec:.{self.price_tick_size.as_tuple().exponent * -1}f}"
             self.logger.info(f"[{self.symbol}] Intentando colocar orden STOP_MARKET @ {sl_price_str} para cantidad {quantity_float} (Habilitado)")
             sl_order_result = create_futures_stop_loss_order(
@@ -694,8 +697,8 @@ class TradingBot:
                 self.logger.info(f"[{self.symbol}] Orden STOP_MARKET {self.pending_sl_order_id} colocada @ {sl_price_str}.")
             else:
                 self.logger.error(f"[{self.symbol}] Fallo al colocar la orden STOP_MARKET @ {sl_price_str}. Respuesta: {sl_order_result}")
-        elif not self.enable_stop_loss_pnl:
-            self.logger.info(f"[{self.symbol}] Colocación de orden Stop Loss DESHABILITADA por configuración (enable_stop_loss_pnl=False).")
+        elif not sl_enabled:
+            self.logger.info(f"[{self.symbol}] Colocación de orden Stop Loss DESHABILITADA por configuración.")
 
     def _check_tp_sl_order_status(self):
         """
@@ -1771,7 +1774,8 @@ class TradingBot:
                 self.last_rsi_value = rsi_values_exit.iloc[-1]
                 current_rsi_str = f"{self.last_rsi_value:.2f}"
             else:
-                self.logger.warning(f"[{self.symbol}] No se pudo calcular el RSI para _check_exit_conditions. Usando valor anterior: {self.last_rsi_value:.2f if self.last_rsi_value else 'None'}")
+                prev_rsi_str = f"{self.last_rsi_value:.2f}" if self.last_rsi_value is not None else "None"
+                self.logger.warning(f"[{self.symbol}] No se pudo calcular el RSI para _check_exit_conditions. Usando valor anterior: {prev_rsi_str}")
                 if self.last_rsi_value is not None:
                     current_rsi_str = f"{self.last_rsi_value:.2f}"
 
@@ -1783,7 +1787,8 @@ class TradingBot:
             exit_signal = False
 
             # 1. Take Profit (por USDT o por Porcentaje)
-            if self.enable_take_profit_pnl:
+            tp_enabled = self.enable_take_profit_pnl or (self.support_order_take_profit_percent > 0)
+            if tp_enabled:
                 if self.take_profit_usdt > 0 and self.last_known_pnl is not None and self.last_known_pnl >= self.take_profit_usdt:
                     self.logger.warning(f"[{self.symbol}] CONDICIÓN DE TAKE PROFIT (PnL USDT) ALCANZADA. PnL={self.last_known_pnl:.4f} >= TP={self.take_profit_usdt}")
                     exit_signal = True
@@ -1800,7 +1805,8 @@ class TradingBot:
                 self.logger.info(f"[{self.symbol}] Salida por Take Profit DESHABILITADA.")
 
             # 2. Stop Loss (por USDT o por Porcentaje)
-            if not exit_signal and self.enable_stop_loss_pnl:
+            sl_enabled = self.enable_stop_loss_pnl or (self.support_order_stop_loss_percent > 0)
+            if not exit_signal and sl_enabled:
                 if self.stop_loss_usdt != 0 and self.last_known_pnl is not None:
                     max_allowed_loss = -abs(Decimal(str(self.stop_loss_usdt)))
                     if self.last_known_pnl <= max_allowed_loss:

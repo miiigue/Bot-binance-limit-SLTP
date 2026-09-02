@@ -86,6 +86,11 @@ def setup_logging(log_filename: str = 'app.log'):
         return None
 
     # --- Handler para Consola --- 
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(log_formatter)
     console_handler.setLevel(log_level)
