@@ -1245,6 +1245,8 @@ class RiskManager:
             except Exception:
                 pass
 
+            real_exp = self.get_current_exposure()
+            self.current_exposure = real_exp
             free_margin = max(Decimal('0'), self.total_balance - real_exp)
             exp_pct = (real_exp / self.total_balance * Decimal('100')) if self.total_balance > Decimal('0') else Decimal('0')
 
