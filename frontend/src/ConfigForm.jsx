@@ -147,12 +147,12 @@ const tooltipTexts = {
     example: "🛡️ Testnet / Simulación para operar seguro sin arriesgar capital real."
   },
   leverage: {
-    desc: "Multiplicador de apalancamiento en Binance Futures. El bot lo ajusta automáticamente para cada par.",
-    example: "Con 10x y 50 USDT de posición, operas contratos por 500 USDT usando 50 USDT de margen."
+    desc: "Multiplicador de apalancamiento en Binance Futures. Reduce el margen real que se descuenta de tu saldo para sostener el tamaño de posición configurado.",
+    example: "Con 5x y un tamaño de posición de 50 USDT, solo se retienen 10 USDT de margen de tu billetera (50 / 5x)."
   },
   positionSizeUSDT: {
-    desc: "Monto de margen base en USDT asignado para abrir cada posición individual.",
-    example: "Si colocas 50 USDT, cada operación abrirá contratos comprometiendo 50 USDT de tu balance."
+    desc: "Tamaño o valor nocional de la orden en USDT que se abrirá y se verá reflejado en tu posición de Binance.",
+    example: "Si colocas 50 USDT, tu posición en Binance mostrará un tamaño de 50 USDT en contratos. El margen real deducido de tu billetera será proporcional al apalancamiento (ej: con 5x son 10 USDT)."
   },
   rsi_interval: {
     desc: "Temporalidad (timeframe) de las velas japonesas usadas para el análisis técnico.",
@@ -804,7 +804,10 @@ function ConfigForm({
             <input type="number" name="leverage" id="leverage" value={formData.leverage} onChange={handleChange} min="1" max="125" step="1" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 3 (para 3x)"/>
           </ConfigItem>
           <ConfigItem labelText="Tamaño Posición (USDT)" htmlFor="positionSizeUSDT" tooltipKey="positionSizeUSDT">
-            <input type="number" name="positionSizeUSDT" id="positionSizeUSDT" value={formData.positionSizeUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" min="1"/>
+            <input type="number" name="positionSizeUSDT" id="positionSizeUSDT" value={formData.positionSizeUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold" min="1"/>
+            <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 block">
+              💡 Margen en billetera: <strong className="text-emerald-400 font-mono">~${(Number(formData.positionSizeUSDT || 0) / (Number(formData.leverage) || 1)).toFixed(2)} USDT</strong> ({formData.leverage || 1}x)
+            </span>
           </ConfigItem>
           <ConfigItem labelText="Intervalo de Velas General" htmlFor="rsiInterval" tooltipKey="rsi_interval">
             <input type="text" name="rsiInterval" id="rsiInterval" value={formData.rsiInterval} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 1m, 5m"/>

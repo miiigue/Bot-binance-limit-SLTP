@@ -12,8 +12,8 @@ function StrategyRadar({ config }) {
 
   // Valores parseados de la configuración
   const leverage = Number(config?.leverage) || 20;
-  const marginUSDT = Number(config?.positionSizeUSDT) || 50;
-  const notionalValue = marginUSDT * leverage;
+  const positionSizeUSDT = Number(config?.positionSizeUSDT) || 50;
+  const estimatedMargin = leverage > 0 ? (positionSizeUSDT / leverage) : positionSizeUSDT;
   const rsiInterval = config?.rsiInterval || '5m';
   const rsiPeriod = Number(config?.rsiPeriod) || 14;
   const symbols = config?.symbolsToTrade ? config.symbolsToTrade.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -77,7 +77,7 @@ function StrategyRadar({ config }) {
   // Cálculos del simulador
   const simulation = useMemo(() => {
     const p = simulatedPrice > 0 ? simulatedPrice : 100;
-    const contractUnits = notionalValue / p;
+    const contractUnits = positionSizeUSDT / p;
 
     let calcTpPrice = 0;
     let calcSlPrice = 0;
@@ -89,17 +89,17 @@ function StrategyRadar({ config }) {
     if (isSupportStrategy) {
       calcTpPrice = p * (1 + supportTPPercent / 100);
       calcSlPrice = p * (1 - supportSLPercent / 100);
-      tpGainUSDT = notionalValue * (supportTPPercent / 100);
-      slLossUSDT = notionalValue * (supportSLPercent / 100);
-      tpReturnOnMargin = (tpGainUSDT / marginUSDT) * 100;
-      slLossOnMargin = (slLossUSDT / marginUSDT) * 100;
+      tpGainUSDT = positionSizeUSDT * (supportTPPercent / 100);
+      slLossUSDT = positionSizeUSDT * (supportSLPercent / 100);
+      tpReturnOnMargin = estimatedMargin > 0 ? (tpGainUSDT / estimatedMargin) * 100 : 0;
+      slLossOnMargin = estimatedMargin > 0 ? (slLossUSDT / estimatedMargin) * 100 : 0;
     } else {
       tpGainUSDT = enableTP ? tpUSDT : 0;
       slLossUSDT = enableSL ? slUSDT : 0;
       calcTpPrice = enableTP && contractUnits > 0 ? p + (tpUSDT / contractUnits) : 0;
       calcSlPrice = enableSL && contractUnits > 0 ? p - (slUSDT / contractUnits) : 0;
-      tpReturnOnMargin = marginUSDT > 0 ? (tpGainUSDT / marginUSDT) * 100 : 0;
-      slLossOnMargin = marginUSDT > 0 ? (slLossUSDT / marginUSDT) * 100 : 0;
+      tpReturnOnMargin = estimatedMargin > 0 ? (tpGainUSDT / estimatedMargin) * 100 : 0;
+      slLossOnMargin = estimatedMargin > 0 ? (slLossUSDT / estimatedMargin) * 100 : 0;
     }
 
     const rrRatio = slLossUSDT > 0 ? (tpGainUSDT / slLossUSDT).toFixed(2) : 'N/A';
@@ -238,10 +238,10 @@ function StrategyRadar({ config }) {
                     🛒 Colocación de Orden
                   </div>
                   <p className="text-[11.5px] text-gray-200 leading-snug">
-                    Comprará un total de <span className="text-white font-bold text-xs">${notionalValue.toLocaleString()} USDT</span> en contratos.
+                    Tamaño de posición: <span className="text-white font-bold text-xs">${positionSizeUSDT.toLocaleString()} USDT</span> en contratos.
                   </p>
                   <p className="text-[10.5px] text-gray-400 mt-1">
-                    (Pones <strong className="text-emerald-400">{marginUSDT} USDT</strong> de tu saldo con apalancamiento <strong className="text-amber-400">{leverage}x</strong>)
+                    (Margen en billetera: <strong className="text-emerald-400">${estimatedMargin.toFixed(2)} USDT</strong> con apalancamiento <strong className="text-amber-400">{leverage}x</strong>)
                   </p>
                 </div>
                 <div className="mt-2.5 pt-2 border-t border-gray-700/60 text-[10.5px] text-gray-400 flex items-center justify-between">
@@ -352,11 +352,11 @@ function StrategyRadar({ config }) {
                   <div className="flex items-center space-x-2">
                     <span className="text-emerald-400 font-extrabold text-sm">⚡ ACCIÓN:</span>
                     <span className="text-gray-100">
-                      Abre orden <strong className="text-white">LIMIT BUY</strong> por un valor total de <strong className="text-emerald-300 font-bold text-sm">${notionalValue.toLocaleString()} USDT</strong> en contratos
+                      Abre orden <strong className="text-white">LIMIT BUY</strong> por un tamaño de posición de <strong className="text-emerald-300 font-bold text-sm">${positionSizeUSDT.toLocaleString()} USDT</strong> en contratos
                     </span>
                   </div>
                   <div className="flex items-center space-x-1.5 text-[11.5px] bg-black/50 px-2.5 py-1 rounded border border-emerald-800/50 text-gray-300">
-                    <span>Inversión: <strong className="text-emerald-400">{marginUSDT} USDT</strong></span>
+                    <span>Margen Billetera: <strong className="text-emerald-400">${estimatedMargin.toFixed(2)} USDT</strong></span>
                     <span className="text-gray-500">•</span>
                     <span>Apalancamiento: <strong className="text-amber-400">{leverage}x</strong></span>
                   </div>
@@ -457,14 +457,14 @@ function StrategyRadar({ config }) {
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
               
-              {/* MARGEN / CONTRATOS */}
+              {/* TAMAÑO POSICIÓN / MARGEN */}
               <div className="bg-gray-900/80 p-2.5 rounded border border-gray-800">
-                <div className="text-[11px] text-gray-400 font-medium">💵 Margen / Total Orden</div>
+                <div className="text-[11px] text-gray-400 font-medium">💵 Posición / Margen</div>
                 <div className="text-sm font-bold text-white mt-0.5">
-                  <span className="text-emerald-400">${marginUSDT} USDT</span> <span className="text-[10.5px] text-amber-400 font-normal">({leverage}x)</span>
+                  <span className="text-emerald-400">${positionSizeUSDT} USDT</span> <span className="text-[10.5px] text-amber-400 font-normal">({leverage}x)</span>
                 </div>
                 <div className="text-[10px] text-gray-300 mt-0.5">
-                  Orden real: <strong className="text-white">${notionalValue.toLocaleString()} USDT</strong> ({simulation.contractUnits.toFixed(2)} uds)
+                  Margen: <strong className="text-emerald-400">${estimatedMargin.toFixed(2)} USDT</strong> ({simulation.contractUnits.toFixed(2)} uds)
                 </div>
               </div>
 
