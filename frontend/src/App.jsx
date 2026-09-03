@@ -306,7 +306,7 @@ function App() {
         {/* 2. Barra de Navegación por Pestañas */}
         <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 md:px-8 py-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            {/* Pestaña 1: Monitor en Vivo */}
+            {/* Pestaña 1: Monitor */}
             <button
               type="button"
               onClick={() => setActiveTab('monitor')}
@@ -316,7 +316,7 @@ function App() {
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
               }`}
             >
-              <span>🖥️</span> Monitor en Vivo
+              <span>🖥️</span> Monitor
               {headerPnlData.coinsInPosition > 0 && (
                 <span className="text-[10px] bg-emerald-500 text-white font-mono px-1.5 py-0.2 rounded-full shadow">
                   {headerPnlData.coinsInPosition} en pos
@@ -324,7 +324,7 @@ function App() {
               )}
             </button>
 
-            {/* Pestaña 2: Configuración y Estrategias */}
+            {/* Pestaña 2: Configuración */}
             <button
               type="button"
               onClick={() => setActiveTab('config')}
@@ -334,10 +334,10 @@ function App() {
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
               }`}
             >
-              <span>⚙️</span> Configuración y Estrategias
+              <span>⚙️</span> Configuración
             </button>
 
-            {/* Pestaña 3: Mosaico de Gráficos TradingView */}
+            {/* Pestaña 3: Gráficos */}
             <button
               type="button"
               onClick={() => setActiveTab('chart')}
@@ -347,10 +347,10 @@ function App() {
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
               }`}
             >
-              <span>📊</span> Mosaico de Gráficos (TradingView)
+              <span>📊</span> Gráficos
             </button>
 
-            {/* Pestaña 4: Rendimiento & PnL */}
+            {/* Pestaña 4: Rendimiento */}
             <button
               type="button"
               onClick={() => setActiveTab('performance')}
@@ -360,10 +360,10 @@ function App() {
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
               }`}
             >
-              <span>📈</span> Rendimiento & PnL
+              <span>📈</span> Rendimiento
             </button>
 
-            {/* Pestaña 5: Radar y Escáner de Mercado */}
+            {/* Pestaña 5: Mercado */}
             <button
               type="button"
               onClick={() => setActiveTab('radar')}
@@ -373,10 +373,10 @@ function App() {
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
               }`}
             >
-              <span>📡</span> Radar de Mercado
+              <span>📡</span> Mercado
             </button>
 
-            {/* Pestaña 6: Laboratorio de Backtesting */}
+            {/* Pestaña 6: Backtesting */}
             <button
               type="button"
               onClick={() => setActiveTab('backtest')}
@@ -386,7 +386,7 @@ function App() {
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
               }`}
             >
-              <span>🧪</span> Backtesting & Laboratorio
+              <span>🧪</span> Backtesting
             </button>
           </div>
 

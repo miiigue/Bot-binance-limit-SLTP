@@ -25,7 +25,7 @@ from src.logger_setup import setup_logging, get_logger
 from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, clear_trade_history, get_all_recent_trades
 from src.bot import TradingBot, BotState 
 from src.binance_client import get_account_balance_usdt, reset_futures_client, get_futures_client
-from src.backtester import get_historical_klines_paginated, run_strategy_backtest
+from src.backtester import get_historical_klines_paginated, run_strategy_backtest, run_portfolio_backtest
 
 # --- NUEVO: Gestor de Estadísticas de Sesión ---
 class SessionStateManager:
@@ -1214,6 +1214,13 @@ def run_backtest_endpoint():
         if not strategy_config:
             # Si no se pasó config específico, cargar de los parámetros cargados
             strategy_config = loaded_trading_params or {}
+
+        # Modo Portafolio Multimoneda (Todas las monedas a la vez)
+        if symbol in ('PORTFOLIO', 'ALL', 'ALL_CONFIGURED') or data.get('is_portfolio'):
+            symbols_to_test = data.get('symbols') or (list(loaded_symbols_to_trade) if loaded_symbols_to_trade else ["SOLUSDT", "DOGEUSDT", "OPUSDT", "SUIUSDT", "NEARUSDT", "ADAUSDT", "ONDOUSDT", "ARBUSDT"])
+            logger.info(f"Iniciando backtest de PORTAFOLIO COMPLETO ({len(symbols_to_test)} pares, {days} días, intervalo {interval})...")
+            results = run_portfolio_backtest(symbols=symbols_to_test, interval=interval, days=days, config=strategy_config, initial_balance_per_coin=initial_balance)
+            return jsonify(results), 200
 
         logger.info(f"Iniciando backtest histórico para {symbol} ({days} días, intervalo {interval})...")
         df = get_historical_klines_paginated(symbol=symbol, interval=interval, days=days, use_cache=True)

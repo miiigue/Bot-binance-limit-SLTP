@@ -381,3 +381,128 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
         'equity_curve': equity_curve,
         'trades': trades_list
     }
+
+
+def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, config: dict = None, initial_balance_per_coin: float = 1000.0) -> dict:
+    """
+    Ejecuta el backtest sobre todo un portafolio de múltiples monedas de forma simultánea.
+    Consolida PnL global, Win Rate del portafolio, curva de capital combinada y ranking ordenado por rentabilidad.
+    """
+    if not symbols:
+        return {"error": "No se especificaron monedas para el backtest de portafolio."}
+    if config is None:
+        config = {}
+
+    individual_results = []
+    all_trades = []
+    total_candles = 0
+
+    for sym in symbols:
+        try:
+            df = get_historical_klines_paginated(sym, interval=interval, days=days, use_cache=True)
+            if df is not None and len(df) >= 50:
+                res = run_strategy_backtest(sym, df, config, initial_balance=initial_balance_per_coin)
+                if 'error' not in res:
+                    individual_results.append(res)
+                    total_candles += res.get('total_candles', 0)
+                    for t in res.get('trades', []):
+                        t['symbol'] = sym
+                        all_trades.append(t)
+        except Exception:
+            continue
+
+    if not individual_results:
+        return {"error": "No se pudieron obtener datos válidos para ninguna de las monedas del portafolio."}
+
+    total_initial_balance = initial_balance_per_coin * len(individual_results)
+    total_net_pnl = sum(r['net_pnl'] for r in individual_results)
+    total_final_balance = total_initial_balance + total_net_pnl
+    total_return_pct = (total_net_pnl / total_initial_balance * 100.0) if total_initial_balance > 0 else 0.0
+
+    total_trades = sum(r['total_trades'] for r in individual_results)
+    total_wins = sum(r['winning_trades'] for r in individual_results)
+    total_losses = sum(r['losing_trades'] for r in individual_results)
+    global_win_rate = (total_wins / total_trades * 100.0) if total_trades > 0 else 0.0
+
+    gross_profit = sum(t['net_pnl'] for t in all_trades if t['net_pnl'] > 0)
+    gross_loss = abs(sum(t['net_pnl'] for t in all_trades if t['net_pnl'] <= 0))
+    global_profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (gross_profit if gross_profit > 0 else 1.0)
+
+    total_fees = sum(r['total_fees_usdt'] for r in individual_results)
+
+    all_trades.sort(key=lambda x: str(x.get('close_time', '')))
+    for idx, t in enumerate(all_trades, 1):
+        t['id'] = idx
+
+    equity_curve = [{"time": all_trades[0]['open_time'] if all_trades else "Inicio", "equity": round(total_initial_balance, 2), "pnl": 0.0}]
+    curr_balance = total_initial_balance
+    peak_balance = total_initial_balance
+    max_dd_usdt = 0.0
+    max_dd_pct = 0.0
+
+    for t in all_trades:
+        curr_balance += t['net_pnl']
+        if curr_balance > peak_balance:
+            peak_balance = curr_balance
+        dd = peak_balance - curr_balance
+        if dd > max_dd_usdt:
+            max_dd_usdt = dd
+        dd_p = (dd / peak_balance * 100.0) if peak_balance > 0 else 0.0
+        if dd_p > max_dd_pct:
+            max_dd_pct = dd_p
+        equity_curve.append({
+            "time": t['close_time'],
+            "equity": round(curr_balance, 2),
+            "pnl": round(curr_balance - total_initial_balance, 2)
+        })
+
+    if len(equity_curve) > 100:
+        step = max(1, len(equity_curve) // 100)
+        downsampled_curve = [equity_curve[i] for i in range(0, len(equity_curve), step)]
+        if equity_curve[-1] not in downsampled_curve:
+            downsampled_curve.append(equity_curve[-1])
+        equity_curve = downsampled_curve
+
+    ranking = []
+    for r in individual_results:
+        ranking.append({
+            "symbol": r['symbol'],
+            "net_pnl": r['net_pnl'],
+            "net_return_pct": r['net_return_pct'],
+            "win_rate_pct": r['win_rate_pct'],
+            "total_trades": r['total_trades'],
+            "winning_trades": r['winning_trades'],
+            "losing_trades": r['losing_trades'],
+            "profit_factor": r['profit_factor'],
+            "max_drawdown_pct": r['max_drawdown_pct'],
+            "total_fees_usdt": r['total_fees_usdt']
+        })
+
+    ranking.sort(key=lambda x: x['net_pnl'], reverse=True)
+
+    return {
+        "is_portfolio": True,
+        "symbol": "PORTFOLIO",
+        "symbols_count": len(individual_results),
+        "symbols_list": [r['symbol'] for r in individual_results],
+        "days_tested": days,
+        "total_candles": total_candles,
+        "initial_balance": round(total_initial_balance, 2),
+        "final_balance": round(total_final_balance, 2),
+        "net_pnl": round(total_net_pnl, 2),
+        "net_return_pct": round(total_return_pct, 2),
+        "total_trades": total_trades,
+        "winning_trades": total_wins,
+        "losing_trades": total_losses,
+        "win_rate_pct": round(global_win_rate, 1),
+        "profit_factor": round(global_profit_factor, 2),
+        "max_drawdown_usdt": round(max_dd_usdt, 2),
+        "max_drawdown_pct": round(max_dd_pct, 2),
+        "avg_trade_pnl": round(total_net_pnl / total_trades, 2) if total_trades > 0 else 0.0,
+        "risk_reward_ratio": round(gross_profit / max(1.0, gross_loss), 2),
+        "total_fees_usdt": round(total_fees, 2),
+        "symbols_ranking": ranking,
+        "equity_curve": equity_curve,
+        "trades": all_trades
+    }
+

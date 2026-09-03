@@ -2,20 +2,22 @@ import React, { useState, useEffect, useMemo } from 'react';
 
 export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToConfig }) {
   // Estado de configuración de la simulación
-  const [symbol, setSymbol] = useState('SOLUSDT');
-  const [availableSymbols, setAvailableSymbols] = useState(['SOLUSDT', 'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ARBUSDT', 'DOGEUSDT']);
+  const [symbol, setSymbol] = useState('PORTFOLIO');
+  const [configuredSymbols, setConfiguredSymbols] = useState([]);
+  const [availableSymbols, setAvailableSymbols] = useState(['SOLUSDT', 'DOGEUSDT', 'OPUSDT', 'SUIUSDT', 'NEARUSDT', 'ADAUSDT', 'ONDOUSDT', 'ARBUSDT', 'BTCUSDT', 'ETHUSDT']);
   const [days, setDays] = useState(14);
   const [interval, setInterval] = useState('5m');
   const [initialBalance, setInitialBalance] = useState(1000);
   
   // Selector de Estrategia (Actual o Guardadas)
-  const [strategySource, setStrategySource] = useState('current'); // 'current' o nombre de estrategia guardada
+  const [strategySource, setStrategySource] = useState('current');
   const [savedStrategies, setSavedStrategies] = useState([]);
   
   // Estado de ejecución y resultados
   const [isRunning, setIsRunning] = useState(false);
   const [results, setResults] = useState(null);
   const [tradeFilter, setTradeFilter] = useState('all'); // 'all', 'wins', 'losses'
+  const [symbolFilter, setSymbolFilter] = useState('all'); // Filtro por moneda específica en modo portafolio
   const [hoveredPoint, setHoveredPoint] = useState(null);
 
   // Cargar símbolos y estrategias guardadas al montar
@@ -27,9 +29,9 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
           const data = await res.json();
           if (data?.symbols?.length) {
             setAvailableSymbols(data.symbols);
-            if (data.configured?.length) {
-              setSymbol(data.configured[0]);
-            }
+          }
+          if (data?.configured?.length) {
+            setConfiguredSymbols(data.configured);
           }
         }
       } catch (err) {
@@ -64,13 +66,17 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
     return found?.config || activeConfig || {};
   }, [strategySource, savedStrategies, activeConfig]);
 
-  // Ejecutar el Backtest
+  // Ejecutar el Backtest (Individual o Portafolio Completo)
   const handleRunBacktest = async () => {
     setIsRunning(true);
     setResults(null);
+    setSymbolFilter('all');
     try {
+      const isPortfolio = symbol === 'PORTFOLIO';
       const payload = {
         symbol: symbol.toUpperCase().trim(),
+        is_portfolio: isPortfolio,
+        symbols: isPortfolio ? (configuredSymbols.length ? configuredSymbols : undefined) : undefined,
         interval,
         days: Number(days),
         initial_balance: Number(initialBalance),
@@ -91,9 +97,12 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
       const data = await res.json();
       setResults(data);
       if (addToast) {
+        const title = isPortfolio 
+          ? `🌐 Portafolio (${data.symbols_count} pares)` 
+          : `${symbol}`;
         addToast(
           '⚡ Backtest Completado',
-          `${symbol} (${days} días): PnL ${data.net_pnl >= 0 ? '+' : ''}${data.net_pnl} USDT (${data.win_rate_pct}% acierto).`,
+          `${title} - ${days} días: PnL ${data.net_pnl >= 0 ? '+' : ''}${data.net_pnl} USDT (${data.win_rate_pct}% acierto).`,
           data.net_pnl >= 0 ? 'success' : 'warning'
         );
       }
@@ -112,10 +121,17 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
   // Filtrado de operaciones
   const filteredTrades = useMemo(() => {
     if (!results?.trades) return [];
-    if (tradeFilter === 'wins') return results.trades.filter(t => t.net_pnl > 0);
-    if (tradeFilter === 'losses') return results.trades.filter(t => t.net_pnl <= 0);
-    return results.trades;
-  }, [results, tradeFilter]);
+    let list = results.trades;
+    if (symbolFilter !== 'all') {
+      list = list.filter(t => t.symbol === symbolFilter);
+    }
+    if (tradeFilter === 'wins') {
+      list = list.filter(t => t.net_pnl > 0);
+    } else if (tradeFilter === 'losses') {
+      list = list.filter(t => t.net_pnl <= 0);
+    }
+    return list;
+  }, [results, tradeFilter, symbolFilter]);
 
   // Aplicar configuración probada al bot en vivo
   const handleApplyToLiveBot = () => {
@@ -232,14 +248,19 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
             <div className="flex items-center gap-2 mb-1">
               <span className="text-2xl">🧪</span>
               <h2 className="text-xl font-bold text-white tracking-wide">
-                Laboratorio de Backtesting Histórico Cuantitativo
+                Laboratorio de Backtesting Cuantitativo
               </h2>
               <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
                 Binance Futures Data
               </span>
+              {results?.is_portfolio && (
+                <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  🌐 Portafolio ({results.symbols_count} pares)
+                </span>
+              )}
             </div>
             <p className="text-sm text-gray-300 max-w-3xl">
-              Simula y valida tus estrategias con datos reales del mercado de Binance vela por vela. Evalúa soportes, RSI, promediado DCA y trailing stops antes de arriesgar capital en vivo.
+              Simula y valida tus estrategias con datos reales de Binance vela por vela. Evalúa una moneda individual o prueba **todo tu portafolio en simultáneo** para identificar las mejores monedas.
             </p>
           </div>
 
@@ -259,24 +280,61 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
 
       {/* 2. Barra de Parámetros de Simulación */}
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+        
+        {/* Acceso Rápido Portafolio vs Monedas */}
+        <div className="mb-4 flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-bold text-gray-500 dark:text-gray-400 mr-1">Alcance:</span>
+          <button
+            type="button"
+            onClick={() => setSymbol('PORTFOLIO')}
+            className={`px-3 py-1 text-xs font-bold rounded-xl border transition-all flex items-center gap-1 ${
+              symbol === 'PORTFOLIO'
+                ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-900/30 ring-2 ring-indigo-400/40'
+                : 'bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-800'
+            }`}
+          >
+            <span>🌐</span>
+            <span>Todo el Portafolio ({configuredSymbols.length || 8} pares)</span>
+          </button>
+
+          {configuredSymbols.map(sym => (
+            <button
+              key={sym}
+              type="button"
+              onClick={() => setSymbol(sym)}
+              className={`px-2.5 py-1 text-xs font-mono font-bold rounded-xl border transition-all ${
+                symbol === sym
+                  ? 'bg-yellow-500 text-black border-yellow-400 shadow-md ring-2 ring-yellow-400/40'
+                  : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-800'
+              }`}
+            >
+              {sym.replace('USDT', '')}
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
           
-          {/* Criptomoneda */}
+          {/* Criptomoneda / Modo */}
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-              🪙 Par de Trading
+              🪙 Selección de Par
             </label>
-            <input
-              type="text"
-              list="symbols-list"
+            <select
               value={symbol}
-              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl text-sm font-mono font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder="SOLUSDT"
-            />
-            <datalist id="symbols-list">
-              {availableSymbols.map(s => <option key={s} value={s} />)}
-            </datalist>
+              onChange={(e) => setSymbol(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl text-sm font-semibold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+            >
+              <option value="PORTFOLIO">🌐 TODO EL PORTAFOLIO ({configuredSymbols.length || 8} Monedas)</option>
+              <optgroup label="Monedas Configuradas">
+                {configuredSymbols.map(s => <option key={s} value={s}>{s}</option>)}
+              </optgroup>
+              <optgroup label="Otras Monedas Populares">
+                {availableSymbols.filter(s => !configuredSymbols.includes(s)).map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </optgroup>
+            </select>
           </div>
 
           {/* Periodo de Días */}
@@ -316,7 +374,7 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
           {/* Capital Inicial */}
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-              💰 Capital Inicial (USDT)
+              💰 Capital {symbol === 'PORTFOLIO' ? 'por Moneda' : 'Inicial'} (USDT)
             </label>
             <input
               type="number"
@@ -360,12 +418,12 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
               {isRunning ? (
                 <>
                   <span className="animate-spin text-sm">⏳</span>
-                  <span>Simulando...</span>
+                  <span>{symbol === 'PORTFOLIO' ? 'Simulando Portafolio...' : 'Simulando...'}</span>
                 </>
               ) : (
                 <>
                   <span>⚡</span>
-                  <span>Ejecutar Backtest</span>
+                  <span>{symbol === 'PORTFOLIO' ? 'Test Portafolio' : 'Testear Moneda'}</span>
                 </>
               )}
             </button>
@@ -387,7 +445,7 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
                 : 'bg-red-500/10 border-red-500/30'
             }`}>
               <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                PnL Neto Total
+                {results.is_portfolio ? 'PnL Total Portafolio' : 'PnL Neto Total'}
               </div>
               <div className={`text-xl font-extrabold font-mono mt-1 ${
                 results.net_pnl >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
@@ -404,7 +462,7 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
             {/* Win Rate */}
             <div className="p-4 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
               <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                Win Rate (% Acierto)
+                Win Rate {results.is_portfolio ? 'Global' : '(% Acierto)'}
               </div>
               <div className="text-xl font-extrabold font-mono mt-1 text-gray-900 dark:text-white">
                 {results.win_rate_pct}%
@@ -469,13 +527,109 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
             </div>
           </div>
 
-          {/* 4. Gráfico de Curva de Capital */}
+          {/* 4. TABLA RANKING POR MONEDA (Solo en Modo Portafolio Multimoneda) */}
+          {results.is_portfolio && results.symbols_ranking?.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🏆</span>
+                  <h3 className="font-bold text-gray-900 dark:text-white text-base">
+                    Ranking de Rendimiento por Moneda (Mejor a Peor)
+                  </h3>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    ({results.symbols_ranking.length} pares evaluados)
+                  </span>
+                </div>
+                {symbolFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setSymbolFilter('all')}
+                    className="text-xs px-2.5 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 rounded-lg hover:bg-indigo-500/30 transition"
+                  >
+                    ✕ Quitar filtro ({symbolFilter})
+                  </button>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-left">
+                  <thead className="bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider">
+                    <tr>
+                      <th className="px-3 py-2.5">Puesto</th>
+                      <th className="px-3 py-2.5">Par</th>
+                      <th className="px-3 py-2.5">PnL Neto</th>
+                      <th className="px-3 py-2.5">Retorno %</th>
+                      <th className="px-3 py-2.5">Win Rate</th>
+                      <th className="px-3 py-2.5 text-center">Trades (G/P)</th>
+                      <th className="px-3 py-2.5">Profit Factor</th>
+                      <th className="px-3 py-2.5">Max Drawdown</th>
+                      <th className="px-3 py-2.5 text-right">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700/60 font-mono text-xs">
+                    {results.symbols_ranking.map((row, idx) => {
+                      const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}º`;
+                      const isSelected = symbolFilter === row.symbol;
+                      return (
+                        <tr 
+                          key={row.symbol} 
+                          className={`transition-colors ${
+                            isSelected 
+                              ? 'bg-indigo-500/15 dark:bg-indigo-900/30' 
+                              : 'hover:bg-gray-50 dark:hover:bg-gray-750'
+                          }`}
+                        >
+                          <td className="px-3 py-2.5 text-sm">{medal}</td>
+                          <td className="px-3 py-2.5 font-bold text-gray-900 dark:text-white">
+                            {row.symbol}
+                          </td>
+                          <td className={`px-3 py-2.5 font-bold ${row.net_pnl >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                            {row.net_pnl >= 0 ? '+' : ''}{row.net_pnl} USDT
+                          </td>
+                          <td className={`px-3 py-2.5 font-semibold ${row.net_return_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {row.net_return_pct >= 0 ? '+' : ''}{row.net_return_pct}%
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className="font-bold text-gray-900 dark:text-white">{row.win_rate_pct}%</span>
+                          </td>
+                          <td className="px-3 py-2.5 text-center text-gray-400">
+                            {row.total_trades} ({row.winning_trades}G / {row.losing_trades}P)
+                          </td>
+                          <td className={`px-3 py-2.5 font-bold ${row.profit_factor >= 1.5 ? 'text-emerald-400' : row.profit_factor >= 1.0 ? 'text-amber-400' : 'text-red-400'}`}>
+                            {row.profit_factor}
+                          </td>
+                          <td className="px-3 py-2.5 text-amber-500">
+                            -{row.max_drawdown_pct}%
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setSymbolFilter(isSelected ? 'all' : row.symbol)}
+                              className={`px-2 py-0.5 rounded text-[11px] font-sans font-bold transition ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200'
+                              }`}
+                            >
+                              {isSelected ? '✓ Viendo Trades' : 'Ver Trades'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 5. Gráfico de Curva de Capital */}
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <span className="text-lg">📈</span>
                 <h3 className="font-bold text-gray-900 dark:text-white text-base">
-                  Curva de Capital Histórica ({symbol} - {results.days_tested} días)
+                  {results.is_portfolio ? 'Curva de Capital del Portafolio Consolidado' : `Curva de Capital Histórica (${results.symbol})`} ({results.days_tested} días)
                 </h3>
               </div>
               <div className="text-xs font-mono text-gray-500 dark:text-gray-400">
@@ -486,13 +640,13 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
             {renderEquitySvg()}
           </div>
 
-          {/* 5. Tabla de Operaciones Simuladas */}
+          {/* 6. Tabla de Operaciones Simuladas */}
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2">
                 <span className="text-lg">📋</span>
                 <h3 className="font-bold text-gray-900 dark:text-white text-base">
-                  Historial de Operaciones Simuladas ({filteredTrades.length})
+                  Historial de Operaciones {symbolFilter !== 'all' ? `(${symbolFilter})` : 'Simuladas'} ({filteredTrades.length})
                 </h3>
               </div>
 
@@ -536,7 +690,7 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
 
             {filteredTrades.length === 0 ? (
               <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
-                No hay operaciones para este filtro o el bot no encontró entradas en el periodo.
+                No hay operaciones para los filtros seleccionados o la estrategia no encontró entradas en este periodo.
               </div>
             ) : (
               <div className="overflow-x-auto max-h-96 overflow-y-auto">
@@ -544,6 +698,7 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
                   <thead className="bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider sticky top-0">
                     <tr>
                       <th className="px-3 py-2.5">#</th>
+                      {results.is_portfolio && <th className="px-3 py-2.5">Par</th>}
                       <th className="px-3 py-2.5">Apertura</th>
                       <th className="px-3 py-2.5">Cierre</th>
                       <th className="px-3 py-2.5">Entrada</th>
@@ -556,8 +711,15 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-700/60 font-mono text-xs">
                     {filteredTrades.map((t) => (
-                      <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                      <tr key={`${t.symbol}_${t.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
                         <td className="px-3 py-2 text-gray-400">{t.id}</td>
+                        {results.is_portfolio && (
+                          <td className="px-3 py-2">
+                            <span className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded font-bold text-[10px] text-gray-800 dark:text-gray-200">
+                              {t.symbol?.replace('USDT', '')}
+                            </span>
+                          </td>
+                        )}
                         <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{t.open_time?.substring(5, 16)}</td>
                         <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{t.close_time?.substring(5, 16)}</td>
                         <td className="px-3 py-2 text-gray-900 dark:text-white font-bold">${t.entry_price}</td>
