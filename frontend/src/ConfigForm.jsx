@@ -343,22 +343,18 @@ function ConfigForm({
   const [riskError, setRiskError] = useState('');
   // --- FIN ESTADOS MOVIDOS ---
   
-  const [riskPercentage, setRiskPercentage] = useState(50); // Estado para el % de riesgo
+  const [riskPercentage, setRiskPercentage] = useState(50);
 
-  // --- Estados para la gestión de estrategias ---
+  // --- Estados para la gestión unificada de estrategias ---
   const [strategyNameInput, setStrategyNameInput] = useState('');
   const [selectedStrategyToLoad, setSelectedStrategyToLoad] = useState('');
-  const [isSavingStrategy, setIsSavingStrategy] = useState(false);
-  const [saveStrategyError, setSaveStrategyError] = useState(null);
-  const [saveStrategySuccess, setSaveStrategySuccess] = useState(null);
+  const [validationError, setValidationError] = useState(null);
   const [isLoadingSelectedStrategy, setIsLoadingSelectedStrategy] = useState(false);
   const [loadStrategyError, setLoadStrategyError] = useState(null);
   const [loadStrategySuccess, setLoadStrategySuccess] = useState(null);
-  // --- Estados para la eliminación de estrategias ---
-  const [isDeletingStrategy, setIsDeletingStrategy] = useState(null); // Guardará el nombre de la estrategia que se está eliminando
+  const [isDeletingStrategy, setIsDeletingStrategy] = useState(null);
   const [deleteStrategyError, setDeleteStrategyError] = useState(null);
   const [deleteStrategySuccess, setDeleteStrategySuccess] = useState(null);
-  // -------------------------------------------------
 
   // --- LÓGICA MOVIDA DESDE RiskDisplay ---
   useEffect(() => {
@@ -377,131 +373,60 @@ function ConfigForm({
       }
     };
 
-    fetchRiskData(); // Carga inicial
-    const intervalId = setInterval(fetchRiskData, 5000); // Refrescar cada 5 segundos
-
-    return () => clearInterval(intervalId); // Limpiar el intervalo al desmontar el componente
+    fetchRiskData();
+    const intervalId = setInterval(fetchRiskData, 5000);
+    return () => clearInterval(intervalId);
   }, []);
-  // --- FIN LÓGICA MOVIDA ---
 
-
-  // --- NUEVO: Cargar la configuración desde el backend al montar ---
+  // --- Sincronizar formData cuando cambia propInitialConfig ---
   useEffect(() => {
-    const fetchInitialConfig = async () => {
-      try {
-        // Cargar configuración principal del bot (config.ini)
-        const response = await fetch('/api/config');
-        if (!response.ok) {
-          throw new Error(`No se pudo cargar la configuración inicial: ${response.statusText}`);
-        }
-        const configFromServer = await response.json();
-        
-        // Mapear la configuración del backend (snake_case) al formato del frontend (camelCase)
-        const mappedData = {
-          ...defaultConfigValues, // Empezar con los valores por defecto
-          symbolsToTrade: configFromServer.SYMBOLS?.symbols_to_trade || configFromServer.symbolsToTrade || '',
-          activeStrategyName: configFromServer.GENERAL?.active_strategy_name || configFromServer.activeStrategyName || 'N/A',
-          leverage: configFromServer.leverage !== undefined ? configFromServer.leverage : (configFromServer.TRADING?.leverage || 20),
-          
-          // Mapeo de [TRADING]
-          rsiInterval: configFromServer.TRADING?.rsi_interval,
-          rsiPeriod: configFromServer.TRADING?.rsi_period,
-          rsiThresholdUp: configFromServer.TRADING?.rsi_threshold_up,
-          rsiThresholdDown: configFromServer.TRADING?.rsi_threshold_down,
-          rsiEntryLevelLow: configFromServer.TRADING?.rsi_entry_level_low,
-          rsiEntryLevelHigh: configFromServer.TRADING?.rsi_entry_level_high,
-          rsiTarget: configFromServer.TRADING?.rsi_target,
-          volumeSmaPeriod: configFromServer.TRADING?.volume_sma_period,
-          volumeFactor: configFromServer.TRADING?.volume_factor,
-          downtrendCheckCandles: configFromServer.TRADING?.downtrend_check_candles,
-          downtrendLevelCheck: configFromServer.TRADING?.downtrend_level_check,
-          requiredUptrendCandles: configFromServer.TRADING?.required_uptrend_candles,
-          positionSizeUSDT: configFromServer.TRADING?.position_size_usdt,
-          stopLossUSDT: configFromServer.TRADING?.stop_loss_usdt,
-          takeProfitUSDT: configFromServer.TRADING?.take_profit_usdt,
-          cycleSleepSeconds: configFromServer.TRADING?.cycle_sleep_seconds,
-          orderTimeoutSeconds: configFromServer.TRADING?.order_timeout_seconds,
-          
-          // Mapeo de booleans de [TRADING]
-          evaluateRsiDelta: configFromServer.TRADING?.evaluate_rsi_delta,
-          evaluateVolumeFilter: configFromServer.TRADING?.evaluate_volume_filter,
-          evaluateRsiRange: configFromServer.TRADING?.evaluate_rsi_range,
-          evaluateDowntrendCandlesBlock: configFromServer.TRADING?.evaluate_downtrend_candles_block,
-          evaluateDowntrendLevelsBlock: configFromServer.TRADING?.evaluate_downtrend_levels_block,
-          evaluateRequiredUptrend: configFromServer.TRADING?.evaluate_required_uptrend,
-          enableTakeProfitPnl: configFromServer.TRADING?.enable_take_profit_pnl,
-          enableStopLossPnl: configFromServer.TRADING?.enable_stop_loss_pnl,
-          enableTrailingRsiStop: configFromServer.TRADING?.enable_trailing_rsi_stop,
-          enablePriceTrailingStop: configFromServer.TRADING?.enable_price_trailing_stop,
-          priceTrailingStopDistanceUSDT: configFromServer.TRADING?.price_trailing_stop_distance_usdt,
-          priceTrailingStopActivationPnlUSDT: configFromServer.TRADING?.price_trailing_stop_activation_pnl_usdt,
-          enablePnlTrailingStop: configFromServer.TRADING?.enable_pnl_trailing_stop,
-          pnlTrailingStopActivationUSDT: configFromServer.TRADING?.pnl_trailing_stop_activation_usdt,
-          pnlTrailingStopDropUSDT: configFromServer.TRADING?.pnl_trailing_stop_drop_usdt,
-          evaluateOpenInterestIncrease: configFromServer.TRADING?.evaluate_open_interest_increase,
-          openInterestPeriod: configFromServer.TRADING?.open_interest_period,
-
-          // Mapeo de Media Móvil
-          evaluateMaFilter: configFromServer.TRADING?.evaluate_ma_filter,
-          maType: configFromServer.TRADING?.ma_type,
-          maPeriod: configFromServer.TRADING?.ma_period,
-
-          // --- NUEVO: Mapeo de Estrategia de Soportes ---
-          evaluateSupportStrategy: configFromServer.TRADING?.evaluate_support_strategy,
-          supportHistoryCandles: configFromServer.TRADING?.support_history_candles,
-          supportPivotWindow: configFromServer.TRADING?.support_pivot_window,
-          supportConfirmations: configFromServer.TRADING?.support_confirmations,
-          supportLevelTolerancePercent: configFromServer.TRADING?.support_level_tolerance_percent,
-          supportOrderStopLossPercent: configFromServer.TRADING?.support_order_stop_loss_percent,
-          supportOrderTakeProfitPercent: configFromServer.TRADING?.support_order_take_profit_percent,
-
-          // Mapeo de [BINANCE]
-          mode: configFromServer.BINANCE?.mode
-        };
-
-        // Filtrar claves undefined para no sobreescribir defaults innecesariamente
-        Object.keys(mappedData).forEach(key => {
-          if (mappedData[key] === undefined) {
-            delete mappedData[key];
-          }
-        });
-        
-        setFormData(prevData => ({ ...prevData, ...mappedData }));
-        if (onStrategyNameChange && mappedData.activeStrategyName && mappedData.activeStrategyName !== 'N/A') {
-            onStrategyNameChange(mappedData.activeStrategyName);
-        }
-
-      } catch (error) {
-        console.error("Error al cargar la configuración del servidor:", error);
-        setError("No se pudo cargar la configuración de config.ini. Se muestran los valores por defecto.");
-      }
-    };
-
-    if (!propInitialConfig) {
-      fetchInitialConfig();
-    }
-  }, [propInitialConfig, onStrategyNameChange]);
-
-  useEffect(() => {
-    if (propInitialConfig) {
-      const newFormData = { ...defaultConfigValues }; 
-
+    if (propInitialConfig && Object.keys(propInitialConfig).length > 0) {
+      const newFormData = { ...defaultConfigValues };
       for (const key in propInitialConfig) {
-        if (Object.prototype.hasOwnProperty.call(propInitialConfig, key)) {
+        if (propInitialConfig[key] !== undefined) {
           newFormData[key] = propInitialConfig[key];
         }
       }
-
       if (propInitialConfig.downtrend_level_check !== undefined) {
         newFormData.downtrendLevelCheck = propInitialConfig.downtrend_level_check;
       }
-
       setFormData(newFormData);
 
       const stratName = propInitialConfig.activeStrategyName || propInitialConfig.active_strategy_name;
-      if (onStrategyNameChange && stratName && stratName !== 'N/A') {
-        onStrategyNameChange(stratName);
+      if (stratName && stratName !== 'N/A' && stratName !== 'Configuración Modificada') {
+        setStrategyNameInput(stratName);
+        setSelectedStrategyToLoad(stratName);
+        if (onStrategyNameChange) {
+          onStrategyNameChange(stratName);
+        }
       }
+    }
+  }, [propInitialConfig, onStrategyNameChange]);
+
+  // Carga inicial de fallback si no se pasó propInitialConfig
+  useEffect(() => {
+    if (!propInitialConfig) {
+      const fetchInitialConfig = async () => {
+        try {
+          const response = await fetch('/api/config');
+          if (response.ok) {
+            const data = await response.json();
+            const newFormData = { ...defaultConfigValues, ...data };
+            setFormData(newFormData);
+            const stratName = data.activeStrategyName || data.active_strategy_name;
+            if (stratName && stratName !== 'N/A' && stratName !== 'Configuración Modificada') {
+              setStrategyNameInput(stratName);
+              setSelectedStrategyToLoad(stratName);
+              if (onStrategyNameChange) {
+                onStrategyNameChange(stratName);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error al cargar config:", err);
+        }
+      };
+      fetchInitialConfig();
     }
   }, [propInitialConfig, onStrategyNameChange]);
 
@@ -511,92 +436,93 @@ function ConfigForm({
       ...prevFormData,
       [name]: type === 'checkbox' ? checked : value
     }));
-    // Al cambiar cualquier campo, indicar que la estrategia actual (si la había) ha sido modificada.
-    if (onStrategyNameChange) {
-      onStrategyNameChange('Configuración Modificada'); // O simplemente '' para borrarlo
-    }
+    setValidationError(null);
   };
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setIsLoading(true);
-    setError(null);
+  // --- Guardar y Aplicar al Bot (Atómico y Validado) ---
+  const handleSaveAndApply = async (overrideName = null) => {
+    setValidationError(null);
     setShowSuccessMessage(false);
+    setError(null);
 
-    const dataToSend = { ...formData };
-    if (dataToSend.downtrendLevelCheck !== undefined) {
-        dataToSend.downtrend_level_check = dataToSend.downtrendLevelCheck;
+    const nameToSave = (overrideName || strategyNameInput || '').trim();
+    if (!nameToSave) {
+      setValidationError("⚠️ Debes escribir un NOMBRE para la configuración antes de guardar.");
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
     }
-    if (dataToSend.evaluateOpenInterestIncrease !== undefined) {
-        dataToSend.evaluate_open_interest_increase = dataToSend.evaluateOpenInterestIncrease;
-    }
-    if (dataToSend.openInterestPeriod !== undefined) {
-        dataToSend.open_interest_period = dataToSend.openInterestPeriod;
-    }
-
-    // --- NUEVO: Añadir los nuevos campos de MA al objeto que se envía ---
-    if (dataToSend.evaluateMaFilter !== undefined) {
-      dataToSend.evaluate_ma_filter = dataToSend.evaluateMaFilter;
-    }
-    if (dataToSend.maType !== undefined) {
-      dataToSend.ma_type = dataToSend.maType;
-    }
-    if (dataToSend.maPeriod !== undefined) {
-      dataToSend.ma_period = dataToSend.maPeriod;
+    if (anySpecial(nameToSave)) {
+      setValidationError("⚠️ El nombre no debe contener puntos (.), barras (/) ni caracteres especiales.");
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
     }
 
-    // --- NUEVO: Añadir los nuevos campos de Soportes al objeto que se envía ---
-    if (dataToSend.evaluateSupportStrategy !== undefined) {
-      dataToSend.evaluate_support_strategy = dataToSend.evaluateSupportStrategy;
-    }
-    if (dataToSend.supportHistoryCandles !== undefined) {
-      dataToSend.support_history_candles = dataToSend.supportHistoryCandles;
-    }
-    if (dataToSend.supportPivotWindow !== undefined) {
-      dataToSend.support_pivot_window = dataToSend.supportPivotWindow;
-    }
-    if (dataToSend.supportConfirmations !== undefined) {
-      dataToSend.support_confirmations = dataToSend.supportConfirmations;
-    }
-    if (dataToSend.supportLevelTolerancePercent !== undefined) {
-      dataToSend.support_level_tolerance_percent = dataToSend.supportLevelTolerancePercent;
-    }
-    if (dataToSend.supportOrderStopLossPercent !== undefined) {
-      dataToSend.support_order_stop_loss_percent = dataToSend.supportOrderStopLossPercent;
-    }
-    if (dataToSend.supportOrderTakeProfitPercent !== undefined) {
-      dataToSend.support_order_take_profit_percent = dataToSend.supportOrderTakeProfitPercent;
+    const symbols = (formData.symbolsToTrade || '').trim();
+    if (!symbols) {
+      setValidationError("⚠️ Debes indicar al menos un par de monedas en 'Símbolos' (ej: SOLUSDT, BTCUSDT).");
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
     }
 
-    // --- NUEVO: Añadir campos de DCA al objeto que se envía ---
-    if (dataToSend.enableDcaReentry !== undefined) {
-      dataToSend.enable_dca_reentry = dataToSend.enableDcaReentry;
-    }
-    if (dataToSend.dcaReentryMode !== undefined) {
-      dataToSend.dca_reentry_mode = dataToSend.dcaReentryMode;
-    }
-    if (dataToSend.dcaPriceDropPercent !== undefined) {
-      dataToSend.dca_price_drop_percent = dataToSend.dcaPriceDropPercent;
-    }
-    if (dataToSend.dcaMaxReentries !== undefined) {
-      dataToSend.dca_max_reentries = dataToSend.dcaMaxReentries;
-    }
-    if (dataToSend.dcaVolumeMultiplier !== undefined) {
-      dataToSend.dca_volume_multiplier = dataToSend.dcaVolumeMultiplier;
-    }
-
+    setIsLoading(true);
     try {
-      const success = await onSave(dataToSend);
-      if (success) {
+      const dataToSend = {
+        ...formData,
+        activeStrategyName: nameToSave,
+        symbolsToTrade: symbols
+      };
+
+      if (dataToSend.downtrendLevelCheck !== undefined) dataToSend.downtrend_level_check = dataToSend.downtrendLevelCheck;
+      if (dataToSend.evaluateOpenInterestIncrease !== undefined) dataToSend.evaluate_open_interest_increase = dataToSend.evaluateOpenInterestIncrease;
+      if (dataToSend.openInterestPeriod !== undefined) dataToSend.open_interest_period = dataToSend.openInterestPeriod;
+      if (dataToSend.evaluateMaFilter !== undefined) dataToSend.evaluate_ma_filter = dataToSend.evaluateMaFilter;
+      if (dataToSend.maType !== undefined) dataToSend.ma_type = dataToSend.maType;
+      if (dataToSend.maPeriod !== undefined) dataToSend.ma_period = dataToSend.maPeriod;
+      if (dataToSend.evaluateSupportStrategy !== undefined) dataToSend.evaluate_support_strategy = dataToSend.evaluateSupportStrategy;
+      if (dataToSend.supportHistoryCandles !== undefined) dataToSend.support_history_candles = dataToSend.supportHistoryCandles;
+      if (dataToSend.supportPivotWindow !== undefined) dataToSend.support_pivot_window = dataToSend.supportPivotWindow;
+      if (dataToSend.supportConfirmations !== undefined) dataToSend.support_confirmations = dataToSend.supportConfirmations;
+      if (dataToSend.supportLevelTolerancePercent !== undefined) dataToSend.support_level_tolerance_percent = dataToSend.supportLevelTolerancePercent;
+      if (dataToSend.supportOrderStopLossPercent !== undefined) dataToSend.support_order_stop_loss_percent = dataToSend.supportOrderStopLossPercent;
+      if (dataToSend.supportOrderTakeProfitPercent !== undefined) dataToSend.support_order_take_profit_percent = dataToSend.supportOrderTakeProfitPercent;
+      if (dataToSend.enableDcaReentry !== undefined) dataToSend.enable_dca_reentry = dataToSend.enableDcaReentry;
+      if (dataToSend.dcaReentryMode !== undefined) dataToSend.dca_reentry_mode = dataToSend.dcaReentryMode;
+      if (dataToSend.dcaPriceDropPercent !== undefined) dataToSend.dca_price_drop_percent = dataToSend.dcaPriceDropPercent;
+      if (dataToSend.dcaMaxReentries !== undefined) dataToSend.dca_max_reentries = dataToSend.dcaMaxReentries;
+      if (dataToSend.dcaVolumeMultiplier !== undefined) dataToSend.dca_volume_multiplier = dataToSend.dcaVolumeMultiplier;
+
+      const result = await onSave(dataToSend);
+      if (result?.success || !result?.error) {
         setShowSuccessMessage(true);
-        setTimeout(() => setShowSuccessMessage(false), 3000);
-        // Al guardar en config.ini, la configuración ya no es una estrategia nombrada específica.
+        setSelectedStrategyToLoad(nameToSave);
+        if (onStrategyNameChange) {
+          onStrategyNameChange(nameToSave);
+        }
+        if (onRefreshStrategies) {
+          onRefreshStrategies();
+        }
+        setTimeout(() => setShowSuccessMessage(false), 5000);
+      } else {
+        setValidationError(result?.error || "Error al guardar la configuración.");
       }
     } catch (err) {
-      setError(err.message || 'Error al guardar la configuración.');
+      setValidationError(err.message || "Error al guardar la configuración.");
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Guardar como Nueva Versión / Copia
+  const handleSaveAsNewCopy = () => {
+    const defaultNewName = strategyNameInput ? `${strategyNameInput}_v2` : 'MiEstrategia_v1';
+    const newName = prompt("Introduce un nuevo nombre para esta copia de la estrategia:", defaultNewName);
+    if (!newName || !newName.trim()) return;
+    setStrategyNameInput(newName.trim());
+    handleSaveAndApply(newName.trim());
+  };
+
+  const anySpecial = (str) => {
+    return ['.', '/', '\\'].some(char => str.includes(char));
   };
 
   // --- Funciones para Guardar y Cargar Estrategias ---
@@ -677,11 +603,14 @@ function ConfigForm({
       // o que se usen valores por defecto si faltan, para evitar errores de "controlled/uncontrolled".
       // Una forma es fusionar con defaultConfigValues.
       const newFormData = { ...defaultConfigValues, ...strategyData }; 
-      setFormData(newFormData); // Actualizar el formulario con los datos de la estrategia
+      setFormData(newFormData);
+      setStrategyNameInput(strategyName);
+      setSelectedStrategyToLoad(strategyName);
+      setValidationError(null);
       if (onStrategyNameChange) {
-        onStrategyNameChange(strategyName); // Actualizar el nombre en la cabecera
+        onStrategyNameChange(strategyName);
       }
-      setLoadStrategySuccess(`Estrategia '${strategyName}' cargada en el formulario. ¡Recuerda guardar la configuración si deseas aplicarla!`);
+      setLoadStrategySuccess(`Estrategia '${strategyName}' cargada con éxito. ¡Haz clic en 'Guardar y Aplicar' para dejarla activa en el bot!`);
       setTimeout(() => setLoadStrategySuccess(null), 5000);
     } catch (err) {
       console.error("Error loading strategy:", err);
@@ -785,6 +714,130 @@ function ConfigForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6 bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 mb-8">
       <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Configuración del Bot</h2>
+
+      {/* ============================================================ */}
+      {/* 🚀 CENTRO DE CONTROL DE ESTRATEGIA Y GUARDADO UNIFICADO       */}
+      {/* ============================================================ */}
+      <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 border-2 border-indigo-500/50 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4">
+        
+        {/* Fila 1: Selector de Estrategia Guardada y Acciones */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-indigo-800/50">
+          <div className="flex-grow">
+            <label htmlFor="selectSavedStrategy" className="block text-xs font-extrabold uppercase tracking-wider text-indigo-300 mb-1.5 flex items-center gap-1.5">
+              <span>📂</span> Cargar Estrategia / Plantilla Guardada:
+            </label>
+            <div className="flex items-center gap-2">
+              <select
+                id="selectSavedStrategy"
+                value={selectedStrategyToLoad}
+                onChange={(e) => {
+                  setSelectedStrategyToLoad(e.target.value);
+                  if (e.target.value) {
+                    handleLoadSelectedStrategy(e.target.value);
+                  }
+                }}
+                className="flex-grow py-2.5 px-3.5 bg-gray-950 border border-indigo-500/60 rounded-xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-400 outline-none shadow-inner"
+              >
+                <option value="">-- Seleccionar Estrategia para Cargar --</option>
+                {availableStrategies.map(item => {
+                  const name = typeof item === 'object' ? item.name : item;
+                  return <option key={name} value={name}>📁 {name}</option>;
+                })}
+              </select>
+              {selectedStrategyToLoad && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteStrategy(selectedStrategyToLoad)}
+                  className="px-3.5 py-2.5 bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-700/60 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow"
+                  title="Eliminar esta estrategia"
+                >
+                  <span>🗑️</span>
+                  <span className="hidden sm:inline">Eliminar</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Badge Estado Activo */}
+          <div className="flex flex-col justify-end">
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Estrategia Activa:</span>
+            <span className="text-sm font-extrabold text-amber-400 font-mono flex items-center gap-1.5 mt-0.5">
+              <span>⭐</span> {strategyNameInput || formData.activeStrategyName || 'Sin Nombre Asignado'}
+            </span>
+          </div>
+        </div>
+
+        {/* Fila 2: Nombre Obligatorio y Botones de Guardado */}
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+          
+          {/* Input Obligatorio del Nombre */}
+          <div className="flex-grow">
+            <label htmlFor="strategyNameInput" className="block text-xs font-extrabold uppercase tracking-wider text-yellow-400 mb-1 flex items-center gap-1.5">
+              <span>🏷️</span> Nombre de la Configuración / Estrategia <span className="text-red-400">* (Obligatorio)</span>:
+            </label>
+            <input 
+              type="text" 
+              id="strategyNameInput"
+              value={strategyNameInput}
+              onChange={(e) => {
+                setStrategyNameInput(e.target.value);
+                setValidationError(null);
+              }}
+              placeholder="Ej: SOPORTES_SCALPING_5M o MI_ESTRATEGIA_SOL"
+              className="w-full py-2.5 px-3.5 bg-gray-950 border-2 border-yellow-500/70 focus:border-yellow-400 rounded-xl text-sm font-bold text-white placeholder-gray-500 outline-none shadow-inner"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              💡 Este nombre identificará estos parámetros tanto en tu bot en vivo como en el Laboratorio de Backtesting.
+            </p>
+          </div>
+
+          {/* Botones de Acción */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Botón Principal: Guardar y Aplicar */}
+            <button
+              type="button"
+              onClick={() => handleSaveAndApply()}
+              disabled={isLoading}
+              className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-emerald-900/50 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+            >
+              <span>💾</span>
+              <span>{isLoading ? 'Guardando...' : 'Guardar y Aplicar al Bot'}</span>
+            </button>
+
+            {/* Botón Secundario: Guardar como Nueva Copia */}
+            <button
+              type="button"
+              onClick={handleSaveAsNewCopy}
+              disabled={isLoading}
+              className="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 font-bold text-xs rounded-xl shadow transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+              title="Guardar una copia con otro nombre"
+            >
+              <span>➕</span>
+              <span>Guardar Nueva Copia</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Mensajes de Validación y Feedback */}
+        {validationError && (
+          <div className="p-3 bg-red-950/90 border border-red-500/70 rounded-xl text-red-200 text-xs font-bold flex items-center gap-2 animate-bounce">
+            <span>⚠️</span>
+            <span>{validationError}</span>
+          </div>
+        )}
+        {showSuccessMessage && (
+          <div className="p-3 bg-emerald-950/90 border border-emerald-500/70 rounded-xl text-emerald-200 text-xs font-bold flex items-center gap-2 animate-fadeIn">
+            <span>✓</span>
+            <span>¡Configuración guardada en la biblioteca y aplicada al bot en vivo exitosamente!</span>
+          </div>
+        )}
+        {loadStrategySuccess && (
+          <div className="p-3 bg-blue-950/90 border border-blue-500/70 rounded-xl text-blue-200 text-xs font-bold flex items-center gap-2 animate-fadeIn">
+            <span>ℹ️</span>
+            <span>{loadStrategySuccess}</span>
+          </div>
+        )}
+      </div>
 
       {/* Radar de Estrategia, Línea de Tiempo y Simulador Dinámico */}
       <StrategyRadar config={formData} />
@@ -1267,53 +1320,34 @@ function ConfigForm({
         </div>
       </fieldset>
 
+      {/* Botón Inferior Sincronizado para Guardar y Aplicar */}
       <div className="pt-6">
-        <button type="submit" disabled={isLoading} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-2.5 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors shadow-md text-base">
-          {isLoading ? 'Guardando en config.ini...' : 'Guardar Configuración (para el Bot)'}
+        <button 
+          type="button" 
+          onClick={() => handleSaveAndApply()} 
+          disabled={isLoading} 
+          className="w-full py-3.5 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-base rounded-xl shadow-xl shadow-emerald-900/40 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+        >
+          <span>💾</span>
+          <span>{isLoading ? 'Guardando y Aplicando...' : `Guardar y Aplicar "${strategyNameInput || 'Configuración'}" al Bot`}</span>
         </button>
-        {showSuccessMessage && <p className="mt-2 text-sm text-green-600 dark:text-green-400 text-center font-medium">¡Configuración (config.ini) guardada exitosamente!</p>}
-        {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400 text-center font-medium">Error al guardar config.ini: {error}</p>}
+        {validationError && <p className="mt-2 text-sm text-red-500 text-center font-bold">⚠️ {validationError}</p>}
+        {showSuccessMessage && <p className="mt-2 text-sm text-green-500 text-center font-bold">✓ ¡Configuración guardada y aplicada exitosamente!</p>}
       </div>
 
-      {/* --- Sección de Gestión de Estrategias --- */}
-      <ConfigSection title="Gestión de Estrategias" className="bg-gray-50 dark:bg-gray-800/50">
-        <div className="space-y-6">
-          {/* Guardar Estrategia */}
-          <div>
-            <h4 className="text-md font-medium text-gray-800 dark:text-gray-200 mb-2">Guardar Configuración Actual como Estrategia</h4>
-            <div className="flex items-end space-x-3">
-              <div className="flex-grow">
-                <label htmlFor="strategyNameInput" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre para la Estrategia:</label>
-                <input 
-                  type="text" 
-                  id="strategyNameInput"
-                  value={strategyNameInput}
-                  onChange={(e) => setStrategyNameInput(e.target.value)}
-                  placeholder="Ej: MiEstrategiaRSI"
-                  className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                />
-              </div>
-              <button 
-                type="button" 
-                onClick={handleSaveCurrentStrategy} 
-                disabled={isSavingStrategy || !strategyNameInput.trim()}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 whitespace-nowrap"
-              >
-                {isSavingStrategy ? 'Guardando...' : 'Guardar Estrategia'}
-              </button>
-            </div>
-            {saveStrategySuccess && <p className="mt-2 text-sm text-green-500 dark:text-green-400">{saveStrategySuccess}</p>}
-            {saveStrategyError && <p className="mt-2 text-sm text-red-500 dark:text-red-400">{saveStrategyError}</p>}
+      {/* --- Biblioteca de Estrategias Guardadas --- */}
+      <ConfigSection title="Biblioteca de Estrategias Guardadas" className="bg-gray-50 dark:bg-gray-800/50 mt-6">
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Carga o administra las estrategias que tienes guardadas en el disco local:
+            </p>
+            {deleteStrategySuccess && <span className="text-xs text-green-500 font-bold">{deleteStrategySuccess}</span>}
+            {deleteStrategyError && <span className="text-xs text-red-500 font-bold">{deleteStrategyError}</span>}
           </div>
 
-          {/* Cargar Estrategia */}
-          <div className="pt-6 border-t border-gray-300 dark:border-gray-600">
-            <h4 className="text-md font-medium text-gray-800 dark:text-gray-200 mb-2">Estrategias Guardadas</h4>
-            {isLoadingStrategies && <p className="text-sm text-gray-500 dark:text-gray-400">Cargando lista de estrategias...</p>}
-            {strategyError && <p className="text-sm text-red-500 dark:text-red-400">Error al cargar estrategias: {strategyError}</p>}
-            
-            {deleteStrategySuccess && <p className="mt-2 mb-2 text-sm text-green-500 dark:text-green-400">{deleteStrategySuccess}</p>}
-            {deleteStrategyError && <p className="mt-2 mb-2 text-sm text-red-500 dark:text-red-400">{deleteStrategyError}</p>}
+          {isLoadingStrategies && <p className="text-sm text-gray-500 dark:text-gray-400">Cargando lista de estrategias...</p>}
+          {strategyError && <p className="text-sm text-red-500 dark:text-red-400">Error al cargar estrategias: {strategyError}</p>}
 
             {!isLoadingStrategies && !strategyError && (
               availableStrategies.length > 0 ? (
@@ -1464,9 +1498,8 @@ function ConfigForm({
             {loadStrategySuccess && !deleteStrategySuccess && <p className="mt-2 text-sm text-green-500 dark:text-green-400">{loadStrategySuccess}</p>}
             {loadStrategyError && !deleteStrategyError && <p className="mt-2 text-sm text-red-500 dark:text-red-400">{loadStrategyError}</p>}
           </div>
-        </div>
-      </ConfigSection>
-      {/* --- Fin Sección de Gestión de Estrategias --- */}
+        </ConfigSection>
+        {/* --- Fin Sección de Gestión de Estrategias --- */}
       </form>
   );
 }

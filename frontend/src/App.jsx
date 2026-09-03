@@ -172,6 +172,7 @@ function App() {
       }
       const savedConfig = await response.json();
       setConfig(savedConfig);
+      fetchAvailableStrategies();
       addToast('✓ Configuración Guardada', 'Los parámetros se han actualizado exitosamente.', 'success');
       return { success: true };
     } catch (error) {

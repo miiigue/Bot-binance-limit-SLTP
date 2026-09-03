@@ -391,167 +391,97 @@ def start_bot_workers():
 
 # --- Endpoints de la API ---
 
+def _build_frontend_config_dict():
+    """Lee config.ini y retorna el diccionario completo mapeado para el frontend."""
+    config = configparser.ConfigParser(allow_no_value=True)
+    if not os.path.exists(CONFIG_FILE_PATH):
+        return {}
+    config.read(CONFIG_FILE_PATH, encoding='utf-8')
+    config_dict = config_to_dict(config)
+    frontend_config = {}
+    if 'BINANCE' in config_dict:
+        frontend_config['mode'] = config_dict['BINANCE'].get('mode', 'paper')
+    if 'TRADING' in config_dict:
+        for key_ini, key_frontend in [
+            ('leverage', 'leverage'),
+            ('rsi_interval', 'rsiInterval'),
+            ('rsi_period', 'rsiPeriod'),
+            ('rsi_threshold_up', 'rsiThresholdUp'),
+            ('rsi_threshold_down', 'rsiThresholdDown'),
+            ('rsi_entry_level_low', 'rsiEntryLevelLow'),
+            ('rsi_entry_level_high', 'rsiEntryLevelHigh'),
+            ('rsi_target', 'rsiTarget'),
+            ('volume_sma_period', 'volumeSmaPeriod'),
+            ('volume_factor', 'volumeFactor'),
+            ('downtrend_check_candles', 'downtrendCheckCandles'),
+            ('downtrend_level_check', 'downtrendLevelCheck'),
+            ('required_uptrend_candles', 'requiredUptrendCandles'),
+            ('position_size_usdt', 'positionSizeUSDT'),
+            ('stop_loss_usdt', 'stopLossUSDT'),
+            ('take_profit_usdt', 'takeProfitUSDT'),
+            ('cycle_sleep_seconds', 'cycleSleepSeconds'),
+            ('order_timeout_seconds', 'orderTimeoutSeconds'),
+            ('evaluate_rsi_delta', 'evaluateRsiDelta'),
+            ('evaluate_volume_filter', 'evaluateVolumeFilter'),
+            ('evaluate_rsi_range', 'evaluateRsiRange'),
+            ('evaluate_downtrend_candles_block', 'evaluateDowntrendCandlesBlock'),
+            ('evaluate_downtrend_levels_block', 'evaluateDowntrendLevelsBlock'),
+            ('evaluate_required_uptrend', 'evaluateRequiredUptrend'),
+            ('enable_take_profit_pnl', 'enableTakeProfitPnl'),
+            ('enable_stop_loss_pnl', 'enableStopLossPnl'),
+            ('enable_trailing_rsi_stop', 'enableTrailingRsiStop'),
+            ('enable_price_trailing_stop', 'enablePriceTrailingStop'),
+            ('price_trailing_stop_distance_usdt', 'priceTrailingStopDistanceUSDT'),
+            ('price_trailing_stop_activation_pnl_usdt', 'priceTrailingStopActivationPnlUSDT'),
+            ('enable_pnl_trailing_stop', 'enablePnlTrailingStop'),
+            ('pnl_trailing_stop_activation_usdt', 'pnlTrailingStopActivationUSDT'),
+            ('pnl_trailing_stop_drop_usdt', 'pnlTrailingStopDropUSDT'),
+            ('evaluate_open_interest_increase', 'evaluateOpenInterestIncrease'),
+            ('open_interest_period', 'openInterestPeriod'),
+            ('evaluate_ma_filter', 'evaluateMaFilter'),
+            ('ma_period', 'maPeriod'),
+            ('evaluate_support_strategy', 'evaluateSupportStrategy'),
+            ('support_history_candles', 'supportHistoryCandles'),
+            ('support_pivot_window', 'supportPivotWindow'),
+            ('support_confirmations', 'supportConfirmations'),
+            ('support_level_tolerance_percent', 'supportLevelTolerancePercent'),
+            ('support_order_stop_loss_percent', 'supportOrderStopLossPercent'),
+            ('support_order_take_profit_percent', 'supportOrderTakeProfitPercent'),
+            ('enable_dca_reentry', 'enableDcaReentry'),
+            ('dca_reentry_mode', 'dcaReentryMode'),
+            ('dca_price_drop_percent', 'dcaPriceDropPercent'),
+            ('dca_max_reentries', 'dcaMaxReentries'),
+            ('dca_volume_multiplier', 'dcaVolumeMultiplier')
+        ]:
+            if key_ini in config_dict['TRADING']:
+                frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
+    if 'SYMBOLS' in config_dict:
+        frontend_config['symbolsToTrade'] = config_dict['SYMBOLS'].get('symbols_to_trade', '')
+    if 'STRATEGY_INFO' in config_dict:
+        frontend_config['activeStrategyName'] = config_dict['STRATEGY_INFO'].get('active_strategy_name', '')
+    else:
+        frontend_config['activeStrategyName'] = ''
+    return frontend_config
+
+
 @app.route('/api/config', methods=['GET'])
 def get_config_endpoint():
     """Endpoint para obtener la configuración actual."""
-    global loaded_trading_params, loaded_symbols_to_trade # Usar las globales cargadas
+    global loaded_trading_params, loaded_symbols_to_trade
     api_logger.info("Solicitud GET /api/config recibida.")
-
-    config = configparser.ConfigParser(allow_no_value=True)
     try:
-        if not os.path.exists(CONFIG_FILE_PATH):
-            api_logger.warning(f"El archivo de configuración {CONFIG_FILE_PATH} no existe. Devolviendo configuración por defecto.")
-            # Devolver los valores por defecto que el frontend podría esperar
-            # Esta es una simplificación; idealmente, los valores por defecto estarían centralizados
-            default_frontend_config = {
-                "mode": "paper",
-                "leverage": 20,
-                "rsiInterval": "5m",
-                "rsiPeriod": 14,
-                "rsiThresholdUp": 8,
-                "rsiThresholdDown": -8,
-                "rsiEntryLevelLow": 25,
-                "rsiEntryLevelHigh": 75,
-                "rsiTarget": 50,
-                "volumeSmaPeriod": 20,
-                "volumeFactor": 1.5,
-                "downtrendCheckCandles": 3,
-                "downtrend_level_check": 5, # Mantener consistencia con config.ini
-                "requiredUptrendCandles": 0,
-                "positionSizeUSDT": 50,
-                "stopLossUSDT": 20,
-                "takeProfitUSDT": 30,
-                "cycleSleepSeconds": 5,
-                "orderTimeoutSeconds": 10,
-                "evaluateRsiDelta": True,
-                "evaluateVolumeFilter": True,
-                "evaluateRsiRange": True,
-                "evaluateDowntrendCandlesBlock": True,
-                "evaluateDowntrendLevelsBlock": True,
-                "evaluateRequiredUptrend": True,
-                "enableTakeProfitPnl": True,
-                "enableStopLossPnl": True,
-                "enableTrailingRsiStop": True,
-                "enablePriceTrailingStop": True,
-                "priceTrailingStopDistanceUSDT": 0.05,
-                "priceTrailingStopActivationPnlUSDT": 0.02,
-                "enablePnlTrailingStop": True,
-                "pnlTrailingStopActivationUSDT": 0.1,
-                "pnlTrailingStopDropUSDT": 0.05,
-                "evaluateOpenInterestIncrease": True, # Cambio de clave aquí
-                "openInterestPeriod": "5m", # <-- Clave para el frontend
-                "evaluateMaFilter": False,
-                "maPeriod": 200,
-                "evaluateSupportStrategy": False,
-                "supportHistoryCandles": 200,
-                "supportPivotWindow": 5,
-                "supportConfirmations": 2,
-                "supportLevelTolerancePercent": 0.5,
-                "supportOrderStopLossPercent": 2.0,
-                "supportOrderTakeProfitPercent": 4.0,
-                "enableDcaReentry": False,
-                "dcaReentryMode": "fixed_percent",
-                "dcaPriceDropPercent": 1.5,
-                "dcaMaxReentries": 2,
-                "dcaVolumeMultiplier": 1.0,
-                "symbolsToTrade": "",
-                "activeStrategyName": ""
-            }
-            return jsonify(default_frontend_config)
-        
-        config.read(CONFIG_FILE_PATH)
-        config_dict = config_to_dict(config)
-        
-        # Mapear para el frontend
-        frontend_config = {}
-        if 'BINANCE' in config_dict:
-            frontend_config['mode'] = config_dict['BINANCE'].get('mode', 'paper')
-        
-        if 'TRADING' in config_dict:
-            # Mapear claves de config.ini a las esperadas por el frontend
-            for key_ini, key_frontend in [
-                ('leverage', 'leverage'),
-                ('rsi_interval', 'rsiInterval'),
-                ('rsi_period', 'rsiPeriod'),
-                ('rsi_threshold_up', 'rsiThresholdUp'),
-                ('rsi_threshold_down', 'rsiThresholdDown'),
-                ('rsi_entry_level_low', 'rsiEntryLevelLow'),
-                ('rsi_entry_level_high', 'rsiEntryLevelHigh'),
-                ('rsi_target', 'rsiTarget'),
-                ('volume_sma_period', 'volumeSmaPeriod'),
-                ('volume_factor', 'volumeFactor'),
-                ('downtrend_check_candles', 'downtrendCheckCandles'),
-                ('downtrend_level_check', 'downtrend_level_check'), # Ya es la correcta
-                ('required_uptrend_candles', 'requiredUptrendCandles'),
-                ('position_size_usdt', 'positionSizeUSDT'),
-                ('stop_loss_usdt', 'stopLossUSDT'),
-                ('take_profit_usdt', 'takeProfitUSDT'),
-                ('cycle_sleep_seconds', 'cycleSleepSeconds'),
-                ('order_timeout_seconds', 'orderTimeoutSeconds'),
-                ('evaluate_rsi_delta', 'evaluateRsiDelta'),
-                ('evaluate_volume_filter', 'evaluateVolumeFilter'),
-                ('evaluate_rsi_range', 'evaluateRsiRange'),
-                ('evaluate_downtrend_candles_block', 'evaluateDowntrendCandlesBlock'),
-                ('evaluate_downtrend_levels_block', 'evaluateDowntrendLevelsBlock'),
-                ('evaluate_required_uptrend', 'evaluateRequiredUptrend'),
-                ('enable_take_profit_pnl', 'enableTakeProfitPnl'),
-                ('enable_stop_loss_pnl', 'enableStopLossPnl'),
-                ('enable_trailing_rsi_stop', 'enableTrailingRsiStop'),
-                ('enable_price_trailing_stop', 'enablePriceTrailingStop'),
-                ('price_trailing_stop_distance_usdt', 'priceTrailingStopDistanceUSDT'),
-                ('price_trailing_stop_activation_pnl_usdt', 'priceTrailingStopActivationPnlUSDT'),
-                ('enable_pnl_trailing_stop', 'enablePnlTrailingStop'),
-                ('pnl_trailing_stop_activation_usdt', 'pnlTrailingStopActivationUSDT'),
-                ('pnl_trailing_stop_drop_usdt', 'pnlTrailingStopDropUSDT'),
-                ('evaluate_open_interest_increase', 'evaluateOpenInterestIncrease'), # Cambio de clave aquí
-                ('open_interest_period', 'openInterestPeriod'), # <-- CAMBIO DE CLAVE AQUÍ para el frontend
-                ('evaluate_ma_filter', 'evaluateMaFilter'),
-                ('ma_period', 'maPeriod'),
-                ('evaluate_support_strategy', 'evaluateSupportStrategy'),
-                ('support_history_candles', 'supportHistoryCandles'),
-                ('support_pivot_window', 'supportPivotWindow'),
-                ('support_confirmations', 'supportConfirmations'),
-                ('support_level_tolerance_percent', 'supportLevelTolerancePercent'),
-                ('support_order_stop_loss_percent', 'supportOrderStopLossPercent'),
-                ('support_order_take_profit_percent', 'supportOrderTakeProfitPercent'),
-                ('enable_dca_reentry', 'enableDcaReentry'),
-                ('dca_reentry_mode', 'dcaReentryMode'),
-                ('dca_price_drop_percent', 'dcaPriceDropPercent'),
-                ('dca_max_reentries', 'dcaMaxReentries'),
-                ('dca_volume_multiplier', 'dcaVolumeMultiplier')
-            ]:
-                if key_ini in config_dict['TRADING']:
-                    frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
-        
-        if 'SYMBOLS' in config_dict:
-            frontend_config['symbolsToTrade'] = config_dict['SYMBOLS'].get('symbols_to_trade', '')
-
-        # --- NUEVO: Leer nombre de estrategia activa ---
-        if 'STRATEGY_INFO' in config_dict:
-            frontend_config['activeStrategyName'] = config_dict['STRATEGY_INFO'].get('active_strategy_name', '')
-        else:
-            frontend_config['activeStrategyName'] = ''
-        # ---------------------------------------------
-
-        # Asegurar que las globales también se actualizan si es la primera carga o si el archivo cambió
-        loaded_trading_params = config_dict.get('TRADING', {})
-        loaded_symbols_to_trade = frontend_config.get('symbolsToTrade', '').split(',') if frontend_config.get('symbolsToTrade') else []
-
-        api_logger.info(f"Configuración FINAL que se enviará al frontend vía /api/config GET: {frontend_config}")
-        api_logger.info(f"Específicamente, symbolsToTrade que se enviará: {frontend_config.get('symbolsToTrade')}")
-        api_logger.info(f"Específicamente, rsiPeriod que se enviará: {frontend_config.get('rsiPeriod')}")
-        return jsonify(frontend_config)
-    
-    except FileNotFoundError:
-        api_logger.error(f"El archivo de configuración {CONFIG_FILE_PATH} no fue encontrado.")
-        return jsonify({"error": "Config file not found"}), 404
+        frontend_config = _build_frontend_config_dict()
+        if not frontend_config:
+            return jsonify({"error": "Config not available"}), 404
+        return jsonify(frontend_config), 200
     except Exception as e:
         api_logger.error(f"Error al procesar la configuración: {e}", exc_info=True)
         return jsonify({"error": f"Error processing config: {e}"}), 500
 
+
 @app.route('/api/config', methods=['POST'])
 def update_config_endpoint():
-    """Endpoint para recibir y guardar la configuración, incluyendo símbolos."""
+    """Endpoint para recibir y guardar la configuración, incluyendo símbolos y sincronización de estrategia."""
     logger = get_logger()
     logger.info("Recibida petición POST /api/config")
     
@@ -566,85 +496,67 @@ def update_config_endpoint():
 
     logger.debug(f"Datos recibidos del frontend: {frontend_data}")
 
-    # --- NUEVO: Extraer active_strategy_name del payload ---
-    active_strategy_name_from_frontend = frontend_data.pop('activeStrategyName', '')
-    logger.info(f"[STRATEGY_DEBUG] active_strategy_name_from_frontend POPPED: '{active_strategy_name_from_frontend}'") # LOG POP
-    # ------------------------------------------------------
+    # Extraer activeStrategyName del payload
+    active_strategy_name_from_frontend = frontend_data.get('activeStrategyName') or frontend_data.get('strategy_name') or ''
+    actual_name_to_save_in_ini = '' if active_strategy_name_from_frontend == 'Configuración Modificada' else active_strategy_name_from_frontend
 
-    # 1. Extraer la lista de símbolos del frontend_data
-    symbols_string_raw = frontend_data.get('symbolsToTrade', '') # Usar la clave del estado de React
-    # Limpiar y validar la lista de símbolos
+    # 1. Extraer y limpiar la lista de símbolos
+    symbols_string_raw = frontend_data.get('symbolsToTrade', '')
     symbols_list = [s.strip().upper() for s in symbols_string_raw.split(',') if s.strip()]
-    symbols_to_save = ",".join(symbols_list) # Guardar como string separado por comas
+    symbols_to_save = ",".join(symbols_list)
     logger.debug(f"Símbolos procesados para guardar: {symbols_to_save}")
 
     # 2. Mapear los otros parámetros (BINANCE, TRADING)
-    #    apiKey y apiSecret ya no serán procesados por map_frontend_trading_binance
     ini_other_data = map_frontend_trading_binance(frontend_data)
 
     config = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(';', '#'))
     try:
-        # Leer el archivo existente para mantener secciones no modificadas (ej: LOGGING)
         if os.path.exists(CONFIG_FILE_PATH):
              config.read(CONFIG_FILE_PATH, encoding='utf-8')
         else:
              logger.warning(f"El archivo {CONFIG_FILE_PATH} no existía, se creará uno nuevo.")
-        
-        logger.info(f"[STRATEGY_DEBUG] Secciones en config DESPUÉS DE LEER config.ini: {config.sections()}") # LOG SECTIONS AFTER READ
 
-        # 3. Actualizar el objeto config con los datos mapeados (BINANCE, TRADING)
+        # 3. Actualizar BINANCE y TRADING
         for section, keys in ini_other_data.items():
             if not config.has_section(section):
                 config.add_section(section)
             for key, value in keys.items():
                 config.set(section, key, str(value))
-                logger.debug(f"Actualizando [{section}] {key} = {str(value)}")
                 
-        # 4. Actualizar/Crear la sección [SYMBOLS]
+        # 4. Actualizar [SYMBOLS]
         if not config.has_section('SYMBOLS'):
             config.add_section('SYMBOLS')
         config.set('SYMBOLS', 'symbols_to_trade', symbols_to_save)
-        logger.debug(f"Actualizando [SYMBOLS] symbols_to_trade = {symbols_to_save}")
 
-        logger.info(f"[STRATEGY_DEBUG] Secciones en config ANTES de procesar STRATEGY_INFO: {config.sections()}") # LOG SECTIONS BEFORE STRATEGY
-
-        # --- NUEVO: Guardar active_strategy_name en [STRATEGY_INFO] ---
+        # 5. Guardar active_strategy_name en [STRATEGY_INFO]
         if not config.has_section('STRATEGY_INFO'):
-            logger.info("[STRATEGY_DEBUG] La sección STRATEGY_INFO no existe, añadiéndola.")
             config.add_section('STRATEGY_INFO')
-        else:
-            logger.info("[STRATEGY_DEBUG] La sección STRATEGY_INFO ya existe.")
-        
-        actual_name_to_save_in_ini = '' if active_strategy_name_from_frontend == 'Configuración Modificada' else active_strategy_name_from_frontend
-        logger.info(f"[STRATEGY_DEBUG] 'actual_name_to_save_in_ini' será: '{actual_name_to_save_in_ini}'")
         config.set('STRATEGY_INFO', 'active_strategy_name', actual_name_to_save_in_ini)
-        logger.info(f"[STRATEGY_DEBUG] SET [STRATEGY_INFO] active_strategy_name = {actual_name_to_save_in_ini}")
-        
-        # Verificar si se estableció correctamente en el objeto config
-        if config.has_section('STRATEGY_INFO') and config.has_option('STRATEGY_INFO', 'active_strategy_name'):
-            retrieved_value = config.get('STRATEGY_INFO', 'active_strategy_name')
-            logger.info(f"[STRATEGY_DEBUG] VERIFICACIÓN POST-SET: config.get('STRATEGY_INFO', 'active_strategy_name') devolvió: '{retrieved_value}'")
-        else:
-            logger.error("[STRATEGY_DEBUG] ERROR DE VERIFICACIÓN POST-SET: STRATEGY_INFO o active_strategy_name no encontrados en el objeto config.")
-        # -------------------------------------------------------------
 
-        logger.info(f"[STRATEGY_DEBUG] Secciones en config ANTES DE ESCRIBIR en config.ini: {config.sections()}") # LOG SECTIONS BEFORE WRITE
-        if config.has_section('STRATEGY_INFO'):
-            logger.info(f"[STRATEGY_DEBUG] Contenido de [STRATEGY_INFO] en objeto config ANTES DE ESCRIBIR: {list(config.items('STRATEGY_INFO'))}")
-        else:
-            logger.info("[STRATEGY_DEBUG] La sección [STRATEGY_INFO] NO ESTÁ en el objeto config ANTES DE ESCRIBIR.")
-
-        # 5. Escribir los cambios de vuelta al archivo config.ini
+        # 6. Escribir cambios a config.ini
         with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as configfile:
             config.write(configfile)
-        
-        # Recargar caché de configuración y resetear cliente de Binance para aplicar cambios en vivo
+
+        # 7. Sincronizar automáticamente en strategies/<name>.json si hay un nombre de estrategia válido
+        if actual_name_to_save_in_ini and not any(c in actual_name_to_save_in_ini for c in ('.', '/', '\\')):
+            try:
+                os.makedirs(STRATEGIES_PATH, exist_ok=True)
+                strat_file_path = os.path.join(STRATEGIES_PATH, f"{actual_name_to_save_in_ini}.json")
+                strat_clean_data = {**frontend_data, "symbolsToTrade": symbols_to_save, "activeStrategyName": actual_name_to_save_in_ini}
+                with open(strat_file_path, 'w', encoding='utf-8') as sf:
+                    json.dump(strat_clean_data, sf, indent=4)
+                logger.info(f"Estrategia '{actual_name_to_save_in_ini}' sincronizada en {strat_file_path}")
+            except Exception as e_strat:
+                logger.warning(f"No se pudo escribir archivo de estrategia '{actual_name_to_save_in_ini}': {e_strat}")
+
+        # Recargar caché de configuración y clientes
         reload_config()
         reset_futures_client()
         load_initial_config()
 
-        logger.info(f"Archivo de configuración {CONFIG_FILE_PATH} actualizado exitosamente.") # Esta es la confirmación final
-        return jsonify({"message": "Configuration updated successfully"}), 200
+        logger.info(f"Configuración guardada exitosamente. Retornando objeto completo.")
+        updated_frontend_config = _build_frontend_config_dict()
+        return jsonify(updated_frontend_config), 200
 
     except Exception as e:
         logger.error(f"Error al escribir la configuración: {e}", exc_info=True) # Log de error
