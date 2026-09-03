@@ -339,19 +339,42 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
 
           {/* Periodo de Días */}
           <div>
-            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-              📅 Periodo Histórico
-            </label>
-            <select
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl text-sm font-semibold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-            >
-              <option value="3">Últimos 3 días</option>
-              <option value="7">Últimos 7 días (1 sem)</option>
-              <option value="14">Últimos 14 días (2 sem)</option>
-              <option value="30">Últimos 30 días (1 mes)</option>
-            </select>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                📅 Periodo ({days} días)
+              </label>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <select
+                value={[3, 7, 14, 30, 45, 60, 90, 180, 365].includes(Number(days)) ? days : 'custom'}
+                onChange={(e) => {
+                  if (e.target.value !== 'custom') {
+                    setDays(Number(e.target.value));
+                  }
+                }}
+                className="w-full px-2.5 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl text-xs sm:text-sm font-semibold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+              >
+                <option value="3">3 días</option>
+                <option value="7">7 días (1 sem)</option>
+                <option value="14">14 días (2 sem)</option>
+                <option value="30">30 días (1 mes)</option>
+                <option value="45">45 días (1.5 meses)</option>
+                <option value="60">60 días (2 meses)</option>
+                <option value="90">90 días (3 meses / Trimestre)</option>
+                <option value="180">180 días (6 meses / Semestre)</option>
+                <option value="365">365 días (1 año completo)</option>
+                <option value="custom">✏️ Personalizado...</option>
+              </select>
+              <input
+                type="number"
+                min="1"
+                max="730"
+                value={days}
+                onChange={(e) => setDays(Math.max(1, Number(e.target.value)))}
+                className="w-16 px-2 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl text-xs sm:text-sm font-mono font-bold text-center text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                title="Escribe cualquier número exacto de días (ej. 45, 60, 90...)"
+              />
+            </div>
           </div>
 
           {/* Intervalo de Velas */}
