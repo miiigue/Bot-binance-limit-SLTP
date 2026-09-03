@@ -22,10 +22,11 @@ trades_limit.db
 *.sqlite3
 *.db
 
-# Logs
+# Logs y Cache de datos
 *.log
 *.log.*
 logs/
+src/data_cache/
 
 # Frontend Node.js
 frontend/node_modules/

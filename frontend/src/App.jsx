@@ -6,6 +6,7 @@ import PnLPerformanceChart from './PnLPerformanceChart';
 import MarketExplorer from './MarketExplorer';
 import BotControls from './BotControls';
 import ToastContainer from './ToastContainer';
+import BacktestLab from './BacktestLab';
 import { isSoundEnabled, setSoundEnabled, playProfitSound, playEntrySound, playLossSound } from './soundEffects';
 import './index.css';
 
@@ -225,6 +226,14 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleApplyStrategyToConfig = async (newConfig) => {
+    const res = await handleSave(newConfig);
+    if (res?.success) {
+      addToast('🚀 Estrategia Aplicada', 'Los parámetros de la simulación ahora están activos en el bot en vivo.', 'success');
+      setActiveTab('config');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
       {/* HEADER UNIFICADO FIJO (Elimina vibraciones y saltos de pantalla) */}
@@ -366,6 +375,19 @@ function App() {
             >
               <span>📡</span> Radar de Mercado
             </button>
+
+            {/* Pestaña 6: Laboratorio de Backtesting */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('backtest')}
+              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+                activeTab === 'backtest'
+                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+              }`}
+            >
+              <span>🧪</span> Backtesting & Laboratorio
+            </button>
           </div>
 
           {/* CONTROLES GLOBALES DE OPERACIÓN (SIEMPRE DISPONIBLES EN TODAS LAS PESTAÑAS) */}
@@ -451,6 +473,15 @@ function App() {
                 config={config}
                 onSaveConfig={handleSave}
                 onSelectSymbolForChart={handleSelectSymbolForChart}
+              />
+            )}
+
+            {/* PESTAÑA 6: Laboratorio de Backtesting */}
+            {activeTab === 'backtest' && (
+              <BacktestLab
+                activeConfig={config}
+                addToast={addToast}
+                onApplyStrategyToConfig={handleApplyStrategyToConfig}
               />
             )}
           </>

@@ -25,6 +25,7 @@ from src.logger_setup import setup_logging, get_logger
 from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, clear_trade_history, get_all_recent_trades
 from src.bot import TradingBot, BotState 
 from src.binance_client import get_account_balance_usdt, reset_futures_client, get_futures_client
+from src.backtester import get_historical_klines_paginated, run_strategy_backtest
 
 # --- NUEVO: Gestor de Estadísticas de Sesión ---
 class SessionStateManager:
@@ -1198,6 +1199,42 @@ def list_strategies():
     except Exception as e:
         logger.error(f"Error al listar estrategias: {e}", exc_info=True)
         return jsonify({"error": f"Error interno al listar estrategias: {str(e)}"}), 500
+
+@app.route('/api/backtest', methods=['POST'])
+def run_backtest_endpoint():
+    logger = get_logger()
+    try:
+        data = request.get_json() or {}
+        symbol = data.get('symbol', 'SOLUSDT').upper().strip()
+        interval = data.get('interval', '5m')
+        days = int(data.get('days', 14))
+        initial_balance = float(data.get('initial_balance', 1000.0))
+        strategy_config = data.get('config')
+        
+        if not strategy_config:
+            # Si no se pasó config específico, cargar de los parámetros cargados
+            strategy_config = loaded_trading_params or {}
+
+        logger.info(f"Iniciando backtest histórico para {symbol} ({days} días, intervalo {interval})...")
+        df = get_historical_klines_paginated(symbol=symbol, interval=interval, days=days, use_cache=True)
+        if df is None or df.empty:
+            return jsonify({"error": f"No se pudieron descargar velas históricas para {symbol}."}), 400
+
+        results = run_strategy_backtest(symbol=symbol, df=df, config=strategy_config, initial_balance=initial_balance)
+        return jsonify(results), 200
+    except Exception as e:
+        logger.error(f"Error al ejecutar backtest: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/backtest/symbols', methods=['GET'])
+def get_backtest_symbols():
+    try:
+        configured = list(loaded_symbols_to_trade) if loaded_symbols_to_trade else []
+        popular = ["SOLUSDT", "BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT", "DOGEUSDT", "NEARUSDT", "AVAXUSDT", "LINKUSDT", "SUIUSDT", "ARBUSDT", "OPUSDT"]
+        all_symbols = list(dict.fromkeys(configured + popular))
+        return jsonify({"symbols": all_symbols, "configured": configured}), 200
+    except Exception as e:
+        return jsonify({"symbols": ["SOLUSDT", "BTCUSDT", "ETHUSDT"], "configured": []}), 200
 
 # La función para correr Flask en un hilo (start_flask_app) 
 # y el if __name__ == '__main__' no se necesitan aquí 
