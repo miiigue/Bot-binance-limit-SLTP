@@ -1147,7 +1147,13 @@ def run_backtest_endpoint():
 
         # Modo Portafolio Multimoneda (Todas las monedas a la vez)
         if symbol in ('PORTFOLIO', 'ALL', 'ALL_CONFIGURED') or data.get('is_portfolio'):
-            symbols_to_test = data.get('symbols') or (list(loaded_symbols_to_trade) if loaded_symbols_to_trade else ["SOLUSDT", "DOGEUSDT", "OPUSDT", "SUIUSDT", "NEARUSDT", "ADAUSDT", "ONDOUSDT", "ARBUSDT"])
+            symbols_to_test = data.get('symbols')
+            if not symbols_to_test and strategy_config:
+                st_syms = strategy_config.get('symbolsToTrade') or strategy_config.get('symbols_to_trade')
+                if st_syms:
+                    symbols_to_test = [s.strip().upper() for s in st_syms.split(',') if s.strip()]
+            if not symbols_to_test:
+                symbols_to_test = (list(loaded_symbols_to_trade) if loaded_symbols_to_trade else ["SOLUSDT", "DOGEUSDT", "OPUSDT", "SUIUSDT", "NEARUSDT", "ADAUSDT", "ONDOUSDT", "ARBUSDT"])
             r_tag = f"desde {start_date} hasta {end_date}" if (start_date and end_date) else f"{days} días"
             logger.info(f"Iniciando backtest de PORTAFOLIO COMPLETO ({len(symbols_to_test)} pares, {r_tag}, intervalo {interval})...")
             results = run_portfolio_backtest(symbols=symbols_to_test, interval=interval, days=days, start_date=start_date, end_date=end_date, config=strategy_config, initial_balance_per_coin=initial_balance)

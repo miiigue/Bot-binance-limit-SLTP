@@ -69,6 +69,16 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
     return found?.config || activeConfig || {};
   }, [strategySource, savedStrategies, activeConfig]);
 
+  // Símbolos dinámicos del portafolio según la estrategia seleccionada
+  const activePortfolioSymbols = useMemo(() => {
+    const symStr = configToTest?.symbolsToTrade || configToTest?.symbols_to_trade;
+    if (symStr && typeof symStr === 'string') {
+      const parsed = symStr.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      if (parsed.length) return parsed;
+    }
+    return configuredSymbols.length ? configuredSymbols : ["SOLUSDT", "DOGEUSDT", "OPUSDT", "SUIUSDT", "NEARUSDT", "ADAUSDT", "ONDOUSDT", "ARBUSDT"];
+  }, [configToTest, configuredSymbols]);
+
   // Ejecutar el Backtest (Individual o Portafolio Completo)
   const handleRunBacktest = async () => {
     setIsRunning(true);
@@ -80,7 +90,7 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
       const payload = {
         symbol: symbol.toUpperCase().trim(),
         is_portfolio: isPortfolio,
-        symbols: isPortfolio ? (configuredSymbols.length ? configuredSymbols : undefined) : undefined,
+        symbols: isPortfolio ? activePortfolioSymbols : undefined,
         interval,
         days: Number(days),
         startDate: isCustomRange ? startDate : undefined,
@@ -301,10 +311,10 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
             }`}
           >
             <span>🌐</span>
-            <span>Todo el Portafolio ({configuredSymbols.length || 8} pares)</span>
+            <span>Todo el Portafolio ({activePortfolioSymbols.length || 8} pares)</span>
           </button>
 
-          {configuredSymbols.map(sym => (
+          {activePortfolioSymbols.map(sym => (
             <button
               key={sym}
               type="button"

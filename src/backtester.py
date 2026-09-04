@@ -167,45 +167,142 @@ def _find_supports(df_window: pd.DataFrame, pivot_window: int = 5, confirmations
     return sorted(confirmed, reverse=True)
 
 
+def normalize_config(cfg: dict) -> dict:
+    """Normaliza claves de configuración aceptando tanto camelCase como snake_case."""
+    if not cfg:
+        return {}
+    c = dict(cfg)
+    
+    def get_val(camel, snake, default=None):
+        if camel in c and c[camel] is not None:
+            return c[camel]
+        if snake in c and c[snake] is not None:
+            return c[snake]
+        return default
+
+    def to_bool(val, default=False):
+        if val is None: return default
+        if isinstance(val, bool): return val
+        return str(val).strip().lower() in ('true', '1', 'yes')
+
+    def to_float(val, default=0.0):
+        try: return float(val)
+        except (ValueError, TypeError): return default
+
+    def to_int(val, default=0):
+        try: return int(val)
+        except (ValueError, TypeError): return default
+
+    return {
+        'leverage': to_int(get_val('leverage', 'leverage', 20), 20),
+        'position_size_usdt': to_float(get_val('positionSizeUSDT', 'position_size_usdt', 50.0), 50.0),
+        
+        # Soportes
+        'evaluate_support_strategy': to_bool(get_val('evaluateSupportStrategy', 'evaluate_support_strategy', False), False),
+        'support_history_candles': to_int(get_val('supportHistoryCandles', 'support_history_candles', 60), 60),
+        'support_pivot_window': to_int(get_val('supportPivotWindow', 'support_pivot_window', 5), 5),
+        'support_confirmations': to_int(get_val('supportConfirmations', 'support_confirmations', 2), 2),
+        'support_level_tolerance_percent': to_float(get_val('supportLevelTolerancePercent', 'support_level_tolerance_percent', 0.5), 0.5),
+        'support_order_take_profit_percent': to_float(get_val('supportOrderTakeProfitPercent', 'support_order_take_profit_percent', 2.0), 2.0),
+        'support_order_stop_loss_percent': to_float(get_val('supportOrderStopLossPercent', 'support_order_stop_loss_percent', 2.0), 2.0),
+
+        # RSI
+        'rsi_interval': str(get_val('rsiInterval', 'rsi_interval', '1m')),
+        'rsi_period': to_int(get_val('rsiPeriod', 'rsi_period', 14), 14),
+        'evaluate_rsi_delta': to_bool(get_val('evaluateRsiDelta', 'evaluate_rsi_delta', True), True),
+        'rsi_threshold_up': to_float(get_val('rsiThresholdUp', 'rsi_threshold_up', 1.0), 1.0),
+        'evaluate_rsi_range': to_bool(get_val('evaluateRsiRange', 'evaluate_rsi_range', True), True),
+        'rsi_entry_level_low': to_float(get_val('rsiEntryLevelLow', 'rsi_entry_level_low', 30.0), 30.0),
+        'rsi_entry_level_high': to_float(get_val('rsiEntryLevelHigh', 'rsi_entry_level_high', 75.0), 75.0),
+
+        # Filtro Volumen
+        'evaluate_volume_filter': to_bool(get_val('evaluateVolumeFilter', 'evaluate_volume_filter', False), False),
+        'volume_factor': to_float(get_val('volumeFactor', 'volume_factor', 1.0), 1.0),
+        'volume_sma_period': to_int(get_val('volumeSmaPeriod', 'volume_sma_period', 20), 20),
+
+        # Filtro MA
+        'evaluate_ma_filter': to_bool(get_val('evaluateMaFilter', 'evaluate_ma_filter', False), False),
+        'ma_period': to_int(get_val('maPeriod', 'ma_period', 25), 25),
+        'ma_type': str(get_val('maType', 'ma_type', 'EMA')).upper(),
+
+        # Filtro Velas Alcistas
+        'evaluate_required_uptrend': to_bool(get_val('evaluateRequiredUptrend', 'evaluate_required_uptrend', False), False),
+        'required_uptrend_candles': to_int(get_val('requiredUptrendCandles', 'required_uptrend_candles', 0), 0),
+
+        # Salidas Fijas
+        'enable_take_profit_pnl': to_bool(get_val('enableTakeProfitPnl', 'enable_take_profit_pnl', True), True),
+        'take_profit_usdt': to_float(get_val('takeProfitUSDT', 'take_profit_usdt', 2.0), 2.0),
+        'enable_stop_loss_pnl': to_bool(get_val('enableStopLossPnl', 'enable_stop_loss_pnl', False), False),
+        'stop_loss_usdt': to_float(get_val('stopLossUSDT', 'stop_loss_usdt', 0.5), 0.5),
+
+        # Trailing RSI
+        'enable_trailing_rsi_stop': to_bool(get_val('enableTrailingRsiStop', 'enable_trailing_rsi_stop', False), False),
+        'rsi_target': to_float(get_val('rsiTarget', 'rsi_target', 50.0), 50.0),
+        'rsi_threshold_down': to_float(get_val('rsiThresholdDown', 'rsi_threshold_down', 1.0), 1.0),
+
+        # Trailing PnL
+        'enable_pnl_trailing_stop': to_bool(get_val('enablePnlTrailingStop', 'enable_pnl_trailing_stop', False), False),
+        'pnl_trailing_stop_activation_usdt': to_float(get_val('pnlTrailingStopActivationUSDT', 'pnl_trailing_stop_activation_usdt', 1.0), 1.0),
+        'pnl_trailing_stop_drop_usdt': to_float(get_val('pnlTrailingStopDropUSDT', 'pnl_trailing_stop_drop_usdt', 0.3), 0.3),
+
+        # Trailing Precio
+        'enable_price_trailing_stop': to_bool(get_val('enablePriceTrailingStop', 'enable_price_trailing_stop', False), False),
+        'price_trailing_stop_distance_usdt': to_float(get_val('priceTrailingStopDistanceUSDT', 'price_trailing_stop_distance_usdt', 0.05), 0.05),
+        'price_trailing_stop_activation_pnl_usdt': to_float(get_val('priceTrailingStopActivationPnlUSDT', 'price_trailing_stop_activation_pnl_usdt', 0.0), 0.0),
+
+        # DCA Re-entradas
+        'enable_dca_reentry': to_bool(get_val('enableDcaReentry', 'enable_dca_reentry', False), False),
+        'dca_reentry_mode': str(get_val('dcaReentryMode', 'dca_reentry_mode', 'fixed_percent')),
+        'dca_price_drop_percent': to_float(get_val('dcaPriceDropPercent', 'dca_price_drop_percent', 1.5), 1.5),
+        'dca_max_reentries': to_int(get_val('dcaMaxReentries', 'dca_max_reentries', 2), 2),
+        'dca_volume_multiplier': to_float(get_val('dcaVolumeMultiplier', 'dca_volume_multiplier', 1.0), 1.0),
+
+        'symbols_to_trade': str(get_val('symbolsToTrade', 'symbols_to_trade', ''))
+    }
+
+
 def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_balance: float = 1000.0) -> dict:
     """
     Ejecuta una simulación completa vela por vela reproduciendo con exactitud:
-    - Soportes / RSI
-    - Entradas LIMIT BUY
-    - Salidas Take Profit y Stop Loss
-    - Re-entradas DCA y ajuste dinámico de precio promedio
-    - Trailing Stop por PnL
+    - Soportes o Estrategia RSI con rango, delta, volumen, MA y tendencia
+    - Salidas Take Profit y Stop Loss (respetando si SL está desactivado)
+    - Trailing Stop por PnL, Trailing Stop por RSI y Trailing Stop por Precio
+    - Re-entradas DCA con ajuste dinámico de precio promedio ponderado
     - Comisiones de Binance Futures (0.02% Maker, 0.04% Taker)
     """
     if df is None or len(df) < 50:
         return {"error": "Insuficientes datos de mercado para el backtest."}
 
-    leverage = int(config.get('leverage', 20) or 20)
-    position_size_usdt = float(config.get('positionSizeUSDT', config.get('position_size_usdt', 50)) or 50)
+    c = normalize_config(config)
+    leverage = c['leverage']
+    position_size_usdt = c['position_size_usdt']
+    evaluate_support = c['evaluate_support_strategy']
+
+    # Precalcular indicadores en vectores numpy para máxima velocidad
+    df['rsi'] = calculate_rsi(df['close'], period=c['rsi_period'])
     
-    evaluate_support = str(config.get('evaluate_support_strategy', 'true')).lower() in ('true', '1')
-    support_history_candles = int(config.get('support_history_candles', 200) or 200)
-    support_pivot_window = int(config.get('support_pivot_window', 5) or 5)
-    support_confirmations = int(config.get('support_confirmations', 2) or 2)
-    support_tolerance_pct = float(config.get('support_level_tolerance_percent', 0.5) or 0.5)
-    support_tp_pct = float(config.get('support_order_take_profit_percent', 4.0) or 4.0)
-    support_sl_pct = float(config.get('support_order_stop_loss_percent', 2.0) or 2.0)
+    if c['evaluate_volume_filter']:
+        vol_sma = df['volume'].rolling(window=c['volume_sma_period']).mean().values
+    else:
+        vol_sma = None
 
-    rsi_period = int(config.get('rsi_period', 14) or 14)
-    rsi_threshold_up = float(config.get('rsi_threshold_up', 1.0) or 1.0)
-    rsi_entry_low = float(config.get('rsi_entry_level_low', 30.0) or 30.0)
+    if c['evaluate_ma_filter']:
+        if c['ma_type'] == 'EMA':
+            ma = df['close'].ewm(span=c['ma_period'], adjust=False).mean().values
+        else:
+            ma = df['close'].rolling(window=c['ma_period']).mean().values
+    else:
+        ma = None
 
-    enable_dca = str(config.get('enable_dca_reentry', 'true')).lower() in ('true', '1')
-    dca_drop_pct = float(config.get('dca_price_drop_percent', 1.5) or 1.5)
-    dca_max = int(config.get('dca_max_reentries', 2) or 2)
-    dca_vol_mult = float(config.get('dca_volume_multiplier', 1.0) or 1.0)
-
-    enable_trailing = str(config.get('enable_pnl_trailing_stop', 'false')).lower() in ('true', '1')
-    trailing_activation_usdt = float(config.get('pnl_trailing_stop_activation_usdt', 1.0) or 1.0)
-    trailing_drop_usdt = float(config.get('pnl_trailing_stop_drop_usdt', 0.3) or 0.3)
-
-    # Precalcular RSI
-    df['rsi'] = calculate_rsi(df['close'], period=rsi_period)
+    is_green = (df['close'] > df['open']).values
+    opens = df['open'].values
+    highs = df['high'].values
+    lows = df['low'].values
+    closes = df['close'].values
+    volumes = df['volume'].values
+    rsis = df['rsi'].values
+    times = df['open_time'].astype(str).values
+    n_candles = len(df)
 
     balance = initial_balance
     peak_balance = initial_balance
@@ -217,97 +314,164 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
     quantity = 0.0
     entry_time = None
     dca_count = 0
-    tp_price = 0.0
-    sl_price = 0.0
     peak_unrealized_pnl = 0.0
-    trailing_armed = False
+    pnl_trailing_armed = False
+    rsi_trailing_armed = False
+    rsi_peak = 0.0
+    peak_price = 0.0
+    price_trailing_armed = False
 
     trades_list = []
-    equity_curve = [{'time': str(df['open_time'].iloc[0]), 'equity': round(initial_balance, 2), 'pnl': 0.0}]
+    equity_curve = [{'time': times[0], 'equity': round(initial_balance, 2), 'pnl': 0.0}]
 
-    start_idx = min(len(df) - 1, max(support_history_candles, 50))
+    start_idx = max(50, c['support_history_candles'] if evaluate_support else c['rsi_period'] + 15)
 
-    for i in range(start_idx, len(df)):
-        candle = df.iloc[i]
-        c_open = float(candle['open'])
-        c_high = float(candle['high'])
-        c_low = float(candle['low'])
-        c_close = float(candle['close'])
-        c_time = str(candle['open_time'])
+    for i in range(start_idx, n_candles):
+        c_open = opens[i]
+        c_high = highs[i]
+        c_low = lows[i]
+        c_close = closes[i]
+        c_time = times[i]
 
         if not in_position:
-            signal_entry_price = None
+            entry_signal = False
+            signal_price = c_open
 
             if evaluate_support:
-                window_df = df.iloc[max(0, i - support_history_candles): i]
-                supports = _find_supports(window_df, support_pivot_window, support_confirmations, support_tolerance_pct)
+                window_df = df.iloc[max(0, i - c['support_history_candles']): i]
+                supports = _find_supports(window_df, c['support_pivot_window'], c['support_confirmations'], c['support_level_tolerance_percent'])
                 if supports:
                     best_support = supports[0]
                     if c_low <= best_support <= c_high or (c_open >= best_support >= c_low):
-                        signal_entry_price = best_support
+                        entry_signal = True
+                        signal_price = best_support
             else:
-                prev_rsi = float(df['rsi'].iloc[i - 2]) if i >= 2 else 50.0
-                curr_rsi = float(df['rsi'].iloc[i - 1])
-                if curr_rsi <= rsi_entry_low and (curr_rsi - prev_rsi) >= rsi_threshold_up:
-                    signal_entry_price = c_open
+                curr_rsi = rsis[i - 1]
+                prev_rsi = rsis[i - 2] if i >= 2 else curr_rsi
 
-            if signal_entry_price and signal_entry_price > 0:
+                # 1. Rango RSI
+                if c['evaluate_rsi_range'] and not (c['rsi_entry_level_low'] <= curr_rsi <= c['rsi_entry_level_high']):
+                    continue
+
+                # 2. Delta RSI
+                if c['evaluate_rsi_delta'] and not ((curr_rsi - prev_rsi) >= c['rsi_threshold_up']):
+                    continue
+
+                # 3. Filtro Volumen
+                if c['evaluate_volume_filter']:
+                    vs = vol_sma[i - 1]
+                    if np.isnan(vs) or volumes[i - 1] <= vs * c['volume_factor']:
+                        continue
+
+                # 4. Filtro MA
+                if c['evaluate_ma_filter']:
+                    mv = ma[i - 1]
+                    if np.isnan(mv) or c_open <= mv:
+                        continue
+
+                # 5. Velas Verdes Requeridas
+                if c['evaluate_required_uptrend'] and c['required_uptrend_candles'] > 0:
+                    req_n = c['required_uptrend_candles']
+                    if not np.all(is_green[max(0, i - req_n): i]):
+                        continue
+
+                entry_signal = True
+                signal_price = c_open
+
+            if entry_signal and signal_price > 0:
                 in_position = True
-                entry_price = signal_entry_price
+                entry_price = signal_price
                 quantity = position_size_usdt / entry_price
                 entry_time = c_time
                 dca_count = 0
                 peak_unrealized_pnl = 0.0
-                trailing_armed = False
-
-                if evaluate_support:
-                    tp_price = entry_price * (1.0 + support_tp_pct / 100.0)
-                    sl_price = entry_price * (1.0 - support_sl_pct / 100.0)
-                else:
-                    tp_usdt = float(config.get('takeProfitUSDT', config.get('take_profit_usdt', 2.0)) or 2.0)
-                    sl_usdt = float(config.get('stopLossUSDT', config.get('stop_loss_usdt', 1.5)) or 1.5)
-                    tp_price = entry_price + (tp_usdt / quantity) if quantity > 0 else entry_price * 1.02
-                    sl_price = entry_price - (sl_usdt / quantity) if quantity > 0 else entry_price * 0.98
+                pnl_trailing_armed = False
+                rsi_trailing_armed = False
+                rsi_peak = rsis[i - 1]
+                peak_price = entry_price
+                price_trailing_armed = False
 
         else:
+            # En posición: calcular PnL y chequear salidas
+            unrealized_pnl = (c_close - entry_price) * quantity
             high_pnl = (c_high - entry_price) * quantity
             if high_pnl > peak_unrealized_pnl:
                 peak_unrealized_pnl = high_pnl
 
-            if enable_trailing and high_pnl >= trailing_activation_usdt:
-                trailing_armed = True
+            if c_high > peak_price:
+                peak_price = c_high
+
+            curr_rsi = rsis[i - 1]
+            if curr_rsi > rsi_peak:
+                rsi_peak = curr_rsi
+
+            # Armar trailings
+            if c['enable_pnl_trailing_stop'] and high_pnl >= c['pnl_trailing_stop_activation_usdt']:
+                pnl_trailing_armed = True
+
+            if c['enable_trailing_rsi_stop'] and curr_rsi >= c['rsi_target']:
+                rsi_trailing_armed = True
+
+            if c['enable_price_trailing_stop'] and (peak_price - entry_price) * quantity >= c['price_trailing_stop_activation_pnl_usdt']:
+                price_trailing_armed = True
+
+            # Precios objetivos
+            if evaluate_support:
+                tp_price = entry_price * (1.0 + c['support_order_take_profit_percent'] / 100.0)
+                sl_price = entry_price * (1.0 - c['support_order_stop_loss_percent'] / 100.0)
+            else:
+                tp_price = (entry_price + (c['take_profit_usdt'] / quantity)) if (c['enable_take_profit_pnl'] and c['take_profit_usdt'] > 0) else None
+                sl_price = (entry_price - (abs(c['stop_loss_usdt']) / quantity)) if (c['enable_stop_loss_pnl'] and c['stop_loss_usdt'] > 0) else None
 
             exit_triggered = False
             exit_price = 0.0
             exit_reason = ''
             is_taker = False
 
-            if c_high >= tp_price:
+            # 1. Take Profit
+            if tp_price and c_high >= tp_price:
                 exit_triggered = True
                 exit_price = tp_price
-                exit_reason = f'Take Profit (+{support_tp_pct if evaluate_support else "TP"}%)'
+                exit_reason = f'Take Profit (+{c["support_order_take_profit_percent"]}%' if evaluate_support else f'Take Profit (+${c["take_profit_usdt"]})'
                 is_taker = False
-            elif c_low <= sl_price:
-                exit_triggered = True
-                exit_price = sl_price
-                exit_reason = f'Stop Loss (-{support_sl_pct if evaluate_support else "SL"}%)'
-                is_taker = True
-            elif trailing_armed and (peak_unrealized_pnl - ((c_close - entry_price) * quantity)) >= trailing_drop_usdt:
+            
+            # 2. Trailing PnL Exit
+            elif pnl_trailing_armed and (peak_unrealized_pnl - unrealized_pnl) >= c['pnl_trailing_stop_drop_usdt']:
                 exit_triggered = True
                 exit_price = c_close
                 exit_reason = 'Trailing Stop PnL'
                 is_taker = True
-            elif enable_dca and dca_count < dca_max:
-                target_dca_price = entry_price * (1.0 - dca_drop_pct / 100.0)
+
+            # 3. Trailing RSI Exit
+            elif rsi_trailing_armed and curr_rsi <= (rsi_peak - abs(c['rsi_threshold_down'])):
+                exit_triggered = True
+                exit_price = c_close
+                exit_reason = 'Trailing Stop RSI'
+                is_taker = True
+
+            # 4. Trailing Precio Exit
+            elif price_trailing_armed and c_low <= (peak_price - c['price_trailing_stop_distance_usdt']):
+                exit_triggered = True
+                exit_price = peak_price - c['price_trailing_stop_distance_usdt']
+                exit_reason = 'Trailing Stop Precio'
+                is_taker = True
+
+            # 5. DCA Re-entradas
+            elif c['enable_dca_reentry'] and dca_count < c['dca_max_reentries']:
+                target_dca_price = entry_price * (1.0 - c['dca_price_drop_percent'] / 100.0)
                 if c_low <= target_dca_price:
                     dca_count += 1
-                    added_qty = (position_size_usdt * (dca_vol_mult ** dca_count)) / target_dca_price
+                    added_qty = (position_size_usdt * (c['dca_volume_multiplier'] ** dca_count)) / target_dca_price
                     total_cost = (entry_price * quantity) + (target_dca_price * added_qty)
                     quantity += added_qty
                     entry_price = total_cost / quantity
-                    if evaluate_support:
-                        tp_price = entry_price * (1.0 + support_tp_pct / 100.0)
-                        sl_price = entry_price * (1.0 - support_sl_pct / 100.0)
+
+            # 6. Stop Loss (solo si está activado)
+            elif sl_price and c_low <= sl_price:
+                exit_triggered = True
+                exit_price = sl_price
+                exit_reason = f'Stop Loss (-{c["support_order_stop_loss_percent"]}%)' if evaluate_support else f'Stop Loss (-${abs(c["stop_loss_usdt"])})'
+                is_taker = True
 
             if exit_triggered:
                 gross_pnl = (exit_price - entry_price) * quantity
@@ -335,23 +499,23 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
                     'symbol': symbol,
                     'open_time': entry_time,
                     'close_time': c_time,
-                    'entry_price': round(entry_price, 4),
-                    'exit_price': round(exit_price, 4),
-                    'quantity': round(quantity, 4),
-                    'position_size_usdt': round(entry_price * quantity, 2),
-                    'margin_usdt': round(margin_req, 2),
-                    'gross_pnl': round(gross_pnl, 4),
-                    'fees': round(total_fees, 4),
-                    'net_pnl': round(net_pnl, 4),
-                    'return_pct': round(ret_pct, 2),
+                    'entry_price': round(float(entry_price), 4),
+                    'exit_price': round(float(exit_price), 4),
+                    'quantity': round(float(quantity), 4),
+                    'position_size_usdt': round(float(entry_price * quantity), 2),
+                    'margin_usdt': round(float(margin_req), 2),
+                    'gross_pnl': round(float(gross_pnl), 4),
+                    'fees': round(float(total_fees), 4),
+                    'net_pnl': round(float(net_pnl), 4),
+                    'return_pct': round(float(ret_pct), 2),
                     'exit_reason': exit_reason,
                     'dca_reentries': dca_count
                 })
 
                 equity_curve.append({
                     'time': c_time,
-                    'equity': round(balance, 2),
-                    'pnl': round(balance - initial_balance, 2)
+                    'equity': round(float(balance), 2),
+                    'pnl': round(float(balance - initial_balance), 2)
                 })
 
                 in_position = False
@@ -390,20 +554,20 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
         'end_date': end_dt_str,
         'period_label': f"{start_dt_str} al {end_dt_str}",
         'total_candles': len(df),
-        'initial_balance': round(initial_balance, 2),
-        'final_balance': round(balance, 2),
-        'net_pnl': round(net_pnl_total, 2),
-        'net_return_pct': round(net_return_pct, 2),
+        'initial_balance': round(float(initial_balance), 2),
+        'final_balance': round(float(balance), 2),
+        'net_pnl': round(float(net_pnl_total), 2),
+        'net_return_pct': round(float(net_return_pct), 2),
         'total_trades': total_trades,
         'winning_trades': len(wins),
         'losing_trades': len(losses),
-        'win_rate_pct': round(win_rate, 1),
-        'profit_factor': round(profit_factor, 2),
-        'max_drawdown_usdt': round(max_drawdown_usdt, 2),
-        'max_drawdown_pct': round(max_drawdown_pct, 2),
-        'avg_trade_pnl': round(net_pnl_total / total_trades, 2) if total_trades > 0 else 0.0,
-        'risk_reward_ratio': round(rr_ratio, 2),
-        'total_fees_usdt': round(total_fees_paid, 2),
+        'win_rate_pct': round(float(win_rate), 1),
+        'profit_factor': round(float(profit_factor), 2),
+        'max_drawdown_usdt': round(float(max_drawdown_usdt), 2),
+        'max_drawdown_pct': round(float(max_drawdown_pct), 2),
+        'avg_trade_pnl': round(float(net_pnl_total / total_trades), 2) if total_trades > 0 else 0.0,
+        'risk_reward_ratio': round(float(rr_ratio), 2),
+        'total_fees_usdt': round(float(total_fees_paid), 2),
         'equity_curve': equity_curve,
         'trades': trades_list
     }
@@ -414,10 +578,21 @@ def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, 
     Ejecuta el backtest sobre todo un portafolio de múltiples monedas de forma simultánea.
     Consolida PnL global, Win Rate del portafolio, curva de capital combinada y ranking ordenado por rentabilidad.
     """
-    if not symbols:
-        return {"error": "No se especificaron monedas para el backtest de portafolio."}
     if config is None:
         config = {}
+
+    norm_cfg = normalize_config(config)
+
+    # Si no se pasaron símbolos o se pasó PORTFOLIO, usar los símbolos configurados en la estrategia
+    if not symbols or symbols == ['PORTFOLIO'] or symbols == ['ALL']:
+        st_syms = norm_cfg.get('symbols_to_trade', '')
+        if st_syms:
+            symbols = [s.strip().upper() for s in st_syms.split(',') if s.strip()]
+        else:
+            symbols = ["SOLUSDT", "DOGEUSDT", "OPUSDT", "SUIUSDT", "NEARUSDT", "ADAUSDT", "ONDOUSDT", "ARBUSDT"]
+
+    if not symbols:
+        return {"error": "No se especificaron monedas para el backtest de portafolio."}
 
     individual_results = []
     all_trades = []
