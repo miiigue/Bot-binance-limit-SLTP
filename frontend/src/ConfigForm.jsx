@@ -512,6 +512,13 @@ function ConfigForm({
     }
   };
 
+  const handleSubmit = (e) => {
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
+    handleSaveAndApply();
+  };
+
   // Guardar como Nueva Versión / Copia
   const handleSaveAsNewCopy = () => {
     const defaultNewName = strategyNameInput ? `${strategyNameInput}_v2` : 'MiEstrategia_v1';
