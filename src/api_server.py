@@ -332,7 +332,8 @@ def run_bot_worker(symbol, trading_params, stop_event_ref):
                 bot_instance._set_error_state(f"Unhandled exception in worker loop: {cycle_error}")
             pass 
 
-        interrupted = stop_event_ref.wait(timeout=sleep_duration)
+        curr_sleep = get_sleep_seconds(bot_instance.params) if (bot_instance and hasattr(bot_instance, 'params')) else sleep_duration
+        interrupted = stop_event_ref.wait(timeout=curr_sleep)
         if interrupted:
             logger.info(f"[{symbol}] Señal de parada recibida durante la espera.")
             break
@@ -553,6 +554,18 @@ def update_config_endpoint():
         reload_config()
         reset_futures_client()
         load_initial_config()
+
+        # --- HOT-RELOAD EN VIVO: Si los workers están corriendo, actualizar parámetros inmediatamente ---
+        if workers_started:
+            logger.info("Workers activos detectados. Aplicando parámetros actualizados en caliente a cada bot...")
+            with status_lock:
+                for sym, bot_inst in worker_statuses.items():
+                    if bot_inst and hasattr(bot_inst, 'update_trading_params'):
+                        try:
+                            bot_inst.update_trading_params(loaded_trading_params)
+                            logger.info(f"-> Hot-reload exitoso para bot {sym}")
+                        except Exception as e_hot:
+                            logger.error(f"Error al actualizar parámetros en caliente para {sym}: {e_hot}")
 
         logger.info(f"Configuración guardada exitosamente. Retornando objeto completo.")
         updated_frontend_config = _build_frontend_config_dict()
@@ -1127,17 +1140,24 @@ def run_backtest_endpoint():
             # Si no se pasó config específico, cargar de los parámetros cargados
             strategy_config = loaded_trading_params or {}
 
+        start_date = data.get('startDate') or data.get('start_date')
+        end_date = data.get('endDate') or data.get('end_date')
+        if start_date: start_date = str(start_date).strip()
+        if end_date: end_date = str(end_date).strip()
+
         # Modo Portafolio Multimoneda (Todas las monedas a la vez)
         if symbol in ('PORTFOLIO', 'ALL', 'ALL_CONFIGURED') or data.get('is_portfolio'):
             symbols_to_test = data.get('symbols') or (list(loaded_symbols_to_trade) if loaded_symbols_to_trade else ["SOLUSDT", "DOGEUSDT", "OPUSDT", "SUIUSDT", "NEARUSDT", "ADAUSDT", "ONDOUSDT", "ARBUSDT"])
-            logger.info(f"Iniciando backtest de PORTAFOLIO COMPLETO ({len(symbols_to_test)} pares, {days} días, intervalo {interval})...")
-            results = run_portfolio_backtest(symbols=symbols_to_test, interval=interval, days=days, config=strategy_config, initial_balance_per_coin=initial_balance)
+            r_tag = f"desde {start_date} hasta {end_date}" if (start_date and end_date) else f"{days} días"
+            logger.info(f"Iniciando backtest de PORTAFOLIO COMPLETO ({len(symbols_to_test)} pares, {r_tag}, intervalo {interval})...")
+            results = run_portfolio_backtest(symbols=symbols_to_test, interval=interval, days=days, start_date=start_date, end_date=end_date, config=strategy_config, initial_balance_per_coin=initial_balance)
             return jsonify(results), 200
 
-        logger.info(f"Iniciando backtest histórico para {symbol} ({days} días, intervalo {interval})...")
-        df = get_historical_klines_paginated(symbol=symbol, interval=interval, days=days, use_cache=True)
+        r_tag = f"desde {start_date} hasta {end_date}" if (start_date and end_date) else f"{days} días"
+        logger.info(f"Iniciando backtest histórico para {symbol} ({r_tag}, intervalo {interval})...")
+        df = get_historical_klines_paginated(symbol=symbol, interval=interval, days=days, start_date=start_date, end_date=end_date, use_cache=True)
         if df is None or df.empty:
-            return jsonify({"error": f"No se pudieron descargar velas históricas para {symbol}."}), 400
+            return jsonify({"error": f"No se pudieron descargar velas históricas para {symbol} en el período solicitado."}), 400
 
         results = run_strategy_backtest(symbol=symbol, df=df, config=strategy_config, initial_balance=initial_balance)
         return jsonify(results), 200

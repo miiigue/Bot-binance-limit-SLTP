@@ -297,6 +297,93 @@ class TradingBot:
         self.is_paused = False
         self.logger.info(f"[{self.symbol}] Worker inicializado exitosamente (Timeout Órdenes: {self.order_timeout_seconds}s).")
 
+    def update_trading_params(self, new_params: dict):
+        """Actualiza los parámetros de trading en caliente para el bot en ejecución."""
+        self.logger.info(f"[{self.symbol}] Recibida solicitud de actualización de parámetros en caliente.")
+        if not new_params:
+            return
+
+        self.params = {**self.params, **new_params}
+        
+        def _safe_int(val, default):
+            if val is None or str(val).strip() == '': return default
+            try: return int(val)
+            except (ValueError, TypeError): return default
+
+        def _safe_float(val, default):
+            if val is None or str(val).strip() == '': return default
+            try: return float(val)
+            except (ValueError, TypeError): return default
+
+        def _safe_decimal(val, default_str):
+            if val is None or str(val).strip() == '': return Decimal(default_str)
+            try: return Decimal(str(val))
+            except Exception: return Decimal(default_str)
+
+        self.downtrend_check_candles = _safe_int(new_params.get('downtrend_check_candles'), self.downtrend_check_candles)
+        self.downtrend_level_check = _safe_int(new_params.get('downtrend_level_check'), self.downtrend_level_check)
+        self.required_uptrend_candles = _safe_int(new_params.get('required_uptrend_candles'), self.required_uptrend_candles)
+        self.rsi_target = _safe_float(new_params.get('rsi_target'), self.rsi_target)
+        self.evaluate_rsi_delta = str(new_params.get('evaluate_rsi_delta', self.evaluate_rsi_delta)).lower() == 'true' if isinstance(new_params.get('evaluate_rsi_delta'), str) else bool(new_params.get('evaluate_rsi_delta', self.evaluate_rsi_delta))
+        self.evaluate_volume_filter = str(new_params.get('evaluate_volume_filter', self.evaluate_volume_filter)).lower() == 'true' if isinstance(new_params.get('evaluate_volume_filter'), str) else bool(new_params.get('evaluate_volume_filter', self.evaluate_volume_filter))
+        self.evaluate_rsi_range = str(new_params.get('evaluate_rsi_range', self.evaluate_rsi_range)).lower() == 'true' if isinstance(new_params.get('evaluate_rsi_range'), str) else bool(new_params.get('evaluate_rsi_range', self.evaluate_rsi_range))
+        self.evaluate_downtrend_candles_block = str(new_params.get('evaluate_downtrend_candles_block', self.evaluate_downtrend_candles_block)).lower() == 'true' if isinstance(new_params.get('evaluate_downtrend_candles_block'), str) else bool(new_params.get('evaluate_downtrend_candles_block', self.evaluate_downtrend_candles_block))
+        self.evaluate_downtrend_levels_block = str(new_params.get('evaluate_downtrend_levels_block', self.evaluate_downtrend_levels_block)).lower() == 'true' if isinstance(new_params.get('evaluate_downtrend_levels_block'), str) else bool(new_params.get('evaluate_downtrend_levels_block', self.evaluate_downtrend_levels_block))
+        self.evaluate_required_uptrend = str(new_params.get('evaluate_required_uptrend', self.evaluate_required_uptrend)).lower() == 'true' if isinstance(new_params.get('evaluate_required_uptrend'), str) else bool(new_params.get('evaluate_required_uptrend', self.evaluate_required_uptrend))
+        self.enable_take_profit_pnl = str(new_params.get('enable_take_profit_pnl', self.enable_take_profit_pnl)).lower() == 'true' if isinstance(new_params.get('enable_take_profit_pnl'), str) else bool(new_params.get('enable_take_profit_pnl', self.enable_take_profit_pnl))
+        self.enable_stop_loss_pnl = str(new_params.get('enable_stop_loss_pnl', self.enable_stop_loss_pnl)).lower() == 'true' if isinstance(new_params.get('enable_stop_loss_pnl'), str) else bool(new_params.get('enable_stop_loss_pnl', self.enable_stop_loss_pnl))
+        self.enable_trailing_rsi_stop = str(new_params.get('enable_trailing_rsi_stop', self.enable_trailing_rsi_stop)).lower() == 'true' if isinstance(new_params.get('enable_trailing_rsi_stop'), str) else bool(new_params.get('enable_trailing_rsi_stop', self.enable_trailing_rsi_stop))
+        self.evaluate_ma_filter = str(new_params.get('evaluate_ma_filter', self.evaluate_ma_filter)).lower() == 'true'
+        self.ma_period = _safe_int(new_params.get('ma_period'), self.ma_period)
+        self.enable_price_trailing_stop = str(new_params.get('enable_price_trailing_stop', self.enable_price_trailing_stop)).lower() == 'true' if isinstance(new_params.get('enable_price_trailing_stop'), str) else bool(new_params.get('enable_price_trailing_stop', self.enable_price_trailing_stop))
+        self.price_trailing_stop_distance_usdt = _safe_decimal(new_params.get('price_trailing_stop_distance_usdt'), str(self.price_trailing_stop_distance_usdt))
+        self.price_trailing_stop_activation_pnl_usdt = _safe_decimal(new_params.get('price_trailing_stop_activation_pnl_usdt'), str(self.price_trailing_stop_activation_pnl_usdt))
+        self.enable_pnl_trailing_stop = str(new_params.get('enable_pnl_trailing_stop', self.enable_pnl_trailing_stop)).lower() == 'true' if isinstance(new_params.get('enable_pnl_trailing_stop'), str) else bool(new_params.get('enable_pnl_trailing_stop', self.enable_pnl_trailing_stop))
+        self.pnl_trailing_stop_activation_usdt = _safe_decimal(new_params.get('pnl_trailing_stop_activation_usdt'), str(self.pnl_trailing_stop_activation_usdt))
+        self.pnl_trailing_stop_drop_usdt = _safe_decimal(new_params.get('pnl_trailing_stop_drop_usdt'), str(self.pnl_trailing_stop_drop_usdt))
+        self.evaluate_open_interest_increase = str(new_params.get('evaluate_open_interest_increase', self.evaluate_open_interest_increase)).lower() == 'true'
+        self.open_interest_period = new_params.get('open_interest_period', self.open_interest_period) or '5m'
+        
+        self.evaluate_support_strategy = str(new_params.get('evaluate_support_strategy', self.evaluate_support_strategy)).lower() == 'true'
+        self.support_history_candles = _safe_int(new_params.get('support_history_candles'), self.support_history_candles)
+        self.support_pivot_window = _safe_int(new_params.get('support_pivot_window'), self.support_pivot_window)
+        self.support_confirmations = _safe_int(new_params.get('support_confirmations'), self.support_confirmations)
+        self.support_level_tolerance_percent = _safe_float(new_params.get('support_level_tolerance_percent'), self.support_level_tolerance_percent)
+        self.support_order_stop_loss_percent = _safe_float(new_params.get('support_order_stop_loss_percent'), self.support_order_stop_loss_percent)
+        self.support_order_take_profit_percent = _safe_float(new_params.get('support_order_take_profit_percent'), self.support_order_take_profit_percent)
+
+        self.enable_dca_reentry = str(new_params.get('enable_dca_reentry', self.enable_dca_reentry)).lower() == 'true'
+        self.dca_reentry_mode = str(new_params.get('dca_reentry_mode', self.dca_reentry_mode)).lower()
+        self.dca_price_drop_percent = _safe_float(new_params.get('dca_price_drop_percent'), self.dca_price_drop_percent)
+        self.dca_max_reentries = _safe_int(new_params.get('dca_max_reentries'), self.dca_max_reentries)
+        self.dca_volume_multiplier = _safe_float(new_params.get('dca_volume_multiplier'), self.dca_volume_multiplier)
+
+        self.rsi_interval = str(new_params.get('rsi_interval') or self.rsi_interval)
+        self.rsi_period = _safe_int(new_params.get('rsi_period'), self.rsi_period)
+        self.rsi_threshold_up = _safe_float(new_params.get('rsi_threshold_up'), self.rsi_threshold_up)
+        self.rsi_threshold_down = _safe_float(new_params.get('rsi_threshold_down'), self.rsi_threshold_down)
+        self.rsi_entry_level_low = _safe_float(new_params.get('rsi_entry_level_low'), self.rsi_entry_level_low)
+        self.rsi_entry_level_high = _safe_float(new_params.get('rsi_entry_level_high'), self.rsi_entry_level_high)
+        self.volume_sma_period = _safe_int(new_params.get('volume_sma_period'), self.volume_sma_period)
+        self.volume_factor = _safe_float(new_params.get('volume_factor'), self.volume_factor)
+
+        self.position_size_usdt = _safe_decimal(new_params.get('position_size_usdt'), str(self.position_size_usdt))
+        self.take_profit_usdt = _safe_decimal(new_params.get('take_profit_usdt'), str(self.take_profit_usdt))
+        self.stop_loss_usdt = _safe_decimal(new_params.get('stop_loss_usdt'), str(self.stop_loss_usdt))
+        
+        # Solo configurar apalancamiento en Binance si no estamos en posición activa
+        new_leverage = _safe_int(new_params.get('leverage'), self.leverage)
+        if new_leverage != self.leverage:
+            self.leverage = new_leverage
+            if not self.in_position:
+                try:
+                    set_futures_leverage(self.symbol, self.leverage)
+                except Exception as e_lev:
+                    self.logger.warning(f"[{self.symbol}] Hot-reload: No se pudo configurar apalancamiento: {e_lev}")
+
+        self.order_timeout_seconds = _safe_int(new_params.get('order_timeout_seconds'), self.order_timeout_seconds)
+        self.logger.info(f"[{self.symbol}] Parámetros de trading actualizados en caliente exitosamente.")
+
     def _check_initial_position(self):
         """
         Verifica si ya existe una posición para el símbolo en Binance al iniciar el bot.

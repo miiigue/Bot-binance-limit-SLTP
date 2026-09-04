@@ -14,18 +14,41 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 BINANCE_FUTURES_PUBLIC_KLINES = "https://fapi.binance.com/fapi/v1/klines"
 
 
-def get_historical_klines_paginated(symbol: str, interval: str = '5m', days: int = 14, use_cache: bool = True) -> pd.DataFrame:
+def get_historical_klines_paginated(symbol: str, interval: str = '5m', days: int = 14, start_date: str = None, end_date: str = None, use_cache: bool = True) -> pd.DataFrame:
     """
-    Descarga datos históricos de velas de Binance Futures paginando hasta cubrir los días solicitados.
-    Utiliza caché local en disco para que las pruebas posteriores sean instantáneas (menos de 0.1s).
+    Descarga datos históricos de velas de Binance Futures paginando hasta cubrir el período solicitado.
+    Soporta:
+    - Modo relativo: por cantidad de días (ej: days=14, 30, 60, etc.)
+    - Modo fechas específicas: start_date='2024-01-01', end_date='2024-03-18' (formato YYYY-MM-DD)
     """
     symbol = symbol.upper().strip()
-    cache_file = os.path.join(CACHE_DIR, f"{symbol}_{interval}_{days}d.json")
 
-    # 1. Verificar si la caché existe y no tiene más de 3 horas
+    is_custom_range = bool(start_date and end_date)
+    if is_custom_range:
+        try:
+            dt_start = datetime.strptime(start_date.strip(), "%Y-%m-%d")
+            dt_end = datetime.strptime(end_date.strip(), "%Y-%m-%d") + timedelta(days=1) - timedelta(milliseconds=1)
+            start_time = int(dt_start.timestamp() * 1000)
+            end_time = int(dt_end.timestamp() * 1000)
+            cache_tag = f"{start_date.strip()}_{end_date.strip()}"
+        except Exception:
+            is_custom_range = False
+            end_time = int(time.time() * 1000)
+            start_time = int((datetime.utcnow() - timedelta(days=days)).timestamp() * 1000)
+            cache_tag = f"{days}d"
+    else:
+        end_time = int(time.time() * 1000)
+        start_time = int((datetime.utcnow() - timedelta(days=days)).timestamp() * 1000)
+        cache_tag = f"{days}d"
+
+    cache_file = os.path.join(CACHE_DIR, f"{symbol}_{interval}_{cache_tag}.json")
+
+    # 1. Verificar si la caché existe
     if use_cache and os.path.exists(cache_file):
         file_age = time.time() - os.path.getmtime(cache_file)
-        if file_age < 3 * 3600:
+        # Si es un rango cerrado del pasado, la caché es inmutable y no expira
+        is_past_closed = is_custom_range and (end_time < int(time.time() * 1000) - 86400000)
+        if is_past_closed or file_age < 3 * 3600:
             try:
                 with open(cache_file, 'r', encoding='utf-8') as f:
                     cached_raw = json.load(f)
@@ -35,9 +58,6 @@ def get_historical_klines_paginated(symbol: str, interval: str = '5m', days: int
                 pass
 
     # 2. Descarga paginada desde Binance Futures
-    end_time = int(time.time() * 1000)
-    start_time = int((datetime.utcnow() - timedelta(days=days)).timestamp() * 1000)
-    
     all_klines = []
     current_start = start_time
     max_retries = 3
@@ -360,9 +380,15 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
             downsampled_curve.append(equity_curve[-1])
         equity_curve = downsampled_curve
 
+    start_dt_str = str(df['open_time'].iloc[0]).split(' ')[0]
+    end_dt_str = str(df['open_time'].iloc[-1]).split(' ')[0]
+
     return {
         'symbol': symbol,
-        'days_tested': int((df['open_time'].iloc[-1] - df['open_time'].iloc[0]).total_seconds() / 86400),
+        'days_tested': max(1, int((df['open_time'].iloc[-1] - df['open_time'].iloc[0]).total_seconds() / 86400)),
+        'start_date': start_dt_str,
+        'end_date': end_dt_str,
+        'period_label': f"{start_dt_str} al {end_dt_str}",
         'total_candles': len(df),
         'initial_balance': round(initial_balance, 2),
         'final_balance': round(balance, 2),
@@ -383,7 +409,7 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
     }
 
 
-def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, config: dict = None, initial_balance_per_coin: float = 1000.0) -> dict:
+def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, start_date: str = None, end_date: str = None, config: dict = None, initial_balance_per_coin: float = 1000.0) -> dict:
     """
     Ejecuta el backtest sobre todo un portafolio de múltiples monedas de forma simultánea.
     Consolida PnL global, Win Rate del portafolio, curva de capital combinada y ranking ordenado por rentabilidad.
@@ -399,7 +425,7 @@ def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, 
 
     for sym in symbols:
         try:
-            df = get_historical_klines_paginated(sym, interval=interval, days=days, use_cache=True)
+            df = get_historical_klines_paginated(sym, interval=interval, days=days, start_date=start_date, end_date=end_date, use_cache=True)
             if df is not None and len(df) >= 50:
                 res = run_strategy_backtest(sym, df, config, initial_balance=initial_balance_per_coin)
                 if 'error' not in res:
@@ -485,7 +511,10 @@ def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, 
         "symbol": "PORTFOLIO",
         "symbols_count": len(individual_results),
         "symbols_list": [r['symbol'] for r in individual_results],
-        "days_tested": days,
+        "days_tested": individual_results[0].get('days_tested', days) if individual_results else days,
+        "start_date": individual_results[0].get('start_date') if individual_results else start_date,
+        "end_date": individual_results[0].get('end_date') if individual_results else end_date,
+        "period_label": individual_results[0].get('period_label') if individual_results else (f"{start_date} al {end_date}" if start_date else f"{days} días"),
         "total_candles": total_candles,
         "initial_balance": round(total_initial_balance, 2),
         "final_balance": round(total_final_balance, 2),
