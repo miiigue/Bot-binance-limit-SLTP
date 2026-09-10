@@ -7,7 +7,7 @@ import React from 'react';
  * @param {string} [props.example] - Texto del ejemplo práctico.
  * @param {string} [props.title] - Título opcional del parámetro.
  */
-const Tooltip = ({ text, example, title }) => {
+const Tooltip = ({ text, example, title, position = 'top', align = 'center' }) => {
   let displayTitle = title;
   let displayDesc = typeof text === 'object' ? text.desc : text;
   let displayExample = example || (typeof text === 'object' ? text.example : null);
@@ -20,14 +20,34 @@ const Tooltip = ({ text, example, title }) => {
     return null;
   }
 
+  const isBottom = position === 'bottom';
+  const posClasses = isBottom ? 'top-full mt-2' : 'bottom-full mb-2';
+  
+  let alignClasses = 'left-1/2 -translate-x-1/2';
+  let arrowAlignClasses = 'left-1/2 -translate-x-1/2';
+  if (align === 'left') {
+    alignClasses = 'left-0';
+    arrowAlignClasses = 'left-3';
+  } else if (align === 'right') {
+    alignClasses = 'right-0';
+    arrowAlignClasses = 'right-3';
+  }
+
+  const arrowClasses = isBottom
+    ? `-top-1 border-l border-t ${arrowAlignClasses}`
+    : `-bottom-1 border-r border-b ${arrowAlignClasses}`;
+
   return (
-    <div className="group relative inline-flex items-center justify-center ml-1.5 align-middle">
+    <div 
+      onClick={(e) => e.stopPropagation()}
+      className="group relative inline-flex items-center justify-center ml-1.5 align-middle cursor-default"
+    >
       {/* Botón / Icono de ayuda interactivo */}
-      <span className="w-4 h-4 bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800 text-[11px] font-bold rounded-full flex items-center justify-center cursor-help transition-colors shadow-sm border border-blue-300 dark:border-blue-700">
+      <span className="w-4 h-4 bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800 text-[11px] font-bold rounded-full flex items-center justify-center cursor-help transition-colors shadow-sm border border-blue-300 dark:border-blue-700 select-none">
         ?
       </span>
       {/* Contenedor flotante del Tooltip */}
-      <div className="absolute bottom-full mb-2 w-72 sm:w-84 bg-gray-900/95 backdrop-blur-sm text-gray-100 text-xs rounded-lg p-3.5 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-50 transform -translate-x-1/2 left-1/2 shadow-2xl border border-gray-700">
+      <div className={`absolute ${posClasses} ${alignClasses} w-72 sm:w-84 bg-gray-900/95 backdrop-blur-sm text-gray-100 text-xs rounded-lg p-3.5 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-50 shadow-2xl border border-gray-700 text-left font-normal normal-case`}>
         {displayTitle && (
           <div className="font-bold text-blue-300 mb-1 border-b border-gray-700/80 pb-1 text-xs tracking-wide uppercase">
             {displayTitle}
@@ -46,8 +66,8 @@ const Tooltip = ({ text, example, title }) => {
             </span>
           </div>
         )}
-        {/* Flecha inferior */}
-        <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45 border-r border-b border-gray-700"></div>
+        {/* Flecha indicadora */}
+        <div className={`absolute w-2 h-2 bg-gray-900 rotate-45 border-gray-700 ${arrowClasses}`}></div>
       </div>
     </div>
   );

@@ -236,46 +236,46 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-primary-50 dark:bg-primary-950 text-gray-900 dark:text-gray-100">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
       {/* HEADER UNIFICADO FIJO (Elimina vibraciones y saltos de pantalla) */}
       <header className="sticky top-0 z-50 shadow-md">
         {/* 1. Barra Amarilla Principal */}
-        <div className="bg-yellow-400 text-black px-4 py-2.5 flex items-center justify-between border-b border-yellow-500/40">
+        <div className="bg-amber-400 text-slate-950 px-4 py-2.5 flex items-center justify-between border-b border-amber-500/60 font-medium">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-lg font-bold truncate">BOT BINANCE LIMIT-SLTP</span>
-              <span className="bg-green-800 text-white text-[10px] px-2 py-0.5 rounded font-mono font-semibold shadow">
+              <span className="text-lg font-black tracking-tight text-slate-950 truncate">BOT BINANCE LIMIT-SLTP</span>
+              <span className="bg-emerald-900 text-white text-[10px] px-2 py-0.5 rounded font-mono font-bold shadow">
                 🛡️ TESTNET DEMO
               </span>
               <button
                 type="button"
                 onClick={handleToggleSound}
                 className={`ml-2 px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 shadow-sm ${
-                  soundOn ? 'bg-emerald-950 text-emerald-300' : 'bg-gray-800 text-gray-400'
+                  soundOn ? 'bg-slate-950 text-emerald-300 border border-emerald-500/50' : 'bg-slate-800 text-slate-300 border border-slate-700'
                 }`}
                 title={soundOn ? 'Silenciar sonidos' : 'Activar alertas sonoras'}
               >
                 <span>{soundOn ? '🔊 ON' : '🔇 OFF'}</span>
               </button>
             </div>
-            <div className="text-xs font-semibold text-blue-900 truncate min-h-[16px]">
+            <div className="text-xs font-bold text-slate-900 truncate min-h-[16px]">
               {activeStrategyDisplayName ? `(${activeStrategyDisplayName})` : ''}
             </div>
           </div>
           
           {/* PNL Info Central */}
           <div className="flex-initial px-3">
-            <div className="text-base font-semibold text-center flex items-center gap-2">
+            <div className="text-base font-bold text-center flex items-center gap-2 text-slate-950">
               <span>PNL {headerPnlData?.coinCount || 0} monedas ({headerPnlData?.coinsInPosition || 0}) = </span>
-              <span className={`text-2xl font-mono font-bold ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-red-600' : (Number(headerPnlData?.totalPnl) || 0) > 0 ? 'text-green-700' : 'text-black'}`}>
+              <span className={`text-2xl font-mono font-black ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData?.totalPnl) || 0) > 0 ? 'text-emerald-900' : 'text-slate-950'}`}>
                 {(Number(headerPnlData?.totalPnl) || 0).toFixed(5)}
               </span>
-              <span className="text-xs font-semibold">USDT</span>
+              <span className="text-xs font-black">USDT</span>
               
               {botsRunning && headerPnlData?.sessionStats && (
-                <span className="ml-2 text-xs flex items-center gap-2 bg-yellow-500/50 px-2 py-0.5 rounded font-mono">
+                <span className="ml-2 text-xs flex items-center gap-2 bg-amber-500/60 border border-amber-600/40 px-2 py-0.5 rounded-lg font-mono text-slate-950 font-bold">
                   <span>Sesión:</span>
-                  <span className={`font-bold ${(Number(headerPnlData.sessionStats.session_pnl) || 0) < 0 ? 'text-red-700' : (Number(headerPnlData.sessionStats.session_pnl) || 0) > 0 ? 'text-green-800' : 'text-black'}`}>
+                  <span className={`font-black ${(Number(headerPnlData.sessionStats.session_pnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData.sessionStats.session_pnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
                     {`${(Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(4)}`} USDT
                   </span>
                 </span>
@@ -287,16 +287,16 @@ function App() {
           <div className="flex-1 flex items-center justify-end space-x-3 min-w-0">
             {botsRunning && (
               <div className="text-xs flex items-center gap-1.5 whitespace-nowrap">
-                <span className="font-semibold text-gray-800">Activo:</span>
-                <span className="font-mono font-bold bg-yellow-500 text-black px-2 py-0.5 rounded text-xs shadow-sm">
+                <span className="font-bold text-slate-900">Activo:</span>
+                <span className="font-mono font-black bg-slate-950 text-amber-300 border border-amber-500/50 px-2 py-0.5 rounded text-xs shadow-sm">
                   {formatElapsedTime(elapsedTime)}
                 </span>
               </div>
             )}
             {botsRunning && config && (
               <div className="text-xs flex items-center gap-1.5 whitespace-nowrap">
-                <span className="font-semibold text-gray-800">Ciclo:</span>
-                <span className="font-mono font-bold bg-yellow-500 text-black px-2 py-0.5 rounded text-xs shadow-sm">
+                <span className="font-bold text-slate-900">Ciclo:</span>
+                <span className="font-mono font-black bg-slate-950 text-amber-300 border border-amber-500/50 px-2 py-0.5 rounded text-xs shadow-sm">
                   {formatElapsedTime(countdown)}
                 </span>
               </div>
@@ -305,21 +305,21 @@ function App() {
         </div>
 
         {/* 2. Barra de Navegación por Pestañas */}
-        <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 md:px-8 py-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="bg-slate-900 border-b border-slate-800 px-4 md:px-8 py-2.5 flex flex-wrap items-center justify-between gap-2 shadow-sm">
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             {/* Pestaña 1: Monitor */}
             <button
               type="button"
               onClick={() => setActiveTab('monitor')}
-              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                 activeTab === 'monitor'
-                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+                  ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                  : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
               }`}
             >
               <span>🖥️</span> Monitor
               {headerPnlData.coinsInPosition > 0 && (
-                <span className="text-[10px] bg-emerald-500 text-white font-mono px-1.5 py-0.2 rounded-full shadow">
+                <span className="text-[10px] bg-emerald-500 text-white font-mono font-bold px-1.5 py-0.2 rounded-full shadow">
                   {headerPnlData.coinsInPosition} en pos
                 </span>
               )}
@@ -329,10 +329,10 @@ function App() {
             <button
               type="button"
               onClick={() => setActiveTab('config')}
-              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                 activeTab === 'config'
-                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+                  ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                  : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
               }`}
             >
               <span>⚙️</span> Configuración
@@ -342,10 +342,10 @@ function App() {
             <button
               type="button"
               onClick={() => setActiveTab('chart')}
-              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                 activeTab === 'chart'
-                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+                  ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                  : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
               }`}
             >
               <span>📊</span> Gráficos
@@ -355,10 +355,10 @@ function App() {
             <button
               type="button"
               onClick={() => setActiveTab('performance')}
-              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                 activeTab === 'performance'
-                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+                  ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                  : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
               }`}
             >
               <span>📈</span> Rendimiento
@@ -368,10 +368,10 @@ function App() {
             <button
               type="button"
               onClick={() => setActiveTab('radar')}
-              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                 activeTab === 'radar'
-                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+                  ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                  : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
               }`}
             >
               <span>📡</span> Mercado
@@ -381,10 +381,10 @@ function App() {
             <button
               type="button"
               onClick={() => setActiveTab('backtest')}
-              className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                 activeTab === 'backtest'
-                  ? 'bg-yellow-500 text-black shadow-md ring-2 ring-yellow-400/40'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
+                  ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                  : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
               }`}
             >
               <span>🧪</span> Backtesting
@@ -402,9 +402,9 @@ function App() {
 
             {/* Indicador de Monedas configuradas */}
             {config?.symbolsToTrade && (
-              <div className="text-xs text-gray-500 dark:text-gray-400 items-center gap-1 hidden xl:flex pl-2 border-l border-gray-200 dark:border-gray-800">
+              <div className="text-xs text-slate-300 items-center gap-1 hidden xl:flex pl-2 border-l border-slate-700">
                 <span>🪙</span>
-                <span className="font-semibold text-gray-700 dark:text-gray-300 font-mono">
+                <span className="font-bold text-slate-200 font-mono">
                   {config.symbolsToTrade.split(',').filter(Boolean).length} pares
                 </span>
               </div>

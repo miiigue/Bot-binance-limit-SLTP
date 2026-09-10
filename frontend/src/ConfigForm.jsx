@@ -5,8 +5,8 @@ import StrategyRadar from './StrategyRadar'; // Radar de Estrategia y Simulador 
 // --- Definiciones de Componentes Auxiliares ---
 function ConfigSection({ title, className, children }) {
   return (
-    <fieldset className={`border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600 ${className || ''}`}>
-      <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">{title}</legend>
+    <fieldset className={`border pt-4 px-4 pb-6 rounded-2xl border-slate-700/80 bg-slate-900/40 shadow-sm ${className || ''}`}>
+      <legend className="text-base font-bold text-white px-3 bg-slate-900 rounded-lg border border-slate-700/80">{title}</legend>
       <div className="mt-4">
         {children}
       </div>
@@ -20,12 +20,12 @@ function ConfigItem({ labelText, htmlFor, description, example, tooltipKey, tool
   const displayExample = example || (info ? info.example : (typeof tooltipText === 'object' ? tooltipText.example : null));
 
   return (
-    <div className="bg-gray-50/80 dark:bg-gray-900/60 p-3.5 rounded-lg border border-gray-200 dark:border-gray-700/70 flex flex-col justify-between hover:border-gray-300 dark:hover:border-gray-600 transition-all shadow-sm">
+    <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-700/80 flex flex-col justify-between hover:border-slate-500 transition-all shadow-sm">
       <div>
         {/* Header con Título + Tooltip + (Opcional) Toggle de Activado */}
         <div className="flex items-center justify-between mb-1.5 min-h-[26px]">
-          <div className="flex items-center space-x-1">
-            <label htmlFor={htmlFor} className="block text-xs font-bold text-gray-800 dark:text-gray-200">
+          <div className="flex items-center space-x-1.5">
+            <label htmlFor={htmlFor} className="block text-xs font-bold text-slate-100">
               {labelText}
             </label>
             {(info || tooltipText) && (
@@ -40,12 +40,12 @@ function ConfigItem({ labelText, htmlFor, description, example, tooltipKey, tool
                 type="checkbox"
                 checked={isChecked}
                 onChange={onCheckboxChange}
-                className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 cursor-pointer"
+                className="h-4 w-4 text-indigo-500 border-slate-600 rounded focus:ring-indigo-400 bg-slate-950 cursor-pointer"
               />
-              <span className={`ml-1.5 text-[11px] font-bold px-1.5 py-0.5 rounded transition-colors ${
+              <span className={`ml-1.5 text-[11px] font-bold px-2 py-0.5 rounded transition-colors ${
                 isChecked
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-300 border border-green-700/40'
-                  : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 border border-gray-700/40'
+                  ? 'bg-emerald-950/80 text-emerald-200 border border-emerald-500/60 shadow-sm'
+                  : 'bg-slate-800 text-slate-300 border border-slate-700'
               }`}>
                 {isChecked ? 'Activado' : 'Desactivado'}
               </span>
@@ -61,15 +61,15 @@ function ConfigItem({ labelText, htmlFor, description, example, tooltipKey, tool
 
       {/* Descripción y Ejemplo (Siempre ubicado abajo de forma compacta y alineada) */}
       {(displayDesc || displayExample) && (
-        <div className="mt-2.5 pt-2 border-t border-gray-200/60 dark:border-gray-700/60 space-y-0.5">
+        <div className="mt-2.5 pt-2 border-t border-slate-800 space-y-0.5">
           {displayDesc && (
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
+            <p className="text-[11px] text-slate-300 font-medium leading-snug">
               {displayDesc}
             </p>
           )}
           {displayExample && (
-            <p className="text-[10.5px] text-amber-600 dark:text-amber-400 font-medium leading-snug">
-              <span className="font-semibold">💡 Ej:</span> {displayExample}
+            <p className="text-[10.5px] text-amber-300 font-medium leading-snug">
+              <span className="font-bold text-amber-200">💡 Ej:</span> {displayExample}
             </p>
           )}
         </div>
@@ -109,6 +109,10 @@ const defaultConfigValues = {
   evaluateRequiredUptrend: true,
   enableTakeProfitPnl: true,
   enableStopLossPnl: true,
+  stopLossOrderType: 'STOP_MARKET',
+  stopLossTriggerType: 'MARK_PRICE',
+  enableEmergencySoftwareSl: true,
+  stopLossExecutionMode: 'TOTAL_100',
   enableTrailingRsiStop: true,
   enablePriceTrailingStop: true,
   priceTrailingStopDistanceUSDT: 0.05,
@@ -137,6 +141,8 @@ const defaultConfigValues = {
   dcaPriceDropPercent: 1.5,
   dcaMaxReentries: 2,
   dcaVolumeMultiplier: 1.0,
+  riskPercentage: 50,
+  risk_percentage: 50,
 };
 
 // --- Diccionario profesional con Explicación y Ejemplo Práctico para cada Parámetro ---
@@ -147,12 +153,12 @@ const tooltipTexts = {
     example: "🛡️ Testnet / Simulación para operar seguro sin arriesgar capital real."
   },
   leverage: {
-    desc: "Multiplicador de apalancamiento en Binance Futures. Reduce el margen real que se descuenta de tu saldo para sostener el tamaño de posición configurado.",
-    example: "Con 5x y un tamaño de posición de 50 USDT, solo se retienen 10 USDT de margen de tu billetera (50 / 5x)."
+    desc: "Multiplicador de apalancamiento en Binance Futures. Multiplica tu margen real para obtener el tamaño total de la posición nocional en contratos.",
+    example: "Con 10x y un margen de 35 USDT, tu posición en Binance será de 350 USDT nocionales."
   },
   positionSizeUSDT: {
-    desc: "Tamaño o valor nocional de la orden en USDT que se abrirá y se verá reflejado en tu posición de Binance.",
-    example: "Si colocas 50 USDT, tu posición en Binance mostrará un tamaño de 50 USDT en contratos. El margen real deducido de tu billetera será proporcional al apalancamiento (ej: con 5x son 10 USDT)."
+    desc: "Margen real en USDT deducido de tu billetera para sostener y abrir cada posición.",
+    example: "Con 35 USDT y 10x de apalancamiento, tu billetera aporta 35 USDT y la posición abierta en Binance tiene un valor de 350 USDT."
   },
   rsi_interval: {
     desc: "Temporalidad (timeframe) de las velas japonesas usadas para el análisis técnico.",
@@ -164,7 +170,7 @@ const tooltipTexts = {
   },
   riskPercentage: {
     desc: "Porcentaje máximo de tu balance total permitido en margen sumando todas las posiciones abiertas.",
-    example: "Con 50% y balance de 1,000 USDT, el bot bloquea nuevas compras si el margen abierto supera 500 USDT."
+    example: "Con 50% y balance de 1,000 USDT, el bot bloquea nuevas compras si el margen total acumulado supera 500 USDT."
   },
 
   // Estrategia de Entrada
@@ -280,6 +286,22 @@ const tooltipTexts = {
     desc: "Pérdida máxima tolerada en USDT antes de cerrar la posición para proteger el capital.",
     example: "Con 20 USDT, si el PnL cae a -20.00 USDT, cierra todo inmediatamente para cortar pérdidas."
   },
+  stopLossOrderType: {
+    desc: "Tipo de orden enviada a Binance para el Stop Loss. STOP_MARKET garantiza ejecución inmediata al tocar el precio, evitando que la orden se quede sin ejecutar en desplomes repentinos.",
+    example: "STOP_MARKET (Recomendado) vende a precio de mercado garantizando salida. STOP_LIMIT coloca una orden limitada que puede saltarse si el precio cae en picada."
+  },
+  stopLossTriggerType: {
+    desc: "Precio tomado como referencia por Binance para disparar el Stop Loss: Precio de Marca (Mark Price) o Último Precio negociado.",
+    example: "Mark Price (Recomendado) previene manipulaciones y mechazos artificiales en el libro de órdenes de futuros."
+  },
+  enableEmergencySoftwareSl: {
+    desc: "Doble Capa de Seguridad (Guardián de Software): Si la orden de Binance no se ejecutara por saturación de red o lag, el bot fuerza un cierre de rescate por código en su ciclo.",
+    example: "Activado (Recomendado) garantiza que tu bot nunca deje una posición desprotegida o huérfana en pérdidas extremas."
+  },
+  stopLossExecutionMode: {
+    desc: "Permite elegir entre cortar el 100% de la posición en el Stop Loss o dividir la salida en dos tramos escalonados (50% y 50%).",
+    example: "'Cierre Total 100%' corta toda la orden al límite; 'Cierre Escalonado 50/50' cierra la mitad primero para absorber mechazos temporales."
+  },
   rsiTarget: {
     desc: "Nivel de RSI necesario para armar el Trailing Stop por RSI y empezar a rastrear el pico de RSI.",
     example: "Con 50, cuando el RSI sube a 50 o más, el bot se pone en alerta y registra el pico más alto (ej: 65)."
@@ -367,6 +389,11 @@ function ConfigForm({
         const data = await response.json();
         setRiskData(data);
         setRiskError('');
+        if (data.risk_percentage_raw !== undefined) {
+          const rawPct = Number(data.risk_percentage_raw);
+          setRiskPercentage(rawPct);
+          setFormData(prev => ({ ...prev, riskPercentage: rawPct, risk_percentage: rawPct }));
+        }
       } catch (err) {
         setRiskError('Error al cargar los datos de riesgo. ¿Está el backend en funcionamiento?');
         console.error(err);
@@ -390,6 +417,12 @@ function ConfigForm({
       if (propInitialConfig.downtrend_level_check !== undefined) {
         newFormData.downtrendLevelCheck = propInitialConfig.downtrend_level_check;
       }
+      if (propInitialConfig.riskPercentage !== undefined || propInitialConfig.risk_percentage !== undefined) {
+        const rp = Number(propInitialConfig.riskPercentage ?? propInitialConfig.risk_percentage);
+        setRiskPercentage(rp);
+        newFormData.riskPercentage = rp;
+        newFormData.risk_percentage = rp;
+      }
       setFormData(newFormData);
 
       const stratName = propInitialConfig.activeStrategyName || propInitialConfig.active_strategy_name;
@@ -412,6 +445,12 @@ function ConfigForm({
           if (response.ok) {
             const data = await response.json();
             const newFormData = { ...defaultConfigValues, ...data };
+            if (data.riskPercentage !== undefined || data.risk_percentage !== undefined) {
+              const rp = Number(data.riskPercentage ?? data.risk_percentage);
+              setRiskPercentage(rp);
+              newFormData.riskPercentage = rp;
+              newFormData.risk_percentage = rp;
+            }
             setFormData(newFormData);
             const stratName = data.activeStrategyName || data.active_strategy_name;
             if (stratName && stratName !== 'N/A' && stratName !== 'Configuración Modificada') {
@@ -466,10 +505,13 @@ function ConfigForm({
 
     setIsLoading(true);
     try {
+      const currentRisk = Number(formData.riskPercentage ?? riskPercentage ?? 50);
       const dataToSend = {
         ...formData,
         activeStrategyName: nameToSave,
-        symbolsToTrade: symbols
+        symbolsToTrade: symbols,
+        riskPercentage: currentRisk,
+        risk_percentage: currentRisk,
       };
 
       if (dataToSend.downtrendLevelCheck !== undefined) dataToSend.downtrend_level_check = dataToSend.downtrendLevelCheck;
@@ -501,6 +543,14 @@ function ConfigForm({
         if (onRefreshStrategies) {
           onRefreshStrategies();
         }
+        // Sincronizar en caliente el gestor de riesgo global
+        try {
+          fetch('/api/risk_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ risk_percentage: currentRisk }),
+          });
+        } catch (e) {}
         setTimeout(() => setShowSuccessMessage(false), 5000);
       } else {
         setValidationError(result?.error || "Error al guardar la configuración.");
@@ -564,17 +614,32 @@ function ConfigForm({
     setSaveStrategySuccess(null);
 
     try {
+      const currentRisk = Number(formData.riskPercentage ?? riskPercentage ?? 50);
+      const dataToSave = {
+        ...formData,
+        riskPercentage: currentRisk,
+        risk_percentage: currentRisk
+      };
       const response = await fetch(`/api/strategies/${encodeURIComponent(strategyNameInput)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData), // Guardar el formData actual tal cual
+        body: JSON.stringify(dataToSave),
       });
       const result = await response.json();
       if (!response.ok) {
         throw new Error(result.error || `Error HTTP ${response.status}`);
       }
+      // Sincronizar en caliente el gestor de riesgo global
+      try {
+        fetch('/api/risk_config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ risk_percentage: currentRisk }),
+        });
+      } catch (e) {}
+
       setSaveStrategySuccess(result.message || "Estrategia guardada con éxito.");
       if (onStrategyNameChange) {
         onStrategyNameChange(strategyNameInput); 
@@ -606,10 +671,21 @@ function ConfigForm({
       if (!response.ok) {
         throw new Error(strategyData.error || `Error HTTP ${response.status}`);
       }
-      // Aquí es crucial asegurar que todos los campos que ConfigForm espera existan en strategyData,
-      // o que se usen valores por defecto si faltan, para evitar errores de "controlled/uncontrolled".
-      // Una forma es fusionar con defaultConfigValues.
       const newFormData = { ...defaultConfigValues, ...strategyData }; 
+      const stratRisk = strategyData.riskPercentage ?? strategyData.risk_percentage;
+      if (stratRisk !== undefined) {
+        const rp = Number(stratRisk);
+        setRiskPercentage(rp);
+        newFormData.riskPercentage = rp;
+        newFormData.risk_percentage = rp;
+        try {
+          fetch('/api/risk_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ risk_percentage: rp })
+          });
+        } catch (e) {}
+      }
       setFormData(newFormData);
       setStrategyNameInput(strategyName);
       setSelectedStrategyToLoad(strategyName);
@@ -849,77 +925,110 @@ function ConfigForm({
       {/* Radar de Estrategia, Línea de Tiempo y Simulador Dinámico */}
       <StrategyRadar config={formData} />
       
-      <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
-        <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">General</legend>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-4">
-          <ConfigItem labelText="Entorno de Ejecución" htmlFor="mode" tooltipKey="mode">
-            <div className="mt-1 flex items-center px-3 py-2 border border-green-300 bg-green-50 dark:bg-green-950/40 dark:border-green-800 rounded-md shadow-sm">
-              <span className="w-2.5 h-2.5 rounded-full bg-green-500 mr-2 animate-pulse"></span>
-              <span className="text-xs font-bold text-green-800 dark:text-green-300 uppercase tracking-wide">
-                🛡️ Testnet / Simulación (Protegido)
+      <fieldset className="border pt-4 px-4 pb-5 rounded-2xl border-slate-700/80 bg-slate-900/40 shadow-sm">
+        <legend className="text-sm font-medium text-white px-3 bg-slate-900 rounded-lg border border-slate-700/80 flex items-center gap-1.5">
+          <span>⚙️</span> Parámetros Generales
+        </legend>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 mt-3">
+          {/* 1. Modo Operación */}
+          <ConfigItem labelText="Modo Operación" htmlFor="mode" tooltipKey="mode">
+            <div className="mt-1 flex items-center px-3 py-2 border border-emerald-500/30 bg-emerald-950/30 rounded-lg shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span>
+              <span className="text-xs font-normal text-emerald-300 tracking-wide">
+                🛡️ Testnet / Simulación
               </span>
             </div>
           </ConfigItem>
-          <ConfigItem labelText="Apalancamiento (Multiplicador x)" htmlFor="leverage" tooltipKey="leverage">
-            <input type="number" name="leverage" id="leverage" value={formData.leverage} onChange={handleChange} min="1" max="125" step="1" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 3 (para 3x)"/>
+
+          {/* 2. Multiplicador Apalancamiento */}
+          <ConfigItem labelText="Multiplicador Apalancamiento" htmlFor="leverage" tooltipKey="leverage">
+            <input 
+              type="number" 
+              name="leverage" 
+              id="leverage" 
+              value={formData.leverage} 
+              onChange={handleChange} 
+              min="1" 
+              max="125" 
+              step="1" 
+              className="mt-1 block w-full py-2 px-3 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm font-normal" 
+              placeholder="10"
+            />
           </ConfigItem>
-          <ConfigItem labelText="Tamaño Posición (USDT)" htmlFor="positionSizeUSDT" tooltipKey="positionSizeUSDT">
-            <input type="number" name="positionSizeUSDT" id="positionSizeUSDT" value={formData.positionSizeUSDT} onChange={handleChange} step="any" className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold" min="1"/>
-            <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 block">
-              💡 Margen en billetera: <strong className="text-emerald-400 font-mono">~${(Number(formData.positionSizeUSDT || 0) / (Number(formData.leverage) || 1)).toFixed(2)} USDT</strong> ({formData.leverage || 1}x)
-            </span>
+
+          {/* 3. Tamaño Posición (Margen USDT) */}
+          <ConfigItem labelText="Tamaño Posición" htmlFor="positionSizeUSDT" tooltipKey="positionSizeUSDT">
+            <input 
+              type="number" 
+              name="positionSizeUSDT" 
+              id="positionSizeUSDT" 
+              value={formData.positionSizeUSDT} 
+              onChange={handleChange} 
+              step="any" 
+              min="1" 
+              className="mt-1 block w-full py-2 px-3 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm font-normal"
+            />
+            <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
+              <div>💼 Margen: <strong className="text-cyan-300 font-mono font-medium">${Number(formData.positionSizeUSDT || 0).toFixed(2)} USDT</strong></div>
+              <div>⚡ Nocional: <strong className="text-amber-300 font-mono font-medium">${(Number(formData.positionSizeUSDT || 0) * (Number(formData.leverage) || 1)).toFixed(2)} USDT</strong> <span className="text-slate-400">({formData.leverage || 1}x)</span></div>
+            </div>
           </ConfigItem>
-          <ConfigItem labelText="Intervalo de Velas General" htmlFor="rsiInterval" tooltipKey="rsi_interval">
-            <input type="text" name="rsiInterval" id="rsiInterval" value={formData.rsiInterval} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="Ej: 1m, 5m"/>
+
+          {/* 4. Intervalo Velas */}
+          <ConfigItem labelText="Intervalo Velas" htmlFor="rsiInterval" tooltipKey="rsi_interval">
+            <input 
+              type="text" 
+              name="rsiInterval" 
+              id="rsiInterval" 
+              value={formData.rsiInterval} 
+              onChange={handleChange} 
+              className="mt-1 block w-full py-2 px-3 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm font-normal" 
+              placeholder="1m, 5m"
+            />
           </ConfigItem>
-          <div className="md:col-span-4">
-            <ConfigItem labelText="Símbolos (separados por coma)" htmlFor="symbolsToTrade" tooltipKey="symbolsToTrade">
-              <textarea name="symbolsToTrade" id="symbolsToTrade" value={formData.symbolsToTrade} onChange={handleChange} rows={2} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm" placeholder="BTCUSDT,ETHUSDT"></textarea>
+
+          {/* 5. Riesgo Cartera */}
+          <ConfigItem labelText="Riesgo Cartera" htmlFor="riskPercentage" tooltipKey="riskPercentage">
+            <div className="relative mt-1">
+              <input 
+                type="number" 
+                name="riskPercentage" 
+                id="riskPercentage" 
+                value={formData.riskPercentage ?? riskPercentage} 
+                onChange={(e) => {
+                  handleChange(e);
+                  setRiskPercentage(e.target.value);
+                }} 
+                min="1" 
+                max="100" 
+                step="1"
+                className="block w-full py-2 pl-3 pr-7 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm font-normal" 
+                placeholder="50"
+              />
+              <span className="absolute inset-y-0 right-2.5 flex items-center text-xs text-indigo-400 pointer-events-none font-medium">%</span>
+            </div>
+            <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
+              <div>🛡️ Límite: <strong className="text-indigo-300 font-mono font-medium">{formData.riskPercentage ?? riskPercentage}%</strong></div>
+              <div>Capacidad: <strong className="text-emerald-400 font-mono font-medium">~${((Number(riskData?.total_balance || 1000) * Number(formData.riskPercentage ?? riskPercentage ?? 50)) / 100).toFixed(0)} USDT</strong></div>
+            </div>
+          </ConfigItem>
+
+          {/* Fila inferior: Símbolos / Pares */}
+          <div className="lg:col-span-5 mt-1">
+            <ConfigItem labelText="Pares Monedas" htmlFor="symbolsToTrade" tooltipKey="symbolsToTrade">
+              <textarea 
+                name="symbolsToTrade" 
+                id="symbolsToTrade" 
+                value={formData.symbolsToTrade} 
+                onChange={handleChange} 
+                rows={2} 
+                className="mt-1 block w-full py-2 px-3 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm font-mono font-normal tracking-wide" 
+                placeholder="BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT"
+              />
             </ConfigItem>
           </div>
         </div>
       </fieldset>
-
-      {/* --- GESTIÓN DE RIESGO GLOBAL (COMPACTA) --- */}
-      <div className="bg-gradient-to-r from-gray-900 via-indigo-950/40 to-gray-900 border border-indigo-900/60 rounded-xl p-4 shadow-sm my-2">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center space-x-3">
-            <span className="text-xl p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">🛡️</span>
-            <div>
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                Gestión de Riesgo Global de la Cartera
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
-                  Límite: {riskPercentage}%
-                </span>
-              </h4>
-              <p className="text-xs text-gray-400">
-                El monitor de balance, márgenes en vivo y ranking por moneda se encuentran en la pestaña <strong className="text-indigo-300">📈 Rendimiento & PnL</strong>.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="relative w-20">
-              <NumberInput
-                id="risk-percentage"
-                name="risk-percentage"
-                value={riskPercentage}
-                onChange={(e) => setRiskPercentage(e.target.value)}
-                min="1"
-                max="100"
-              />
-              <span className="absolute inset-y-0 right-2 flex items-center text-xs text-gray-400 pointer-events-none font-bold">%</span>
-            </div>
-            <button
-              type="button"
-              onClick={handleSaveRisk}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition active:scale-95 whitespace-nowrap"
-            >
-              Guardar Riesgo
-            </button>
-          </div>
-        </div>
-      </div>
       {/* ------------------------------------------- */}
 
       {/* ======================================================== */}
@@ -1246,6 +1355,66 @@ function ConfigForm({
             >
               <input type="number" name="stopLossUSDT" id="stopLossUSDT" value={formData.stopLossUSDT} onChange={handleChange} step="any" className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold" placeholder="Ej: 20"/>
             </ConfigItem>
+          </div>
+
+          {/* Sub-bloque: Configuración Avanzada de Protección y Respaldo de Stop Loss */}
+          <div className="pt-2">
+            <div className="text-[11px] font-medium text-indigo-400 dark:text-indigo-300 uppercase tracking-wider flex items-center mb-2">
+              <span className="mr-1.5">🛡️</span> Protección Avanzada de Stop Loss (Anti-Desplome / Respaldo)
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <ConfigItem labelText="Tipo Orden" htmlFor="stopLossOrderType" tooltipKey="stopLossOrderType">
+                <select
+                  id="stopLossOrderType"
+                  name="stopLossOrderType"
+                  value={formData.stopLossOrderType || 'STOP_MARKET'}
+                  onChange={handleChange}
+                  className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs font-medium text-gray-900 dark:text-gray-100"
+                >
+                  <option value="STOP_MARKET">🛡️ STOP_MARKET (Garantía Salida)</option>
+                  <option value="STOP">⚠️ STOP_LIMIT (Orden Límite)</option>
+                </select>
+              </ConfigItem>
+
+              <ConfigItem labelText="Precio Disparo" htmlFor="stopLossTriggerType" tooltipKey="stopLossTriggerType">
+                <select
+                  id="stopLossTriggerType"
+                  name="stopLossTriggerType"
+                  value={formData.stopLossTriggerType || 'MARK_PRICE'}
+                  onChange={handleChange}
+                  className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs font-medium text-gray-900 dark:text-gray-100"
+                >
+                  <option value="MARK_PRICE">🎯 Mark Price (Anti-mechazos)</option>
+                  <option value="CONTRACT_PRICE">📊 Last Price (Último precio)</option>
+                </select>
+              </ConfigItem>
+
+              <ConfigItem 
+                labelText="Doble Capa" 
+                htmlFor="enableEmergencySoftwareSl" 
+                checkboxName="enableEmergencySoftwareSl" 
+                isChecked={!!formData.enableEmergencySoftwareSl} 
+                onCheckboxChange={handleChange} 
+                tooltipKey="enableEmergencySoftwareSl"
+              >
+                <div className="text-[11px] text-slate-400 dark:text-slate-300 font-light py-1">
+                  Guardián por software que rescata la posición si la orden nativa de Binance no se ejecutara.
+                </div>
+              </ConfigItem>
+
+              <ConfigItem labelText="Modo Cierre" htmlFor="stopLossExecutionMode" tooltipKey="stopLossExecutionMode">
+                <select
+                  id="stopLossExecutionMode"
+                  name="stopLossExecutionMode"
+                  value={formData.stopLossExecutionMode || 'TOTAL_100'}
+                  onChange={handleChange}
+                  className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs font-medium text-gray-900 dark:text-gray-100"
+                >
+                  <option value="TOTAL_100">🔒 Cierre Total 100%</option>
+                  <option value="SPLIT_50_50">✂️ Cierre Escalonado 50/50</option>
+                </select>
+              </ConfigItem>
+            </div>
           </div>
         </div>
 

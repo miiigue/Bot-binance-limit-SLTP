@@ -12,6 +12,7 @@ import time # Necesario para sleep
 import logging # Necesario para get_logger y calculate_sleep
 from decimal import Decimal
 from threading import Lock # Necesario para el Lock del RiskManager
+from datetime import datetime
 
 # --- Quitar Workaround sys.path --- 
 # current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -243,6 +244,10 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'evaluate_required_uptrend': str(frontend_data.get('evaluateRequiredUptrend', True)).lower(),
             'enable_take_profit_pnl': str(frontend_data.get('enableTakeProfitPnl', True)).lower(),
             'enable_stop_loss_pnl': str(frontend_data.get('enableStopLossPnl', True)).lower(),
+            'stop_loss_order_type': _val('stopLossOrderType', 'STOP_MARKET'),
+            'stop_loss_trigger_type': _val('stopLossTriggerType', 'MARK_PRICE'),
+            'enable_emergency_software_sl': str(frontend_data.get('enableEmergencySoftwareSl', True)).lower(),
+            'stop_loss_execution_mode': _val('stopLossExecutionMode', 'TOTAL_100'),
             'enable_trailing_rsi_stop': str(frontend_data.get('enableTrailingRsiStop', True)).lower(),
             'enable_price_trailing_stop': str(frontend_data.get('enablePriceTrailingStop', True)).lower(),
             'price_trailing_stop_distance_usdt': _val('priceTrailingStopDistanceUSDT', 0.05),
@@ -270,6 +275,7 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'dca_price_drop_percent': _val('dcaPriceDropPercent', 1.5),
             'dca_max_reentries': _val('dcaMaxReentries', 2),
             'dca_volume_multiplier': _val('dcaVolumeMultiplier', 1.0),
+            'risk_percentage': _val('riskPercentage', _val('risk_percentage', 50)),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -430,6 +436,10 @@ def _build_frontend_config_dict():
             ('evaluate_required_uptrend', 'evaluateRequiredUptrend'),
             ('enable_take_profit_pnl', 'enableTakeProfitPnl'),
             ('enable_stop_loss_pnl', 'enableStopLossPnl'),
+            ('stop_loss_order_type', 'stopLossOrderType'),
+            ('stop_loss_trigger_type', 'stopLossTriggerType'),
+            ('enable_emergency_software_sl', 'enableEmergencySoftwareSl'),
+            ('stop_loss_execution_mode', 'stopLossExecutionMode'),
             ('enable_trailing_rsi_stop', 'enableTrailingRsiStop'),
             ('enable_price_trailing_stop', 'enablePriceTrailingStop'),
             ('price_trailing_stop_distance_usdt', 'priceTrailingStopDistanceUSDT'),
@@ -452,10 +462,16 @@ def _build_frontend_config_dict():
             ('dca_reentry_mode', 'dcaReentryMode'),
             ('dca_price_drop_percent', 'dcaPriceDropPercent'),
             ('dca_max_reentries', 'dcaMaxReentries'),
-            ('dca_volume_multiplier', 'dcaVolumeMultiplier')
+            ('dca_volume_multiplier', 'dcaVolumeMultiplier'),
+            ('risk_percentage', 'riskPercentage')
         ]:
             if key_ini in config_dict['TRADING']:
                 frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
+    if 'riskPercentage' not in frontend_config:
+        try:
+            frontend_config['riskPercentage'] = float(risk_manager.risk_percentage * Decimal('100'))
+        except Exception:
+            frontend_config['riskPercentage'] = 50
     if 'SYMBOLS' in config_dict:
         frontend_config['symbolsToTrade'] = config_dict['SYMBOLS'].get('symbols_to_trade', '')
     if 'STRATEGY_INFO' in config_dict:
@@ -882,6 +898,15 @@ def load_initial_config():
             else:
                 loaded_trading_params[key] = original_value
 
+    if 'risk_percentage' in loaded_trading_params:
+        try:
+            r_pct = Decimal(str(loaded_trading_params['risk_percentage'])) / Decimal('100')
+            if Decimal('0') <= r_pct <= Decimal('1'):
+                risk_manager.set_risk_percentage(r_pct)
+                logger.info(f"RiskManager sincronizado con porcentaje de riesgo: {r_pct:.2%}")
+        except Exception as e_r:
+            logger.warning(f"No se pudo sincronizar porcentaje de riesgo con RiskManager: {e_r}")
+
     logger.info(f"Configuración inicial cargada: {len(loaded_symbols_to_trade)} símbolos, Params procesados: {loaded_trading_params}")
     return True
 
@@ -1027,6 +1052,18 @@ def _save_strategy_logic(strategy_name: str, data: dict):
         with open(strategy_file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
         logger.info(f"Estrategia '{strategy_name}' guardada exitosamente en {strategy_file_path}")
+
+        # Sincronizar porcentaje de riesgo si viene en los datos de la estrategia
+        risk_val = data.get('riskPercentage') or data.get('risk_percentage')
+        if risk_val is not None:
+            try:
+                r_pct = Decimal(str(risk_val)) / Decimal('100')
+                if Decimal('0') <= r_pct <= Decimal('1'):
+                    risk_manager.set_risk_percentage(r_pct)
+                    logger.info(f"RiskManager actualizado con porcentaje de estrategia '{strategy_name}': {r_pct:.2%}")
+            except Exception:
+                pass
+
         return jsonify({"message": f"Estrategia '{strategy_name}' guardada exitosamente."}), 201
     except Exception as e:
         logger.error(f"Error al guardar la estrategia '{strategy_name}': {e}", exc_info=True)
@@ -1042,6 +1079,18 @@ def _load_strategy_logic(strategy_name: str):
         with open(strategy_file_path, 'r', encoding='utf-8') as f:
             strategy_data = json.load(f)
         logger.info(f"Estrategia '{strategy_name}' cargada exitosamente.")
+
+        # Sincronizar porcentaje de riesgo en caliente al cargar la estrategia
+        risk_val = strategy_data.get('riskPercentage') or strategy_data.get('risk_percentage')
+        if risk_val is not None:
+            try:
+                r_pct = Decimal(str(risk_val)) / Decimal('100')
+                if Decimal('0') <= r_pct <= Decimal('1'):
+                    risk_manager.set_risk_percentage(r_pct)
+                    logger.info(f"RiskManager actualizado al cargar estrategia '{strategy_name}': {r_pct:.2%}")
+            except Exception:
+                pass
+
         return jsonify(strategy_data), 200
     except json.JSONDecodeError as e_json:
         logger.error(f"Error al decodificar JSON para la estrategia '{strategy_name}' desde {strategy_file_path}: {e_json}", exc_info=True)
@@ -1125,6 +1174,84 @@ def list_strategies():
         logger.error(f"Error al listar estrategias: {e}", exc_info=True)
         return jsonify({"error": f"Error interno al listar estrategias: {str(e)}"}), 500
 
+BACKTEST_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backtest_history.json')
+BACKTEST_HISTORY_BACKUP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backtest_history.backup.json')
+
+def load_backtest_history():
+    for fpath in [BACKTEST_HISTORY_FILE, BACKTEST_HISTORY_BACKUP_FILE]:
+        if os.path.exists(fpath):
+            try:
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, list) and len(data) > 0:
+                        return data
+            except Exception:
+                pass
+    return []
+
+def save_backtest_history_item(result_data: dict, payload: dict):
+    try:
+        history = load_backtest_history()
+        run_id = f"bt_{int(time.time() * 1000)}"
+        run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        result_data['id'] = run_id
+        result_data['executed_at'] = run_time
+        result_data['timestamp'] = run_time
+        
+        cfg = payload.get('config') or {}
+        strat_name = cfg.get('activeStrategyName') or cfg.get('strategy_name') or 'Configuración Actual'
+        
+        summary = {
+            'id': run_id,
+            'timestamp': run_time,
+            'strategy_name': strat_name,
+            'is_portfolio': result_data.get('is_portfolio', False),
+            'symbol': result_data.get('symbol', 'PORTFOLIO'),
+            'symbols_count': result_data.get('symbols_count', 1),
+            'interval': payload.get('interval', '5m'),
+            'period_label': result_data.get('period_label', ''),
+            'days_tested': result_data.get('days_tested', 0),
+            'initial_balance': result_data.get('initial_balance', 0.0),
+            'final_balance': result_data.get('final_balance', 0.0),
+            'final_equity': result_data.get('final_equity', 0.0),
+            'total_volume_traded_usdt': result_data.get('total_volume_traded_usdt', 0.0),
+            'total_fees_usdt': result_data.get('total_fees_usdt', 0.0),
+            'total_margin_used_usdt': result_data.get('total_margin_used_usdt', 0.0),
+            'total_trades': result_data.get('total_trades', 0),
+            'winning_trades': result_data.get('winning_trades', 0),
+            'losing_trades': result_data.get('losing_trades', 0),
+            'win_rate_pct': result_data.get('win_rate_pct', 0.0),
+            'net_pnl': result_data.get('net_pnl', 0.0),
+            'unrealized_pnl': result_data.get('total_unrealized_pnl' if result_data.get('is_portfolio') else 'unrealized_pnl', 0.0),
+            'net_equity_pnl': result_data.get('net_equity_pnl', result_data.get('net_pnl', 0.0)),
+            'net_return_pct': result_data.get('net_return_pct', 0.0),
+            'trapped_coins_count': result_data.get('trapped_coins_count', 0),
+            'has_open_positions': bool(result_data.get('open_positions') or result_data.get('open_position')),
+            'health_status': result_data.get('smart_analysis', {}).get('health_status', 'NEUTRAL')
+        }
+
+        full_entry = {
+            'summary': summary,
+            'result': result_data,
+            'payload': payload
+        }
+
+        history.insert(0, full_entry)
+        history = history[:50]
+
+        with open(BACKTEST_HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(history, f, indent=2, ensure_ascii=False)
+        try:
+            with open(BACKTEST_HISTORY_BACKUP_FILE, 'w', encoding='utf-8') as f_bak:
+                json.dump(history, f_bak, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+        return run_id
+    except Exception as e:
+        get_logger().error(f"Error guardando historial de backtest: {e}")
+        return None
+
 @app.route('/api/backtest', methods=['POST'])
 def run_backtest_endpoint():
     logger = get_logger()
@@ -1155,8 +1282,13 @@ def run_backtest_endpoint():
             if not symbols_to_test:
                 symbols_to_test = (list(loaded_symbols_to_trade) if loaded_symbols_to_trade else ["SOLUSDT", "DOGEUSDT", "OPUSDT", "SUIUSDT", "NEARUSDT", "ADAUSDT", "ONDOUSDT", "ARBUSDT"])
             r_tag = f"desde {start_date} hasta {end_date}" if (start_date and end_date) else f"{days} días"
-            logger.info(f"Iniciando backtest de PORTAFOLIO COMPLETO ({len(symbols_to_test)} pares, {r_tag}, intervalo {interval})...")
-            results = run_portfolio_backtest(symbols=symbols_to_test, interval=interval, days=days, start_date=start_date, end_date=end_date, config=strategy_config, initial_balance_per_coin=initial_balance)
+            
+            # El Saldo Cartera ingresado representa el capital total de la cuenta, distribuido entre los pares
+            n_coins = len(symbols_to_test) if symbols_to_test else 1
+            balance_per_coin = initial_balance / n_coins if n_coins > 0 else initial_balance
+            results = run_portfolio_backtest(symbols=symbols_to_test, interval=interval, days=days, start_date=start_date, end_date=end_date, config=strategy_config, initial_balance_per_coin=balance_per_coin)
+            results['config'] = strategy_config
+            save_backtest_history_item(results, data)
             return jsonify(results), 200
 
         r_tag = f"desde {start_date} hasta {end_date}" if (start_date and end_date) else f"{days} días"
@@ -1166,9 +1298,249 @@ def run_backtest_endpoint():
             return jsonify({"error": f"No se pudieron descargar velas históricas para {symbol} en el período solicitado."}), 400
 
         results = run_strategy_backtest(symbol=symbol, df=df, config=strategy_config, initial_balance=initial_balance)
+        results['config'] = strategy_config
+        save_backtest_history_item(results, data)
         return jsonify(results), 200
     except Exception as e:
         logger.error(f"Error al ejecutar backtest: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/backtest/history', methods=['GET'])
+def get_backtest_history_endpoint():
+    try:
+        history = load_backtest_history()
+        summaries = [item.get('summary', {}) for item in history if 'summary' in item]
+        return jsonify(summaries), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/backtest/history/<run_id>', methods=['GET'])
+def get_backtest_history_item_endpoint(run_id):
+    try:
+        history = load_backtest_history()
+        for item in history:
+            if item.get('summary', {}).get('id') == run_id:
+                res = dict(item.get('result', {}))
+                if 'config' not in res or not res['config']:
+                    res['config'] = item.get('payload', {}).get('config', {})
+                if 'summary' not in res:
+                    res['summary'] = item.get('summary', {})
+                sum_ts = item.get('summary', {}).get('timestamp')
+                res['executed_at'] = res.get('executed_at') or res.get('timestamp') or sum_ts
+                res['timestamp'] = res.get('timestamp') or sum_ts or res['executed_at']
+                return jsonify(res), 200
+        return jsonify({"error": "Simulación no encontrada en el historial"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/backtest/history/<run_id>', methods=['DELETE'])
+def delete_backtest_history_item_endpoint(run_id):
+    try:
+        history = load_backtest_history()
+        new_history = [item for item in history if item.get('summary', {}).get('id') != run_id]
+        with open(BACKTEST_HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(new_history, f, indent=2, ensure_ascii=False)
+        return jsonify({"success": True, "deleted_id": run_id}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/backtest/history', methods=['DELETE'])
+def clear_backtest_history_endpoint():
+    try:
+        with open(BACKTEST_HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump([], f)
+        return jsonify({"success": True, "message": "Historial vaciado con éxito"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/strategies/ranked_performance', methods=['GET'])
+def get_strategies_ranked_performance():
+    """
+    Devuelve todas las estrategias guardadas con sus métricas de rendimiento
+    extraídas del historial de backtest, ordenadas de mayor a menor según su
+    Patrimonio Neto Real (net_equity_pnl) o PnL Realizado.
+    """
+    logger = get_logger()
+    try:
+        metric = request.args.get('metric', 'net_equity_pnl') # 'net_equity_pnl' o 'net_pnl'
+        
+        saved_files = []
+        if os.path.exists(STRATEGIES_PATH):
+            saved_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
+        
+        all_strat_names = [os.path.splitext(f)[0] for f in saved_files]
+        
+        history = load_backtest_history()
+        strat_stats = {}
+        
+        for item in history:
+            s = item.get('summary', item) if isinstance(item, dict) else {}
+            name = s.get('strategy_name')
+            if not name:
+                continue
+            
+            equity = float(s.get('net_equity_pnl', s.get('net_pnl', 0.0)) or 0.0)
+            pnl = float(s.get('net_pnl', 0.0) or 0.0)
+            win_rate = float(s.get('win_rate_pct', 0.0) or 0.0)
+            trades = int(s.get('total_trades', 0) or 0)
+            trapped = int(s.get('trapped_coins_count', 0) or 0)
+            period = s.get('period_label') or f"{s.get('days_tested', 0)} días"
+            is_portfolio = bool(s.get('is_portfolio', False))
+            
+            curr_val = equity if metric == 'net_equity_pnl' else pnl
+            
+            if name not in strat_stats or curr_val > strat_stats[name]['sort_value']:
+                strat_stats[name] = {
+                    'name': name,
+                    'net_equity_pnl': round(equity, 2),
+                    'net_pnl': round(pnl, 2),
+                    'win_rate_pct': round(win_rate, 1),
+                    'total_trades': trades,
+                    'trapped_coins_count': trapped,
+                    'period_label': period,
+                    'is_portfolio': is_portfolio,
+                    'sort_value': curr_val,
+                    'has_backtest': True
+                }
+        
+        ranked_list = []
+        for name in all_strat_names:
+            if name in strat_stats:
+                ranked_list.append(strat_stats[name])
+            else:
+                ranked_list.append({
+                    'name': name,
+                    'net_equity_pnl': 0.0,
+                    'net_pnl': 0.0,
+                    'win_rate_pct': 0.0,
+                    'total_trades': 0,
+                    'trapped_coins_count': 0,
+                    'period_label': 'Sin prueba registrada',
+                    'is_portfolio': False,
+                    'sort_value': -999999.0,
+                    'has_backtest': False
+                })
+        
+        ranked_list.sort(key=lambda x: (x['has_backtest'], x['sort_value'], x['win_rate_pct'], x['total_trades']), reverse=True)
+        
+        for idx, item in enumerate(ranked_list):
+            item['rank'] = idx + 1
+        
+        return jsonify({
+            "strategies": ranked_list,
+            "total_count": len(ranked_list),
+            "tested_count": len(strat_stats),
+            "metric_used": metric
+        }), 200
+    except Exception as e:
+        logger.error(f"Error al calcular ranking de estrategias: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/strategies/prune_least_profitable', methods=['POST'])
+def prune_least_profitable_strategies():
+    """
+    Conserva las Top N estrategias más rentables/eficaces y elimina las demás
+    del directorio de estrategias (y opcionalmente del historial de backtests).
+    """
+    logger = get_logger()
+    try:
+        data = request.get_json() or {}
+        keep_count = int(data.get('keep_count', 10))
+        metric = data.get('metric', 'net_equity_pnl')
+        prune_history = bool(data.get('prune_history', True))
+        
+        if keep_count < 1:
+            return jsonify({"error": "La cantidad de estrategias a mantener debe ser al menos 1."}), 400
+
+        if not os.path.exists(STRATEGIES_PATH):
+            return jsonify({"error": "No existe la carpeta de estrategias."}), 404
+            
+        saved_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
+        all_strat_names = [os.path.splitext(f)[0] for f in saved_files]
+        
+        if len(all_strat_names) <= keep_count:
+            return jsonify({
+                "message": f"Solo hay {len(all_strat_names)} estrategias guardadas. No hay ninguna que eliminar para conservar {keep_count}.",
+                "kept_strategies": all_strat_names,
+                "deleted_strategies": [],
+                "pruned_history_count": 0
+            }), 200
+
+        history = load_backtest_history()
+        strat_stats = {}
+        for item in history:
+            s = item.get('summary', item) if isinstance(item, dict) else {}
+            name = s.get('strategy_name')
+            if not name:
+                continue
+            equity = float(s.get('net_equity_pnl', s.get('net_pnl', 0.0)) or 0.0)
+            pnl = float(s.get('net_pnl', 0.0) or 0.0)
+            win_rate = float(s.get('win_rate_pct', 0.0) or 0.0)
+            trades = int(s.get('total_trades', 0) or 0)
+            curr_val = equity if metric == 'net_equity_pnl' else pnl
+            if name not in strat_stats or curr_val > strat_stats[name]['sort_value']:
+                strat_stats[name] = {
+                    'name': name,
+                    'sort_value': curr_val,
+                    'win_rate': win_rate,
+                    'trades': trades,
+                    'has_backtest': True
+                }
+
+        ranked_list = []
+        for name in all_strat_names:
+            if name in strat_stats:
+                ranked_list.append(strat_stats[name])
+            else:
+                ranked_list.append({
+                    'name': name,
+                    'sort_value': -999999.0,
+                    'win_rate': 0.0,
+                    'trades': 0,
+                    'has_backtest': False
+                })
+
+        ranked_list.sort(key=lambda x: (x['has_backtest'], x['sort_value'], x['win_rate'], x['trades']), reverse=True)
+
+        kept_strategies = [s['name'] for s in ranked_list[:keep_count]]
+        delete_strategies = [s['name'] for s in ranked_list[keep_count:]]
+
+        deleted_success = []
+        for strat_name in delete_strategies:
+            file_path = os.path.join(STRATEGIES_PATH, f"{strat_name}.json")
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    deleted_success.append(strat_name)
+                    logger.info(f"Estrategia eliminada en depuración Top {keep_count}: {strat_name}")
+                except Exception as del_err:
+                    logger.warning(f"No se pudo eliminar {file_path}: {del_err}")
+
+        pruned_history_count = 0
+        if prune_history and history:
+            original_len = len(history)
+            new_history = [
+                item for item in history
+                if (item.get('summary', item).get('strategy_name') not in delete_strategies)
+            ]
+            pruned_history_count = original_len - len(new_history)
+            for fpath in [BACKTEST_HISTORY_FILE, BACKTEST_HISTORY_BACKUP_FILE]:
+                try:
+                    with open(fpath, 'w', encoding='utf-8') as f:
+                        json.dump(new_history, f, indent=2, ensure_ascii=False)
+                except Exception as he:
+                    logger.warning(f"Error actualizando historial tras poda en {fpath}: {he}")
+
+        return jsonify({
+            "success": True,
+            "message": f"Depuración completada: se conservaron las {len(kept_strategies)} mejores estrategias y se eliminaron {len(deleted_success)} menos rentables.",
+            "kept_strategies": kept_strategies,
+            "deleted_strategies": deleted_success,
+            "pruned_history_count": pruned_history_count
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error al depurar estrategias menos rentables: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/backtest/symbols', methods=['GET'])

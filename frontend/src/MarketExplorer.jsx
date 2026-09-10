@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import Tooltip from './Tooltip';
 
 const MarketExplorer = ({ config, onSaveConfig, onSelectSymbolForChart }) => {
   const [coins, setCoins] = useState([]);
@@ -93,8 +94,15 @@ const MarketExplorer = ({ config, onSaveConfig, onSelectSymbolForChart }) => {
   };
 
   const SortIcon = ({ columnKey }) => {
-    if (sortBy.key !== columnKey) return <span className="text-gray-500 text-xs"> ⇅</span>;
-    return sortBy.order === 'asc' ? <span className="text-yellow-400 text-xs"> ▲</span> : <span className="text-yellow-400 text-xs"> ▼</span>;
+    const isActive = sortBy.key === columnKey;
+    const isAsc = isActive && sortBy.order === 'asc';
+    const isDesc = isActive && sortBy.order === 'desc';
+    return (
+      <span className="inline-flex flex-col items-center justify-center text-[7px] leading-[6px] w-2.5 h-3 ml-1 align-middle">
+        <span className={`transition-all ${isAsc ? 'text-amber-400 font-black scale-125' : isActive ? 'text-slate-600' : 'text-slate-500'}`}>▲</span>
+        <span className={`transition-all ${isDesc ? 'text-amber-400 font-black scale-125' : isActive ? 'text-slate-600' : 'text-slate-500'}`}>▼</span>
+      </span>
+    );
   };
 
   return (
@@ -109,7 +117,8 @@ const MarketExplorer = ({ config, onSaveConfig, onSelectSymbolForChart }) => {
             </div>
             <div>
               <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                Escáner y Radar de Oportunidades Binance Futures
+                <span>Escáner y Radar de Oportunidades Binance Futures</span>
+                <Tooltip title="Radar de Mercado" text="Monitor en tiempo real de todos los contratos USDT en Binance Futures para identificar monedas con alto volumen, fuertes tendencias o caídas aprovechables." example="Filtra por Top Ganadoras para operar rupturas o Top Caídas para estrategias de rebote RSI." />
                 <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-semibold">
                   {coins.length} Pares USDT
                 </span>
@@ -132,43 +141,77 @@ const MarketExplorer = ({ config, onSaveConfig, onSelectSymbolForChart }) => {
 
         {/* Filtros */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 my-4">
-          <input
-            type="text"
-            placeholder="🔍 Buscar moneda (ej. SOL)..."
-            className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:outline-none col-span-1 sm:col-span-2 lg:col-span-1"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <input
-            type="number"
-            placeholder="Precio Mín. $"
-            className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:outline-none"
-            value={minPrice}
-            onChange={(e) => setMinPrice(e.target.value)}
-          />
-          <input
-            type="number"
-            placeholder="Precio Máx. $"
-            className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:outline-none"
-            value={maxPrice}
-            onChange={(e) => setMaxPrice(e.target.value)}
-          />
-          <input
-            type="number"
-            placeholder="Volumen Mín. (USDT)"
-            className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:outline-none"
-            value={minVolume}
-            onChange={(e) => setMinVolume(e.target.value)}
-          />
-          <select
-            className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:outline-none font-semibold"
-            value={performance}
-            onChange={(e) => setPerformance(e.target.value)}
-          >
-            <option value="all">🪙 Todos los Pares</option>
-            <option value="gainers">🚀 Top Ganadoras (+)</option>
-            <option value="losers">📉 Top Caídas (-)</option>
-          </select>
+          <div>
+            <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center">
+              <span>Buscar Moneda</span>
+              <Tooltip title="Buscador de Símbolos" text="Filtra la lista escribiendo el nombre de la criptomoneda (ej. BTC, ETH, SOL)." />
+            </label>
+            <input
+              type="text"
+              placeholder="🔍 Moneda (ej. SOL)..."
+              className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:outline-none"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center">
+              <span>Precio Mínimo</span>
+              <Tooltip title="Precio Mínimo" text="Oculta monedas cuyo precio esté por debajo de este valor en USDT." />
+            </label>
+            <input
+              type="number"
+              placeholder="Precio Mín. $"
+              className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:outline-none"
+              value={minPrice}
+              onChange={(e) => setMinPrice(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center">
+              <span>Precio Máximo</span>
+              <Tooltip title="Precio Máximo" text="Oculta monedas cuyo precio supere este valor en USDT." />
+            </label>
+            <input
+              type="number"
+              placeholder="Precio Máx. $"
+              className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:outline-none"
+              value={maxPrice}
+              onChange={(e) => setMaxPrice(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center">
+              <span>Volumen Mínimo</span>
+              <Tooltip title="Volumen Mínimo" text="Filtra monedas con volumen insuficiente para garantizar liquidez adecuada y spreads bajos." example="Un volumen de 10,000,000 descarta pares ilíquidos." />
+            </label>
+            <input
+              type="number"
+              placeholder="Volumen Mín. (USDT)"
+              className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:outline-none"
+              value={minVolume}
+              onChange={(e) => setMinVolume(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center">
+              <span>Clasificación</span>
+              <Tooltip title="Clasificación de Mercado" text="Muestra todas las monedas, solo las que van en ganancia en 24h (+) o las que van en caída (-)." />
+            </label>
+            <select
+              className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:outline-none font-semibold"
+              value={performance}
+              onChange={(e) => setPerformance(e.target.value)}
+            >
+              <option value="all">🪙 Todos los Pares</option>
+              <option value="gainers">🚀 Top Ganadoras (+)</option>
+              <option value="losers">📉 Top Caídas (-)</option>
+            </select>
+          </div>
         </div>
 
         {/* Tabla */}
@@ -182,19 +225,38 @@ const MarketExplorer = ({ config, onSaveConfig, onSelectSymbolForChart }) => {
               <thead className="bg-gray-100 dark:bg-gray-800/80">
                 <tr>
                   <th scope="col" className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none" onClick={() => handleSort('symbol')}>
-                    Par <SortIcon columnKey="symbol" />
+                    <div className="inline-flex items-center gap-1">
+                      <span>Par</span>
+                      <SortIcon columnKey="symbol" />
+                      <Tooltip title="Par de Negociación" text="Símbolo del contrato de futuros en Binance cotizado contra USDT." align="left" />
+                    </div>
                   </th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none" onClick={() => handleSort('price')}>
-                    Precio <SortIcon columnKey="price" />
+                    <div className="inline-flex items-center gap-1">
+                      <span>Precio</span>
+                      <SortIcon columnKey="price" />
+                      <Tooltip title="Precio en Vivo" text="Último precio de cotización ejecutado en Binance Futures." />
+                    </div>
                   </th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none" onClick={() => handleSort('priceChangePercent')}>
-                    Cambio 24h <SortIcon columnKey="priceChangePercent" />
+                    <div className="inline-flex items-center gap-1">
+                      <span>Cambio 24h</span>
+                      <SortIcon columnKey="priceChangePercent" />
+                      <Tooltip title="Variación 24 Horas" text="Porcentaje de subida o bajada en el precio en las últimas 24 horas." />
+                    </div>
                   </th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none" onClick={() => handleSort('quoteVolume')}>
-                    Volumen 24h (USDT) <SortIcon columnKey="quoteVolume" />
+                    <div className="inline-flex items-center gap-1">
+                      <span>Volumen 24h (USDT)</span>
+                      <SortIcon columnKey="quoteVolume" />
+                      <Tooltip title="Volumen Comercializado" text="Total de capital transaccionado en millones de USDT durante las últimas 24 horas." />
+                    </div>
                   </th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
-                    Acción Rápida
+                    <div className="inline-flex items-center justify-end gap-1 w-full">
+                      <span>Acción Rápida</span>
+                      <Tooltip title="Acciones Rápidas" text="Ver el gráfico técnico interactivo de la moneda o añadirla instantáneamente a la lista de trading del bot." align="right" />
+                    </div>
                   </th>
                 </tr>
               </thead>

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import BinanceSortHeader, { sortTableData } from './BinanceSortHeader';
 
 // Clave para guardar/leer en localStorage
 const STATUS_CACHE_KEY = 'botStatusesCache';
@@ -22,12 +23,12 @@ const formatPnl = (pnl) => {
 
 // --- NUEVA FUNCIÓN HELPER PARA COLOR DE PNL ---
 const getPnlColorClass = (pnl) => {
-  if (pnl === null || pnl === undefined) return 'text-gray-500 dark:text-gray-400';
+  if (pnl === null || pnl === undefined) return 'text-slate-300';
   const value = parseFloat(pnl);
-  if (isNaN(value)) return 'text-gray-500 dark:text-gray-400';
-  if (value > 0) return 'text-green-500';
-  if (value < 0) return 'text-red-500';
-  return 'text-gray-500 dark:text-gray-400';
+  if (isNaN(value)) return 'text-slate-300';
+  if (value > 0) return 'text-emerald-400 font-bold';
+  if (value < 0) return 'text-rose-400 font-bold';
+  return 'text-slate-300 font-bold';
 };
 // ---------------------------------------------
 
@@ -64,6 +65,68 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
   const [numTradesToShow, setNumTradesToShow] = useState(2); // Por defecto 2 trades
   const [closingSymbols, setClosingSymbols] = useState({}); // { symbol: boolean }
   const [pausingSymbols, setPausingSymbols] = useState({}); // { symbol: boolean }
+
+  // --- ORDENAMIENTO INTERACTIVO ESTILO BINANCE ---
+  const [statusSort, setStatusSort] = useState({ key: 'symbol', direction: 'asc' });
+
+  const handleStatusSort = (key) => {
+    setStatusSort(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      const defaultAscKeys = ['symbol', 'state', 'last_error'];
+      return { key, direction: defaultAscKeys.includes(key) ? 'asc' : 'desc' };
+    });
+  };
+
+  const statusExtractors = useMemo(() => ({
+    symbol: s => s.symbol || '',
+    state: s => s.is_paused ? 'Paused' : (s.state || ''),
+    margin: s => s.in_position ? (Number(s.margin_usdt) || ((Number(s.position_value_usdt) || 50) / (Number(s.leverage) || 20))) : 0,
+    current_pnl: s => s.in_position ? (parseFloat(s.current_pnl) || 0) : -9999999,
+    historical_pnl: s => parseFloat(s.historical_pnl) || 0,
+    pending_entry_order_id: s => s.pending_entry_order_id ? 1 : 0,
+    pending_exit_order_id: s => s.pending_exit_order_id ? 1 : 0,
+    pending_tp_order_id: s => s.pending_tp_order_id ? 1 : 0,
+    pending_sl_order_id: s => s.pending_sl_order_id ? 1 : 0,
+    last_error: s => s.last_error || ''
+  }), []);
+
+  const sortedStatuses = useMemo(() => {
+    return sortTableData(statuses, statusSort, statusExtractors);
+  }, [statuses, statusSort, statusExtractors]);
+
+  // Ordenamiento para trades del acordeón por símbolo
+  const [subTradeSorts, setSubTradeSorts] = useState({}); // { [symbol]: { key, direction } }
+
+  const handleSubTradeSort = (symbol, key) => {
+    setSubTradeSorts(prev => {
+      const cur = prev[symbol] || { key: 'close_timestamp', direction: 'desc' };
+      if (cur.key === key) {
+        return { ...prev, [symbol]: { key, direction: cur.direction === 'asc' ? 'desc' : 'asc' } };
+      }
+      const defaultAscKeys = ['close_timestamp', 'close_reason', 'id'];
+      return { ...prev, [symbol]: { key, direction: defaultAscKeys.includes(key) ? 'asc' : 'desc' } };
+    });
+  };
+
+  const sortedSubTrades = useMemo(() => {
+    const map = {};
+    for (const sym of Object.keys(tradeHistories)) {
+      const list = tradeHistories[sym] || [];
+      const sortConfig = subTradeSorts[sym] || { key: 'close_timestamp', direction: 'desc' };
+      map[sym] = sortTableData(list, sortConfig, {
+        close_timestamp: t => t.close_timestamp || '',
+        close_reason: t => t.close_reason || '',
+        open_price: t => t.open_price || 0,
+        close_price: t => t.close_price || 0,
+        quantity: t => t.quantity || 0,
+        pnl_usdt: t => parseFloat(t.pnl_usdt) || 0,
+        id: t => t.id || ''
+      });
+    }
+    return map;
+  }, [tradeHistories, subTradeSorts]);
 
   const handleTogglePause = async (e, symbol) => {
     e.stopPropagation();
@@ -292,24 +355,39 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
   // -------------------------------------------------------------------------------------
 
   return (
-    <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 mt-6">
-      <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Estado y Monitoreo de Bots</h2>
+    <div className="bg-slate-900 border border-slate-700/80 shadow-xl rounded-2xl p-6 mt-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-xl font-black text-white tracking-wide flex items-center gap-2">
+            <span>⚡</span>
+            <span>Estado y Monitoreo de Bots en Tiempo Real</span>
+          </h2>
+          <p className="text-xs text-slate-300 mt-0.5">
+            Supervisa las posiciones abiertas, margen comprometido, órdenes activas y PnL acumulado por moneda.
+          </p>
+        </div>
+      </div>
       
       {/* Mostrar el mensaje de error de inicio */}
       {startError && (
-        <div className="my-4 p-3 bg-red-100 dark:bg-red-900/40 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
-          <p className="font-semibold">Error al iniciar los bots:</p>
-          <p className="text-sm">{startError}</p>
+        <div className="my-4 p-3 bg-red-950/80 border border-red-500/80 text-red-200 rounded-xl">
+          <p className="font-bold">Error al iniciar los bots:</p>
+          <p className="text-xs font-mono">{startError}</p>
         </div>
       )}
 
       {/* Mostrar el mensaje de error de conexión/API */}
-      {error && <p className="text-yellow-600 dark:text-yellow-400 mb-4 font-medium">{error}</p>}
+      {error && (
+        <div className="my-3 p-3 bg-amber-950/70 border border-amber-500/70 rounded-xl text-amber-200 text-xs font-semibold">
+          ⚠️ {error}
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         {/* --- BARRA DE OPCIONES DE TRADES & RESET --- */}
-        <div className="my-4 flex flex-wrap items-center justify-between gap-3 bg-gray-50 dark:bg-gray-800/60 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center">
-            <label htmlFor="numTradesToShowInput" className="mr-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+        <div className="my-4 flex flex-wrap items-center justify-between gap-3 bg-slate-950/90 p-3 rounded-xl border border-slate-700/80">
+          <div className="flex items-center gap-2">
+            <label htmlFor="numTradesToShowInput" className="text-xs font-bold text-slate-200">
               Mostrar últimos trades:
             </label>
             <input
@@ -329,7 +407,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                   setNumTradesToShow(2);
                 }
               }}
-              className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-center font-bold"
+              className="w-16 px-2 py-1 border border-slate-600 rounded-lg shadow-sm sm:text-xs bg-slate-900 text-white text-center font-mono font-bold"
               min="1"
             />
           </div>
@@ -349,80 +427,73 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                 alert(`Error: ${e.message}`);
               }
             }}
-            className="text-xs font-semibold px-3 py-1.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-300 border border-red-700/50 transition-colors flex items-center shadow-sm"
+            className="text-xs font-bold px-3 py-1.5 rounded-xl bg-red-950/70 hover:bg-red-900 text-red-200 border border-red-700/60 transition-colors flex items-center shadow-sm"
             title="Borra el registro de trades pasados de la base de datos"
           >
             🗑️ Vaciar Historial de Trades & PnL
           </button>
         </div>
         {/* ----------------------------------------- */}
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
+        <table className="min-w-full divide-y divide-slate-700">
+          <thead className="bg-slate-950 border-b-2 border-slate-700">
             <tr>
-              {/* --- NUEVA COLUMNA VACÍA PARA EL BOTÓN DE EXPANDIR --- */}
-              <th scope="col" className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-10"></th>
-              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Symbol</th>
-              <th scope="col" className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Control</th>
-              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Estado</th>
-              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Posición & Margen</th>
-              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Current PnL</th>
-              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Hist. PnL</th>
-               <th scope="col" className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Pending Entry ID
-              </th>
-               <th scope="col" className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Pending Exit ID
-              </th>
-              <th scope="col" className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Pending TP ID
-              </th>
-              <th scope="col" className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Pending SL ID
-              </th>
-              <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Last Error
-              </th>
+              <th scope="col" className="px-2 py-3 text-left text-xs font-extrabold text-slate-100 uppercase tracking-wider w-10"></th>
+              <BinanceSortHeader label="Symbol" sortKey="symbol" currentSort={statusSort} onSort={handleStatusSort} />
+              <th scope="col" className="px-3 py-3 text-center text-xs font-extrabold text-slate-100 uppercase tracking-wider">Control</th>
+              <BinanceSortHeader label="Estado" sortKey="state" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Current PnL" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Hist. PnL" sortKey="historical_pnl" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Pending Entry" sortKey="pending_entry_order_id" currentSort={statusSort} onSort={handleStatusSort} align="center" />
+              <BinanceSortHeader label="Pending Exit" sortKey="pending_exit_order_id" currentSort={statusSort} onSort={handleStatusSort} align="center" />
+              <BinanceSortHeader label="Pending TP" sortKey="pending_tp_order_id" currentSort={statusSort} onSort={handleStatusSort} align="center" />
+              <BinanceSortHeader label="Pending SL" sortKey="pending_sl_order_id" currentSort={statusSort} onSort={handleStatusSort} align="center" />
+              <BinanceSortHeader label="Last Error" sortKey="last_error" currentSort={statusSort} onSort={handleStatusSort} />
             </tr>
           </thead>
-          <tbody>{/* <--- APERTURA DE TBODY */}
-            {statuses.length > 0 ? (
-              statuses.map((status) => (
+          <tbody className="divide-y divide-slate-800">
+            {sortedStatuses.length > 0 ? (
+              sortedStatuses.map((status) => (
                 <React.Fragment key={status.symbol}>
                   <tr 
-                    className={`border-b dark:border-gray-700 ${status.in_position ? 'bg-green-50 dark:bg-green-900/50 hover:bg-green-100 dark:hover:bg-green-800/60' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'} transition-colors duration-150`}
+                    className={`transition-colors duration-150 cursor-pointer ${
+                      status.in_position 
+                        ? 'bg-emerald-950/20 hover:bg-emerald-950/40 border-l-4 border-l-emerald-500' 
+                        : 'hover:bg-slate-800/60'
+                    }`}
                     onClick={() => toggleRow(status.symbol)}
                   >
                     {/* --- CELDA CON BOTÓN DE EXPANDIR --- */}
-                    <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    <td className="px-2 py-3 whitespace-nowrap text-sm text-slate-300">
                       <button 
-                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        className="p-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 focus:outline-none"
                         aria-expanded={!!expandedRows[status.symbol]}
                         aria-controls={`history-${status.symbol}`}
                       >
-                        {expandedRows[status.symbol] ? '▼' : '▶'} {/* Flecha abajo/derecha */}
+                        {expandedRows[status.symbol] ? '▼' : '▶'}
                       </button>
                     </td>
-                    {/* --- Símbolo con botón de cierre X compacto a la izquierda si está en posición --- */}
-                    <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                    {/* --- Símbolo con botón de cierre X compacto --- */}
+                    <td className="px-3 py-3 whitespace-nowrap text-sm font-bold text-white">
                       <div className="flex items-center space-x-2">
                         {status.in_position && (
                           <button
                             onClick={(e) => handleCloseSinglePosition(e, status.symbol)}
                             disabled={closingSymbols[status.symbol]}
-                            className="w-5 h-5 flex-shrink-0 flex items-center justify-center text-xs font-extrabold text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-full shadow transition-transform transform active:scale-95 disabled:bg-gray-400"
+                            className="w-5 h-5 flex-shrink-0 flex items-center justify-center text-xs font-extrabold text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-full shadow transition-transform transform active:scale-95 disabled:bg-gray-600"
                             title={`Cerrar posición de ${status.symbol} a mercado en Binance`}
                           >
                             {closingSymbols[status.symbol] ? '..' : '✕'}
                           </button>
                         )}
-                        <span>{status.symbol}</span>
+                        <span className="font-mono text-sm">{status.symbol}</span>
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             if (onSelectSymbolForChart) onSelectSymbolForChart(status.symbol);
                           }}
-                          className="px-1.5 py-0.5 text-[11px] bg-yellow-400/20 hover:bg-yellow-400/40 text-yellow-600 dark:text-yellow-400 border border-yellow-400/40 rounded transition shadow-sm font-semibold"
+                          className="px-1.5 py-0.5 text-[11px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded transition shadow-sm font-bold"
                           title={`Ver gráfico en vivo de ${status.symbol}`}
                         >
                           📊
@@ -430,16 +501,16 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       </div>
                     </td>
 
-                    {/* --- BOTÓN DE PAUSA RÁPIDA (FEATURE 2) --- */}
+                    {/* --- BOTÓN DE PAUSA RÁPIDA --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         onClick={(e) => handleTogglePause(e, status.symbol)}
                         disabled={pausingSymbols[status.symbol]}
-                        className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all active:scale-95 shadow-sm flex items-center justify-center gap-1 mx-auto ${
+                        className={`px-2.5 py-1 text-[11px] font-bold rounded-xl border transition-all active:scale-95 shadow-sm flex items-center justify-center gap-1 mx-auto ${
                           status.is_paused
-                            ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
-                            : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
+                            ? 'bg-amber-950/80 hover:bg-amber-900 text-amber-200 border-amber-500/50'
+                            : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-200 border-emerald-500/50'
                         }`}
                         title={status.is_paused ? 'Bot pausado para este par. Clic para reactivar.' : 'Bot activo para este par. Clic para pausar.'}
                       >
@@ -454,117 +525,118 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     </td>
 
                     {/* --- ESTADO --- */}
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                         status.state === 'IN_POSITION' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                         status.state === 'Paused' || status.is_paused ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-500/30' :
-                         status.state === 'ERROR' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                         status.state?.includes('WAITING') ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                         status.state === 'Inactive' ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300' :
-                         'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                    <td className="px-3 py-3 whitespace-nowrap text-xs">
+                     <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-bold rounded-full border ${
+                         status.state === 'IN_POSITION' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50' :
+                         status.state === 'Paused' || status.is_paused ? 'bg-amber-950/80 text-amber-200 border-amber-500/50' :
+                         status.state === 'ERROR' ? 'bg-red-950/80 text-red-200 border-red-500/50' :
+                         status.state?.includes('WAITING') ? 'bg-indigo-950/80 text-indigo-200 border-indigo-500/50' :
+                         status.state === 'Inactive' ? 'bg-slate-800 text-slate-300 border-slate-700' :
+                         'bg-slate-800 text-slate-200 border-slate-700'
                      }`}>
                        {status.is_paused && status.state !== 'IN_POSITION' ? '⏸️ Pausado' : (status.state || 'N/A')}
                      </span>
                     </td>
 
-                    {/* --- POSICIÓN & MARGEN (FEATURE 1) --- */}
+                    {/* --- POSICIÓN & MARGEN --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-xs">
                       {status?.in_position ? (
                         <div className="flex flex-col space-y-0.5">
                           <div className="flex items-center gap-1">
-                            <span className="font-bold text-gray-900 dark:text-white font-mono text-xs">
+                            <span className="font-extrabold text-white font-mono text-xs">
                               ${(Number(status?.position_value_usdt) || Math.abs((Number(status?.entry_price) || 0) * (Number(status?.position_size) || 0))).toFixed(2)} USDT
                             </span>
-                            <span className="text-[10px] text-gray-400 font-mono">
+                            <span className="text-[11px] text-slate-300 font-mono">
                               ({status?.position_size || 0} {String(status?.symbol || '').replace('USDT', '')})
                             </span>
                           </div>
                           <div className="flex items-center gap-1">
-                            <span className="text-[11px] font-semibold text-emerald-500 dark:text-emerald-400 font-mono">
+                            <span className="text-[11px] font-bold text-emerald-400 font-mono">
                               Margen: ~${(Number(status?.margin_usdt) || ((Number(status?.position_value_usdt) || 50) / (Number(status?.leverage) || 20))).toFixed(2)} USDT
                             </span>
-                            <span className="text-[10px] px-1 py-0.2 rounded bg-gray-800 text-amber-400 font-bold border border-gray-700 font-mono">
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-amber-300 font-bold border border-slate-700 font-mono">
                               {status?.leverage || 20}x
                             </span>
                           </div>
                           {status?.entry_price && !isNaN(parseFloat(status.entry_price)) && (
-                            <span className="text-[10px] text-gray-500 font-mono">
+                            <span className="text-[11px] text-slate-300 font-mono">
                               Entrada: ${parseFloat(status.entry_price).toFixed(4)}
                             </span>
                           )}
                         </div>
                       ) : (
-                        <span className="text-gray-400 dark:text-gray-500 text-xs italic">
+                        <span className="text-slate-400 text-xs italic">
                           Sin posición
                         </span>
                       )}
                     </td>
 
                     <td className="px-3 py-3 whitespace-nowrap text-sm">
-                      <span className={`font-semibold ${getPnlColorClass(status.current_pnl)}`}>
+                      <span className={`font-mono ${getPnlColorClass(status.current_pnl)}`}>
                       {status.in_position ? formatPnl(status.current_pnl) : 'N/A'}
                       </span>
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap text-sm">
-                      <span className={`font-semibold ${getPnlColorClass(status.historical_pnl)}`}>
+                      <span className={`font-mono ${getPnlColorClass(status.historical_pnl)}`}>
                       {formatPnl(status.historical_pnl)}
                       </span>
                     </td>
-                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300 text-center">
-                      {status.pending_entry_order_id ? 'SI' : ''}
+                     <td className="px-2 py-3 whitespace-nowrap text-xs text-center font-mono">
+                      {status.pending_entry_order_id ? <span className="text-emerald-400 font-bold">SÍ</span> : <span className="text-slate-500">-</span>}
                     </td>
-                     <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300 text-center">
-                      {status.pending_exit_order_id ? 'SI' : ''}
+                     <td className="px-2 py-3 whitespace-nowrap text-xs text-center font-mono">
+                      {status.pending_exit_order_id ? <span className="text-emerald-400 font-bold">SÍ</span> : <span className="text-slate-500">-</span>}
                     </td>
-                    <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300 text-center">
-                      {status.pending_tp_order_id ? 'SI' : ''}
+                    <td className="px-2 py-3 whitespace-nowrap text-xs text-center font-mono">
+                      {status.pending_tp_order_id ? <span className="text-emerald-400 font-bold">SÍ</span> : <span className="text-slate-500">-</span>}
                     </td>
-                    <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300 text-center">
-                      {status.pending_sl_order_id ? 'SI' : ''}
+                    <td className="px-2 py-3 whitespace-nowrap text-xs text-center font-mono">
+                      {status.pending_sl_order_id ? <span className="text-emerald-400 font-bold">SÍ</span> : <span className="text-slate-500">-</span>}
                     </td>
-                    <td className="px-3 py-3 text-sm text-red-600 dark:text-red-400 truncate">
+                    <td className="px-3 py-3 text-xs text-rose-400 font-bold truncate max-w-[120px]">
                       {status.last_error ? 'ERROR' : ''}
                     </td>
                   </tr>
                   {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
                   {expandedRows[status.symbol] && (
                     <tr id={`history-${status.symbol}`}>
-                      {/* Celda que ocupa todo el ancho */}
-                      <td colSpan="12" className="px-2 py-2 bg-gray-50 dark:bg-gray-750">
+                      <td colSpan="12" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
                         {loadingHistories[status.symbol] && (
-                          <p className="text-sm text-center text-gray-500 dark:text-gray-400">Loading history...</p>
+                          <p className="text-xs text-center text-slate-300 font-mono">Cargando historial...</p>
                         )}
                         {historyErrors[status.symbol] && (
-                          <p className="text-sm text-center text-red-600 dark:text-red-400">{historyErrors[status.symbol]}</p>
+                          <p className="text-xs text-center text-rose-400">{historyErrors[status.symbol]}</p>
                         )}
                         {!loadingHistories[status.symbol] && !historyErrors[status.symbol] && (
                           tradeHistories[status.symbol]?.length > 0 ? (
                             <div className="overflow-x-auto">
-                               <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">Last {tradeHistories[status.symbol].length} Trades for {status.symbol}:</h4>
-                              <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-600 text-xs">
-                                <thead className="bg-gray-100 dark:bg-gray-700">
+                              <h4 className="text-xs font-bold mb-2 text-slate-200">
+                                Últimos {tradeHistories[status.symbol].length} trades cerrados para {status.symbol}:
+                              </h4>
+                              <table className="min-w-full divide-y divide-slate-800 text-xs font-mono">
+                                <thead className="bg-slate-900 border-b border-slate-700">
                                   <tr>
-                                    <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-300">Close Time</th>
-                                    <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-300">Reason</th>
-                                    <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-300">Entry Price</th>
-                                    <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-300">Close Price</th>
-                                    <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-300">Quantity</th>
-                                    <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-300">PnL</th>
-                                    <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-300">ID</th> 
+                                    <BinanceSortHeader label="Fecha Cierre" sortKey="close_timestamp" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
+                                    <BinanceSortHeader label="Motivo" sortKey="close_reason" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
+                                    <BinanceSortHeader label="Entrada" sortKey="open_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
+                                    <BinanceSortHeader label="Salida" sortKey="close_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
+                                    <BinanceSortHeader label="Cantidad" sortKey="quantity" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
+                                    <BinanceSortHeader label="PnL" sortKey="pnl_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
+                                    <BinanceSortHeader label="ID" sortKey="id" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
                                   </tr>
                                 </thead>
-                                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                                  {tradeHistories[status.symbol].map(trade => (
-                                    <tr key={trade.id} className="hover:bg-gray-50 dark:hover:bg-gray-600">
-                                      <td className="px-2 py-1 whitespace-nowrap text-gray-700 dark:text-gray-300">{formatDate(trade.close_timestamp)}</td>
-                                      <td className="px-2 py-1 whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.close_reason || 'N/A'}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
+                                <tbody className="divide-y divide-slate-800">
+                                  {(sortedSubTrades[status.symbol] || tradeHistories[status.symbol]).map(trade => (
+                                    <tr key={trade.id} className="hover:bg-slate-900/60">
+                                      <td className="px-2 py-1 whitespace-nowrap text-slate-300">{formatDate(trade.close_timestamp)}</td>
+                                      <td className="px-2 py-1 whitespace-nowrap text-slate-300">{trade.close_reason || 'N/A'}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap text-slate-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
                                       <td className={`px-2 py-1 text-right whitespace-nowrap ${getPnlColorClass(trade.pnl_usdt)}`}>
                                         {formatPnl(trade.pnl_usdt)}
                                       </td>
-                                      <td className="px-2 py-1 whitespace-nowrap text-gray-700 dark:text-gray-300">{trade.id}</td>
+                                      <td className="px-2 py-1 whitespace-nowrap text-slate-400">{trade.id}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -576,9 +648,9 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                  }, 0);
                                  return (
                                    <div className="mt-2 text-right pr-4">
-                                     <span className="font-bold text-sm text-gray-700 dark:text-gray-300">
-                                       Total PNL de la lista: 
-                                       <span className={`ml-2 ${getPnlColorClass(totalHistoryPnl)}`}>
+                                     <span className="font-bold text-xs text-slate-200">
+                                       Total PnL de la lista: 
+                                       <span className={`ml-2 font-mono ${getPnlColorClass(totalHistoryPnl)}`}>
                                          {formatPnl(totalHistoryPnl)}
                                        </span>
                                      </span>
@@ -587,7 +659,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                })()}
                             </div>
                           ) : (
-                            <p className="text-sm text-center text-gray-500 dark:text-gray-400">No trade history found for {status.symbol}.</p>
+                            <p className="text-xs text-center text-slate-400">No hay trades cerrados para {status.symbol}.</p>
                           )
                         )}
                       </td>
@@ -597,7 +669,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               ))
             ) : (
               <tr>
-                <td colSpan="10" className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan="12" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
                   {isLoading ? 'Cargando estados...' : (error ? `Error: ${error}` : 'No hay datos de bots disponibles.')}
                 </td>
               </tr>

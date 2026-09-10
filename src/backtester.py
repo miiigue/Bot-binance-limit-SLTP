@@ -168,9 +168,8 @@ def _find_supports(df_window: pd.DataFrame, pivot_window: int = 5, confirmations
 
 
 def normalize_config(cfg: dict) -> dict:
-    """Normaliza claves de configuración aceptando tanto camelCase como snake_case."""
-    if not cfg:
-        return {}
+    if cfg is None:
+        cfg = {}
     c = dict(cfg)
     
     def get_val(camel, snake, default=None):
@@ -261,6 +260,138 @@ def normalize_config(cfg: dict) -> dict:
     }
 
 
+def generate_smart_analysis(res: dict, config: dict) -> dict:
+    """
+    Genera un diagnóstico cuantitativo inteligente y recomendaciones accionables
+    basado en las operaciones cerradas, posiciones abiertas/atrapadas, concentración de ganancias
+    y la configuración empleada.
+    """
+    if not res or 'error' in res:
+        return {}
+
+    norm_cfg = normalize_config(config) if config else {}
+    sl_enabled = norm_cfg.get('enable_stop_loss_pnl', False)
+    sl_val = norm_cfg.get('stop_loss_usdt', 0.0)
+    dca_enabled = norm_cfg.get('enable_dca_reentry', False)
+    dca_max = norm_cfg.get('dca_max_reentries', 0)
+    tp_val = norm_cfg.get('take_profit_usdt', 0.0)
+
+    is_portfolio = res.get('is_portfolio', False)
+    open_positions = res.get('open_positions', [])
+    if not is_portfolio and res.get('open_position'):
+        open_positions = [res['open_position']]
+
+    trapped = [p for p in open_positions if p.get('is_trapped') or p.get('unrealized_pnl', 0) < 0]
+    total_trades = res.get('total_trades', 0)
+    net_pnl = res.get('net_pnl', 0.0)
+    unrealized_pnl = res.get('total_unrealized_pnl' if is_portfolio else 'unrealized_pnl', 0.0)
+    net_equity = res.get('net_equity_pnl', round(net_pnl + unrealized_pnl, 2))
+    win_rate = res.get('win_rate_pct', 0.0)
+
+    # Evaluación de Salud del Sistema
+    if len(trapped) >= 3 or (len(trapped) >= 1 and not is_portfolio and unrealized_pnl < -20):
+        health_status = 'CRITICAL_RISK'
+        health_title = 'Riesgo Alto: Capital Atrapado por Falta de Stop Loss'
+        health_badge = '🚨 Riesgo de Parálisis'
+        health_color = 'red'
+    elif len(trapped) > 0 or unrealized_pnl < -10:
+        health_status = 'WARNING'
+        health_title = 'Atención Requerida: Pérdidas Flotantes Pendientes'
+        health_badge = '⚠️ Posiciones en Drawdown'
+        health_color = 'amber'
+    elif net_pnl > 0 and total_trades >= 5:
+        health_status = 'HEALTHY'
+        health_title = 'Rendimiento Sólido y Controlado'
+        health_badge = '🟢 Estrategia Saludable'
+        health_color = 'emerald'
+    else:
+        health_status = 'NEUTRAL'
+        health_title = 'Baja Actividad o Muestra Reducida'
+        health_badge = 'ℹ️ Muestra Moderada'
+        health_color = 'blue'
+
+    findings = []
+    recommendations = []
+
+    # 1. Análisis de Posiciones Atrapadas / Monedas en Rojo
+    if trapped:
+        trapped_symbols = [p['symbol'] for p in trapped]
+        max_dur = max((p.get('duration_days', 0) for p in trapped), default=0)
+        findings.append({
+            'type': 'danger',
+            'title': f'{len(trapped)} Moneda(s) Congeladas al Cierre ({", ".join(trapped_symbols)})',
+            'description': f"Al terminar el período de prueba, {len(trapped)} moneda(s) acumulan un flotante negativo de {unrealized_pnl:.2f} USDT. La más antigua lleva {max_dur:.0f} días abierta. Mientras estas posiciones permanecieron abiertas, el bot tuvo prohibido abrir nuevas operaciones en ellas.",
+            'metric': f"-${abs(unrealized_pnl):.2f} USDT No Realizado"
+        })
+
+        if not sl_enabled:
+            recommendations.append({
+                'category': 'Gestión de Riesgo (Stop Loss)',
+                'priority': 'ALTA (Crítica)',
+                'title': 'Activar la Protección "Stop Loss Fijo (USDT)" en el Panel',
+                'text': 'La casilla de protección "Stop Loss Fijo (USDT)" se encuentra desactivada en tu configuración. Cuando el mercado experimentó una fuerte caída y agotó los niveles de recompras de seguridad (DCA), la posición quedó congelada en pérdidas flotantes indefinidamente. Te recomendamos activar "Stop Loss Fijo (USDT)" desde la sección de Salidas del panel (fijando un valor de $15 a $30 USDT o entre 3% y 5% por operación). Aunque asumas pérdidas pequeñas controladas, liberarás tu capital de inmediato para seguir aprovechando cientos de rebotes y oportunidades durante los meses siguientes.'
+            })
+    else:
+        findings.append({
+            'type': 'success',
+            'title': 'Excelente Gestión de Salidas',
+            'description': 'No se detectaron monedas congeladas o atrapadas en pérdidas no realizadas al cierre de la simulación. Todas las órdenes alcanzaron sus objetivos o se cerraron limpiamente.',
+            'metric': '100% Capital Disponible'
+        })
+
+    # 2. Análisis de Concentración de Ganancias (Portafolio)
+    if is_portfolio and res.get('symbols_ranking'):
+        ranking = res['symbols_ranking']
+        pos_coins = [r for r in ranking if r['net_pnl'] > 0]
+        if pos_coins and net_pnl > 0:
+            top_2_pnl = sum(r['net_pnl'] for r in pos_coins[:2])
+            top_share = round((top_2_pnl / net_pnl * 100.0), 1)
+            if top_share >= 65:
+                top_names = " y ".join(r['symbol'] for r in pos_coins[:2])
+                findings.append({
+                    'type': 'warning',
+                    'title': f'Fuerte Concentración de Beneficios ({top_share}%)',
+                    'description': f"El {top_share}% del total de ganancias provino de solo 2 monedas: {top_names}. El resto de pares generaron muy poco o se mantuvieron paralizados durante gran parte del período.",
+                    'metric': f"{top_share}% en Top 2"
+                })
+
+    # 3. Análisis de Recompras DCA
+    if dca_enabled:
+        if trapped and any(p.get('dca_reentries', 0) >= dca_max for p in trapped):
+            recommendations.append({
+                'category': 'Estrategia DCA (Recompras)',
+                'priority': 'MEDIA',
+                'title': 'Moderar "Take Profit Fijo" o Usar Trailing Stop tras Recompras',
+                'text': f'Se detectó que varias monedas alcanzaron el límite configurado de {dca_max} Re-entradas de Seguridad (DCA) y no lograron cerrar porque se exigía alcanzar el objetivo completo de "Take Profit Fijo (USDT)" (+${tp_val:.2f} USDT). En tendencias bajistas pronunciadas, exigir la ganancia total tras múltiples recompras prolonga el riesgo de quedar atrapado. Considera en el panel fijar un "Take Profit Fijo" más cercano o habilitar los "Trailing Stops Dinámicos" para asegurar una salida rápida en el primer rebote.'
+            })
+
+    # 4. Relación Ganancia Realizada vs Patrimonio Neto
+    if unrealized_pnl < 0:
+        findings.append({
+            'type': 'info',
+            'title': 'Divergencia entre PnL Realizado y Patrimonio Neto',
+            'description': f"La simulación cerró operaciones con una ganancia realizada de +{net_pnl:.2f} USDT, pero tras descontar el flotante negativo de las órdenes abiertas ({unrealized_pnl:.2f} USDT), el Patrimonio Neto Real es de {net_equity:.2f} USDT.",
+            'metric': f"Equity Real: ${net_equity:.2f} USDT"
+        })
+
+    if not recommendations:
+        recommendations.append({
+            'category': 'Estrategia Equilibrada',
+            'priority': 'INFO',
+            'title': 'Configuración Estable y Consistente',
+            'text': 'Los filtros de entrada y reglas de salida mostraron un comportamiento sólido sin dependencias peligrosas en este rango de fechas.'
+        })
+
+    return {
+        'health_status': health_status,
+        'health_title': health_title,
+        'health_badge': health_badge,
+        'health_color': health_color,
+        'findings': findings,
+        'recommendations': recommendations
+    }
+
+
 def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_balance: float = 1000.0) -> dict:
     """
     Ejecuta una simulación completa vela por vela reproduciendo con exactitud:
@@ -308,6 +439,7 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
     peak_balance = initial_balance
     max_drawdown_usdt = 0.0
     max_drawdown_pct = 0.0
+    max_floating_drop_pct = 0.0
 
     in_position = False
     entry_price = 0.0
@@ -381,7 +513,8 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
             if entry_signal and signal_price > 0:
                 in_position = True
                 entry_price = signal_price
-                quantity = position_size_usdt / entry_price
+                notional_order = position_size_usdt * leverage
+                quantity = notional_order / entry_price
                 entry_time = c_time
                 dca_count = 0
                 peak_unrealized_pnl = 0.0
@@ -400,6 +533,10 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
 
             if c_high > peak_price:
                 peak_price = c_high
+
+            floating_dip_pct = ((entry_price - c_low) / entry_price) * 100.0 if entry_price > 0 else 0.0
+            if floating_dip_pct > max_floating_drop_pct:
+                max_floating_drop_pct = floating_dip_pct
 
             curr_rsi = rsis[i - 1]
             if curr_rsi > rsi_peak:
@@ -461,7 +598,9 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
                 target_dca_price = entry_price * (1.0 - c['dca_price_drop_percent'] / 100.0)
                 if c_low <= target_dca_price:
                     dca_count += 1
-                    added_qty = (position_size_usdt * (c['dca_volume_multiplier'] ** dca_count)) / target_dca_price
+                    added_margin = position_size_usdt * (c['dca_volume_multiplier'] ** dca_count)
+                    added_notional = added_margin * leverage
+                    added_qty = added_notional / target_dca_price
                     total_cost = (entry_price * quantity) + (target_dca_price * added_qty)
                     quantity += added_qty
                     entry_price = total_cost / quantity
@@ -520,6 +659,42 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
 
                 in_position = False
 
+    open_position_info = None
+    if in_position:
+        final_price = float(closes[-1])
+        final_time = str(times[-1])
+        unrealized = float((final_price - entry_price) * quantity)
+        est_exit_fee = float((final_price * quantity) * 0.0004)
+        unrealized_net = unrealized - est_exit_fee
+        margin_req = float((entry_price * quantity) / leverage if leverage > 0 else 1.0)
+        unrealized_pct = float((unrealized / margin_req * 100.0)) if margin_req > 0 else 0.0
+
+        try:
+            dur_days = round((pd.to_datetime(final_time) - pd.to_datetime(entry_time)).total_seconds() / 86400, 1)
+        except Exception:
+            dur_days = 0.0
+
+        max_dca_val = c['dca_max_reentries'] if c['enable_dca_reentry'] else 0
+        is_trapped = (dca_count >= max_dca_val and max_dca_val > 0) or unrealized_net < 0 or dur_days >= 7.0
+
+        open_position_info = {
+            'symbol': symbol,
+            'entry_time': entry_time,
+            'current_time': final_time,
+            'entry_price': round(float(entry_price), 4),
+            'current_price': round(float(final_price), 4),
+            'quantity': round(float(quantity), 4),
+            'position_size_usdt': round(float(entry_price * quantity), 2),
+            'margin_usdt': round(float(margin_req), 2),
+            'unrealized_pnl': round(float(unrealized_net), 2),
+            'unrealized_pnl_pct': round(float(unrealized_pct), 2),
+            'dca_reentries': dca_count,
+            'max_dca': max_dca_val,
+            'duration_days': dur_days,
+            'is_trapped': is_trapped,
+            'status': 'Atrapada en Drawdown' if (unrealized_net < 0 and is_trapped) else ('En Ganancia Flotante' if unrealized_net > 0 else 'Abierta al Cierre')
+        }
+
     total_trades = len(trades_list)
     wins = [t for t in trades_list if t['net_pnl'] > 0]
     losses = [t for t in trades_list if t['net_pnl'] <= 0]
@@ -536,6 +711,20 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
     total_fees_paid = sum(t['fees'] for t in trades_list)
     net_pnl_total = balance - initial_balance
     net_return_pct = (net_pnl_total / initial_balance) * 100.0
+    unrealized_val = open_position_info['unrealized_pnl'] if open_position_info else 0.0
+    net_equity_pnl = round(float(net_pnl_total + unrealized_val), 2)
+    final_equity = round(float(balance + unrealized_val), 2)
+
+    # Métricas de Volumen y Capital Puesto en Juego
+    total_volume_traded = sum(t.get('position_size_usdt', 0.0) + (t.get('exit_price', 0.0) * t.get('quantity', 0.0)) for t in trades_list)
+    total_margin_used = sum(t.get('margin_usdt', 0.0) for t in trades_list)
+    peak_margin_used = max([t.get('margin_usdt', 0.0) for t in trades_list], default=0.0)
+
+    if open_position_info:
+        total_volume_traded += open_position_info.get('position_size_usdt', 0.0)
+        total_margin_used += open_position_info.get('margin_usdt', 0.0)
+        if open_position_info.get('margin_usdt', 0.0) > peak_margin_used:
+            peak_margin_used = open_position_info.get('margin_usdt', 0.0)
 
     if len(equity_curve) > 100:
         step = max(1, len(equity_curve) // 100)
@@ -547,7 +736,7 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
     start_dt_str = str(df['open_time'].iloc[0]).split(' ')[0]
     end_dt_str = str(df['open_time'].iloc[-1]).split(' ')[0]
 
-    return {
+    out_res = {
         'symbol': symbol,
         'days_tested': max(1, int((df['open_time'].iloc[-1] - df['open_time'].iloc[0]).total_seconds() / 86400)),
         'start_date': start_dt_str,
@@ -558,6 +747,16 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
         'final_balance': round(float(balance), 2),
         'net_pnl': round(float(net_pnl_total), 2),
         'net_return_pct': round(float(net_return_pct), 2),
+        'unrealized_pnl': unrealized_val,
+        'net_equity_pnl': net_equity_pnl,
+        'final_equity': final_equity,
+        'total_volume_traded_usdt': round(float(total_volume_traded), 2),
+        'total_margin_used_usdt': round(float(total_margin_used), 2),
+        'peak_margin_used_usdt': round(float(peak_margin_used), 2),
+        'has_open_position': bool(open_position_info),
+        'open_position': open_position_info,
+        'open_positions': [open_position_info] if open_position_info else [],
+        'trapped_coins_count': 1 if (open_position_info and open_position_info.get('is_trapped')) else 0,
         'total_trades': total_trades,
         'winning_trades': len(wins),
         'losing_trades': len(losses),
@@ -565,12 +764,17 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
         'profit_factor': round(float(profit_factor), 2),
         'max_drawdown_usdt': round(float(max_drawdown_usdt), 2),
         'max_drawdown_pct': round(float(max_drawdown_pct), 2),
+        'liquidation_drop_pct': round(98.0 / (leverage if leverage > 0 else 10), 1),
+        'max_floating_drop_pct': round(float(max_floating_drop_pct), 1),
         'avg_trade_pnl': round(float(net_pnl_total / total_trades), 2) if total_trades > 0 else 0.0,
         'risk_reward_ratio': round(float(rr_ratio), 2),
         'total_fees_usdt': round(float(total_fees_paid), 2),
         'equity_curve': equity_curve,
         'trades': trades_list
     }
+
+    out_res['smart_analysis'] = generate_smart_analysis(out_res, config)
+    return out_res
 
 
 def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, start_date: str = None, end_date: str = None, config: dict = None, initial_balance_per_coin: float = 1000.0) -> dict:
@@ -664,24 +868,49 @@ def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, 
             downsampled_curve.append(equity_curve[-1])
         equity_curve = downsampled_curve
 
+    open_positions = []
+    for r in individual_results:
+        op = r.get('open_position')
+        if op:
+            open_positions.append(op)
+
+    total_unrealized_pnl = round(float(sum(p['unrealized_pnl'] for p in open_positions)), 2)
+    trapped_coins = [p for p in open_positions if p.get('is_trapped') or p.get('unrealized_pnl', 0) < 0]
+    trapped_coins_count = len(trapped_coins)
+    net_equity_pnl = round(float(total_net_pnl + total_unrealized_pnl), 2)
+    final_equity = round(float(total_final_balance + total_unrealized_pnl), 2)
+    net_equity_return_pct = round(float((net_equity_pnl / total_initial_balance * 100.0)), 2) if total_initial_balance > 0 else 0.0
+
+    # Consolidación de Volumen y Margen de Portafolio
+    total_portfolio_volume = sum(r.get('total_volume_traded_usdt', 0.0) for r in individual_results)
+    total_portfolio_margin = sum(r.get('total_margin_used_usdt', 0.0) for r in individual_results)
+    peak_portfolio_margin = max([r.get('peak_margin_used_usdt', 0.0) for r in individual_results], default=0.0)
+
     ranking = []
     for r in individual_results:
         ranking.append({
             "symbol": r['symbol'],
             "net_pnl": r['net_pnl'],
             "net_return_pct": r['net_return_pct'],
+            "unrealized_pnl": r.get('unrealized_pnl', 0.0),
+            "net_equity_pnl": r.get('net_equity_pnl', r['net_pnl']),
+            "has_open_position": r.get('has_open_position', False),
+            "open_position": r.get('open_position'),
+            "is_trapped": r.get('trapped_coins_count', 0) > 0,
             "win_rate_pct": r['win_rate_pct'],
             "total_trades": r['total_trades'],
             "winning_trades": r['winning_trades'],
             "losing_trades": r['losing_trades'],
             "profit_factor": r['profit_factor'],
             "max_drawdown_pct": r['max_drawdown_pct'],
-            "total_fees_usdt": r['total_fees_usdt']
+            "total_fees_usdt": r['total_fees_usdt'],
+            "total_volume_traded_usdt": r.get('total_volume_traded_usdt', 0.0),
+            "total_margin_used_usdt": r.get('total_margin_used_usdt', 0.0)
         })
 
     ranking.sort(key=lambda x: x['net_pnl'], reverse=True)
 
-    return {
+    port_res = {
         "is_portfolio": True,
         "symbol": "PORTFOLIO",
         "symbols_count": len(individual_results),
@@ -695,6 +924,16 @@ def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, 
         "final_balance": round(total_final_balance, 2),
         "net_pnl": round(total_net_pnl, 2),
         "net_return_pct": round(total_return_pct, 2),
+        "total_unrealized_pnl": total_unrealized_pnl,
+        "net_equity_pnl": net_equity_pnl,
+        "final_equity": final_equity,
+        "net_equity_return_pct": net_equity_return_pct,
+        "total_volume_traded_usdt": round(float(total_portfolio_volume), 2),
+        "total_margin_used_usdt": round(float(total_portfolio_margin), 2),
+        "peak_margin_used_usdt": round(float(peak_portfolio_margin), 2),
+        "open_positions": open_positions,
+        "open_positions_count": len(open_positions),
+        "trapped_coins_count": trapped_coins_count,
         "total_trades": total_trades,
         "winning_trades": total_wins,
         "losing_trades": total_losses,
@@ -702,6 +941,8 @@ def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, 
         "profit_factor": round(global_profit_factor, 2),
         "max_drawdown_usdt": round(max_dd_usdt, 2),
         "max_drawdown_pct": round(max_dd_pct, 2),
+        "liquidation_drop_pct": individual_results[0].get('liquidation_drop_pct', round(98.0 / (norm_cfg.get('leverage', 10) or 10), 1)) if individual_results else round(98.0 / (norm_cfg.get('leverage', 10) or 10), 1),
+        "max_floating_drop_pct": round(float(max([r.get('max_floating_drop_pct', 0.0) for r in individual_results], default=0.0)), 1),
         "avg_trade_pnl": round(total_net_pnl / total_trades, 2) if total_trades > 0 else 0.0,
         "risk_reward_ratio": round(gross_profit / max(1.0, gross_loss), 2),
         "total_fees_usdt": round(total_fees, 2),
@@ -709,4 +950,7 @@ def run_portfolio_backtest(symbols: list, interval: str = '5m', days: int = 14, 
         "equity_curve": equity_curve,
         "trades": all_trades
     }
+
+    port_res['smart_analysis'] = generate_smart_analysis(port_res, config)
+    return port_res
 

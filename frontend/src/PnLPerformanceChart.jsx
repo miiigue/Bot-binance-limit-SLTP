@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import Tooltip from './Tooltip';
 
 function PnLPerformanceChart({ symbolsList = [] }) {
   const [trades, setTrades] = useState([]);
@@ -363,6 +364,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
                 <h2 className="text-base font-bold text-white tracking-wide">
                   Monitor de Billetera Binance & Salud de Margen
                 </h2>
+                <Tooltip title="Monitor de Margen y Billetera" text="Monitorea en vivo el balance total, margen retenido en trades activos y margen libre disponible en tu cuenta de Binance Futures." />
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   Futures Testnet Live
@@ -390,7 +392,10 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           {/* Balance Total */}
           <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3.5 flex flex-col justify-between shadow-md">
             <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px]">💰 Balance Total</span>
+              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1">
+                <span>💰 Balance Total</span>
+                <Tooltip title="Balance Total de Cuenta" text="Capital total en USDT disponible en la billetera de futuros de Binance (saldo de margen + fondos disponibles)." />
+              </span>
               <span className="text-gray-500">USDT</span>
             </div>
             <div className="text-2xl font-black font-mono text-white tracking-tight">
@@ -405,7 +410,10 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           {/* Margen Ocupado / Exposición Actual */}
           <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3.5 flex flex-col justify-between shadow-md">
             <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px]">🔒 Margen en Uso</span>
+              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1">
+                <span>🔒 Margen en Uso</span>
+                <Tooltip title="Margen Comprometido" text="Monto de USDT actualmente retenido como garantía en las posiciones abiertas activas." />
+              </span>
               <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold border ${stressBorder}`}>
                 {stressLabel}
               </span>
@@ -424,7 +432,10 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           {/* Margen Libre / Disponible */}
           <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3.5 flex flex-col justify-between shadow-md">
             <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px]">🟢 Margen Libre</span>
+              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1">
+                <span>🟢 Margen Libre</span>
+                <Tooltip title="Margen Disponible" text="Capital libre en USDT no asignado a ninguna posición, disponible para nuevas aperturas o absorber retrocesos de mercado." />
+              </span>
               <span className="text-emerald-400 text-[10px] font-bold">Disponible</span>
             </div>
             <div className="text-2xl font-black font-mono text-emerald-400 tracking-tight">
@@ -441,7 +452,10 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           {/* Límite Máximo Autorizado */}
           <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3.5 flex flex-col justify-between shadow-md">
             <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px]">🛡️ Límite Autorizado</span>
+              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1">
+                <span>🛡️ Límite Autorizado</span>
+                <Tooltip title="Límite Máximo de Exposición" text="Porcentaje máximo de tu cartera total que el bot tiene autorización de comprometer en margen simultáneamente." example="Si tienes $1,000 y fijas 50%, el bot nunca usará más de $500 en margen, protegiéndote de sobreexposición." />
+              </span>
               <span className="text-purple-300 text-[10px] font-mono font-bold">
                 {riskData?.risk_percentage || `${riskPercentageInput}%`}
               </span>
@@ -465,6 +479,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
             <div className="flex items-center justify-between text-xs text-gray-300">
               <span className="font-semibold flex items-center gap-1.5">
                 <span>Nivel de Utilización de Margen:</span>
+                <Tooltip title="Nivel de Utilización" text="Porcentaje del límite de riesgo autorizado que está en uso en este momento. Verde = Seguro (<50%), Amarillo = Moderado (50-80%), Rojo = Alto Riesgo (>80%)." />
                 <span className="font-mono text-white font-bold">{stressRatio.toFixed(1)}% del límite</span>
               </span>
               <span className="text-gray-400 text-[11px] font-mono">
@@ -481,8 +496,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
 
           {/* Formulario de Ajuste de Límite */}
           <form onSubmit={handleSaveRiskLimit} className="flex items-center gap-2 flex-shrink-0 bg-gray-950/70 p-2 rounded-xl border border-gray-800">
-            <label htmlFor="riskInput" className="text-xs text-gray-300 font-medium whitespace-nowrap pl-1">
-              Ajustar Límite:
+            <label htmlFor="riskInput" className="text-xs text-gray-300 font-medium whitespace-nowrap pl-1 flex items-center gap-1">
+              <span>Ajustar Límite:</span>
+              <Tooltip title="Ajuste de Riesgo Máximo" text="Guarda el porcentaje máximo de riesgo permitido para el bot tanto en Binance como en la configuración del servidor." />
             </label>
             <div className="relative w-20">
               <input
@@ -534,7 +550,8 @@ function PnLPerformanceChart({ symbolsList = [] }) {
             </div>
             <div>
               <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                Rendimiento Financiero y Estadísticas de Trading
+                <span>Rendimiento Financiero y Estadísticas de Trading</span>
+                <Tooltip title="Estadísticas de Trading" text="Historial completo de trades cerrados, ratio de acierto, factor de beneficio y curva de capital acumulado en vivo." />
                 <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
                   netPnL >= 0 
                     ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
@@ -579,8 +596,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 my-4">
           
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
-              🎯 Tasa de Acierto
+            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
+              <span>🎯 Tasa de Acierto</span>
+              <Tooltip title="Tasa de Acierto (Win Rate)" text="Porcentaje de operaciones completadas con ganancia sobre el total de operaciones cerradas." example="Un Win Rate del 70% significa que 7 de cada 10 operaciones fueron exitosas." />
             </span>
             <span className={`text-xl font-bold font-mono ${parseFloat(winRate) >= 50 ? 'text-emerald-500' : 'text-amber-500'}`}>
               {winRate}%
@@ -591,8 +609,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           </div>
 
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
-              💰 PnL Realizado
+            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
+              <span>💰 PnL Realizado</span>
+              <Tooltip title="PnL Realizado Neto" text="Suma acumulada de todas las ganancias y pérdidas de las posiciones que ya han sido cerradas definitivamente." />
             </span>
             <span className={`text-xl font-bold font-mono ${netPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
               {netPnL >= 0 ? `+${netPnL.toFixed(2)}` : netPnL.toFixed(2)} <span className="text-xs">USDT</span>
@@ -603,8 +622,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           </div>
 
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
-              ⚖️ Profit Factor
+            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
+              <span>⚖️ Profit Factor</span>
+              <Tooltip title="Factor de Rentabilidad (Profit Factor)" text="Relación matemática entre las ganancias brutas y las pérdidas brutas. Mayor a 1 significa cuenta rentable." example="Si ganaste $300 y perdiste $100, el Profit Factor es 3.00." />
             </span>
             <span className="text-xl font-bold font-mono text-blue-500">
               {profitFactor}
@@ -615,8 +635,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           </div>
 
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
-              📉 Max Drawdown
+            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
+              <span>📉 Max Drawdown</span>
+              <Tooltip title="Máxima Caída (Drawdown)" text="La mayor reducción de capital que sufrió la cuenta desde su punto más alto hasta su valle más profundo." example="Indica la peor racha de pérdidas que ha soportado la estrategia hasta el momento." />
             </span>
             <span className="text-xl font-bold font-mono text-amber-500">
               -${maxDrawdownUSDT.toFixed(2)}
@@ -627,8 +648,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           </div>
 
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
-              📐 Ratio Win/Loss
+            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
+              <span>📐 Ratio Win/Loss</span>
+              <Tooltip title="Ratio Ganancia / Pérdida Promedio" text="Mide cuánto dinero ganas en promedio en una operación ganadora comparado con lo que pierdes en una perdedora." example="1.5:1 significa que el trade ganador promedio gana un 50% más de lo que pierde un trade negativo." />
             </span>
             <span className="text-xl font-bold font-mono text-purple-400">
               {realizedRiskReward}:1
@@ -639,8 +661,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           </div>
 
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
-              🏆 Mejor / Peor
+            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
+              <span>🏆 Mejor / Peor</span>
+              <Tooltip title="Mejor y Peor Operación" text="El trade más rentable cerrado por Take Profit y el trade con mayor pérdida cerrado por Stop Loss." />
             </span>
             <div className="flex items-center justify-between text-xs font-mono font-bold mt-1">
               <span className="text-emerald-400">+{bestTrade.toFixed(2)}</span>
@@ -658,8 +681,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
         {equityPoints.length > 1 ? (
           <div className="mt-4 p-4 bg-gray-950 rounded-xl border border-gray-800 relative">
             <div className="flex items-center justify-between px-2 mb-2">
-              <span className="text-xs font-bold text-gray-300">
-                📈 Curva de Crecimiento de Capital ({equityPoints.length} operaciones)
+              <span className="text-xs font-bold text-gray-300 flex items-center gap-1">
+                <span>📈 Curva de Crecimiento de Capital ({equityPoints.length} operaciones)</span>
+                <Tooltip title="Curva de Crecimiento de Capital" text="Muestra la evolución cronológica del saldo acumulado trade a trade. Una pendiente ascendente constante refleja consistencia en la estrategia." />
               </span>
               <span className="text-xs font-mono text-emerald-400">
                 Total Acumulado: {netPnL >= 0 ? `+${netPnL.toFixed(4)}` : netPnL.toFixed(4)} USDT
@@ -754,7 +778,8 @@ function PnLPerformanceChart({ symbolsList = [] }) {
             </div>
             <div>
               <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                Ranking de Rendimiento por Criptomoneda
+                <span>Ranking de Rendimiento por Criptomoneda</span>
+                <Tooltip title="Rendimiento Individual por Moneda" text="Desglose detallado del PnL, tasa de acierto y volumen de cada par para identificar qué monedas aportan más a la cuenta y cuáles convendría pausar o ajustar." />
                 <span className="text-xs font-normal text-gray-400">({coinPerformanceList.length} pares operados)</span>
               </h3>
               <p className="text-xs text-gray-500 dark:text-gray-400">
