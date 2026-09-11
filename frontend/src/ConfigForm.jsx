@@ -338,8 +338,8 @@ const tooltipTexts = {
     example: "10 segundos cancela la orden si el precio se escapó y no se llenó en 10s para no quedar atrapado."
   },
   entryOrderType: {
-    desc: "Tipo de orden para entrar y salir al mercado. MARKET entra al instante garantizado al precio actual (comportamiento idéntico al Backtesting). LIMIT coloca orden al mejor precio Ask/Bid ahorrando 50% de comisiones (Maker 0.02%).",
-    example: "Usa MARKET para replicar al 100% las operaciones instantáneas del simulador/backtesting sin riesgo de timeout. Usa LIMIT si prefieres pagar menor comisión de intercambio."
+    desc: "Define cómo ejecuta el bot las operaciones en Binance: al precio actual o mediante orden límite.",
+    example: "MARKET ejecuta inmediatamente al precio disponible. LIMIT busca entrar al mejor precio del libro."
   }
 };
 
@@ -954,17 +954,17 @@ function ConfigForm({
               onChange={handleChange}
               className="mt-1 block w-full py-2 px-2.5 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-semibold cursor-pointer"
             >
-              <option value="LIMIT">LIMIT (Maker 0.02%)</option>
-              <option value="MARKET">MARKET (Backtest ⚡)</option>
+              <option value="LIMIT">LIMIT (Límite)</option>
+              <option value="MARKET">MARKET (Mercado)</option>
             </select>
             <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
               {formData.entryOrderType === 'MARKET' ? (
-                <div>⚡ <strong className="text-amber-300 font-medium">Fill Instantáneo</strong> (Backtest)</div>
+                <div>⚡ <strong className="text-amber-300 font-medium">Ejecución Inmediata</strong></div>
               ) : (
-                <div>🎯 <strong className="text-emerald-300 font-medium">Ahorro 50% Fee</strong> (Maker Ask)</div>
+                <div>🎯 <strong className="text-emerald-300 font-medium">Mejor Precio (Maker)</strong></div>
               )}
               <div className="text-[10px] text-slate-500">
-                {formData.entryOrderType === 'MARKET' ? 'Sin riesgo timeout' : 'Espera mejor precio'}
+                {formData.entryOrderType === 'MARKET' ? 'Sin espera en libro' : 'Ahorro de comisión'}
               </div>
             </div>
           </ConfigItem>
@@ -1530,7 +1530,7 @@ function ConfigForm({
               className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm disabled:opacity-40"
             />
             {formData.entryOrderType === 'MARKET' && (
-              <p className="text-[10.5px] text-amber-400 mt-1 font-medium">⚡ Inactivo: en modo MARKET se llena al instante sin timeout.</p>
+              <p className="text-[10.5px] text-amber-400 mt-1 font-medium">⚡ Inactivo: en modo MARKET la orden se ejecuta de inmediato.</p>
             )}
           </ConfigItem>
         </div>
