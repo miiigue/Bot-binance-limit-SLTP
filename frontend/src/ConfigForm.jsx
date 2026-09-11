@@ -101,6 +101,7 @@ const defaultConfigValues = {
   cycleSleepSeconds: 5,
   mode: 'paper',
   orderTimeoutSeconds: 60,
+  entryOrderType: 'LIMIT',
   evaluateRsiDelta: true,
   evaluateVolumeFilter: true,
   evaluateRsiRange: true,
@@ -335,6 +336,10 @@ const tooltipTexts = {
   orderTimeoutSeconds: {
     desc: "Tiempo máximo en segundos que una orden LIMIT espera ser ejecutada antes de cancelarse.",
     example: "10 segundos cancela la orden si el precio se escapó y no se llenó en 10s para no quedar atrapado."
+  },
+  entryOrderType: {
+    desc: "Tipo de orden para entrar y salir al mercado. MARKET entra al instante garantizado al precio actual (comportamiento idéntico al Backtesting). LIMIT coloca orden al mejor precio Ask/Bid ahorrando 50% de comisiones (Maker 0.02%).",
+    example: "Usa MARKET para replicar al 100% las operaciones instantáneas del simulador/backtesting sin riesgo de timeout. Usa LIMIT si prefieres pagar menor comisión de intercambio."
   }
 };
 
@@ -929,7 +934,7 @@ function ConfigForm({
         <legend className="text-sm font-medium text-white px-3 bg-slate-900 rounded-lg border border-slate-700/80 flex items-center gap-1.5">
           <span>⚙️</span> Parámetros Generales
         </legend>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 mt-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5 mt-3">
           {/* 1. Modo Operación */}
           <ConfigItem labelText="Modo Operación" htmlFor="mode" tooltipKey="mode">
             <div className="mt-1 flex items-center px-3 py-2 border border-emerald-500/30 bg-emerald-950/30 rounded-lg shadow-sm">
@@ -940,7 +945,31 @@ function ConfigForm({
             </div>
           </ConfigItem>
 
-          {/* 2. Multiplicador Apalancamiento */}
+          {/* 2. Tipo Orden (LIMIT vs MARKET) */}
+          <ConfigItem labelText="Tipo Orden" htmlFor="entryOrderType" tooltipKey="entryOrderType">
+            <select
+              name="entryOrderType"
+              id="entryOrderType"
+              value={formData.entryOrderType || 'LIMIT'}
+              onChange={handleChange}
+              className="mt-1 block w-full py-2 px-2.5 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-semibold cursor-pointer"
+            >
+              <option value="LIMIT">LIMIT (Maker 0.02%)</option>
+              <option value="MARKET">MARKET (Backtest ⚡)</option>
+            </select>
+            <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
+              {formData.entryOrderType === 'MARKET' ? (
+                <div>⚡ <strong className="text-amber-300 font-medium">Fill Instantáneo</strong> (Backtest)</div>
+              ) : (
+                <div>🎯 <strong className="text-emerald-300 font-medium">Ahorro 50% Fee</strong> (Maker Ask)</div>
+              )}
+              <div className="text-[10px] text-slate-500">
+                {formData.entryOrderType === 'MARKET' ? 'Sin riesgo timeout' : 'Espera mejor precio'}
+              </div>
+            </div>
+          </ConfigItem>
+
+          {/* 3. Multiplicador Apalancamiento */}
           <ConfigItem labelText="Multiplicador Apalancamiento" htmlFor="leverage" tooltipKey="leverage">
             <input 
               type="number" 
@@ -1014,7 +1043,7 @@ function ConfigForm({
           </ConfigItem>
 
           {/* Fila inferior: Símbolos / Pares */}
-          <div className="lg:col-span-5 mt-1">
+          <div className="lg:col-span-6 mt-1">
             <ConfigItem labelText="Pares Monedas" htmlFor="symbolsToTrade" tooltipKey="symbolsToTrade">
               <textarea 
                 name="symbolsToTrade" 
@@ -1491,7 +1520,18 @@ function ConfigForm({
             <input type="number" name="cycleSleepSeconds" id="cycleSleepSeconds" value={formData.cycleSleepSeconds} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
           </ConfigItem>
           <ConfigItem labelText="Timeout de Orden (segundos)" htmlFor="orderTimeoutSeconds" tooltipKey="orderTimeoutSeconds">
-            <input type="number" name="orderTimeoutSeconds" id="orderTimeoutSeconds" value={formData.orderTimeoutSeconds} onChange={handleChange} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"/>
+            <input 
+              type="number" 
+              name="orderTimeoutSeconds" 
+              id="orderTimeoutSeconds" 
+              value={formData.orderTimeoutSeconds} 
+              onChange={handleChange} 
+              disabled={formData.entryOrderType === 'MARKET'}
+              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm disabled:opacity-40"
+            />
+            {formData.entryOrderType === 'MARKET' && (
+              <p className="text-[10.5px] text-amber-400 mt-1 font-medium">⚡ Inactivo: en modo MARKET se llena al instante sin timeout.</p>
+            )}
           </ConfigItem>
         </div>
       </fieldset>

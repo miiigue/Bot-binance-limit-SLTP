@@ -245,8 +245,8 @@ function StrategyRadar({ config }) {
                   </p>
                 </div>
                 <div className="mt-2.5 pt-2 border-t border-gray-700/60 text-[10.5px] text-gray-400 flex items-center justify-between">
-                  <span>Tipo: <strong className="text-white">LIMIT BUY</strong></span>
-                  <span>Timeout: <strong className="text-white">{orderTimeout}s</strong></span>
+                  <span>Tipo: <strong className={config?.entryOrderType === 'MARKET' ? "text-amber-300" : "text-white"}>{config?.entryOrderType === 'MARKET' ? 'MARKET BUY ⚡' : 'LIMIT BUY'}</strong></span>
+                  <span>Timeout: <strong className="text-white">{config?.entryOrderType === 'MARKET' ? 'Instantáneo' : `${orderTimeout}s`}</strong></span>
                 </div>
               </div>
 

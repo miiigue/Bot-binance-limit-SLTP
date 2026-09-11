@@ -66,9 +66,19 @@ export function StrategyBadgesPills({ config }) {
   const volFactor = cfg.volumeFactor ?? cfg.volume_factor ?? 1.1;
 
   const cycleSec = cfg.cycleSleepSeconds ?? cfg.cycle_sleep_seconds;
+  const orderType = String(cfg.entryOrderType ?? cfg.entry_order_type ?? 'LIMIT').toUpperCase();
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      {/* Tipo de Orden */}
+      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold shadow-sm ${
+        orderType === 'MARKET' 
+          ? 'bg-amber-950/80 text-amber-300 border border-amber-600/60' 
+          : 'bg-teal-950/80 text-teal-300 border border-teal-700/60'
+      }`} title={orderType === 'MARKET' ? 'Entrada y salida a mercado (instantánea, igual a backtesting)' : 'Entrada y salida límite al mejor precio (Maker 0.02%)'}>
+        {orderType === 'MARKET' ? '⚡ MARKET' : '🎯 LIMIT'}
+      </span>
+
       {/* Monedas */}
       {symbolsCount > 0 && (
         <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-700/60 shadow-sm" title={`Lista de ${symbolsCount} monedas guardadas`}>

@@ -21,6 +21,7 @@ from .binance_client import (
     get_futures_position,
     get_order_book_ticker,
     create_futures_limit_order,
+    create_futures_market_order,
     get_order_status,
     cancel_futures_order,
     create_futures_take_profit_order, # <-- NUEVA IMPORTACIÓN
@@ -235,6 +236,12 @@ class TradingBot:
                 self.order_timeout_seconds = 60
             # ---------------------------------------------------
 
+            # --- Tipo de orden de entrada y salida: LIMIT o MARKET ---
+            self.entry_order_type = str(self.params.get('entry_order_type', 'LIMIT')).upper()
+            if self.entry_order_type not in ('LIMIT', 'MARKET'):
+                self.entry_order_type = 'LIMIT'
+            self.logger.info(f"[{self.symbol}] Tipo de orden configurado: {self.entry_order_type}")
+
             # Validaciones básicas de parámetros
             if self.leverage < 1:
                 self.logger.warning(f"[{self.symbol}] LEVERAGE ({self.leverage}) debe ser >= 1. Usando 20.")
@@ -299,7 +306,7 @@ class TradingBot:
                  self.logger.info(f"[{self.symbol}] Inicialización completa. No hay posición. Transicionando a estado IDLE.")
 
         self.is_paused = False
-        self.logger.info(f"[{self.symbol}] Worker inicializado exitosamente (Timeout Órdenes: {self.order_timeout_seconds}s).")
+        self.logger.info(f"[{self.symbol}] Worker inicializado exitosamente (Tipo Orden: {self.entry_order_type}, Timeout Órdenes: {self.order_timeout_seconds}s).")
 
     def update_trading_params(self, new_params: dict):
         """Actualiza los parámetros de trading en caliente para el bot en ejecución."""
@@ -394,6 +401,11 @@ class TradingBot:
                     self.logger.warning(f"[{self.symbol}] Hot-reload: No se pudo configurar apalancamiento: {e_lev}")
 
         self.order_timeout_seconds = _safe_int(new_params.get('order_timeout_seconds'), self.order_timeout_seconds)
+        if 'entry_order_type' in new_params:
+            new_order_type = str(new_params['entry_order_type']).upper()
+            if new_order_type in ('LIMIT', 'MARKET'):
+                self.entry_order_type = new_order_type
+                self.logger.info(f"[{self.symbol}] Hot-reload: entry_order_type actualizado a {self.entry_order_type}")
         self.logger.info(f"[{self.symbol}] Parámetros de trading actualizados en caliente exitosamente.")
 
     def _check_initial_position(self):
@@ -1165,6 +1177,7 @@ class TradingBot:
                 'stop_loss_usdt': float(self.stop_loss_usdt),
                 'downtrend_check_candles': self.downtrend_check_candles,
                 'order_timeout_seconds': self.order_timeout_seconds,
+                'entry_order_type': self.entry_order_type,
                 'rsi_target': self.rsi_target,
                 'enable_price_trailing_stop': self.enable_price_trailing_stop,
                 'price_trailing_stop_distance_usdt': float(self.price_trailing_stop_distance_usdt),
@@ -1461,18 +1474,44 @@ class TradingBot:
         price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
         self.logger.info(f"[{self.symbol}] Calculado para salida: Precio LIMIT SELL={limit_sell_price_adjusted:.{price_precision_log}f}, Cantidad={quantity_to_sell}")
 
-        order_result = create_futures_limit_order(self.symbol, 'SELL', quantity_to_sell, limit_sell_price_adjusted)
+        if self.entry_order_type == 'MARKET':
+            self.logger.warning(f"[{self.symbol}] Intentando cerrar posición con orden MARKET SELL (Razón: {reason})...")
+            self.current_exit_reason = reason
+            order_result = create_futures_market_order(self.symbol, 'SELL', quantity_to_sell, reduce_only=True)
+            if order_result and order_result.get('orderId'):
+                status_val = order_result.get('status')
+                avg_price_str = order_result.get('avgPrice', '0')
+                executed_qty_str = order_result.get('executedQty', '0')
+                try:
+                    has_price = Decimal(str(avg_price_str)) > Decimal('0')
+                    has_qty = Decimal(str(executed_qty_str)) > Decimal('0')
+                except Exception:
+                    has_price, has_qty = False, False
 
-        if order_result and order_result.get('orderId'):
-            self.pending_exit_order_id = order_result['orderId']
-            self.pending_order_timestamp = time.time()
-            # Guardar la razón de la salida para usarla al registrar en DB si se llena
-            self.current_exit_reason = reason 
-            self.logger.warning(f"[{self.symbol}] Orden LIMIT SELL {self.pending_exit_order_id} colocada @ {limit_sell_price_adjusted:.{price_precision_log}f}. Esperando ejecución...")
-            self._update_state(BotState.WAITING_EXIT_FILL)
+                if status_val == 'FILLED' and has_price and has_qty:
+                    self.logger.info(f"[{self.symbol}] Orden MARKET SELL {order_result.get('orderId')} ejecutada y FILLED de inmediato.")
+                    self._handle_filled_exit_order(order_result)
+                else:
+                    self.pending_exit_order_id = order_result['orderId']
+                    self.pending_order_timestamp = time.time()
+                    self.logger.warning(f"[{self.symbol}] Orden MARKET SELL {self.pending_exit_order_id} colocada (Status={status_val}). Esperando confirmación...")
+                    self._update_state(BotState.WAITING_EXIT_FILL)
+            else:
+                self.logger.error(f"[{self.symbol}] Fallo al colocar la orden MARKET SELL para cerrar posición (Razón: {reason}).")
+                self._set_error_state(f"Failed to place market exit order (reason: {reason}).")
         else:
-            self.logger.error(f"[{self.symbol}] Fallo al colocar la orden LIMIT SELL para cerrar posición (Razón: {reason}).")
-            self._set_error_state(f"Failed to place exit order (reason: {reason}).")
+            order_result = create_futures_limit_order(self.symbol, 'SELL', quantity_to_sell, limit_sell_price_adjusted)
+
+            if order_result and order_result.get('orderId'):
+                self.pending_exit_order_id = order_result['orderId']
+                self.pending_order_timestamp = time.time()
+                # Guardar la razón de la salida para usarla al registrar en DB si se llena
+                self.current_exit_reason = reason 
+                self.logger.warning(f"[{self.symbol}] Orden LIMIT SELL {self.pending_exit_order_id} colocada @ {limit_sell_price_adjusted:.{price_precision_log}f}. Esperando ejecución...")
+                self._update_state(BotState.WAITING_EXIT_FILL)
+            else:
+                self.logger.error(f"[{self.symbol}] Fallo al colocar la orden LIMIT SELL para cerrar posición (Razón: {reason}).")
+                self._set_error_state(f"Failed to place exit order (reason: {reason}).")
     # --- Fin del nuevo método ---
 
     def _check_entry_conditions(self, klines_df: pd.DataFrame):
@@ -1720,19 +1759,47 @@ class TradingBot:
 
                 # Calcular la precisión del precio para el log de forma segura
                 price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
-                self.logger.warning(f"[{self.symbol}] SEÑAL DE ENTRADA ({self.entry_reason}). Intentando colocar orden LIMIT BUY @ {limit_buy_price:.{price_precision_log}f}, Cantidad={quantity}")
-                self._update_state(BotState.PLACING_ENTRY)
-                order_result = create_futures_limit_order(self.symbol, 'BUY', quantity, limit_buy_price)
 
-                if order_result and order_result.get('orderId'):
-                    self.pending_entry_order_id = order_result['orderId']
-                    self.pending_order_timestamp = time.time()
-                    # NO guardamos rsi_at_entry aquí, sino cuando la orden se LLENA.
-                    self.logger.warning(f"[{self.symbol}] Orden LIMIT BUY {self.pending_entry_order_id} colocada @ {limit_buy_price:.{price_precision_log}f}. Esperando ejecución...")
-                    self._update_state(BotState.WAITING_ENTRY_FILL)
+                if self.entry_order_type == 'MARKET':
+                    self.logger.warning(f"[{self.symbol}] SEÑAL DE ENTRADA ({self.entry_reason}). Intentando colocar orden MARKET BUY, Cantidad={quantity} (Ref Price: {limit_buy_price:.{price_precision_log}f})")
+                    self._update_state(BotState.PLACING_ENTRY)
+                    order_result = create_futures_market_order(self.symbol, 'BUY', quantity)
+
+                    if order_result and order_result.get('orderId'):
+                        status_val = order_result.get('status')
+                        avg_price_str = order_result.get('avgPrice', '0')
+                        executed_qty_str = order_result.get('executedQty', '0')
+                        try:
+                            has_price = Decimal(str(avg_price_str)) > Decimal('0')
+                            has_qty = Decimal(str(executed_qty_str)) > Decimal('0')
+                        except Exception:
+                            has_price, has_qty = False, False
+
+                        if status_val == 'FILLED' and has_price and has_qty:
+                            self.logger.info(f"[{self.symbol}] Orden MARKET BUY {order_result.get('orderId')} ejecutada y FILLED de inmediato.")
+                            self._handle_filled_entry_order(order_result)
+                        else:
+                            self.pending_entry_order_id = order_result['orderId']
+                            self.pending_order_timestamp = time.time()
+                            self.logger.warning(f"[{self.symbol}] Orden MARKET BUY {self.pending_entry_order_id} colocada (Status={status_val}). Esperando confirmación...")
+                            self._update_state(BotState.WAITING_ENTRY_FILL)
+                    else:
+                        self.logger.error(f"[{self.symbol}] Fallo al colocar la orden MARKET BUY.")
+                        self._set_error_state("Failed to place market entry order.")
                 else:
-                    self.logger.error(f"[{self.symbol}] Fallo al colocar la orden LIMIT BUY.")
-                    self._set_error_state("Failed to place entry order.") 
+                    self.logger.warning(f"[{self.symbol}] SEÑAL DE ENTRADA ({self.entry_reason}). Intentando colocar orden LIMIT BUY @ {limit_buy_price:.{price_precision_log}f}, Cantidad={quantity}")
+                    self._update_state(BotState.PLACING_ENTRY)
+                    order_result = create_futures_limit_order(self.symbol, 'BUY', quantity, limit_buy_price)
+
+                    if order_result and order_result.get('orderId'):
+                        self.pending_entry_order_id = order_result['orderId']
+                        self.pending_order_timestamp = time.time()
+                        # NO guardamos rsi_at_entry aquí, sino cuando la orden se LLENA.
+                        self.logger.warning(f"[{self.symbol}] Orden LIMIT BUY {self.pending_entry_order_id} colocada @ {limit_buy_price:.{price_precision_log}f}. Esperando ejecución...")
+                        self._update_state(BotState.WAITING_ENTRY_FILL)
+                    else:
+                        self.logger.error(f"[{self.symbol}] Fallo al colocar la orden LIMIT BUY.")
+                        self._set_error_state("Failed to place entry order.") 
             else:
                 # self.logger.debug(f"[{self.symbol}] No hay señal de entrada en este ciclo.") # Ya logueado arriba
                 self._update_state(BotState.IDLE) 
@@ -2332,7 +2399,7 @@ class TradingBot:
                 db_trade_params = {}
                 string_params = ['rsi_interval', 'rsi_period', 'rsi_threshold_up', 'rsi_threshold_down', 
                                  'rsi_entry_level_low', 'rsi_entry_level_high', 'volume_sma_period', 
-                                 'volume_factor', 'downtrend_check_candles', 'order_timeout_seconds']
+                                 'volume_factor', 'downtrend_check_candles', 'order_timeout_seconds', 'entry_order_type']
                 float_params = ['position_size_usdt', 'take_profit_usdt', 'stop_loss_usdt', 'rsi_target',
                                 'price_trailing_stop_distance_usdt', 'price_trailing_stop_activation_pnl_usdt',
                                 'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt']

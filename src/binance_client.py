@@ -395,6 +395,53 @@ def create_futures_limit_order(symbol: str, side: str, quantity: float, price: f
         logger.error(f"Error al crear orden LIMIT {side} para {symbol} @ {price_str}: {e}", exc_info=True)
         return None
 
+def create_futures_market_order(symbol: str, side: str, quantity: float, reduce_only: bool = False) -> dict | None:
+    """
+    Crea una orden MARKET (a mercado) en Binance Futures.
+    Se ejecuta de forma inmediata al precio actual disponible en el order book.
+    Comportamiento idéntico al backtesting.
+
+    Args:
+        symbol: Símbolo del par (ej: 'BTCUSDT').
+        side: 'BUY' o 'SELL'.
+        quantity: Cantidad de contratos/monedas a operar.
+        reduce_only: Si es True, solo reduce/cierra posición existente (solo en modo unidireccional).
+
+    Returns:
+        El diccionario de respuesta de la API si la orden se ejecutó exitosamente, None si falló.
+    """
+    client = get_futures_client()
+    logger = get_logger()
+    if not client:
+        logger.error("Cliente Binance no disponible para create_futures_market_order.")
+        return None
+
+    side = side.upper()
+    if side not in ['BUY', 'SELL']:
+        logger.error(f"Lado inválido '{side}' para crear orden MARKET.")
+        return None
+
+    pos_side = 'LONG' if is_hedge_mode() else 'BOTH'
+
+    try:
+        logger.info(f"Intentando crear orden MARKET {side} para {quantity} {symbol} (positionSide={pos_side}, reduceOnly={reduce_only})")
+        params = {
+            'symbol': symbol.upper(),
+            'side': side,
+            'type': 'MARKET',
+            'quantity': quantity,
+            'positionSide': pos_side
+        }
+        if not is_hedge_mode() and reduce_only:
+            params['reduceOnly'] = 'true'
+
+        order = client.new_order(**params)
+        logger.info(f"Orden MARKET {side} ejecutada para {symbol}. Respuesta API: {order}")
+        return order
+    except Exception as e:
+        logger.error(f"Error al crear orden MARKET {side} para {symbol}: {e}", exc_info=True)
+        return None
+
 def get_order_status(symbol: str, order_id: int) -> dict | None:
     """
     Consulta el estado de una orden específica en Binance Futures.
