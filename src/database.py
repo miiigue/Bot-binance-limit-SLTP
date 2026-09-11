@@ -278,6 +278,60 @@ def get_all_recent_trades(limit: int = 200) -> list[dict]:
             conn.close()
     return trades
 
+def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol: int = 50) -> int:
+    """
+    Sincroniza en tiempo real los trades completados desde Binance Testnet a la base de datos local SQLite.
+    Garantiza que la sección de Rendimiento refleje fielmente cada operación ejecutada en Binance.
+    """
+    from src.binance_client import get_user_trade_history
+    from src.config_loader import get_trading_symbols
+    logger = get_logger()
+
+    if not symbols:
+        symbols = get_trading_symbols() or []
+
+    synced_count = 0
+    for sym in symbols:
+        try:
+            trades = get_user_trade_history(symbol=sym, limit=limit_per_symbol)
+            if not trades:
+                continue
+
+            for t in trades:
+                trade_id = t.get('id')
+                if not trade_id:
+                    continue
+                if check_if_binance_trade_exists(int(trade_id)):
+                    continue
+
+                realized_pnl = float(t.get('realizedPnl', '0'))
+                qty = float(t.get('qty', '0'))
+                price = float(t.get('price', '0'))
+                side = str(t.get('side', 'BUY')).upper()
+                time_ms = int(t.get('time', 0))
+                trade_time = datetime.fromtimestamp(time_ms / 1000) if time_ms > 0 else datetime.now()
+
+                record_trade(
+                    symbol=sym,
+                    trade_type="LONG" if side == 'SELL' else "SHORT",
+                    open_timestamp=trade_time,
+                    open_price=price,
+                    quantity=qty,
+                    position_size_usdt=price * qty,
+                    close_timestamp=trade_time,
+                    close_price=price,
+                    pnl_usdt=realized_pnl,
+                    close_reason="Binance Testnet Sync",
+                    binance_trade_id=int(trade_id)
+                )
+                synced_count += 1
+        except Exception as e_sym:
+            logger.warning(f"Error sincronizando trades de Binance para {sym}: {e_sym}")
+
+    if synced_count > 0:
+        logger.info(f"Sincronización en vivo con Binance: {synced_count} nuevos trades guardados en DB.")
+    return synced_count
+
 # --- NUEVAS FUNCIONES ---
 def check_if_binance_trade_exists(binance_trade_id: Union[int, None]) -> bool: # <-- CAMBIO AQUÍ
     """Verifica si un trade con el binance_trade_id especificado ya existe en la base de datos."""

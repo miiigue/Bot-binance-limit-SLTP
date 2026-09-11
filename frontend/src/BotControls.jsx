@@ -51,7 +51,18 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
       const resp = await fetch('/api/close_all_positions', { method: 'POST' });
       const data = await resp.json();
       if (resp.ok) {
-        notify('🚨 Posiciones Cerradas', 'Todas las posiciones abiertas se cerraron a mercado.', 'warning');
+        const results = data.results || {};
+        const entries = Object.entries(results);
+        if (entries.length === 0) {
+          notify('ℹ️ Sin Posiciones', 'No se encontraron posiciones activas en Binance Testnet.', 'info');
+        } else {
+          const failed = entries.filter(([_, status]) => String(status).toLowerCase().includes('fallo') || String(status).toLowerCase().includes('error'));
+          if (failed.length > 0) {
+            notify('⚠️ Cierre con Avisos', `Estado: ${entries.map(([s, st]) => `${s}: ${st}`).join(' | ')}`, 'error');
+          } else {
+            notify('🚨 Posiciones Cerradas', `Se cerraron exitosamente en Binance: ${entries.map(([s]) => s).join(', ')}`, 'success');
+          }
+        }
       } else {
         notify('Error al Cerrar Posiciones', data.error || 'No se pudieron cerrar.', 'error');
       }

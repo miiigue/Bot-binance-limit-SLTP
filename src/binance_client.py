@@ -10,7 +10,7 @@ import time
 import os # Import the os module
 from dotenv import load_dotenv
 load_dotenv()
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 import requests # <-- IMPORTAR REQUESTS
 from requests.adapters import HTTPAdapter # <-- IMPORTAR HTTPADAPTER
 from datetime import datetime # <-- IMPORTAR DATETIME
@@ -205,10 +205,39 @@ def get_futures_symbol_info(symbol: str):
         logger.error(f"Error inesperado al obtener exchange_info: {e}", exc_info=True)
         return None
 
+def adjust_quantity_for_symbol(symbol: str, quantity: float | Decimal) -> float | None:
+    """
+    Ajusta una cantidad al stepSize y minQty permitidos por Binance Futures para ese símbolo.
+    Garantiza que la orden nunca sea rechazada por filtros de precisión o LOT_SIZE.
+    """
+    sym_info = get_futures_symbol_info(symbol)
+    if not sym_info:
+        return float(quantity)
+
+    qty_dec = Decimal(str(quantity))
+    min_qty = Decimal('0')
+    step_size = Decimal('0')
+
+    for f in sym_info.get('filters', []):
+        if f.get('filterType') == 'LOT_SIZE':
+            min_qty = Decimal(str(f.get('minQty', '0')))
+            step_size = Decimal(str(f.get('stepSize', '0.001')))
+            break
+
+    if step_size > Decimal('0'):
+        qty_dec = (qty_dec / step_size).quantize(Decimal('1'), rounding=ROUND_DOWN) * step_size
+        precision = abs(step_size.as_tuple().exponent)
+        qty_dec = round(qty_dec, precision)
+
+    if min_qty > Decimal('0') and qty_dec < min_qty:
+        return None
+
+    return float(qty_dec)
+
 def create_futures_market_order(symbol: str, side: str, quantity: float, position_side: str | None = None):
     """
     Crea una orden de mercado de futuros (MARKET).
-    (Adaptado para binance-futures-connector)
+    Ajusta automáticamente la cantidad a la precisión requerida y resuelve positionSide (One-Way vs Hedge).
     """
     logger = get_logger()
     client = get_futures_client()
@@ -219,33 +248,38 @@ def create_futures_market_order(symbol: str, side: str, quantity: float, positio
     if side not in ['BUY', 'SELL']:
         logger.error(f"Lado de orden inválido: {side}. Debe ser 'BUY' o 'SELL'.")
         return None
-    if quantity <= 0:
-        logger.error(f"Cantidad inválida para la orden: {quantity}. Debe ser positiva.")
+
+    adj_qty = adjust_quantity_for_symbol(symbol, quantity)
+    if adj_qty is None or adj_qty <= 0:
+        logger.error(f"[{symbol}] Cantidad inválida para orden {quantity} tras ajuste por lot size.")
         return None
 
-    position_side_to_use = position_side if position_side else ('LONG' if is_hedge_mode() else 'BOTH')
+    # Respetar Hedge Mode vs One-Way Mode
+    hedge = is_hedge_mode()
+    if hedge:
+        position_side_to_use = position_side if position_side in ('LONG', 'SHORT') else ('LONG' if side == 'BUY' else 'SHORT')
+    else:
+        position_side_to_use = 'BOTH'
+
     params = {
-        'symbol': symbol,
+        'symbol': symbol.upper(),
         'side': side,
         'type': 'MARKET',
-        'quantity': quantity,
+        'quantity': adj_qty,
         'positionSide': position_side_to_use
     }
 
-    logger.warning(f"Intentando crear orden de mercado: {side} {quantity} {symbol} (PositionSide={position_side_to_use}) con params: {params}")
+    logger.warning(f"[{symbol}] Creando orden MARKET: {side} {adj_qty} (PositionSide={position_side_to_use})")
 
     try:
-        # La función se llama 'new_order'
-        order = client.new_order(**params) # Usar ** para desempaquetar el diccionario
-        logger.info(f"Orden de mercado creada exitosamente: ID={order.get('orderId', 'N/A')}, Symbol={order.get('symbol')}, Side={order.get('side')}, Qty={order.get('origQty')}, Status={order.get('status')}")
-        logger.debug(f"Respuesta completa de la orden: {order}")
+        order = client.new_order(**params)
+        logger.info(f"[{symbol}] Orden MARKET exitosa: ID={order.get('orderId')}, Status={order.get('status')}")
         return order
-
     except ClientError as e:
-        logger.error(f"Error de API al crear orden {side} {quantity} {symbol}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
+        logger.error(f"[{symbol}] Error de API al crear orden MARKET {side} {adj_qty}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
         return None
     except Exception as e:
-        logger.error(f"Error inesperado al crear orden {side} {quantity} {symbol}: {e}", exc_info=True)
+        logger.error(f"[{symbol}] Error inesperado al crear orden MARKET {side} {adj_qty}: {e}", exc_info=True)
         return None
 
 def get_futures_position(symbol: str):
@@ -608,10 +642,7 @@ def get_user_trade_history(symbol: str, start_time_ms: int | None = None, limit:
         if start_time_ms is not None:
             params['startTime'] = start_time_ms
         
-        # client.futures_account_trades() suele devolver los más recientes si no se especifica orderId o fromId.
-        # La documentación indica que los trades se devuelven en orden ascendente por 'time'.
-        # Para obtener los más recientes relacionados con un cierre, podríamos necesitar buscar desde el final.
-        trades = client.futures_account_trades(**params)
+        trades = client.get_account_trades(**params)
         
         if trades:
             # Ordenar por 'time' descendente (más nuevo primero) para procesar cierres recientes primero.

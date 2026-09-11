@@ -58,17 +58,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
 
   useEffect(() => {
     fetchAllData();
-    // Refresco periódico del monitor de riesgo y saldo cada 5 segundos
-    const intervalId = setInterval(async () => {
-      try {
-        const riskResp = await fetch('/api/risk_config');
-        if (riskResp.ok) {
-          const riskJson = await riskResp.json();
-          setRiskData(riskJson);
-        }
-      } catch (e) {
-        // silencioso en polling
-      }
+    // Refresco periódico automático de trades, riesgo y saldo cada 5 segundos en vivo
+    const intervalId = setInterval(() => {
+      fetchAllData();
     }, 5000);
 
     return () => clearInterval(intervalId);
@@ -580,6 +572,16 @@ function PnLPerformanceChart({ symbolsList = [] }) {
                 ))}
               </select>
             )}
+
+            <button
+              type="button"
+              onClick={fetchAllData}
+              disabled={isLoading}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow transition flex items-center gap-1.5 active:scale-95"
+              title="Sincronizar trades y PnL en vivo con Binance Testnet"
+            >
+              <span>{isLoading ? '⏳' : '🔄'}</span> Sincronizar Binance
+            </button>
 
             <button
               type="button"

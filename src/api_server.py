@@ -817,33 +817,78 @@ def close_all_positions_endpoint():
         active_workers = dict(worker_statuses)
     
     for symbol, worker in active_workers.items():
-        if hasattr(worker, 'close_position_now') and getattr(worker, 'in_position', False):
+        if worker and hasattr(worker, 'close_position_now'):
             try:
-                ok = worker.close_position_now(reason="Cierre Manual Global")
-                results[symbol] = "Cerrada" if ok else "Fallo"
+                # Cancelar órdenes de salida o TP/SL pendientes primero
+                if hasattr(worker, '_cancel_active_tp_sl_orders'):
+                    worker._cancel_active_tp_sl_orders()
+                if getattr(worker, 'in_position', False):
+                    ok = worker.close_position_now(reason="Cierre Manual Global")
+                    results[symbol] = "Cerrada por Worker" if ok else "Fallo en Worker"
             except Exception as e:
                 logger.error(f"Error cerrando {symbol} en worker: {e}")
-                results[symbol] = f"Error: {e}"
+                results[symbol] = f"Error Worker: {e}"
     
-    # 2. Verificar si quedó alguna posición huérfana en Binance
+    # 2. Consultar y cerrar directamente TODAS las posiciones reales activas en Binance Testnet
     try:
-        from src.binance_client import get_futures_position_information, create_futures_market_order
+        from src.binance_client import get_futures_client, get_futures_position_information, create_futures_market_order
+        from src.database import record_trade, sync_binance_trades_to_db
+        
+        client = get_futures_client()
         all_positions = get_futures_position_information() or []
         for p in all_positions:
             sym = p.get('symbol')
             try:
                 amt = float(p.get('positionAmt', '0'))
                 if abs(amt) > 1e-9:
+                    # Cancelar órdenes abiertas de este símbolo para liberar margen
+                    try:
+                        if client:
+                            client.cancel_open_orders(symbol=sym)
+                    except Exception as e_co:
+                        logger.warning(f"[{sym}] Aviso al cancelar órdenes abiertas antes del cierre: {e_co}")
+                    
                     side = 'SELL' if amt > 0 else 'BUY'
-                    pos_side = p.get('positionSide', 'LONG')
-                    order = create_futures_market_order(sym, side=side, quantity=abs(amt), position_side=pos_side)
-                    results[sym] = "Cerrada (Binance)" if order else "Fallo (Binance)"
+                    raw_ps = p.get('positionSide', 'BOTH')
+                    order = create_futures_market_order(sym, side=side, quantity=abs(amt), position_side=raw_ps)
+                    if order:
+                        results[sym] = f"Cerrada en Binance (Orden ID: {order.get('orderId')})"
+                        try:
+                            entry_price = float(p.get('entryPrice', 0))
+                            close_price = float(order.get('avgPrice', order.get('price', entry_price)))
+                            if close_price <= 0:
+                                close_price = entry_price
+                            pnl = (close_price - entry_price) * abs(amt) if side == 'SELL' else (entry_price - close_price) * abs(amt)
+                            record_trade(
+                                symbol=sym,
+                                trade_type="LONG" if side == 'SELL' else "SHORT",
+                                open_timestamp=datetime.now(),
+                                open_price=entry_price,
+                                quantity=abs(amt),
+                                position_size_usdt=entry_price * abs(amt),
+                                close_timestamp=datetime.now(),
+                                close_price=close_price,
+                                pnl_usdt=pnl,
+                                close_reason="Cierre Manual Global Testnet",
+                                binance_trade_id=order.get('orderId')
+                            )
+                        except Exception as e_rec:
+                            logger.warning(f"Aviso al registrar trade en DB para {sym}: {e_rec}")
+                    else:
+                        results[sym] = "Fallo al enviar orden a Binance"
             except Exception as e:
                 logger.error(f"Error cerrando posición Binance {sym}: {e}")
                 results[sym] = f"Error: {e}"
     except Exception as e:
         logger.error(f"Error consultando posiciones generales de Binance: {e}")
     
+    # Sincronizar historial con Binance para que se refleje al instante en Rendimiento
+    try:
+        from src.database import sync_binance_trades_to_db
+        sync_binance_trades_to_db(limit_per_symbol=20)
+    except Exception as e_sync:
+        logger.warning(f"Aviso tras cierre al sincronizar trades: {e_sync}")
+        
     return jsonify({
         "message": "Operación de cierre masivo ejecutada.",
         "results": results
@@ -962,11 +1007,28 @@ def get_all_trades_endpoint():
     if limit_param < 1:
         limit_param = 200
     try:
+        # Sincronización automática en vivo con Binance Testnet
+        try:
+            from src.database import sync_binance_trades_to_db
+            sync_binance_trades_to_db(limit_per_symbol=20)
+        except Exception as e_sync:
+            logger.debug(f"Aviso durante sincronización de trades con Binance: {e_sync}")
+
         trades = get_all_recent_trades(limit=limit_param)
         return jsonify({"trades": trades})
     except Exception as e:
         logger.error(f"Error al obtener historial general de trades: {e}", exc_info=True)
         return jsonify({"error": str(e), "trades": []}), 500
+
+@app.route('/api/trades/sync', methods=['POST'])
+def sync_trades_endpoint():
+    """Sincroniza explícitamente el historial de Binance Testnet a la base de datos."""
+    try:
+        from src.database import sync_binance_trades_to_db
+        count = sync_binance_trades_to_db(limit_per_symbol=50)
+        return jsonify({"success": True, "synced_count": count, "message": f"Se sincronizaron {count} trades de Binance Testnet."}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # --- ENDPOINT PARA EXPLORADOR Y RADAR DE MERCADO CON CACHÉ ---
 _market_data_cache = {

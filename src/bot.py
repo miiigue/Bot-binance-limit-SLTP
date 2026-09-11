@@ -1088,9 +1088,12 @@ class TradingBot:
         Intenta obtener PNL realizado de Binance; si falla, lo calcula manualmente.
         """
         if not self.current_position:
-            self.logger.error(f"[{self.symbol}] Se intentó registrar cierre, pero no había datos de posición interna guardada.")
-            self._reset_state()
-            return
+            self.logger.warning(f"[{self.symbol}] Posición interna no estaba en memoria al registrar cierre. Creando registro de respaldo.")
+            self.current_position = {
+                'entry_price': getattr(self, 'last_known_entry_price', Decimal('0')) or Decimal(str(close_price)),
+                'quantity': Decimal(str(quantity_closed)),
+                'entry_time': datetime.now()
+            }
 
         entry_price = self.current_position.get('entry_price', Decimal('0'))
         entry_time = self.current_position.get('entry_time')
