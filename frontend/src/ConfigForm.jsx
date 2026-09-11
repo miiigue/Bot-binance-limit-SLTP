@@ -14,10 +14,12 @@ function ConfigSection({ title, className, children }) {
   );
 }
 
-function ConfigItem({ labelText, htmlFor, description, example, tooltipKey, tooltipText, checkboxName, isChecked, onCheckboxChange, children }) {
+function ConfigItem({ labelText, htmlFor, description, example, tooltipKey, tooltipText, checkboxName, isChecked, onCheckboxChange, hideDescription = false, children }) {
   const info = tooltipKey && tooltipTexts[tooltipKey] ? tooltipTexts[tooltipKey] : null;
-  const displayDesc = description || (info ? info.desc : (typeof tooltipText === 'object' ? tooltipText.desc : tooltipText));
-  const displayExample = example || (info ? info.example : (typeof tooltipText === 'object' ? tooltipText.example : null));
+  const tooltipDesc = description || (info ? info.desc : (typeof tooltipText === 'object' ? tooltipText.desc : tooltipText));
+  const tooltipEx = example || (info ? info.example : (typeof tooltipText === 'object' ? tooltipText.example : null));
+  const displayDesc = hideDescription ? null : tooltipDesc;
+  const displayExample = hideDescription ? null : tooltipEx;
 
   return (
     <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-700/80 flex flex-col justify-between hover:border-slate-500 transition-all shadow-sm">
@@ -28,8 +30,8 @@ function ConfigItem({ labelText, htmlFor, description, example, tooltipKey, tool
             <label htmlFor={htmlFor} className="block text-xs font-bold text-slate-100">
               {labelText}
             </label>
-            {(info || tooltipText) && (
-              <Tooltip text={displayDesc} example={displayExample} title={labelText} />
+            {(info || tooltipText || description) && (
+              <Tooltip text={tooltipDesc} example={tooltipEx} title={labelText} />
             )}
           </div>
           {checkboxName && (
@@ -948,7 +950,7 @@ function ConfigForm({
         </legend>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-3.5 mt-3">
           {/* 1. Modo Operación */}
-          <ConfigItem labelText="Modo Operación" htmlFor="mode" tooltipKey="mode">
+          <ConfigItem labelText="Modo Operación" htmlFor="mode" tooltipKey="mode" hideDescription>
             <div className="mt-1 flex items-center px-3 py-2 border border-emerald-500/30 bg-emerald-950/30 rounded-lg shadow-sm">
               <span className="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span>
               <span className="text-xs font-normal text-emerald-300 tracking-wide">
@@ -958,7 +960,7 @@ function ConfigForm({
           </ConfigItem>
 
           {/* 2. Tipo Orden (LIMIT vs MARKET) */}
-          <ConfigItem labelText="Tipo Orden" htmlFor="entryOrderType" tooltipKey="entryOrderType">
+          <ConfigItem labelText="Tipo Orden" htmlFor="entryOrderType" tooltipKey="entryOrderType" hideDescription>
             <select
               name="entryOrderType"
               id="entryOrderType"
@@ -982,7 +984,7 @@ function ConfigForm({
           </ConfigItem>
 
           {/* 3. Tipo RSI (WILDER vs CUTLER) */}
-          <ConfigItem labelText="Tipo RSI" htmlFor="topRsiType" tooltipKey="rsiType">
+          <ConfigItem labelText="Tipo RSI" htmlFor="topRsiType" tooltipKey="rsiType" hideDescription>
             <select
               name="rsiType"
               id="topRsiType"
@@ -1006,7 +1008,7 @@ function ConfigForm({
           </ConfigItem>
 
           {/* 4. Multiplicador Apalancamiento */}
-          <ConfigItem labelText="Multiplicador Apalancamiento" htmlFor="leverage" tooltipKey="leverage">
+          <ConfigItem labelText="Multiplicador Apalancamiento" htmlFor="leverage" tooltipKey="leverage" hideDescription>
             <input 
               type="number" 
               name="leverage" 
@@ -1022,7 +1024,7 @@ function ConfigForm({
           </ConfigItem>
 
           {/* 3. Tamaño Posición (Margen USDT) */}
-          <ConfigItem labelText="Tamaño Posición" htmlFor="positionSizeUSDT" tooltipKey="positionSizeUSDT">
+          <ConfigItem labelText="Tamaño Posición" htmlFor="positionSizeUSDT" tooltipKey="positionSizeUSDT" hideDescription>
             <input 
               type="number" 
               name="positionSizeUSDT" 
@@ -1040,7 +1042,7 @@ function ConfigForm({
           </ConfigItem>
 
           {/* 4. Intervalo Velas */}
-          <ConfigItem labelText="Intervalo Velas" htmlFor="rsiInterval" tooltipKey="rsi_interval">
+          <ConfigItem labelText="Intervalo Velas" htmlFor="rsiInterval" tooltipKey="rsi_interval" hideDescription>
             <input 
               type="text" 
               name="rsiInterval" 
@@ -1053,7 +1055,7 @@ function ConfigForm({
           </ConfigItem>
 
           {/* 5. Riesgo Cartera */}
-          <ConfigItem labelText="Riesgo Cartera" htmlFor="riskPercentage" tooltipKey="riskPercentage">
+          <ConfigItem labelText="Riesgo Cartera" htmlFor="riskPercentage" tooltipKey="riskPercentage" hideDescription>
             <div className="relative mt-1">
               <input 
                 type="number" 
@@ -1066,7 +1068,7 @@ function ConfigForm({
                 }} 
                 min="1" 
                 max="100" 
-                step="1"
+                step="1" 
                 className="block w-full py-2 pl-3 pr-7 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm font-normal" 
                 placeholder="50"
               />
@@ -1080,7 +1082,7 @@ function ConfigForm({
 
           {/* Fila inferior: Símbolos / Pares */}
           <div className="col-span-full mt-1">
-            <ConfigItem labelText="Pares Monedas" htmlFor="symbolsToTrade" tooltipKey="symbolsToTrade">
+            <ConfigItem labelText="Pares Monedas" htmlFor="symbolsToTrade" tooltipKey="symbolsToTrade" hideDescription>
               <textarea 
                 name="symbolsToTrade" 
                 id="symbolsToTrade" 
