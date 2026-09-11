@@ -939,7 +939,7 @@ function ConfigForm({
         <legend className="text-sm font-medium text-white px-3 bg-slate-900 rounded-lg border border-slate-700/80 flex items-center gap-1.5">
           <span>⚙️</span> Parámetros Generales
         </legend>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5 mt-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-3.5 mt-3">
           {/* 1. Modo Operación */}
           <ConfigItem labelText="Modo Operación" htmlFor="mode" tooltipKey="mode">
             <div className="mt-1 flex items-center px-3 py-2 border border-emerald-500/30 bg-emerald-950/30 rounded-lg shadow-sm">
@@ -974,7 +974,31 @@ function ConfigForm({
             </div>
           </ConfigItem>
 
-          {/* 3. Multiplicador Apalancamiento */}
+          {/* 3. Tipo RSI (WILDER vs CUTLER) */}
+          <ConfigItem labelText="Tipo RSI" htmlFor="topRsiType" tooltipKey="rsiType">
+            <select
+              name="rsiType"
+              id="topRsiType"
+              value={formData.rsiType || 'WILDER'}
+              onChange={handleChange}
+              className="mt-1 block w-full py-2 px-2.5 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-semibold cursor-pointer"
+            >
+              <option value="WILDER">WILDER (Binance)</option>
+              <option value="CUTLER">CUTLER (Rápido SMA)</option>
+            </select>
+            <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
+              {formData.rsiType === 'CUTLER' ? (
+                <div>⚡ <strong className="text-amber-300 font-medium">SMA Directa</strong></div>
+              ) : (
+                <div>🌐 <strong className="text-emerald-300 font-medium">Welles Wilder (Oficial)</strong></div>
+              )}
+              <div className="text-[10px] text-slate-500">
+                {formData.rsiType === 'CUTLER' ? 'Oscilación rápida' : 'Igual a TradingView'}
+              </div>
+            </div>
+          </ConfigItem>
+
+          {/* 4. Multiplicador Apalancamiento */}
           <ConfigItem labelText="Multiplicador Apalancamiento" htmlFor="leverage" tooltipKey="leverage">
             <input 
               type="number" 
@@ -1048,7 +1072,7 @@ function ConfigForm({
           </ConfigItem>
 
           {/* Fila inferior: Símbolos / Pares */}
-          <div className="lg:col-span-6 mt-1">
+          <div className="col-span-full mt-1">
             <ConfigItem labelText="Pares Monedas" htmlFor="symbolsToTrade" tooltipKey="symbolsToTrade">
               <textarea 
                 name="symbolsToTrade" 
