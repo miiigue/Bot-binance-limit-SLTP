@@ -2,25 +2,25 @@
 # Por ahora, lo dejamos vacío. 
 
 import pandas as pd
+import numpy as np
 import pandas_ta as ta # Importamos la librería pandas-ta
 
 # Importamos el logger
 from .logger_setup import get_logger
 
-def calculate_rsi(close_prices: pd.Series, period: int):
+def calculate_rsi(close_prices: pd.Series, period: int = 14, rsi_type: str = 'WILDER'):
     """
-    Calcula el Índice de Fuerza Relativa (RSI) usando pandas_ta.
+    Calcula el Índice de Fuerza Relativa (RSI) con soporte unificado para:
+    - 'WILDER': Suavizado exponencial oficial de Welles Wilder (estándar Binance y TradingView).
+    - 'CUTLER': Media móvil simple directa (SMA) de ganancias/pérdidas (fórmula reactiva del backtester).
 
     Args:
         close_prices (pd.Series): Una Serie de Pandas que contiene los precios de cierre.
-                                  Debe tener al menos 'period' + 1 valores.
         period (int): El período a usar para el cálculo del RSI (ej: 14).
+        rsi_type (str): 'WILDER' (default) o 'CUTLER'.
 
     Returns:
-        pd.Series: Una Serie de Pandas con los valores de RSI calculados.
-                   Los primeros 'period' valores serán NaN (Not a Number) porque
-                   se necesita ese historial mínimo para el cálculo.
-                   Retorna None si hay un error o datos insuficientes.
+        pd.Series: Serie de Pandas con los valores de RSI calculados.
     """
     logger = get_logger()
 
@@ -32,9 +32,6 @@ def calculate_rsi(close_prices: pd.Series, period: int):
         logger.error(f"Error en calculate_rsi: el período debe ser un entero positivo, se recibió {period}.")
         return None
 
-    # Verificar si hay suficientes datos para el cálculo
-    # pandas_ta necesita al menos 'period' puntos para empezar a calcular.
-    # Pediremos un poco más para estar seguros (por si acaso la librería tiene requisitos internos)
     min_required_data = period + 2
     if len(close_prices) < min_required_data:
         logger.warning(f"Datos insuficientes para calcular RSI con período {period}. "
@@ -43,21 +40,18 @@ def calculate_rsi(close_prices: pd.Series, period: int):
 
     try:
         close = close_prices.astype(float)
+        mode = str(rsi_type or 'WILDER').upper().strip()
 
-        # 1. Intentar cálculo con pandas_ta si el método existe
-        try:
-            if hasattr(ta, 'rsi'):
-                rsi_series = ta.rsi(close=close, length=period)
-                if rsi_series is not None and not rsi_series.empty:
-                    return rsi_series
-            if hasattr(close, 'ta') and hasattr(close.ta, 'rsi'):
-                rsi_series = close.ta.rsi(length=period)
-                if rsi_series is not None and not rsi_series.empty:
-                    return rsi_series
-        except Exception:
-            pass
+        if mode in ('CUTLER', 'SMA', 'SIMPLE'):
+            # Cálculo tipo Cutler's RSI usando media móvil simple directa (SMA)
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0.0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0.0)).rolling(window=period).mean()
+            rs = gain / loss.replace(0, np.nan)
+            rsi_series = 100.0 - (100.0 / (1.0 + rs))
+            return rsi_series.fillna(50.0)
 
-        # 2. Cálculo nativo matemático de Wilder's RSI (Exactamente el estándar de Binance / TradingView)
+        # Por defecto: WILDER (Suavizado exponencial estándar Binance / TradingView)
         delta = close.diff()
         gain = delta.where(delta > 0, 0.0)
         loss = -delta.where(delta < 0, 0.0)
@@ -67,8 +61,7 @@ def calculate_rsi(close_prices: pd.Series, period: int):
 
         rs = avg_gain / avg_loss.replace(0, 1e-10)
         rsi_series = 100.0 - (100.0 / (1.0 + rs))
-
-        return rsi_series
+        return rsi_series.fillna(50.0)
 
     except Exception as e:
         logger.error(f"Error inesperado al calcular RSI: {e}", exc_info=True)

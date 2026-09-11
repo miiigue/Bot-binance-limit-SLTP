@@ -212,6 +212,7 @@ class TradingBot:
         try:
             self.rsi_interval = str(self.params.get('rsi_interval') or '5m')
             self.rsi_period = _safe_int(self.params.get('rsi_period'), 14)
+            self.rsi_type = str(self.params.get('rsi_type', 'WILDER')).upper().strip()
             self.rsi_threshold_up = _safe_float(self.params.get('rsi_threshold_up'), 1.5)
             self.rsi_threshold_down = _safe_float(self.params.get('rsi_threshold_down'), -1.0)
             self.rsi_entry_level_low = _safe_float(self.params.get('rsi_entry_level_low'), 25.0)
@@ -371,6 +372,8 @@ class TradingBot:
 
         self.rsi_interval = str(new_params.get('rsi_interval') or self.rsi_interval)
         self.rsi_period = _safe_int(new_params.get('rsi_period'), self.rsi_period)
+        if 'rsi_type' in new_params:
+            self.rsi_type = str(new_params['rsi_type']).upper().strip()
         self.rsi_threshold_up = _safe_float(new_params.get('rsi_threshold_up'), self.rsi_threshold_up)
         self.rsi_threshold_down = _safe_float(new_params.get('rsi_threshold_down'), self.rsi_threshold_down)
         self.rsi_entry_level_low = _safe_float(new_params.get('rsi_entry_level_low'), self.rsi_entry_level_low)
@@ -1166,6 +1169,7 @@ class TradingBot:
 
         try:
             db_trade_params = {
+                'rsi_type': getattr(self, 'rsi_type', 'WILDER'),
                 'rsi_interval': self.rsi_interval,
                 'rsi_period': self.rsi_period,
                 'rsi_threshold_up': self.rsi_threshold_up,
@@ -1530,7 +1534,7 @@ class TradingBot:
             self.logger.info(f"[{self.symbol}] Pasando a calculate_rsi - klines_df['close'] dtype: {klines_df['close'].dtype}")
             # --- FIN LOGS DE DEPURACIÓN ---
 
-            rsi_values = calculate_rsi(klines_df['close'], period=self.rsi_period)
+            rsi_values = calculate_rsi(klines_df['close'], period=self.rsi_period, rsi_type=getattr(self, 'rsi_type', 'WILDER'))
             
             self.logger.info(f"[{self.symbol}] Resultado de calculate_rsi: {'None o vacío' if rsi_values is None or rsi_values.empty else 'Serie OK, último valor: ' + str(rsi_values.iloc[-1])}") 
 
@@ -1950,7 +1954,7 @@ class TradingBot:
         Verifica si se cumplen las condiciones para cerrar una posición LONG.
         """
         if self.in_position and self.current_position:
-            rsi_values_exit = calculate_rsi(klines_df['close'], period=self.rsi_period)
+            rsi_values_exit = calculate_rsi(klines_df['close'], period=self.rsi_period, rsi_type=getattr(self, 'rsi_type', 'WILDER'))
             current_rsi_str = "N/A"
             if rsi_values_exit is not None and not rsi_values_exit.empty:
                 self.last_rsi_value = rsi_values_exit.iloc[-1]
@@ -2397,7 +2401,7 @@ class TradingBot:
 
                 # Construcción de db_trade_params mejorada
                 db_trade_params = {}
-                string_params = ['rsi_interval', 'rsi_period', 'rsi_threshold_up', 'rsi_threshold_down', 
+                string_params = ['rsi_type', 'rsi_interval', 'rsi_period', 'rsi_threshold_up', 'rsi_threshold_down', 
                                  'rsi_entry_level_low', 'rsi_entry_level_high', 'volume_sma_period', 
                                  'volume_factor', 'downtrend_check_candles', 'order_timeout_seconds', 'entry_order_type']
                 float_params = ['position_size_usdt', 'take_profit_usdt', 'stop_loss_usdt', 'rsi_target',

@@ -83,6 +83,7 @@ function ConfigItem({ labelText, htmlFor, description, example, tooltipKey, tool
 const defaultConfigValues = {
   symbolsToTrade: '',
   leverage: 20,
+  rsiType: 'WILDER',
   rsiInterval: '5m',
   rsiPeriod: 14,
   rsiThresholdUp: 1.5,
@@ -175,6 +176,10 @@ const tooltipTexts = {
   },
 
   // Estrategia de Entrada
+  rsiType: {
+    desc: "Fórmula de cálculo del RSI. WILDER aplica el suavizado exponencial oficial de Welles Wilder (idéntico a gráficos Binance y TradingView). CUTLER aplica media móvil simple de ganancias/pérdidas directa (más reactivo).",
+    example: "WILDER para sincronía exacta con Binance y TradingView; CUTLER para scalping con oscilación rápida."
+  },
   rsi_period: {
     desc: "Cantidad de velas históricas usadas para calcular el indicador RSI.",
     example: "14 velas (estándar tradicional) o 7 velas (para un RSI más rápido y reactivo a scalping)."
@@ -1073,9 +1078,22 @@ function ConfigForm({
           <div className="text-xs font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider flex items-center">
             <span className="mr-1.5">📊</span> 1. Indicador RSI y Rango de Entrada
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+            <ConfigItem labelText="Tipo RSI" htmlFor="rsiType" tooltipKey="rsiType">
+              <select 
+                name="rsiType" 
+                id="rsiType" 
+                value={formData.rsiType || 'WILDER'} 
+                onChange={handleChange} 
+                className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 text-xs sm:text-sm font-semibold"
+              >
+                <option value="WILDER">WILDER (Estándar Binance)</option>
+                <option value="CUTLER">CUTLER (Rápido SMA)</option>
+              </select>
+            </ConfigItem>
+
             <ConfigItem labelText="Periodo RSI" htmlFor="rsiPeriod" tooltipKey="rsi_period">
-              <input type="number" name="rsiPeriod" id="rsiPeriod" value={formData.rsiPeriod} onChange={handleChange} className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold" min="1"/>
+              <input type="number" name="rsiPeriod" id="rsiPeriod" value={formData.rsiPeriod} onChange={handleChange} className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 text-xs sm:text-sm font-semibold" min="1"/>
             </ConfigItem>
 
             <ConfigItem 
@@ -1086,7 +1104,7 @@ function ConfigForm({
               onCheckboxChange={handleChange} 
               tooltipKey="rsiThresholdUp"
             >
-              <input type="number" name="rsiThresholdUp" id="rsiThresholdUp" value={formData.rsiThresholdUp} onChange={handleChange} step="any" className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold"/>
+              <input type="number" name="rsiThresholdUp" id="rsiThresholdUp" value={formData.rsiThresholdUp} onChange={handleChange} step="any" className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 text-xs sm:text-sm font-semibold"/>
             </ConfigItem>
 
             <ConfigItem 
@@ -1097,11 +1115,11 @@ function ConfigForm({
               onCheckboxChange={handleChange} 
               tooltipKey="rsiEntryLevelLow"
             >
-              <input type="number" name="rsiEntryLevelLow" id="rsiEntryLevelLow" value={formData.rsiEntryLevelLow} onChange={handleChange} step="any" className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold"/>
+              <input type="number" name="rsiEntryLevelLow" id="rsiEntryLevelLow" value={formData.rsiEntryLevelLow} onChange={handleChange} step="any" className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 text-xs sm:text-sm font-semibold"/>
             </ConfigItem>
 
             <ConfigItem labelText="RSI Límite Superior" htmlFor="rsiEntryLevelHigh" tooltipKey="rsiEntryLevelHigh">
-              <input type="number" name="rsiEntryLevelHigh" id="rsiEntryLevelHigh" value={formData.rsiEntryLevelHigh} onChange={handleChange} step="any" className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold"/>
+              <input type="number" name="rsiEntryLevelHigh" id="rsiEntryLevelHigh" value={formData.rsiEntryLevelHigh} onChange={handleChange} step="any" className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 text-xs sm:text-sm font-semibold"/>
             </ConfigItem>
           </div>
         </div>
@@ -1627,7 +1645,7 @@ function ConfigForm({
                                    <>
                                      {cfg.rsiPeriod !== undefined && (
                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60">
-                                         ⏱️ {cfg.rsiInterval || '1m'} • RSI({cfg.rsiPeriod}){cfg.evaluateRsiDelta && cfg.rsiThresholdUp ? ` Δ+${cfg.rsiThresholdUp}` : ''}
+                                         ⏱️ {cfg.rsiInterval || '1m'} • RSI({cfg.rsiPeriod}{cfg.rsiType ? `, ${cfg.rsiType}` : ''}){cfg.evaluateRsiDelta && cfg.rsiThresholdUp ? ` Δ+${cfg.rsiThresholdUp}` : ''}
                                        </span>
                                      )}
 

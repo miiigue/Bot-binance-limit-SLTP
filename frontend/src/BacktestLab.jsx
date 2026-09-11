@@ -29,6 +29,7 @@ export function StrategyBadgesPills({ config }) {
   const posSize = cfg.positionSizeUSDT ?? cfg.position_size_usdt;
   const interval = cfg.rsiInterval ?? cfg.rsi_interval ?? '1m';
   const rsiPeriod = cfg.rsiPeriod ?? cfg.rsi_period;
+  const rsiType = String(cfg.rsiType ?? cfg.rsi_type ?? 'WILDER').toUpperCase();
   const evalDelta = cfg.evaluateRsiDelta ?? cfg.evaluate_rsi_delta;
   const thresholdUp = cfg.rsiThresholdUp ?? cfg.rsi_threshold_up;
   const evalRange = cfg.evaluateRsiRange ?? cfg.evaluate_rsi_range;
@@ -96,7 +97,7 @@ export function StrategyBadgesPills({ config }) {
       {/* RSI Intervalo y Período */}
       {rsiPeriod !== undefined && (
         <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-950/80 text-blue-300 border border-blue-800/60 shadow-sm">
-          ⏱️ {interval} • RSI({rsiPeriod}){evalDelta && thresholdUp ? ` Δ+${thresholdUp}` : ''}
+          ⏱️ {interval} • RSI({rsiPeriod}, {rsiType}){evalDelta && thresholdUp ? ` Δ+${thresholdUp}` : ''}
         </span>
       )}
 

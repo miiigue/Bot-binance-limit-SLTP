@@ -219,6 +219,7 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
         },
         'TRADING': {
             'leverage': _val('leverage', 20),
+            'rsi_type': str(_val('rsiType', 'WILDER')).upper().strip(),
             'rsi_interval': _val('rsiInterval', '5m'),
             'rsi_period': _val('rsiPeriod', 14),
             'rsi_threshold_up': _val('rsiThresholdUp', 8),
@@ -412,6 +413,7 @@ def _build_frontend_config_dict():
     if 'TRADING' in config_dict:
         for key_ini, key_frontend in [
             ('leverage', 'leverage'),
+            ('rsi_type', 'rsiType'),
             ('rsi_interval', 'rsiInterval'),
             ('rsi_period', 'rsiPeriod'),
             ('rsi_threshold_up', 'rsiThresholdUp'),

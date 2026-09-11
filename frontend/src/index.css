@@ -85,4 +85,13 @@ code, kbd, samp, pre, .font-mono {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #475569; /* slate-600 */
+}
+
+/* Ocultar barra de desplazamiento en elementos scrollables horizontales móviles */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 } 

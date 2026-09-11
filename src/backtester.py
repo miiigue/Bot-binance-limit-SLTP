@@ -5,6 +5,7 @@ import urllib.request
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
+from src.rsi_calculator import calculate_rsi
 
 # Directorio de caché local para velas históricas
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src', 'data_cache')
@@ -126,15 +127,6 @@ def _raw_klines_to_dataframe(raw_klines: list) -> pd.DataFrame:
     return df
 
 
-def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss.replace(0, np.nan)
-    rsi = 100 - (100 / (1 + rs))
-    return rsi.fillna(50.0)
-
-
 def _find_supports(df_window: pd.DataFrame, pivot_window: int = 5, confirmations: int = 2, tolerance_percent: float = 0.5) -> list:
     """Calcula soportes confirmados idéntico a la función en TradingBot."""
     if len(df_window) < (2 * pivot_window + 1):
@@ -206,6 +198,7 @@ def normalize_config(cfg: dict) -> dict:
         'support_order_stop_loss_percent': to_float(get_val('supportOrderStopLossPercent', 'support_order_stop_loss_percent', 2.0), 2.0),
 
         # RSI
+        'rsi_type': str(get_val('rsiType', 'rsi_type', 'WILDER')).upper().strip(),
         'rsi_interval': str(get_val('rsiInterval', 'rsi_interval', '1m')),
         'rsi_period': to_int(get_val('rsiPeriod', 'rsi_period', 14), 14),
         'evaluate_rsi_delta': to_bool(get_val('evaluateRsiDelta', 'evaluate_rsi_delta', True), True),
@@ -410,7 +403,7 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
     evaluate_support = c['evaluate_support_strategy']
 
     # Precalcular indicadores en vectores numpy para máxima velocidad
-    df['rsi'] = calculate_rsi(df['close'], period=c['rsi_period'])
+    df['rsi'] = calculate_rsi(df['close'], period=c['rsi_period'], rsi_type=c['rsi_type'])
     
     if c['evaluate_volume_filter']:
         vol_sma = df['volume'].rolling(window=c['volume_sma_period']).mean().values
