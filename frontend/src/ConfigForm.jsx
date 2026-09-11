@@ -390,6 +390,7 @@ function ConfigForm({
 
   // --- LÓGICA MOVIDA DESDE RiskDisplay ---
   useEffect(() => {
+    let isInitial = true;
     const fetchRiskData = async () => {
       try {
         const response = await fetch('/api/risk_config');
@@ -399,10 +400,16 @@ function ConfigForm({
         const data = await response.json();
         setRiskData(data);
         setRiskError('');
-        if (data.risk_percentage_raw !== undefined) {
+        if (isInitial && data.risk_percentage_raw !== undefined) {
           const rawPct = Number(data.risk_percentage_raw);
           setRiskPercentage(rawPct);
-          setFormData(prev => ({ ...prev, riskPercentage: rawPct, risk_percentage: rawPct }));
+          setFormData(prev => {
+            if (prev.riskPercentage === undefined || prev.riskPercentage === null || prev.riskPercentage === '') {
+              return { ...prev, riskPercentage: rawPct, risk_percentage: rawPct };
+            }
+            return prev;
+          });
+          isInitial = false;
         }
       } catch (err) {
         setRiskError('Error al cargar los datos de riesgo. ¿Está el backend en funcionamiento?');
@@ -555,7 +562,7 @@ function ConfigForm({
         }
         // Sincronizar en caliente el gestor de riesgo global
         try {
-          fetch('/api/risk_config', {
+          await fetch('/api/risk_config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ risk_percentage: currentRisk }),
@@ -643,7 +650,7 @@ function ConfigForm({
       }
       // Sincronizar en caliente el gestor de riesgo global
       try {
-        fetch('/api/risk_config', {
+        await fetch('/api/risk_config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ risk_percentage: currentRisk }),

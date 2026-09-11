@@ -572,8 +572,18 @@ def update_config_endpoint():
 
         # Recargar caché de configuración y clientes
         reload_config()
-        reset_futures_client()
         load_initial_config()
+
+        # Sincronizar explícitamente porcentaje de riesgo con RiskManager
+        risk_val = frontend_data.get('riskPercentage') or frontend_data.get('risk_percentage')
+        if risk_val is not None:
+            try:
+                r_pct = Decimal(str(risk_val)) / Decimal('100')
+                if Decimal('0') <= r_pct <= Decimal('1'):
+                    risk_manager.set_risk_percentage(r_pct)
+                    logger.info(f"RiskManager sincronizado en update_config_endpoint: {r_pct:.2%}")
+            except Exception as e_r:
+                logger.warning(f"Error sincronizando RiskManager: {e_r}")
 
         # --- HOT-RELOAD EN VIVO: Si los workers están corriendo, actualizar parámetros inmediatamente ---
         if workers_started:
@@ -878,7 +888,8 @@ def load_initial_config():
                          'price_trailing_stop_distance_usdt',
                          'price_trailing_stop_activation_pnl_usdt',
                          'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt',
-                         'support_level_tolerance_percent', 'support_order_stop_loss_percent', 'support_order_take_profit_percent']:
+                         'support_level_tolerance_percent', 'support_order_stop_loss_percent', 'support_order_take_profit_percent',
+                         'risk_percentage']:
                 if value_str is None or str(value_str).strip() == '':
                     loaded_trading_params[key] = 0.0
                 else:
@@ -1665,8 +1676,22 @@ def handle_risk_config():
         if data and 'risk_percentage' in data:
             try:
                 # El frontend enviará un número (ej. 50), lo convertimos a Decimal (0.50)
-                percentage = Decimal(data['risk_percentage']) / Decimal('100')
+                raw_pct = Decimal(str(data['risk_percentage']))
+                percentage = raw_pct / Decimal('100')
                 risk_manager.set_risk_percentage(percentage)
+                # Persistir en config.ini para que no se pierda al reiniciar
+                try:
+                    config = configparser.ConfigParser(allow_no_value=True)
+                    if os.path.exists(CONFIG_FILE_PATH):
+                        config.read(CONFIG_FILE_PATH, encoding='utf-8')
+                        if not config.has_section('TRADING'):
+                            config.add_section('TRADING')
+                        config.set('TRADING', 'risk_percentage', str(raw_pct))
+                        with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as cf:
+                            config.write(cf)
+                        reload_config()
+                except Exception as e_cfg:
+                    api_logger.warning(f"No se pudo persistir risk_percentage en config.ini: {e_cfg}")
                 return jsonify({'message': 'Risk percentage updated successfully.'}), 200
             except Exception as e:
                 return jsonify({'error': f'Invalid value for risk_percentage: {e}'}), 400
