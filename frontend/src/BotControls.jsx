@@ -82,6 +82,7 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
       if (resp.ok) {
         notify('🔄 Historial Reiniciado', 'El historial de trades y PnL se restableció a 0.00 USDT.', 'success');
         setTimeout(() => {
+          localStorage.removeItem('botStatusesCache');
           window.location.reload();
         }, 1000);
       } else {

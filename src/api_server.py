@@ -28,6 +28,9 @@ from src.bot import TradingBot, BotState
 from src.binance_client import get_account_balance_usdt, reset_futures_client, get_futures_client
 from src.backtester import get_historical_klines_paginated, run_strategy_backtest, run_portfolio_backtest
 
+# Timestamp until which sync is paused after a reset (prevents re-importing trades)
+_sync_paused_until = 0
+
 # --- NUEVO: Gestor de Estadísticas de Sesión ---
 class SessionStateManager:
     def __init__(self, logger):
@@ -1089,8 +1092,11 @@ def get_all_trades_endpoint():
     try:
         # Sincronización automática en vivo con Binance Testnet
         try:
-            from src.database import sync_binance_trades_to_db
-            sync_binance_trades_to_db(limit_per_symbol=20)
+            if time.time() >= _sync_paused_until:
+                from src.database import sync_binance_trades_to_db
+                sync_binance_trades_to_db(limit_per_symbol=20)
+            else:
+                logger.debug("Sync pausado post-reset. Reanudará en unos segundos.")
         except Exception as e_sync:
             logger.debug(f"Aviso durante sincronización de trades con Binance: {e_sync}")
 
@@ -1121,6 +1127,8 @@ def reset_trades_endpoint():
         from src.database import clear_trade_history
         success = clear_trade_history()
         if success:
+            global _sync_paused_until
+            _sync_paused_until = time.time() + 15  # Pausar sync por 15 segundos post-reset
             session_manager.reset_stats()
             with status_lock:
                 for sym, worker in worker_statuses.items():

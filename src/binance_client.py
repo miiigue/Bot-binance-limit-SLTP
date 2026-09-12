@@ -736,6 +736,20 @@ def get_open_interest_history(symbol: str, period: str, limit: int = 2) -> list[
         return None
 # --- FIN NUEVA FUNCIÓN ---
 
+def get_server_time() -> int | None:
+    """Obtiene el timestamp del servidor de Binance en milisegundos."""
+    logger = get_logger()
+    try:
+        client = get_futures_client()
+        if not client:
+            return None
+        server_time = client.time()
+        return server_time.get('serverTime') if server_time else None
+    except Exception as e:
+        logger.warning(f"Error al obtener server time de Binance: {e}")
+        return None
+
+
 def get_account_balance_usdt() -> Decimal | None:
     """
     Obtiene el saldo total (wallet balance) en USDT de la cuenta de futuros.

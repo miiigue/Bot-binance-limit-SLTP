@@ -421,19 +421,29 @@ def get_all_recent_trades(limit: int = 2000) -> list[dict]:
     return trades
 
 def get_bot_setting(key: str, default: str | None = None) -> str | None:
-    """Obtiene una configuración persistente de la base de datos."""
+    """Obtiene una configuración persistente de la base de datos. Reintenta en caso de bloqueo SQLite."""
+    logger = get_logger()
     conn = None
-    try:
-        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM bot_settings WHERE key = ?", (key,))
-        row = cursor.fetchone()
-        return row[0] if row else default
-    except Exception:
-        return default
-    finally:
-        if conn:
-            conn.close()
+    for attempt in range(3):
+        try:
+            conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM bot_settings WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            return row[0] if row else default
+        except sqlite3.OperationalError as e:
+            logger.warning(f"get_bot_setting('{key}') intento {attempt+1}/3 falló (SQLite bloqueado): {e}")
+            import time as _time
+            _time.sleep(0.15 * (attempt + 1))
+        except Exception as e:
+            logger.error(f"get_bot_setting('{key}') error inesperado: {e}")
+            return default
+        finally:
+            if conn:
+                conn.close()
+                conn = None
+    logger.error(f"get_bot_setting('{key}') falló tras 3 reintentos. Retornando default: {default}")
+    return default
 
 def set_bot_setting(key: str, value: str) -> bool:
     """Guarda o actualiza una configuración persistente en la base de datos."""
@@ -490,7 +500,7 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                 if not trade_id:
                     continue
                 time_ms = int(t.get('time', 0))
-                if cutoff_ms > 0 and time_ms < cutoff_ms:
+                if cutoff_ms > 0 and time_ms <= cutoff_ms:
                     continue
                 if check_if_binance_trade_exists(int(trade_id)):
                     continue
@@ -596,10 +606,19 @@ def clear_trade_history() -> bool:
         except sqlite3.Error:
             pass
         try:
-            from datetime import timezone as dt_timezone
-            now_ms = int(datetime.now(dt_timezone.utc).timestamp() * 1000)
+            from src.binance_client import get_server_time
+            server_time_ms = get_server_time()
+            if server_time_ms and server_time_ms > 0:
+                now_ms = server_time_ms + 2000  # Buffer de 2 segundos para trades in-flight
+            else:
+                from datetime import timezone as dt_timezone
+                now_ms = int(datetime.now(dt_timezone.utc).timestamp() * 1000) + 2000
         except Exception:
-            now_ms = int(datetime.now().timestamp() * 1000)
+            from datetime import timezone as dt_timezone
+            try:
+                now_ms = int(datetime.now(dt_timezone.utc).timestamp() * 1000) + 2000
+            except Exception:
+                now_ms = int(datetime.now().timestamp() * 1000) + 2000
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS bot_settings (
                 key TEXT PRIMARY KEY,

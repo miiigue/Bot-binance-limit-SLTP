@@ -491,18 +491,24 @@ class TradingBot:
         self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Verificando posición abierta en Binance...")
         position_data = get_futures_position(self.symbol)
 
+        # CRITICAL FIX: Si la API retorna None (timeout/error de red), NO asumir cierre.
+        # Mantener la posición y reintentar en el próximo ciclo.
+        if position_data is None:
+            self.logger.warning(f"[{self.symbol}] _update_open_position_pnl: API retornó None (posible timeout/error de red). "
+                                f"NO se asumirá cierre. Manteniendo posición actual y reintentando en próximo ciclo.")
+            return True
+
         pos_amt_binance = Decimal('0')
         entry_price_binance = Decimal('0')
         unrealized_pnl_binance = Decimal('0')
 
-        if position_data:
-            try:
-                pos_amt_binance = Decimal(str(position_data.get('positionAmt', '0')))
-                entry_price_binance = Decimal(str(position_data.get('entryPrice', '0')))
-                unrealized_pnl_binance = Decimal(str(position_data.get('unRealizedProfit', '0')))
-            except Exception as e:
-                self.logger.error(f"[{self.symbol}] _update_open_position_pnl: Error al convertir datos de posición de Binance a Decimal: {e}. Datos: {position_data}")
-                return True
+        try:
+            pos_amt_binance = Decimal(str(position_data.get('positionAmt', '0')))
+            entry_price_binance = Decimal(str(position_data.get('entryPrice', '0')))
+            unrealized_pnl_binance = Decimal(str(position_data.get('unRealizedProfit', '0')))
+        except Exception as e:
+            self.logger.error(f"[{self.symbol}] _update_open_position_pnl: Error al convertir datos de posición de Binance a Decimal: {e}. Datos: {position_data}")
+            return True
 
         # El bot pensaba que estaba en posición (self.in_position == True)
         if abs(pos_amt_binance) < Decimal('1e-9'): # Posición cerrada en Binance
@@ -1542,6 +1548,32 @@ class TradingBot:
             else:
                 self.logger.error(f"[{self.symbol}] Fallo al colocar la orden MARKET SELL para cerrar posición (Razón: {reason}).")
                 self._set_error_state(f"Failed to place market exit order (reason: {reason}).")
+        elif reason and any(kw in reason.lower() for kw in ['stop_loss', 'emergency', 'trailing']):
+            # Para salidas de emergencia (SL, trailing stops), usar MARKET para garantizar ejecución
+            self.logger.warning(f"[{self.symbol}] Salida de emergencia ({reason}): usando orden MARKET SELL con reduceOnly para garantizar cierre.")
+            self.current_exit_reason = reason
+            order_result = create_futures_market_order(self.symbol, 'SELL', quantity_to_sell, reduce_only=True)
+            if order_result and order_result.get('orderId'):
+                status_val = order_result.get('status')
+                avg_price_str = order_result.get('avgPrice', '0')
+                executed_qty_str = order_result.get('executedQty', '0')
+                try:
+                    has_price = Decimal(str(avg_price_str)) > Decimal('0')
+                    has_qty = Decimal(str(executed_qty_str)) > Decimal('0')
+                except Exception:
+                    has_price, has_qty = False, False
+
+                if status_val == 'FILLED' and has_price and has_qty:
+                    self.logger.info(f"[{self.symbol}] Orden MARKET SELL de emergencia {order_result.get('orderId')} FILLED de inmediato.")
+                    self._handle_filled_exit_order(order_result)
+                else:
+                    self.pending_exit_order_id = order_result['orderId']
+                    self.pending_order_timestamp = time.time()
+                    self.logger.warning(f"[{self.symbol}] Orden MARKET SELL de emergencia {self.pending_exit_order_id} colocada (Status={status_val}). Esperando confirmación...")
+                    self._update_state(BotState.WAITING_EXIT_FILL)
+            else:
+                self.logger.error(f"[{self.symbol}] Fallo al colocar la orden MARKET SELL de emergencia (Razón: {reason}).")
+                self._set_error_state(f"Failed to place emergency market exit order (reason: {reason}).")
         else:
             order_result = create_futures_limit_order(self.symbol, 'SELL', quantity_to_sell, limit_sell_price_adjusted)
 
@@ -2356,15 +2388,12 @@ class TradingBot:
                     if self.current_state != BotState.IDLE and self.current_state != BotState.STOPPED : # Solo resetear si no está ya en un estado de reposo
                         self._reset_state()
                         self._update_state(BotState.IDLE)
-        else: # No se pudo obtener info de la posición
-            self.logger.warning(f"[{self.symbol}] Verificación: No se pudo obtener información de posición de Binance.")
-            if self.in_position:
-                 self.logger.warning(f"[{self.symbol}] Asumiendo cierre externo por no poder obtener datos de posición.")
-                 self._handle_external_closure_or_discrepancy(reason="verify_pos_no_data")
-            else:
-                if self.current_state != BotState.IDLE and self.current_state != BotState.STOPPED:
-                    self._reset_state()
-                    self._update_state(BotState.IDLE)
+        else: # No se pudo obtener info de la posición (API error/timeout)
+            self.logger.warning(f"[{self.symbol}] Verificación: No se pudo obtener información de posición de Binance. "
+                                f"NO se asumirá cierre. Manteniendo estado actual hasta obtener datos reales.")
+            # CRITICAL FIX: NO llamar a _handle_external_closure_or_discrepancy.
+            # Mantener el estado actual del bot y reintentar en el próximo ciclo.
+            # Esto evita registrar trades falsos cuando hay problemas de red/API.
 
     def _reset_pending_order_state(self):
         """

@@ -87,12 +87,16 @@ function App() {
       }
     }
 
-    // Detección de eventos: SOLO disparar cuando un trade REALMENTE se cierra (PnL realizado definitivo)
+    // Detección de eventos: SOLO disparar cuando un trade REALMENTE se cierra
+    // Requiere que coinsInPosition DISMINUYA (cierre real) para disparar notificación
     const currentClosedPnl = data?.historicalPnl !== undefined 
       ? Number(data.historicalPnl)
       : (data?.sessionStats?.session_realized_pnl !== undefined ? Number(data.sessionStats.session_realized_pnl) : null);
 
-    if (lastClosedPnlRef.current !== null && currentClosedPnl !== null) {
+    const currentCoins = data?.coinsInPosition !== undefined ? data.coinsInPosition : null;
+    const coinsDecreased = (lastInPosCoinsRef.current !== null && currentCoins !== null && currentCoins < lastInPosCoinsRef.current);
+
+    if (lastClosedPnlRef.current !== null && currentClosedPnl !== null && coinsDecreased) {
       const diff = currentClosedPnl - lastClosedPnlRef.current;
       if (diff > 0.005) {
         playProfitSound();

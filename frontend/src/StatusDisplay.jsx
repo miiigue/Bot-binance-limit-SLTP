@@ -429,7 +429,13 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                 const res = await fetch('/api/trades/reset', { method: 'POST' });
                 if (res.ok) {
                   setTradeHistories({});
-                  alert("✅ Historial de trades reiniciado con éxito.");
+                  setStatuses([]);
+                  localStorage.removeItem('botStatusesCache');
+                  if (onStatusUpdate) {
+                    onStatusUpdate({ totalPnl: 0, coinCount: 0, coinsInPosition: 0 });
+                  }
+                  alert("✅ Historial de trades reiniciado con éxito. La página se recargará.");
+                  setTimeout(() => window.location.reload(), 1000);
                 } else {
                   alert("Error al reiniciar trades.");
                 }
