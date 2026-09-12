@@ -101,21 +101,47 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     }
   };
 
+  // Helper para obtener el PnL real de un trade (incluso si pnl_usdt vino en 0 pero hubo diferencia de precios)
+  const getTradePnL = (t) => {
+    const raw = parseFloat(t.pnl_usdt);
+    if (!isNaN(raw) && Math.abs(raw) > 1e-6) return raw;
+    const openP = parseFloat(t.open_price);
+    const closeP = parseFloat(t.close_price);
+    const qty = parseFloat(t.quantity);
+    if (!isNaN(openP) && !isNaN(closeP) && !isNaN(qty) && openP > 0 && closeP > 0 && qty > 0 && Math.abs(openP - closeP) > 1e-8) {
+      return (t.trade_type === 'SHORT' ? (openP - closeP) : (closeP - openP)) * qty;
+    }
+    return !isNaN(raw) ? raw : 0;
+  };
+
+  // Filtrar operaciones válidas descartando órdenes de entrada espurias con PnL 0 de sincronizaciones
+  const validTrades = useMemo(() => {
+    return trades.filter(t => {
+      const pnl = getTradePnL(t);
+      if (Math.abs(pnl) > 1e-6) return true;
+      // Descartar si es sync dummy de Binance sin PnL real
+      if (t.close_reason && t.close_reason.includes('Binance Testnet Sync') && Math.abs(pnl) < 1e-6) {
+        return false;
+      }
+      return true;
+    });
+  }, [trades]);
+
   // Filtrar trades por símbolo
   const filteredTrades = useMemo(() => {
     return filterSymbol === 'ALL'
-      ? trades
-      : trades.filter(t => t.symbol && t.symbol.toUpperCase() === filterSymbol.toUpperCase());
-  }, [trades, filterSymbol]);
+      ? validTrades
+      : validTrades.filter(t => t.symbol && t.symbol.toUpperCase() === filterSymbol.toUpperCase());
+  }, [validTrades, filterSymbol]);
 
   // Métricas financieras calculadas
   const totalTrades = filteredTrades.length;
-  const winningTrades = filteredTrades.filter(t => (parseFloat(t.pnl_usdt) || 0) > 0);
-  const losingTrades = filteredTrades.filter(t => (parseFloat(t.pnl_usdt) || 0) < 0);
+  const winningTrades = filteredTrades.filter(t => getTradePnL(t) > 0);
+  const losingTrades = filteredTrades.filter(t => getTradePnL(t) < 0);
   const winRate = totalTrades > 0 ? ((winningTrades.length / totalTrades) * 100).toFixed(1) : '0.0';
 
-  const grossProfit = winningTrades.reduce((acc, t) => acc + (parseFloat(t.pnl_usdt) || 0), 0);
-  const grossLoss = Math.abs(losingTrades.reduce((acc, t) => acc + (parseFloat(t.pnl_usdt) || 0), 0));
+  const grossProfit = winningTrades.reduce((acc, t) => acc + getTradePnL(t), 0);
+  const grossLoss = Math.abs(losingTrades.reduce((acc, t) => acc + getTradePnL(t), 0));
   const netPnL = grossProfit - grossLoss;
   const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : (grossProfit > 0 ? '∞' : '1.00');
 
@@ -124,10 +150,10 @@ function PnLPerformanceChart({ symbolsList = [] }) {
   const realizedRiskReward = avgLoss > 0 ? (avgWin / avgLoss).toFixed(2) : (avgWin > 0 ? '∞' : '1.00');
 
   const bestTrade = filteredTrades.length > 0
-    ? Math.max(...filteredTrades.map(t => parseFloat(t.pnl_usdt) || 0))
+    ? Math.max(...filteredTrades.map(t => getTradePnL(t)))
     : 0;
   const worstTrade = filteredTrades.length > 0
-    ? Math.min(...filteredTrades.map(t => parseFloat(t.pnl_usdt) || 0))
+    ? Math.min(...filteredTrades.map(t => getTradePnL(t)))
     : 0;
 
   // Curva de Capital (Cumulative Equity) y Maximum Drawdown (MDD)
@@ -137,7 +163,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     let maxDD = 0;
 
     const points = filteredTrades.map((t, idx) => {
-      const pnl = parseFloat(t.pnl_usdt) || 0;
+      const pnl = getTradePnL(t);
       runningTotal += pnl;
       if (runningTotal > peak) peak = runningTotal;
       const currentDD = peak - runningTotal;
@@ -198,9 +224,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
   const coinPerformanceList = useMemo(() => {
     const map = {};
 
-    trades.forEach(t => {
+    validTrades.forEach(t => {
       const sym = (t.symbol || 'DESCONOCIDO').toUpperCase();
-      const pnl = parseFloat(t.pnl_usdt) || 0;
+      const pnl = getTradePnL(t);
 
       if (!map[sym]) {
         map[sym] = {
@@ -240,7 +266,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     });
 
     return list;
-  }, [trades, coinSortOrder]);
+  }, [validTrades, coinSortOrder]);
 
   const maxAbsCoinPnL = useMemo(() => {
     if (coinPerformanceList.length === 0) return 1;
@@ -266,9 +292,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
   const strategyPerformanceList = useMemo(() => {
     const map = {};
 
-    trades.forEach(t => {
+    validTrades.forEach(t => {
       const strat = getTradeStrategy(t);
-      const pnl = parseFloat(t.pnl_usdt) || 0;
+      const pnl = getTradePnL(t);
       const sym = (t.symbol || '').toUpperCase();
 
       if (!map[strat]) {

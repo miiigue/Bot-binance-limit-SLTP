@@ -920,7 +920,15 @@ def close_all_positions_endpoint():
                         results[sym] = f"Cerrada en Binance (Orden ID: {order.get('orderId')})"
                         try:
                             entry_price = float(p.get('entryPrice', 0))
-                            close_price = float(order.get('avgPrice', order.get('price', entry_price)))
+                            close_price = float(order.get('avgPrice', order.get('price', 0)))
+                            if close_price <= 0:
+                                try:
+                                    from src.binance_client import get_order_book_ticker
+                                    ticker = get_order_book_ticker(sym)
+                                    if ticker:
+                                        close_price = float(ticker.get('bidPrice' if side == 'SELL' else 'askPrice', entry_price))
+                                except Exception:
+                                    pass
                             if close_price <= 0:
                                 close_price = entry_price
                             pnl = (close_price - entry_price) * abs(amt) if side == 'SELL' else (entry_price - close_price) * abs(amt)
@@ -1170,41 +1178,6 @@ def get_market_data_endpoint():
         logger.error(f"Error al obtener datos de mercado en /api/market_data: {e}")
         return jsonify(_market_data_cache.get('data', [])), 200
 
-# --- ENDPOINT PARA REINICIAR HISTORIAL DE TRADES Y PNL ---
-@app.route('/api/trades/reset', methods=['POST'])
-def reset_trade_history():
-    """Endpoint para reiniciar el historial de trades y el PnL acumulado."""
-    logger = get_logger()
-    logger.info("Recibida petición POST /api/trades/reset para limpiar historial de operaciones...")
-    try:
-        # 1. Limpiar base de datos SQLite
-        success = clear_trade_history()
-        if not success:
-            return jsonify({"error": "No se pudo limpiar la base de datos de trades."}), 500
-
-        # 2. Resetear variables de PnL en workers activos
-        with status_lock:
-            for symbol, bot_instance in list(worker_statuses.items()):
-                try:
-                    if hasattr(bot_instance, 'historical_pnl'):
-                        bot_instance.historical_pnl = Decimal('0')
-                    if hasattr(bot_instance, 'session_pnl'):
-                        bot_instance.session_pnl = Decimal('0')
-                    if hasattr(bot_instance, 'reset_session_pnl'):
-                        bot_instance.reset_session_pnl()
-                except Exception as e:
-                    logger.warning(f"No se pudo resetear PnL en bot_instance de {symbol}: {e}")
-
-        # 3. Resetear estadísticas de sesión global
-        if session_manager:
-            session_manager.reset_stats()
-
-        logger.info("Historial de trades y PnL reiniciados exitosamente a 0.00.")
-        return jsonify({"success": True, "message": "Historial de PnL y operaciones reiniciado correctamente."}), 200
-
-    except Exception as e:
-        logger.error(f"Error inesperado al reiniciar historial de trades: {e}", exc_info=True)
-        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 # --------------------------------------------------------
 
 # --- NUEVOS ENDPOINTS PARA ESTRATEGIAS ---

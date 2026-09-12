@@ -524,33 +524,49 @@ class TradingBot:
                 self.logger.warning(f"[{self.symbol}] No se encontró una razón de cierre preexistente. Se asumirá como 'Cierre Externo'.")
 
             # 2. Intentar obtener los datos finales del último trade en Binance
-            final_pnl = Decimal('0')
-            final_close_price = old_entry_price or Decimal('0')
+            final_pnl = None
+            final_close_price = None
             final_close_timestamp = datetime.now()
 
-            last_trade = get_last_account_trade(self.symbol, start_time=old_entry_time)
+            last_trade = get_last_account_trade(self.symbol, start_time=None)
 
             if last_trade:
-                self.logger.info(f"[{self.symbol}] Se encontró el último trade en el historial de Binance: {last_trade}")
+                self.logger.info(f"[{self.symbol}] Se encontró trade en historial de Binance: {last_trade}")
                 try:
-                    trade_pnl = Decimal(last_trade.get('realizedPnl', '0'))
+                    trade_pnl = Decimal(str(last_trade.get('realizedPnl', '0')))
                     if trade_pnl != Decimal('0'):
                         final_pnl = trade_pnl
-                        final_close_price = Decimal(last_trade.get('price', '0'))
-                        final_close_timestamp = datetime.fromtimestamp(last_trade.get('time') / 1000)
-                        self.logger.info(f"[{self.symbol}] Datos del trade extraídos -> PNL Final: {final_pnl}, Precio Cierre: {final_close_price}")
+                        final_close_price = Decimal(str(last_trade.get('price', '0')))
+                        time_val = last_trade.get('time')
+                        if time_val:
+                            final_close_timestamp = datetime.fromtimestamp(time_val / 1000)
+                        self.logger.info(f"[{self.symbol}] PnL detectado de trade Binance: {final_pnl:.4f}, Precio: {final_close_price}")
                         if close_reason == "Cierre Externo":
                             close_reason = f"Cierre Externo (PnL Detectado: {final_pnl:.4f})"
-                    else:
-                        self.logger.warning(f"[{self.symbol}] El PNL del último trade es 0. Se usará 0 como PNL final.")
                 except Exception as e:
-                    self.logger.error(f"[{self.symbol}] Error al procesar datos del último trade. Se usará PNL 0. Error: {e}")
-                    if close_reason == "Cierre Externo":
-                        close_reason = "Cierre Externo (Error procesando trade)"
-            else:
-                self.logger.warning(f"[{self.symbol}] No se encontró un trade de cierre en el historial de Binance. Se registrará con PNL 0.")
-                if close_reason == "Cierre Externo":
-                    close_reason = "Cierre Externo (Trade no encontrado)"
+                    self.logger.error(f"[{self.symbol}] Error al procesar datos del último trade: {e}")
+
+            # Fallback 1: Si Binance no devolvió PnL no-cero, usar last_known_pnl registrado en tiempo real
+            if (final_pnl is None or final_pnl == Decimal('0')) and self.last_known_pnl is not None and abs(self.last_known_pnl) > Decimal('0'):
+                final_pnl = self.last_known_pnl
+                self.logger.info(f"[{self.symbol}] PnL obtenido de last_known_pnl en vivo: {final_pnl:.4f}")
+
+            # Fallback 2: Consultar precio de mercado actual y calcular PnL exacto
+            if final_close_price is None or final_close_price <= Decimal('0'):
+                try:
+                    ticker = get_order_book_ticker(self.symbol)
+                    if ticker and 'bidPrice' in ticker:
+                        final_close_price = Decimal(str(ticker['bidPrice']))
+                except Exception:
+                    pass
+                if not final_close_price or final_close_price <= Decimal('0'):
+                    final_close_price = old_entry_price or Decimal('0')
+
+            if final_pnl is None:
+                if old_entry_price and old_quantity and final_close_price and final_close_price > Decimal('0'):
+                    final_pnl = (final_close_price - old_entry_price) * old_quantity
+                else:
+                    final_pnl = Decimal('0')
             
             # 3. Guardar en la base de datos
             open_ts_for_db = old_entry_time.to_pydatetime() if isinstance(old_entry_time, (pd.Timestamp, datetime)) and hasattr(old_entry_time, 'to_pydatetime') else (old_entry_time if isinstance(old_entry_time, datetime) else datetime.utcnow())
@@ -1221,6 +1237,10 @@ class TradingBot:
                 strategy_name=strat_to_record
             )
             self.logger.info(f"[{self.symbol}] _handle_successful_closure: Trade registrado exitosamente en DB.")
+            if final_pnl is not None:
+                self.historical_pnl += final_pnl
+                self.session_pnl += final_pnl
+                self.logger.info(f"[{self.symbol}] PnL acumulado tras cierre: Histórico={self.historical_pnl:.4f}, Sesión={self.session_pnl:.4f}")
         except Exception as e:
             self.logger.error(f"[{self.symbol}] ERROR CRÍTICO en _handle_successful_closure al registrar el trade en la DB: {e}", exc_info=True)
             self.logger.error(f"[{self.symbol}] Datos que se intentaron registrar: Symbol: {self.symbol}, Type: LONG, OpenTS: {open_ts_for_db}, CloseTS: {close_ts_for_db}, "
@@ -2165,19 +2185,10 @@ class TradingBot:
         if status_val == 'FILLED':
             self.logger.info(f"[{self.symbol}] Orden de salida {self.pending_exit_order_id} LLENADA. Procesando...")
             
-            # --- INICIO CORRECCIÓN PNL HISTÓRICO Y EXPOSICIÓN ---
-            self._update_open_position_pnl()
-            final_pnl_of_trade = self.last_known_pnl
-            if final_pnl_of_trade is not None:
-                self.historical_pnl += final_pnl_of_trade
-                self.session_pnl += final_pnl_of_trade # <-- NUEVO: Acumular PNL de sesión
-                self.logger.info(f"[{self.symbol}] PNL de la operación cerrada ({final_pnl_of_trade}) añadido al histórico y a la sesión. Total Histórico: {self.historical_pnl}, Total Sesión: {self.session_pnl}")
-            
             # Quitar el margen de la exposición
             self.risk_manager.remove_exposure(self.margin_for_current_position)
             self.logger.info(f"[{self.symbol}] Posición cerrada. Eliminando MARGEN {self.margin_for_current_position} USDT de la exposición.")
-            self.margin_for_current_position = Decimal('0') # Resetear
-            # --- FIN CORRECCIÓN PNL HISTÓRICO Y EXPOSICIÓN ---
+            self.margin_for_current_position = Decimal('0')
 
             self._handle_filled_exit_order(order_status_response)
             return

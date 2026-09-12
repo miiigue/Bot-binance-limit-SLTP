@@ -113,6 +113,14 @@ def init_db_schema():
         """)
         conn.commit()
 
+        # Limpiar trades dummy con PnL = 0 originados por sincronizaciones erróneas de órdenes de entrada
+        try:
+            cursor.execute("DELETE FROM trades WHERE close_reason = 'Binance Testnet Sync' AND abs(ifnull(pnl_usdt, 0)) < 1e-6")
+            conn.commit()
+            logger.info("Purga automática de trades dummy con PnL 0 completada en DB.")
+        except Exception as e_clean:
+            logger.debug(f"Aviso en limpieza automática de trades dummy: {e_clean}")
+
         logger.info("Esquema de la base de datos inicializado/verificado.")
         return True
     except sqlite3.Error as e:
@@ -387,18 +395,28 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                     continue
 
                 realized_pnl = float(t.get('realizedPnl', '0'))
+                # ¡CRÍTICO! Solo registrar si realmente hubo PnL realizado (es decir, una operación de salida/cierre)
+                # Las órdenes de entrada (BUY) siempre tienen realizedPnl = 0 y no son trades cerrados.
+                if abs(realized_pnl) < 1e-6:
+                    continue
+
                 qty = float(t.get('qty', '0'))
                 price = float(t.get('price', '0'))
                 side = str(t.get('side', 'BUY')).upper()
                 trade_time = datetime.fromtimestamp(time_ms / 1000) if time_ms > 0 else datetime.now()
 
+                # Para un trade de salida SELL (cierre de LONG), el precio de entrada se calcula:
+                entry_price_est = price - (realized_pnl / qty) if (qty > 0 and side == 'SELL') else (price + (realized_pnl / qty) if qty > 0 else price)
+                if entry_price_est <= 0:
+                    entry_price_est = price
+
                 record_trade(
                     symbol=sym,
                     trade_type="LONG" if side == 'SELL' else "SHORT",
                     open_timestamp=trade_time,
-                    open_price=price,
+                    open_price=entry_price_est,
                     quantity=qty,
-                    position_size_usdt=price * qty,
+                    position_size_usdt=entry_price_est * qty,
                     close_timestamp=trade_time,
                     close_price=price,
                     pnl_usdt=realized_pnl,
@@ -468,7 +486,11 @@ def clear_trade_history() -> bool:
             cursor.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
         except sqlite3.Error:
             pass
-        now_ms = int(datetime.now().timestamp() * 1000)
+        try:
+            from datetime import timezone as dt_timezone
+            now_ms = int(datetime.now(dt_timezone.utc).timestamp() * 1000)
+        except Exception:
+            now_ms = int(datetime.now().timestamp() * 1000)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS bot_settings (
                 key TEXT PRIMARY KEY,
