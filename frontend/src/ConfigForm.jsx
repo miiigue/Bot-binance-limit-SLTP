@@ -390,6 +390,12 @@ function ConfigForm({
   const [deleteStrategyError, setDeleteStrategyError] = useState(null);
   const [deleteStrategySuccess, setDeleteStrategySuccess] = useState(null);
 
+  // --- Estados para Multi-Estrategia por Moneda ---
+  const [multiStrategyEnabled, setMultiStrategyEnabled] = useState(false);
+  const [strategyAssignments, setStrategyAssignments] = useState({});
+  const [newPairInput, setNewPairInput] = useState('');
+  const [newPairStrategy, setNewPairStrategy] = useState('');
+
   // --- LÓGICA MOVIDA DESDE RiskDisplay ---
   useEffect(() => {
     let isInitial = true;
@@ -452,6 +458,12 @@ function ConfigForm({
           onStrategyNameChange(stratName);
         }
       }
+      if (propInitialConfig.multiStrategyEnabled !== undefined) {
+        setMultiStrategyEnabled(Boolean(propInitialConfig.multiStrategyEnabled));
+      }
+      if (propInitialConfig.strategyAssignments && typeof propInitialConfig.strategyAssignments === 'object') {
+        setStrategyAssignments(propInitialConfig.strategyAssignments);
+      }
     }
   }, [propInitialConfig, onStrategyNameChange]);
 
@@ -479,6 +491,12 @@ function ConfigForm({
                 onStrategyNameChange(stratName);
               }
             }
+            if (data.multiStrategyEnabled !== undefined) {
+              setMultiStrategyEnabled(Boolean(data.multiStrategyEnabled));
+            }
+            if (data.strategyAssignments && typeof data.strategyAssignments === 'object') {
+              setStrategyAssignments(data.strategyAssignments);
+            }
           }
         } catch (err) {
           console.error("Error al cargar config:", err);
@@ -495,6 +513,60 @@ function ConfigForm({
       [name]: type === 'checkbox' ? checked : value
     }));
     setValidationError(null);
+  };
+
+  const symbolsList = (formData.symbolsToTrade || '')
+    .split(',')
+    .map(s => s.trim().toUpperCase())
+    .filter(Boolean);
+
+  const handleAssignStrategy = (symbol, stratName) => {
+    setStrategyAssignments(prev => ({
+      ...prev,
+      [symbol.toUpperCase()]: stratName
+    }));
+  };
+
+  const handleRemoveSymbol = (symbolToRemove) => {
+    const symUpper = symbolToRemove.toUpperCase();
+    const updated = symbolsList.filter(s => s !== symUpper);
+    setFormData(prev => ({ ...prev, symbolsToTrade: updated.join(',') }));
+    setStrategyAssignments(prev => {
+      const copy = { ...prev };
+      delete copy[symUpper];
+      return copy;
+    });
+  };
+
+  const handleAddSymbol = (e) => {
+    e?.preventDefault();
+    const clean = (newPairInput || '').trim().toUpperCase();
+    if (!clean) return;
+    if (symbolsList.includes(clean)) {
+      alert(`El par ${clean} ya está en la lista de monedas activas.`);
+      return;
+    }
+    const updated = [...symbolsList, clean];
+    setFormData(prev => ({ ...prev, symbolsToTrade: updated.join(',') }));
+    const defaultStrat = newPairStrategy || (availableStrategies[0]?.name) || strategyNameInput || 'Global';
+    setStrategyAssignments(prev => ({ ...prev, [clean]: defaultStrat }));
+    setNewPairInput('');
+  };
+
+  const handleInspectStrategy = (stratName) => {
+    const stratObj = (availableStrategies || []).find(s => s.name === stratName);
+    if (stratObj && stratObj.config) {
+      setFormData(prev => ({
+        ...prev,
+        ...stratObj.config,
+        activeStrategyName: stratName
+      }));
+      setStrategyNameInput(stratName);
+      setSelectedStrategyToLoad(stratName);
+      if (onStrategyNameChange) onStrategyNameChange(stratName);
+      setLoadStrategySuccess(`Parámetros de '${stratName}' cargados en el formulario inferior para inspección.`);
+      setTimeout(() => setLoadStrategySuccess(null), 4000);
+    }
   };
 
   // --- Guardar y Aplicar al Bot (Atómico y Validado) ---
@@ -531,6 +603,8 @@ function ConfigForm({
         symbolsToTrade: symbols,
         riskPercentage: currentRisk,
         risk_percentage: currentRisk,
+        multiStrategyEnabled: multiStrategyEnabled,
+        strategyAssignments: strategyAssignments,
       };
 
       if (dataToSend.downtrendLevelCheck !== undefined) dataToSend.downtrend_level_check = dataToSend.downtrendLevelCheck;
@@ -944,6 +1018,169 @@ function ConfigForm({
       {/* Radar de Estrategia, Línea de Tiempo y Simulador Dinámico */}
       <StrategyRadar config={formData} />
       
+      {/* SECCIÓN: MODO DE EJECUCIÓN (GLOBAL VS MULTI-ESTRATEGIA) */}
+      <div className="border border-slate-700/80 bg-slate-900/60 rounded-2xl p-4 shadow-sm mb-5">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+              <span>🔀</span> Modo de Ejecución de Estrategias:
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Define si todas las monedas ejecutan la misma estrategia global o si cada par opera con su propia estrategia independiente.
+            </p>
+          </div>
+          
+          <div className="flex items-center p-1 bg-slate-950 rounded-xl border border-slate-700 gap-1 self-stretch md:self-auto">
+            <button
+              type="button"
+              onClick={() => setMultiStrategyEnabled(false)}
+              className={`flex-1 md:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                !multiStrategyEnabled
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🌐</span> Estrategia Global
+            </button>
+            <button
+              type="button"
+              onClick={() => setMultiStrategyEnabled(true)}
+              className={`flex-1 md:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                multiStrategyEnabled
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🔀</span> Multi-Estrategia por Moneda
+            </button>
+          </div>
+        </div>
+
+        {multiStrategyEnabled ? (
+          <div className="mt-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                <span>🎯</span> Asignación de Estrategias por Par ({symbolsList.length} pares activos):
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Cada moneda opera con sus propios parámetros de entrada, salida y tipo de orden.
+              </span>
+            </div>
+
+            {/* Tabla Matriz de Asignaciones */}
+            <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/70">
+              <table className="min-w-full divide-y divide-slate-800 text-xs">
+                <thead className="bg-slate-900/80 text-slate-300 uppercase font-extrabold">
+                  <tr>
+                    <th className="px-3.5 py-2.5 text-left">Moneda</th>
+                    <th className="px-3.5 py-2.5 text-left">Estrategia Asignada</th>
+                    <th className="px-3.5 py-2.5 text-center">Tipo Orden</th>
+                    <th className="px-3.5 py-2.5 text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {symbolsList.length > 0 ? (
+                    symbolsList.map((sym) => {
+                      const assignedStrat = strategyAssignments[sym] || strategyNameInput || (availableStrategies[0]?.name) || 'Global';
+                      const stratObj = (availableStrategies || []).find(s => s.name === assignedStrat);
+                      const orderType = (stratObj?.config?.entryOrderType || stratObj?.config?.entry_order_type || 'LIMIT').toUpperCase();
+
+                      return (
+                        <tr key={sym} className="hover:bg-slate-900/40 transition-colors">
+                          <td className="px-3.5 py-2.5 font-mono font-black text-white flex items-center gap-2">
+                            <span className="text-sm">🪙</span>
+                            <span>{sym}</span>
+                          </td>
+                          <td className="px-3.5 py-2.5">
+                            <select
+                              value={assignedStrat}
+                              onChange={(e) => handleAssignStrategy(sym, e.target.value)}
+                              className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none w-full max-w-xs cursor-pointer"
+                            >
+                              {(availableStrategies || []).map(st => (
+                                <option key={st.name} value={st.name}>{st.name}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3.5 py-2.5 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold ${
+                              orderType === 'MARKET'
+                                ? 'bg-amber-950/80 text-amber-300 border border-amber-600/50'
+                                : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'
+                            }`}>
+                              {orderType === 'MARKET' ? '⚡ MARKET' : '🎯 LIMIT'}
+                            </span>
+                          </td>
+                          <td className="px-3.5 py-2.5 text-center whitespace-nowrap space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => handleInspectStrategy(assignedStrat)}
+                              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-md text-[11px] font-bold border border-slate-700 transition"
+                              title="Carga esta estrategia en el formulario inferior para inspeccionarla o retocarla"
+                            >
+                              ⚙️ Inspeccionar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSymbol(sym)}
+                              className="px-2 py-1 bg-rose-950/50 hover:bg-rose-900 text-rose-300 rounded-md text-[11px] font-bold border border-rose-800/50 transition"
+                              title="Quitar este par de la lista"
+                            >
+                              ✕ Quitar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan="4" className="px-4 py-3 text-center text-slate-500">
+                        No hay pares añadidos. Añade uno abajo.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Formulario rápido para añadir nuevo par */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <input
+                type="text"
+                value={newPairInput}
+                onChange={(e) => setNewPairInput(e.target.value.toUpperCase())}
+                placeholder="Ej: ADAUSDT o SOLUSDT"
+                className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white uppercase font-mono font-bold placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+              <select
+                value={newPairStrategy}
+                onChange={(e) => setNewPairStrategy(e.target.value)}
+                className="bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                <option value="">Seleccionar Estrategia...</option>
+                {(availableStrategies || []).map(st => (
+                  <option key={st.name} value={st.name}>{st.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleAddSymbol}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-sm active:scale-95"
+              >
+                <span>➕</span> Añadir Par a la Cesta
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 p-3 bg-slate-950/50 rounded-xl border border-slate-800 text-xs text-slate-400 flex items-center gap-2">
+            <span>ℹ️</span>
+            <span>
+              Modo Global activo: Todos los pares (<strong>{formData.symbolsToTrade || 'Sin configurar'}</strong>) operarán con la misma configuración activa ({strategyNameInput || 'Global'}).
+            </span>
+          </div>
+        )}
+      </div>
+
       <fieldset className="border pt-4 px-4 pb-5 rounded-2xl border-slate-700/80 bg-slate-900/40 shadow-sm">
         <legend className="text-sm font-medium text-white px-3 bg-slate-900 rounded-lg border border-slate-700/80 flex items-center gap-1.5">
           <span>⚙️</span> Parámetros Generales

@@ -380,15 +380,42 @@ def start_bot_workers():
             logger.critical("BLOQUEO DE SEGURIDAD: Conexión con Binance Testnet no verificada. Inicio abortado.")
             return False, "Bloqueo de seguridad: No se pudo verificar la conexión exclusiva con Binance Testnet."
 
-        logger.info("Iniciando workers de bot...")
+        from src.config_loader import is_multi_strategy_enabled, get_symbol_strategy_assignments
+        is_multi = is_multi_strategy_enabled()
+        assignments = get_symbol_strategy_assignments()
+        global_strat_name = ''
+        try:
+            cfg_temp = configparser.ConfigParser()
+            if os.path.exists(CONFIG_FILE_PATH):
+                cfg_temp.read(CONFIG_FILE_PATH, encoding='utf-8')
+                global_strat_name = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='Global')
+        except Exception:
+            global_strat_name = 'Global'
+
+        logger.info(f"Iniciando workers de bot... (Modo Multi-Estrategia: {is_multi})")
         for symbol_idx, symbol in enumerate(loaded_symbols_to_trade):
-            logger.info(f"-> Preparando worker para {symbol}...")
-            # Usar una COPIA de loaded_trading_params para cada hilo
-            thread = threading.Thread(target=run_bot_worker, args=(symbol, loaded_trading_params.copy(), stop_event), name=f"Worker-{symbol}")
+            worker_params = loaded_trading_params.copy()
+            strat_name = assignments.get(symbol.upper(), global_strat_name) if is_multi else global_strat_name
+            
+            if is_multi and strat_name:
+                strat_file = os.path.join(STRATEGIES_PATH, f"{strat_name}.json")
+                if os.path.exists(strat_file):
+                    try:
+                        with open(strat_file, 'r', encoding='utf-8') as f_sf:
+                            strat_json = json.load(f_sf)
+                        mapped = map_frontend_trading_binance(strat_json)
+                        if 'TRADING' in mapped:
+                            worker_params.update(mapped['TRADING'])
+                        logger.info(f"-> Parámetros de estrategia '{strat_name}' cargados para {symbol}")
+                    except Exception as e_s:
+                        logger.warning(f"Error cargando estrategia '{strat_name}' para {symbol}: {e_s}")
+            
+            worker_params['strategy_name'] = strat_name or 'Global'
+            logger.info(f"-> Preparando worker para {symbol} (Estrategia: {worker_params['strategy_name']})...")
+            thread = threading.Thread(target=run_bot_worker, args=(symbol, worker_params, stop_event), name=f"Worker-{symbol}")
             threads.append(thread)
             thread.start()
             if (symbol_idx + 1) < len(loaded_symbols_to_trade):
-                 # Espera corta entre inicios de hilos para evitar sobrecarga inicial
                  time.sleep(1) 
         
         num_bot_threads = len(threads)
@@ -482,6 +509,10 @@ def _build_frontend_config_dict():
         frontend_config['activeStrategyName'] = config_dict['STRATEGY_INFO'].get('active_strategy_name', '')
     else:
         frontend_config['activeStrategyName'] = ''
+
+    from src.config_loader import is_multi_strategy_enabled, get_symbol_strategy_assignments
+    frontend_config['multiStrategyEnabled'] = is_multi_strategy_enabled()
+    frontend_config['strategyAssignments'] = get_symbol_strategy_assignments()
     return frontend_config
 
 
@@ -554,6 +585,19 @@ def update_config_endpoint():
             config.add_section('STRATEGY_INFO')
         config.set('STRATEGY_INFO', 'active_strategy_name', actual_name_to_save_in_ini)
 
+        # 5.1 Guardar configuración MULTI_STRATEGY en config.ini
+        if not config.has_section('MULTI_STRATEGY'):
+            config.add_section('MULTI_STRATEGY')
+        if 'multiStrategyEnabled' in frontend_data:
+            config.set('MULTI_STRATEGY', 'enabled', str(frontend_data['multiStrategyEnabled']).lower())
+        if 'strategyAssignments' in frontend_data and isinstance(frontend_data['strategyAssignments'], dict):
+            for opt in list(config.options('MULTI_STRATEGY')):
+                if opt.lower() != 'enabled':
+                    config.remove_option('MULTI_STRATEGY', opt)
+            for sym, s_name in frontend_data['strategyAssignments'].items():
+                if sym and s_name:
+                    config.set('MULTI_STRATEGY', sym.strip().lower(), str(s_name).strip())
+
         # 6. Escribir cambios a config.ini
         with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as configfile:
             config.write(configfile)
@@ -588,11 +632,27 @@ def update_config_endpoint():
         # --- HOT-RELOAD EN VIVO: Si los workers están corriendo, actualizar parámetros inmediatamente ---
         if workers_started:
             logger.info("Workers activos detectados. Aplicando parámetros actualizados en caliente a cada bot...")
+            from src.config_loader import is_multi_strategy_enabled, get_symbol_strategy_assignments
+            is_multi = is_multi_strategy_enabled()
+            assignments = get_symbol_strategy_assignments()
             with status_lock:
                 for sym, bot_inst in worker_statuses.items():
                     if bot_inst and hasattr(bot_inst, 'update_trading_params'):
                         try:
-                            bot_inst.update_trading_params(loaded_trading_params)
+                            if is_multi and sym.upper() in assignments:
+                                s_name = assignments[sym.upper()]
+                                s_file = os.path.join(STRATEGIES_PATH, f"{s_name}.json")
+                                if os.path.exists(s_file):
+                                    with open(s_file, 'r', encoding='utf-8') as f_s:
+                                        s_data = json.load(f_s)
+                                    s_params = map_frontend_trading_binance(s_data).get('TRADING', loaded_trading_params.copy())
+                                    s_params['strategy_name'] = s_name
+                                    bot_inst.update_trading_params(s_params)
+                                    logger.info(f"-> Hot-reload multi-estrategia exitoso para {sym} con '{s_name}'")
+                                    continue
+                            params_to_use = loaded_trading_params.copy()
+                            params_to_use['strategy_name'] = actual_name_to_save_in_ini or 'Global'
+                            bot_inst.update_trading_params(params_to_use)
                             logger.info(f"-> Hot-reload exitoso para bot {sym}")
                         except Exception as e_hot:
                             logger.error(f"Error al actualizar parámetros en caliente para {sym}: {e_hot}")
@@ -649,6 +709,11 @@ def get_worker_status():
                 if worker_data.get('in_position', False):
                     total_unrealized_pnl += Decimal(str(worker_data.get('current_pnl', 0.0)))
             
+            # Asegurar que el nombre de la estrategia esté siempre disponible
+            if 'strategy_name' not in status_entry or not status_entry.get('strategy_name'):
+                from src.config_loader import get_strategy_for_symbol
+                status_entry['strategy_name'] = get_strategy_for_symbol(symbol, fallback_strategy='') or 'Global'
+
             all_symbols_status.append(status_entry)
 
         # --- NUEVO: Actualizar y obtener estadísticas de sesión ---

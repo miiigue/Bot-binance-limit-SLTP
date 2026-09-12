@@ -14,9 +14,11 @@ function PnLPerformanceChart({ symbolsList = [] }) {
   const [isSavingRisk, setIsSavingRisk] = useState(false);
   const [riskFeedback, setRiskFeedback] = useState(null);
 
-  // Ordenamiento para el Gráfico de Rendimiento por Moneda
+  // Ordenamiento para el Gráfico de Rendimiento por Moneda o Estrategia
   // 'PNL_DESC' (Mayor a menor), 'PNL_ASC' (Menor a mayor), 'WINRATE_DESC', 'TRADES_DESC', 'ALPHA'
   const [coinSortOrder, setCoinSortOrder] = useState('PNL_DESC');
+  // Modo de vista del ranking: 'COINS' (por criptomoneda) o 'STRATEGIES' (torneo por estrategia)
+  const [rankingViewMode, setRankingViewMode] = useState('COINS');
 
   // Cargar datos financieros y de billetera
   const fetchAllData = async () => {
@@ -245,6 +247,78 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     return Math.max(0.1, ...coinPerformanceList.map(c => Math.abs(c.totalPnL)));
   }, [coinPerformanceList]);
 
+  // Helper para extraer el nombre de la estrategia de un trade
+  const getTradeStrategy = (t) => {
+    if (t.strategy_name && String(t.strategy_name).trim()) return String(t.strategy_name).trim();
+    if (t.parameters) {
+      try {
+        const p = typeof t.parameters === 'string' ? JSON.parse(t.parameters) : t.parameters;
+        if (p.strategy_name) return String(p.strategy_name).trim();
+        if (p.active_strategy_name) return String(p.active_strategy_name).trim();
+      } catch (_) {}
+    }
+    return 'Global';
+  };
+
+  // ========================================================
+  // DESGLOSE Y RANKING POR ESTRATEGIA (TORNEO DE ESTRATEGIAS)
+  // ========================================================
+  const strategyPerformanceList = useMemo(() => {
+    const map = {};
+
+    trades.forEach(t => {
+      const strat = getTradeStrategy(t);
+      const pnl = parseFloat(t.pnl_usdt) || 0;
+      const sym = (t.symbol || '').toUpperCase();
+
+      if (!map[strat]) {
+        map[strat] = {
+          strategy: strat,
+          totalPnL: 0,
+          tradesCount: 0,
+          wins: 0,
+          losses: 0,
+          symbols: new Set(),
+          bestTrade: -Infinity,
+          worstTrade: Infinity
+        };
+      }
+
+      map[strat].totalPnL += pnl;
+      map[strat].tradesCount += 1;
+      if (sym) map[strat].symbols.add(sym);
+      if (pnl > 0) map[strat].wins += 1;
+      if (pnl < 0) map[strat].losses += 1;
+      if (pnl > map[strat].bestTrade) map[strat].bestTrade = pnl;
+      if (pnl < map[strat].worstTrade) map[strat].worstTrade = pnl;
+    });
+
+    const list = Object.values(map).map(s => ({
+      ...s,
+      symbolsList: Array.from(s.symbols),
+      winRate: s.tradesCount > 0 ? ((s.wins / s.tradesCount) * 100).toFixed(1) : '0.0',
+      bestTrade: s.bestTrade === -Infinity ? 0 : s.bestTrade,
+      worstTrade: s.worstTrade === Infinity ? 0 : s.worstTrade
+    }));
+
+    // Aplicar ordenamiento interactivo
+    list.sort((a, b) => {
+      if (coinSortOrder === 'PNL_DESC') return b.totalPnL - a.totalPnL;
+      if (coinSortOrder === 'PNL_ASC') return a.totalPnL - b.totalPnL;
+      if (coinSortOrder === 'WINRATE_DESC') return parseFloat(b.winRate) - parseFloat(a.winRate);
+      if (coinSortOrder === 'TRADES_DESC') return b.tradesCount - a.tradesCount;
+      if (coinSortOrder === 'ALPHA') return a.strategy.localeCompare(b.strategy);
+      return b.totalPnL - a.totalPnL;
+    });
+
+    return list;
+  }, [trades, coinSortOrder]);
+
+  const maxAbsStrategyPnL = useMemo(() => {
+    if (strategyPerformanceList.length === 0) return 1;
+    return Math.max(0.1, ...strategyPerformanceList.map(s => Math.abs(s.totalPnL)));
+  }, [strategyPerformanceList]);
+
   // Exportar reporte a CSV
   const handleExportCSV = () => {
     if (filteredTrades.length === 0) {
@@ -255,6 +329,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     const headers = [
       'ID',
       'Símbolo',
+      'Estrategia',
       'Tipo',
       'Fecha Apertura',
       'Fecha Cierre',
@@ -269,6 +344,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     const rows = filteredTrades.map(t => [
       t.id || '',
       t.symbol || '',
+      `"${getTradeStrategy(t)}"`,
       t.trade_type || 'LONG',
       t.open_timestamp ? `"${t.open_timestamp}"` : '',
       t.close_timestamp ? `"${t.close_timestamp}"` : '',
@@ -768,169 +844,298 @@ function PnLPerformanceChart({ symbolsList = [] }) {
       </div>
 
       {/* ======================================================== */}
-      {/* 3. NUEVO GRÁFICO: RANKING Y RENDIMIENTO POR CRIPTOMONEDA */}
+      {/* 3. RANKING Y RENDIMIENTO: POR MONEDA O POR ESTRATEGIA   */}
       {/* ======================================================== */}
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-lg p-5 transition-all">
         
-        {/* Cabecera del Ranking con Selector de Ordenamiento */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-200 dark:border-gray-800">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-blue-500/20 text-blue-400 rounded-lg">
-              <span className="text-xl">📊</span>
+        {/* Cabecera del Ranking con Selector de Modo y Ordenamiento */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-gray-200 dark:border-gray-800">
+          <div className="flex items-center space-x-3">
+            <div className={`p-2.5 rounded-xl ${rankingViewMode === 'STRATEGIES' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+              <span className="text-2xl">{rankingViewMode === 'STRATEGIES' ? '🧠' : '📊'}</span>
             </div>
             <div>
-              <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <span>Ranking de Rendimiento por Criptomoneda</span>
-                <Tooltip title="Rendimiento Individual por Moneda" text="Desglose detallado del PnL, tasa de acierto y volumen de cada par para identificar qué monedas aportan más a la cuenta y cuáles convendría pausar o ajustar." />
-                <span className="text-xs font-normal text-gray-400">({coinPerformanceList.length} pares operados)</span>
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Compara qué monedas son las más rentables y cuáles generan pérdidas para optimizar tu cesta de trading.
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <span>{rankingViewMode === 'STRATEGIES' ? 'Torneo de Rendimiento por Estrategia' : 'Ranking de Rendimiento por Criptomoneda'}</span>
+                  <Tooltip 
+                    title={rankingViewMode === 'STRATEGIES' ? 'Torneo de Estrategias en Vivo' : 'Rendimiento Individual por Moneda'} 
+                    text={rankingViewMode === 'STRATEGIES' 
+                      ? 'Comparativa en vivo de las distintas estrategias activadas. Analiza cuál genera mayor PnL neto, mejor tasa de aciertos (Win Rate) y consistencia en el mercado.' 
+                      : 'Desglose detallado del PnL, tasa de acierto y volumen de cada par para identificar qué monedas aportan más a la cuenta y cuáles convendría pausar o ajustar.'
+                    } 
+                  />
+                  <span className="text-xs font-normal text-gray-400">
+                    ({rankingViewMode === 'STRATEGIES' ? `${strategyPerformanceList.length} estrategias` : `${coinPerformanceList.length} pares`})
+                  </span>
+                </h3>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {rankingViewMode === 'STRATEGIES'
+                  ? 'Compara el desempeño entre estrategias para descubrir cuál es la más rentable y consistente en Binance Testnet.'
+                  : 'Compara qué monedas son las más rentables y cuáles generan pérdidas para optimizar tu cesta de trading.'
+                }
               </p>
             </div>
           </div>
 
-          {/* Botones de Ordenamiento */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl border border-gray-200 dark:border-gray-700">
-            <span className="text-[11px] font-bold text-gray-400 px-2">Ordenar:</span>
-            
-            <button
-              type="button"
-              onClick={() => setCoinSortOrder('PNL_DESC')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                coinSortOrder === 'PNL_DESC'
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-              }`}
-              title="Ordenar de mayor a menor ganancia (Top Ganadoras primero)"
-            >
-              <span>⬇️</span> Mayor a Menor
-            </button>
+          {/* Selector de Modo (Moneda vs Estrategia) + Selector de Orden */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Pestañas de Vista */}
+            <div className="flex items-center bg-gray-100 dark:bg-gray-800 p-1 rounded-xl border border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setRankingViewMode('COINS')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  rankingViewMode === 'COINS'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-white'
+                }`}
+              >
+                <span>🪙</span> Por Moneda
+              </button>
+              <button
+                type="button"
+                onClick={() => setRankingViewMode('STRATEGIES')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  rankingViewMode === 'STRATEGIES'
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-white'
+                }`}
+              >
+                <span>🧠</span> Torneo por Estrategia
+              </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => setCoinSortOrder('PNL_ASC')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                coinSortOrder === 'PNL_ASC'
-                  ? 'bg-rose-600 text-white shadow'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-              }`}
-              title="Ordenar de menor a mayor ganancia (Mayores Pérdidas primero)"
-            >
-              <span>⬆️</span> Menor a Mayor
-            </button>
+            {/* Botones de Ordenamiento */}
+            <div className="flex flex-wrap items-center gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl border border-gray-200 dark:border-gray-700">
+              <span className="text-[11px] font-bold text-gray-400 px-1.5">Orden:</span>
+              
+              <button
+                type="button"
+                onClick={() => setCoinSortOrder('PNL_DESC')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                  coinSortOrder === 'PNL_DESC'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                }`}
+                title="Ordenar de mayor a menor ganancia (Top Ganadoras primero)"
+              >
+                <span>⬇️</span> Mayor PnL
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setCoinSortOrder('WINRATE_DESC')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                coinSortOrder === 'WINRATE_DESC'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-              }`}
-              title="Ordenar por mayor tasa de acierto (%)"
-            >
-              🎯 Win Rate
-            </button>
+              <button
+                type="button"
+                onClick={() => setCoinSortOrder('PNL_ASC')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                  coinSortOrder === 'PNL_ASC'
+                    ? 'bg-rose-600 text-white shadow'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                }`}
+                title="Ordenar de menor a mayor ganancia (Mayores Pérdidas primero)"
+              >
+                <span>⬆️</span> Menor PnL
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setCoinSortOrder('TRADES_DESC')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                coinSortOrder === 'TRADES_DESC'
-                  ? 'bg-purple-600 text-white shadow'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-              }`}
-              title="Ordenar por cantidad de operaciones"
-            >
-              🔢 Volumen
-            </button>
+              <button
+                type="button"
+                onClick={() => setCoinSortOrder('WINRATE_DESC')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition ${
+                  coinSortOrder === 'WINRATE_DESC'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                }`}
+                title="Ordenar por mayor tasa de acierto (%)"
+              >
+                🎯 Win Rate
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCoinSortOrder('TRADES_DESC')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition ${
+                  coinSortOrder === 'TRADES_DESC'
+                    ? 'bg-purple-600 text-white shadow'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                }`}
+                title="Ordenar por cantidad de operaciones"
+              >
+                🔢 Trades
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Lista de Barras de Rendimiento por Moneda */}
-        {coinPerformanceList.length > 0 ? (
-          <div className="mt-4 space-y-3">
-            {coinPerformanceList.map((coin, index) => {
-              const isProfit = coin.totalPnL >= 0;
-              const barWidthPercent = Math.min(100, Math.max(8, (Math.abs(coin.totalPnL) / maxAbsCoinPnL) * 100));
+        {/* VISTA 1: RANKING POR CRIPTOMONEDA */}
+        {rankingViewMode === 'COINS' && (
+          coinPerformanceList.length > 0 ? (
+            <div className="mt-4 space-y-3">
+              {coinPerformanceList.map((coin, index) => {
+                const isProfit = coin.totalPnL >= 0;
+                const barWidthPercent = Math.min(100, Math.max(8, (Math.abs(coin.totalPnL) / maxAbsCoinPnL) * 100));
 
-              return (
-                <div
-                  key={coin.symbol}
-                  className={`p-3 rounded-xl border transition-all hover:border-gray-600 ${
-                    filterSymbol === coin.symbol 
-                      ? 'bg-indigo-950/40 border-indigo-500/60 shadow-md' 
-                      : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-800'
-                  }`}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                    
-                    {/* Identificación de la moneda */}
-                    <div className="flex items-center space-x-2.5">
-                      <span className="w-6 h-6 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold text-xs flex items-center justify-center font-mono">
-                        #{index + 1}
-                      </span>
-                      <span className="text-sm font-bold text-gray-900 dark:text-white font-mono">
-                        {coin.symbol}
-                      </span>
-                      <span className="text-[11px] px-2 py-0.5 rounded-full font-bold bg-gray-200 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300">
-                        {coin.tradesCount} {coin.tradesCount === 1 ? 'operación' : 'operaciones'}
-                      </span>
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                        parseFloat(coin.winRate) >= 50 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60' : 'bg-amber-950 text-amber-300 border border-amber-800/60'
-                      }`}>
-                        Win Rate: {coin.winRate}% ({coin.wins}W / {coin.losses}L)
-                      </span>
+                return (
+                  <div
+                    key={coin.symbol}
+                    className={`p-3 rounded-xl border transition-all hover:border-gray-600 ${
+                      filterSymbol === coin.symbol 
+                        ? 'bg-indigo-950/40 border-indigo-500/60 shadow-md' 
+                        : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-800'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      
+                      {/* Identificación de la moneda */}
+                      <div className="flex items-center space-x-2.5">
+                        <span className="w-6 h-6 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold text-xs flex items-center justify-center font-mono">
+                          #{index + 1}
+                        </span>
+                        <span className="text-sm font-bold text-gray-900 dark:text-white font-mono">
+                          {coin.symbol}
+                        </span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-bold bg-gray-200 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300">
+                          {coin.tradesCount} {coin.tradesCount === 1 ? 'operación' : 'operaciones'}
+                        </span>
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                          parseFloat(coin.winRate) >= 50 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60' : 'bg-amber-950 text-amber-300 border border-amber-800/60'
+                        }`}>
+                          Win Rate: {coin.winRate}% ({coin.wins}W / {coin.losses}L)
+                        </span>
+                      </div>
+
+                      {/* Ganancia y Botón de Filtro */}
+                      <div className="flex items-center space-x-3">
+                        <div className="text-right">
+                          <span className={`text-base font-extrabold font-mono ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {isProfit ? `+${coin.totalPnL.toFixed(4)}` : coin.totalPnL.toFixed(4)} <span className="text-xs">USDT</span>
+                          </span>
+                          <div className="text-[10px] text-gray-400 flex items-center justify-end gap-1 font-mono">
+                            <span>Max: +{coin.bestTrade.toFixed(2)}</span>
+                            <span>•</span>
+                            <span>Min: {coin.worstTrade.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setFilterSymbol(filterSymbol === coin.symbol ? 'ALL' : coin.symbol)}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition ${
+                            filterSymbol === coin.symbol
+                              ? 'bg-indigo-600 text-white shadow'
+                              : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                          }`}
+                          title={filterSymbol === coin.symbol ? 'Quitar filtro' : `Filtrar solo trades de ${coin.symbol}`}
+                        >
+                          {filterSymbol === coin.symbol ? '✓ Filtrado' : '🔍 Filtrar'}
+                        </button>
+                      </div>
+
                     </div>
 
-                    {/* Ganancia y Botón de Filtro */}
-                    <div className="flex items-center space-x-3">
-                      <div className="text-right">
-                        <span className={`text-base font-extrabold font-mono ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {isProfit ? `+${coin.totalPnL.toFixed(4)}` : coin.totalPnL.toFixed(4)} <span className="text-xs">USDT</span>
+                    {/* Barra Visual Proporcional de Ganancia/Pérdida */}
+                    <div className="w-full bg-gray-200 dark:bg-gray-900 rounded-full h-2.5 overflow-hidden p-0.5">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          isProfit ? 'bg-emerald-500' : 'bg-rose-500'
+                        }`}
+                        style={{ width: `${barWidthPercent}%` }}
+                      />
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="py-6 text-center text-gray-400 text-xs">
+              No hay operaciones cerradas para generar el ranking por moneda.
+            </div>
+          )
+        )}
+
+        {/* VISTA 2: TORNEO POR ESTRATEGIA */}
+        {rankingViewMode === 'STRATEGIES' && (
+          strategyPerformanceList.length > 0 ? (
+            <div className="mt-4 space-y-3">
+              {strategyPerformanceList.map((strat, index) => {
+                const isProfit = strat.totalPnL >= 0;
+                const barWidthPercent = Math.min(100, Math.max(8, (Math.abs(strat.totalPnL) / maxAbsStrategyPnL) * 100));
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : null;
+
+                return (
+                  <div
+                    key={strat.strategy}
+                    className="p-3.5 rounded-xl border bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-800 transition-all hover:border-purple-500/50 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      
+                      {/* Identificación y Medalla de la Estrategia */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="w-7 h-7 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold text-xs flex items-center justify-center font-mono">
+                          {medal ? medal : `#${index + 1}`}
                         </span>
-                        <div className="text-[10px] text-gray-400 flex items-center justify-end gap-1 font-mono">
-                          <span>Max: +{coin.bestTrade.toFixed(2)}</span>
-                          <span>•</span>
-                          <span>Min: {coin.worstTrade.toFixed(2)}</span>
+                        <span className="text-sm font-extrabold text-gray-900 dark:text-purple-300 font-mono flex items-center gap-1.5">
+                          <span>🧠</span> {strat.strategy}
+                        </span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-bold bg-gray-200 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300">
+                          {strat.tradesCount} {strat.tradesCount === 1 ? 'operación' : 'operaciones'}
+                        </span>
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                          parseFloat(strat.winRate) >= 50 
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60' 
+                            : 'bg-amber-950 text-amber-300 border border-amber-800/60'
+                        }`}>
+                          Win Rate: {strat.winRate}% ({strat.wins}W / {strat.losses}L)
+                        </span>
+
+                        {/* Monedas operadas con esta estrategia */}
+                        {strat.symbolsList && strat.symbolsList.length > 0 && (
+                          <div className="flex items-center gap-1 ml-1 flex-wrap">
+                            <span className="text-[10px] text-gray-400 font-medium">Pares:</span>
+                            {strat.symbolsList.map(sym => (
+                              <span key={sym} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-800/40 font-mono font-bold">
+                                {sym}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Ganancia Total de la Estrategia */}
+                      <div className="flex items-center space-x-3">
+                        <div className="text-right">
+                          <span className={`text-base font-extrabold font-mono ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {isProfit ? `+${strat.totalPnL.toFixed(4)}` : strat.totalPnL.toFixed(4)} <span className="text-xs">USDT</span>
+                          </span>
+                          <div className="text-[10px] text-gray-400 flex items-center justify-end gap-1 font-mono">
+                            <span>Max: +{strat.bestTrade.toFixed(2)}</span>
+                            <span>•</span>
+                            <span>Min: {strat.worstTrade.toFixed(2)}</span>
+                          </div>
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setFilterSymbol(filterSymbol === coin.symbol ? 'ALL' : coin.symbol)}
-                        className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition ${
-                          filterSymbol === coin.symbol
-                            ? 'bg-indigo-600 text-white shadow'
-                            : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                    </div>
+
+                    {/* Barra Visual Proporcional de Ganancia/Pérdida */}
+                    <div className="w-full bg-gray-200 dark:bg-gray-900 rounded-full h-2.5 overflow-hidden p-0.5">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          isProfit ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-rose-500 to-pink-500'
                         }`}
-                        title={filterSymbol === coin.symbol ? 'Quitar filtro' : `Filtrar solo trades de ${coin.symbol}`}
-                      >
-                        {filterSymbol === coin.symbol ? '✓ Filtrado' : '🔍 Filtrar'}
-                      </button>
+                        style={{ width: `${barWidthPercent}%` }}
+                      />
                     </div>
 
                   </div>
-
-                  {/* Barra Visual Proporcional de Ganancia/Pérdida */}
-                  <div className="w-full bg-gray-200 dark:bg-gray-900 rounded-full h-2.5 overflow-hidden p-0.5">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        isProfit ? 'bg-emerald-500' : 'bg-rose-500'
-                      }`}
-                      style={{ width: `${barWidthPercent}%` }}
-                    />
-                  </div>
-
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="py-6 text-center text-gray-400 text-xs">
-            No hay operaciones para generar el ranking por moneda.
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="py-6 text-center text-gray-400 text-xs">
+              No hay operaciones registradas con información de estrategia aún. En cuanto el bot ejecute trades con una estrategia activa, aparecerán aquí en vivo.
+            </div>
+          )
         )}
 
       </div>

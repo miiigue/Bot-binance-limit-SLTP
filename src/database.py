@@ -93,6 +93,17 @@ def init_db_schema():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_binance_trade_id ON trades (binance_trade_id)")
         conn.commit() # Commit después de CREATE INDEX
 
+        # Verificar si la columna strategy_name existe en trades (para multi-estrategia)
+        try:
+            cursor.execute("PRAGMA table_info(trades)")
+            cols = [info[1] for info in cursor.fetchall()]
+            if 'strategy_name' not in cols:
+                cursor.execute("ALTER TABLE trades ADD COLUMN strategy_name TEXT")
+                conn.commit()
+                logger.info("Columna 'strategy_name' añadida a la tabla 'trades'.")
+        except Exception as e_sn:
+            logger.warning(f"Aviso verificando columna strategy_name en trades: {e_sn}")
+
         # Tabla para configuraciones persistentes (ej. corte de sincronización al resetear historial)
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS bot_settings (
@@ -118,16 +129,27 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
                  pnl_usdt: Union[float, None] = None,    # Unificar estilo para None
                  close_reason: Union[str, None] = None, # Unificar estilo para None
                  parameters: Union[dict, None] = None,   # Unificar estilo para None
-                 binance_trade_id: Union[int, None] = None): # <-- CAMBIO AQUÍ y Unificar
+                 binance_trade_id: Union[int, None] = None, # <-- CAMBIO AQUÍ y Unificar
+                 strategy_name: Union[str, None] = None):
     """
-    Registra un trade completado o una posición abierta en la base de datos.
+    Registra un trade completado o una posición abierta en la base de datos, incluyendo la estrategia responsable.
     """
     logger = get_logger()
+    # Si no se pasó explícito, intentar inferir de parameters o de la configuración del símbolo
+    if not strategy_name and parameters:
+        strategy_name = parameters.get('strategy_name') or parameters.get('active_strategy_name') or parameters.get('activeStrategyName')
+    if not strategy_name:
+        try:
+            from src.config_loader import get_strategy_for_symbol
+            strategy_name = get_strategy_for_symbol(symbol, fallback_strategy='')
+        except Exception:
+            strategy_name = ''
+
     # Convertir el diccionario de parámetros a JSON string si se proporciona
     parameters_json = json.dumps(parameters) if parameters else None
 
     # <<< DETAILED LOGGING OF PARAMETERS RECEIVED BY record_trade >>>
-    logger.info(f"record_trade (database.py) called with: symbol='{symbol}', type='{trade_type}', open_ts={open_timestamp}, close_ts={close_timestamp}, open_p={open_price}, close_p={close_price}, qty={quantity}, pos_size_usdt={position_size_usdt}, PNL_USDT={pnl_usdt}, reason='{close_reason}', binance_id={binance_trade_id}, params_json_len={len(parameters_json) if parameters_json else 0}")
+    logger.info(f"record_trade (database.py): symbol='{symbol}', type='{trade_type}', strategy='{strategy_name}', open_ts={open_timestamp}, close_ts={close_timestamp}, open_p={open_price}, close_p={close_price}, qty={quantity}, pos_size_usdt={position_size_usdt}, PNL_USDT={pnl_usdt}, reason='{close_reason}', binance_id={binance_trade_id}, params_json_len={len(parameters_json) if parameters_json else 0}")
 
     conn = None
     try:
@@ -136,13 +158,15 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
         cursor.execute("""
         INSERT INTO trades (symbol, trade_type, open_timestamp, close_timestamp, 
                           open_price, close_price, quantity, position_size_usdt, 
-                          pnl_usdt, close_reason, parameters, binance_trade_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          pnl_usdt, close_reason, parameters, binance_trade_id, strategy_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (symbol, trade_type, open_timestamp, close_timestamp, 
               open_price, close_price, quantity, position_size_usdt, 
-              pnl_usdt, close_reason, parameters_json, binance_trade_id)) # <-- AÑADIR binance_trade_id
+              pnl_usdt, close_reason, parameters_json, binance_trade_id, strategy_name)) # <-- AÑADIR binance_trade_id y strategy_name
         conn.commit()
-        logger.info(f"Trade para {symbol} registrado en la DB. Binance Trade ID: {binance_trade_id if binance_trade_id else 'N/A'}")
+        trade_id = cursor.lastrowid
+        logger.info(f"Trade registrado con éxito en SQLite DB (ID: {trade_id}, Símbolo: {symbol}, Estrategia: {strategy_name}). Binance Trade ID: {binance_trade_id if binance_trade_id else 'N/A'}")
+        return trade_id
     except sqlite3.IntegrityError as ie:
         # Esto podría ocurrir si intentamos insertar un binance_trade_id que ya existe (debido a la restricción UNIQUE)
         logger.error(f"Error de integridad al registrar trade para {symbol} (Binance ID: {binance_trade_id}): {ie}. Es posible que este trade ya exista.", exc_info=True)
@@ -269,7 +293,7 @@ def get_all_recent_trades(limit: int = 200) -> list[dict]:
         query = """
         SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
                open_price, close_price, quantity, position_size_usdt,
-               pnl_usdt, close_reason, parameters
+               pnl_usdt, close_reason, parameters, strategy_name
         FROM (
             SELECT * FROM trades
             ORDER BY id DESC

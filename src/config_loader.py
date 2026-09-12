@@ -85,6 +85,42 @@ def get_trading_symbols() -> list[str]:
         print(f"ERROR: Error inesperado al leer símbolos de config.ini: {e}", file=sys.stderr)
         return []
 
+def is_multi_strategy_enabled() -> bool:
+    """Verifica si el modo multi-estrategia por moneda está habilitado en config.ini."""
+    config = load_config()
+    if not config:
+        return False
+    try:
+        return config.getboolean('MULTI_STRATEGY', 'enabled', fallback=False)
+    except Exception:
+        return False
+
+def get_symbol_strategy_assignments() -> dict[str, str]:
+    """
+    Lee las asignaciones símbolo -> nombre_estrategia desde la sección [MULTI_STRATEGY].
+    Retorna un diccionario en mayúsculas: {'SOLUSDT': 'v5_RSI...', 'BTCUSDT': 'v4_EMA...'}
+    """
+    config = load_config()
+    if not config:
+        return {}
+    if not config.has_section('MULTI_STRATEGY'):
+        return {}
+    
+    assignments = {}
+    for key, val in config.items('MULTI_STRATEGY'):
+        if key.lower() == 'enabled':
+            continue
+        sym = key.strip().upper()
+        strat = val.strip()
+        if sym and strat:
+            assignments[sym] = strat
+    return assignments
+
+def get_strategy_for_symbol(symbol: str, fallback_strategy: str = '') -> str:
+    """Obtiene la estrategia asignada a un símbolo específico, o la estrategia por defecto."""
+    assignments = get_symbol_strategy_assignments()
+    return assignments.get(symbol.strip().upper(), fallback_strategy)
+
 # Ejemplo de uso (no se ejecuta al importar)
 if __name__ == '__main__':
     print(f"Buscando config en: {CONFIG_FILE_PATH}")

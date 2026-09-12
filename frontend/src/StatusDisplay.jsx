@@ -439,6 +439,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
             <tr>
               <th scope="col" className="px-2 py-3 text-left text-xs font-extrabold text-slate-100 uppercase tracking-wider w-10"></th>
               <BinanceSortHeader label="Symbol" sortKey="symbol" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Estrategia" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} />
               <th scope="col" className="px-3 py-3 text-center text-xs font-extrabold text-slate-100 uppercase tracking-wider">Control</th>
               <BinanceSortHeader label="Estado" sortKey="state" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
@@ -499,6 +500,13 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                           📊
                         </button>
                       </div>
+                    </td>
+
+                    {/* --- ESTRATEGIA ASIGNADA --- */}
+                    <td className="px-3 py-3 whitespace-nowrap text-xs">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-indigo-950/80 text-indigo-300 border border-indigo-700/60 shadow-sm" title={`Estrategia: ${status.strategy_name || 'Global'}`}>
+                        {status.strategy_name || 'Global'}
+                      </span>
                     </td>
 
                     {/* --- BOTÓN DE PAUSA RÁPIDA --- */}
