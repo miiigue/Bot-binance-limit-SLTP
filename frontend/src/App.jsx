@@ -277,24 +277,30 @@ function App() {
               </div>
             </div>
 
-            {/* Fila 2 Móvil: PnL y Estrategia */}
-            <div className="flex items-center justify-between gap-1 pt-1 border-t border-amber-500/30 text-xs">
+            {/* Fila 2 Móvil: PnL Desglosado */}
+            <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-amber-500/30 text-xs">
               <div className="flex items-center gap-1 font-bold text-slate-950 truncate">
-                <span className="text-[11px]">PNL ({headerPnlData?.coinsInPosition || 0}/{headerPnlData?.coinCount || 0}):</span>
-                <span className={`text-base font-mono font-black ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData?.totalPnl) || 0) > 0 ? 'text-emerald-900' : 'text-slate-950'}`}>
-                  {(Number(headerPnlData?.totalPnl) || 0).toFixed(4)}
+                <span className="text-[10px]">Flotante ({headerPnlData?.coinsInPosition || 0} pos):</span>
+                <span className={`text-xs font-mono font-black ${(Number(headerPnlData?.unrealizedPnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData?.unrealizedPnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
+                  {(Number(headerPnlData?.unrealizedPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.unrealizedPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.unrealizedPnl) || 0).toFixed(2)}
                 </span>
-                <span className="text-[10px] font-black">USDT</span>
               </div>
 
               {botsRunning && headerPnlData?.sessionStats && (
-                <div className="flex items-center gap-1 bg-amber-500/60 border border-amber-600/40 px-1.5 py-0.5 rounded font-mono text-[11px] text-slate-950 font-bold flex-shrink-0">
-                  <span className="text-[10px]">Sesión:</span>
-                  <span className={`font-black ${(Number(headerPnlData.sessionStats.session_pnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData.sessionStats.session_pnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
-                    {`${(Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(2)}`}
+                <div className="flex items-center gap-1 bg-amber-500/60 border border-amber-600/40 px-1.5 py-0.5 rounded font-mono text-[10px] text-slate-950 font-bold flex-shrink-0" title="Ganancia generada en este ciclo de ejecución">
+                  <span>Sesión:</span>
+                  <span className={`font-black ${(Number(headerPnlData.sessionStats.session_pnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
+                    {(Number(headerPnlData.sessionStats.session_pnl) || 0) >= 0 ? `+${(Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(2)}` : (Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(2)}
                   </span>
                 </div>
               )}
+
+              <div className="flex items-center gap-1 bg-amber-600/30 border border-amber-700/30 px-1.5 py-0.5 rounded font-mono text-[10px] text-slate-950 font-bold flex-shrink-0" title="Historial total acumulado en base de datos">
+                <span>Total:</span>
+                <span className={`font-black ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
+                  {(Number(headerPnlData?.totalPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.totalPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.totalPnl) || 0).toFixed(2)}
+                </span>
+              </div>
             </div>
 
             {activeStrategyDisplayName && (
@@ -304,7 +310,7 @@ function App() {
             )}
           </div>
 
-          {/* Vista Desktop (md:) idéntica original */}
+          {/* Vista Desktop (md:) Desglose Transparente */}
           <div className="hidden md:flex items-center justify-between">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
@@ -328,23 +334,35 @@ function App() {
               </div>
             </div>
             
-            {/* PNL Info Central */}
-            <div className="flex-initial px-3">
-              <div className="text-base font-bold text-center flex items-center gap-2 text-slate-950">
-                <span>PNL {headerPnlData?.coinCount || 0} monedas ({headerPnlData?.coinsInPosition || 0}) = </span>
-                <span className={`text-2xl font-mono font-black ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData?.totalPnl) || 0) > 0 ? 'text-emerald-900' : 'text-slate-950'}`}>
-                  {(Number(headerPnlData?.totalPnl) || 0).toFixed(5)}
-                </span>
-                <span className="text-xs font-black">USDT</span>
-                
-                {botsRunning && headerPnlData?.sessionStats && (
-                  <span className="ml-2 text-xs flex items-center gap-2 bg-amber-500/60 border border-amber-600/40 px-2 py-0.5 rounded-lg font-mono text-slate-950 font-bold">
-                    <span>Sesión:</span>
-                    <span className={`font-black ${(Number(headerPnlData.sessionStats.session_pnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData.sessionStats.session_pnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
-                      {`${(Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(4)}`} USDT
-                    </span>
+            {/* PNL Info Central: Flotante + Sesión + Total Histórico */}
+            <div className="flex-initial px-2">
+              <div className="flex items-center gap-2 text-slate-950 font-bold">
+                {/* 1. Flotante no realizado */}
+                <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border border-slate-800 px-3 py-1 rounded-xl shadow-sm" title="PnL no realizado de las posiciones abiertas en este momento en Binance">
+                  <span className="text-xs text-slate-400">Flotante ({headerPnlData?.coinsInPosition || 0} pos):</span>
+                  <span className={`text-base font-mono font-black ${(Number(headerPnlData?.unrealizedPnl) || 0) < 0 ? 'text-rose-400' : (Number(headerPnlData?.unrealizedPnl) || 0) > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                    {(Number(headerPnlData?.unrealizedPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.unrealizedPnl) || 0).toFixed(4)}` : (Number(headerPnlData?.unrealizedPnl) || 0).toFixed(4)}
                   </span>
+                  <span className="text-[10px] text-slate-400">USDT</span>
+                </div>
+                
+                {/* 2. PnL de la Sesión Actual */}
+                {botsRunning && headerPnlData?.sessionStats && (
+                  <div className="flex items-center gap-1.5 bg-amber-500/50 border border-amber-600/50 px-2.5 py-1 rounded-xl shadow-sm text-slate-950" title="PnL acumulado en la sesión de ejecución actual">
+                    <span className="text-xs font-bold text-slate-900">Sesión:</span>
+                    <span className={`text-sm font-mono font-black ${(Number(headerPnlData.sessionStats.session_pnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData.sessionStats.session_pnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
+                      {(Number(headerPnlData.sessionStats.session_pnl) || 0) >= 0 ? `+${(Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(4)}` : (Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(4)} USDT
+                    </span>
+                  </div>
                 )}
+
+                {/* 3. Total Histórico Cerrado (Coincide exactamente con Rendimiento) */}
+                <div className="flex items-center gap-1.5 bg-slate-950/10 border border-slate-900/20 px-2.5 py-1 rounded-xl shadow-sm text-slate-950" title="PnL total realizado de todas las operaciones cerradas en la base de datos">
+                  <span className="text-xs font-bold text-slate-900">Total Histórico:</span>
+                  <span className={`text-sm font-mono font-black ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData?.totalPnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
+                    {(Number(headerPnlData?.totalPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.totalPnl) || 0).toFixed(4)}` : (Number(headerPnlData?.totalPnl) || 0).toFixed(4)} USDT
+                  </span>
+                </div>
               </div>
             </div>
             

@@ -1396,7 +1396,17 @@ class TradingBot:
         
         # 5. Registrar cierre y resetear
         close_price = Decimal(str(order_resp.get('avgPrice', order_resp.get('price', '0'))))
-        if close_price == Decimal('0') and self.last_known_entry_price:
+        if close_price <= Decimal('0'):
+            try:
+                ticker = get_order_book_ticker(self.symbol)
+                if ticker:
+                    ticker_p = ticker.get('bidPrice' if close_side == 'SELL' else 'askPrice')
+                    if ticker_p:
+                        close_price = Decimal(str(ticker_p))
+            except Exception as e_tick:
+                self.logger.warning(f"[{self.symbol}] No se pudo obtener precio del order book para cierre: {e_tick}")
+
+        if close_price <= Decimal('0') and self.last_known_entry_price:
             close_price = self.last_known_entry_price
         
         self.current_exit_reason = reason

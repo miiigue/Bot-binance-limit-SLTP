@@ -228,6 +228,107 @@ def get_cumulative_pnl_by_symbol() -> dict: # Cambiado para devolver dict direct
     return cumulative_pnl
 # ----------------------------------------
 
+def get_total_database_metrics() -> dict:
+    """Calcula las métricas financieras globales consolidadas directamente desde SQLite."""
+    conn = None
+    default_res = {
+        "total_pnl": 0.0,
+        "total_trades": 0,
+        "winning_trades": 0,
+        "losing_trades": 0,
+        "gross_profit": 0.0,
+        "gross_loss": 0.0,
+        "profit_factor": "1.00",
+        "win_rate": 0.0,
+        "winning_strategies_pnl": 0.0,
+        "losing_strategies_pnl": 0.0,
+        "strategies_breakdown": []
+    }
+    try:
+        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        # 1. Agregado general
+        cur.execute("""
+            SELECT 
+                COUNT(*) as total_trades,
+                SUM(IFNULL(pnl_usdt, 0)) as total_pnl,
+                SUM(CASE WHEN pnl_usdt > 0.00001 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN pnl_usdt < -0.00001 THEN 1 ELSE 0 END) as losses,
+                SUM(CASE WHEN pnl_usdt > 0.00001 THEN pnl_usdt ELSE 0 END) as gross_profit,
+                SUM(CASE WHEN pnl_usdt < -0.00001 THEN ABS(pnl_usdt) ELSE 0 END) as gross_loss
+            FROM trades
+        """)
+        row = cur.fetchone()
+        if row and row['total_trades'] > 0:
+            tot = int(row['total_trades'] or 0)
+            wins = int(row['wins'] or 0)
+            losses = int(row['losses'] or 0)
+            pnl = float(row['total_pnl'] or 0.0)
+            gp = float(row['gross_profit'] or 0.0)
+            gl = float(row['gross_loss'] or 0.0)
+            pf = f"{(gp / gl):.2f}" if gl > 0 else ("∞" if gp > 0 else "1.00")
+            wr = round((wins / tot) * 100, 1) if tot > 0 else 0.0
+            
+            default_res.update({
+                "total_pnl": pnl,
+                "total_trades": tot,
+                "winning_trades": wins,
+                "losing_trades": losses,
+                "gross_profit": gp,
+                "gross_loss": gl,
+                "profit_factor": pf,
+                "win_rate": wr
+            })
+            
+        # 2. Desglose por estrategia para el resumen del torneo
+        cur.execute("""
+            SELECT 
+                IFNULL(strategy_name, 'Global') as strat,
+                COUNT(*) as count,
+                SUM(IFNULL(pnl_usdt, 0)) as strat_pnl,
+                SUM(CASE WHEN pnl_usdt > 0.00001 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN pnl_usdt < -0.00001 THEN 1 ELSE 0 END) as losses
+            FROM trades
+            GROUP BY strat
+            ORDER BY strat_pnl DESC
+        """)
+        strat_rows = cur.fetchall()
+        pos_strat_pnl = 0.0
+        neg_strat_pnl = 0.0
+        breakdown = []
+        for sr in strat_rows:
+            s_name = sr['strat'] or 'Global'
+            s_pnl = float(sr['strat_pnl'] or 0.0)
+            s_cnt = int(sr['count'] or 0)
+            s_wins = int(sr['wins'] or 0)
+            s_losses = int(sr['losses'] or 0)
+            if s_pnl > 0:
+                pos_strat_pnl += s_pnl
+            else:
+                neg_strat_pnl += s_pnl
+            breakdown.append({
+                "strategy": s_name,
+                "pnl": s_pnl,
+                "trades": s_cnt,
+                "wins": s_wins,
+                "losses": s_losses,
+                "win_rate": round((s_wins / s_cnt) * 100, 1) if s_cnt > 0 else 0.0
+            })
+        default_res["winning_strategies_pnl"] = pos_strat_pnl
+        default_res["losing_strategies_pnl"] = neg_strat_pnl
+        default_res["strategies_breakdown"] = breakdown
+        
+        return default_res
+    except Exception as e:
+        get_logger().error(f"Error al calcular métricas globales de base de datos: {e}")
+        return default_res
+    finally:
+        if conn:
+            conn.close()
+# ----------------------------------------
+
 # --- NUEVA FUNCIÓN ---
 def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
     """
@@ -285,7 +386,7 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
     return trades
 # --- FIN NUEVA FUNCIÓN ---
 
-def get_all_recent_trades(limit: int = 200) -> list[dict]:
+def get_all_recent_trades(limit: int = 2000) -> list[dict]:
     """
     Recupera los últimos N trades cerrados en orden cronológico ascendente (del más antiguo al más reciente)
     para alimentar gráficos de rendimiento y curvas de capital (Equity Curve).
@@ -410,6 +511,13 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                 if entry_price_est <= 0:
                     entry_price_est = price
 
+                strat_for_sym = 'Global'
+                try:
+                    from src.config_loader import get_strategy_for_symbol
+                    strat_for_sym = get_strategy_for_symbol(sym, fallback_strategy='Global') or 'Global'
+                except Exception:
+                    strat_for_sym = 'Global'
+
                 record_trade(
                     symbol=sym,
                     trade_type="LONG" if side == 'SELL' else "SHORT",
@@ -421,7 +529,8 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                     close_price=price,
                     pnl_usdt=realized_pnl,
                     close_reason="Binance Testnet Sync",
-                    binance_trade_id=int(trade_id)
+                    binance_trade_id=int(trade_id),
+                    strategy_name=strat_for_sym
                 )
                 synced_count += 1
         except Exception as e_sym:

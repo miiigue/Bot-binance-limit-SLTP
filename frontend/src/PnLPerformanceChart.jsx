@@ -6,6 +6,8 @@ function PnLPerformanceChart({ symbolsList = [] }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filterSymbol, setFilterSymbol] = useState('ALL');
+  const [filterStrategy, setFilterStrategy] = useState('ALL');
+  const [backendSummary, setBackendSummary] = useState(null);
   const [accountStatus, setAccountStatus] = useState(null);
 
   // Estado del Monitor de Riesgo y Billetera Binance
@@ -26,7 +28,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     setError(null);
     try {
       const [tradesResp, statusResp, riskResp] = await Promise.all([
-        fetch('/api/all_trades?limit=500'),
+        fetch('/api/all_trades?limit=2000'),
         fetch('/api/status'),
         fetch('/api/risk_config')
       ]);
@@ -34,6 +36,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
       if (tradesResp.ok) {
         const data = await tradesResp.json();
         setTrades(Array.isArray(data.trades) ? data.trades : []);
+        if (data.summary) {
+          setBackendSummary(data.summary);
+        }
       }
 
       if (statusResp.ok) {
@@ -114,6 +119,19 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     return !isNaN(raw) ? raw : 0;
   };
 
+  // Helper para extraer el nombre de la estrategia de un trade
+  const getTradeStrategy = (t) => {
+    if (t.strategy_name && String(t.strategy_name).trim()) return String(t.strategy_name).trim();
+    if (t.parameters) {
+      try {
+        const p = typeof t.parameters === 'string' ? JSON.parse(t.parameters) : t.parameters;
+        if (p.strategy_name) return String(p.strategy_name).trim();
+        if (p.active_strategy_name) return String(p.active_strategy_name).trim();
+      } catch (_) {}
+    }
+    return 'Global';
+  };
+
   // Filtrar operaciones válidas descartando órdenes de entrada espurias con PnL 0 de sincronizaciones
   const validTrades = useMemo(() => {
     return trades.filter(t => {
@@ -127,12 +145,28 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     });
   }, [trades]);
 
-  // Filtrar trades por símbolo
+  // Lista única de estrategias disponibles en el historial
+  const availableStrategies = useMemo(() => {
+    const set = new Set();
+    validTrades.forEach(t => {
+      const s = getTradeStrategy(t);
+      if (s) set.add(s);
+    });
+    return Array.from(set).sort();
+  }, [validTrades]);
+
+  // Filtrar trades por símbolo y por estrategia
   const filteredTrades = useMemo(() => {
-    return filterSymbol === 'ALL'
-      ? validTrades
-      : validTrades.filter(t => t.symbol && t.symbol.toUpperCase() === filterSymbol.toUpperCase());
-  }, [validTrades, filterSymbol]);
+    return validTrades.filter(t => {
+      if (filterSymbol !== 'ALL' && (!t.symbol || t.symbol.toUpperCase() !== filterSymbol.toUpperCase())) {
+        return false;
+      }
+      if (filterStrategy !== 'ALL' && getTradeStrategy(t) !== filterStrategy) {
+        return false;
+      }
+      return true;
+    });
+  }, [validTrades, filterSymbol, filterStrategy]);
 
   // Métricas financieras calculadas
   const totalTrades = filteredTrades.length;
@@ -273,19 +307,6 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     return Math.max(0.1, ...coinPerformanceList.map(c => Math.abs(c.totalPnL)));
   }, [coinPerformanceList]);
 
-  // Helper para extraer el nombre de la estrategia de un trade
-  const getTradeStrategy = (t) => {
-    if (t.strategy_name && String(t.strategy_name).trim()) return String(t.strategy_name).trim();
-    if (t.parameters) {
-      try {
-        const p = typeof t.parameters === 'string' ? JSON.parse(t.parameters) : t.parameters;
-        if (p.strategy_name) return String(p.strategy_name).trim();
-        if (p.active_strategy_name) return String(p.active_strategy_name).trim();
-      } catch (_) {}
-    }
-    return 'Global';
-  };
-
   // ========================================================
   // DESGLOSE Y RANKING POR ESTRATEGIA (TORNEO DE ESTRATEGIAS)
   // ========================================================
@@ -338,7 +359,31 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     });
 
     return list;
-  }, [trades, coinSortOrder]);
+  }, [validTrades, coinSortOrder]);
+
+  // Resumen Consolidado del Torneo de Estrategias
+  const tournamentBreakdown = useMemo(() => {
+    let winSum = 0;
+    let lossSum = 0;
+    let winCount = 0;
+    let lossCount = 0;
+    strategyPerformanceList.forEach(s => {
+      if (s.totalPnL > 0.00001) {
+        winSum += s.totalPnL;
+        winCount += 1;
+      } else if (s.totalPnL < -0.00001) {
+        lossSum += s.totalPnL;
+        lossCount += 1;
+      }
+    });
+    return {
+      winningStrategiesSum: winSum,
+      losingStrategiesSum: lossSum,
+      winningStratsCount: winCount,
+      losingStratsCount: lossCount,
+      netStrategiesSum: winSum + lossSum
+    };
+  }, [strategyPerformanceList]);
 
   const maxAbsStrategyPnL = useMemo(() => {
     if (strategyPerformanceList.length === 0) return 1;
@@ -660,7 +705,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
             </div>
           </div>
 
-          {/* Filtro por moneda y Exportar CSV */}
+          {/* Filtro por moneda, por estrategia y Exportar CSV */}
           <div className="flex flex-wrap items-center gap-2">
             {availableSymbols.length > 0 && (
               <select
@@ -671,6 +716,19 @@ function PnLPerformanceChart({ symbolsList = [] }) {
                 <option value="ALL">🪙 Todas las Monedas ({trades.length} ops)</option>
                 {availableSymbols.map(sym => (
                   <option key={sym} value={sym}>{sym}</option>
+                ))}
+              </select>
+            )}
+
+            {availableStrategies.length > 0 && (
+              <select
+                value={filterStrategy}
+                onChange={(e) => setFilterStrategy(e.target.value)}
+                className="text-xs py-1.5 px-3 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg font-semibold text-purple-700 dark:text-purple-300 focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="ALL">🧠 Todas las Estrategias</option>
+                {availableStrategies.map(strat => (
+                  <option key={strat} value={strat}>🧠 {strat}</option>
                 ))}
               </select>
             )}
@@ -1083,6 +1141,51 @@ function PnLPerformanceChart({ symbolsList = [] }) {
         {rankingViewMode === 'STRATEGIES' && (
           strategyPerformanceList.length > 0 ? (
             <div className="mt-4 space-y-3">
+              {/* Cuadro de Coherencia Matemática y Resumen del Torneo */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 bg-slate-950/80 rounded-xl border border-slate-800 shadow-inner">
+                <div className="flex items-center justify-between p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-lg">
+                  <div>
+                    <div className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <span>🏆 Ganadoras ({tournamentBreakdown.winningStratsCount})</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Total acumulado en profit</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-base font-mono font-black text-emerald-400">
+                      +{tournamentBreakdown.winningStrategiesSum.toFixed(4)} USDT
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-2.5 bg-rose-950/40 border border-rose-500/30 rounded-lg">
+                  <div>
+                    <div className="text-[11px] text-rose-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <span>🔻 En Drawdown / Previas ({tournamentBreakdown.losingStratsCount})</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Total en pérdida neta</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-base font-mono font-black text-rose-400">
+                      {tournamentBreakdown.losingStrategiesSum.toFixed(4)} USDT
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-2.5 bg-cyan-950/40 border border-cyan-500/30 rounded-lg">
+                  <div>
+                    <div className="text-[11px] text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <span>📊 PnL Neto Consolidado</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Ganadoras + Pérdidas</div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`text-base font-mono font-black ${tournamentBreakdown.netStrategiesSum >= 0 ? 'text-cyan-400' : 'text-rose-400'}`}>
+                      {tournamentBreakdown.netStrategiesSum >= 0 ? `+${tournamentBreakdown.netStrategiesSum.toFixed(4)}` : tournamentBreakdown.netStrategiesSum.toFixed(4)} USDT
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {strategyPerformanceList.map((strat, index) => {
                 const isProfit = strat.totalPnL >= 0;
                 const barWidthPercent = Math.min(100, Math.max(8, (Math.abs(strat.totalPnL) / maxAbsStrategyPnL) * 100));
@@ -1127,7 +1230,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
                         )}
                       </div>
 
-                      {/* Ganancia Total de la Estrategia */}
+                      {/* Ganancia Total de la Estrategia y Botón de Filtrado */}
                       <div className="flex items-center space-x-3">
                         <div className="text-right">
                           <span className={`text-base font-extrabold font-mono ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -1139,6 +1242,19 @@ function PnLPerformanceChart({ symbolsList = [] }) {
                             <span>Min: {strat.worstTrade.toFixed(2)}</span>
                           </div>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setFilterStrategy(filterStrategy === strat.strategy ? 'ALL' : strat.strategy)}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition ${
+                            filterStrategy === strat.strategy
+                              ? 'bg-purple-600 text-white shadow'
+                              : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                          }`}
+                          title={filterStrategy === strat.strategy ? 'Quitar filtro' : `Filtrar KPIs y curva solo de ${strat.strategy}`}
+                        >
+                          {filterStrategy === strat.strategy ? '✓ Filtrado' : '🔍 Filtrar'}
+                        </button>
                       </div>
 
                     </div>

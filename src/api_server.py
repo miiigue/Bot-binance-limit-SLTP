@@ -720,10 +720,16 @@ def get_worker_status():
         session_manager.update_stats(total_session_pnl, total_unrealized_pnl)
         session_stats = session_manager.get_stats()
         
+        # Métricas consolidadas directas de la base de datos
+        from src.database import get_total_database_metrics
+        db_metrics = get_total_database_metrics()
+
         response_data = {
             "bots_running": workers_started,
             "statuses": all_symbols_status,
-            "session_stats": session_stats # <-- NUEVO: Añadir estadísticas al response
+            "total_unrealized_pnl": float(total_unrealized_pnl),
+            "session_stats": session_stats,
+            "global_db_metrics": db_metrics
         }
         
         logger.debug(f"Returning combined statuses. Bots running: {workers_started}")
@@ -903,6 +909,10 @@ def close_all_positions_endpoint():
         all_positions = get_futures_position_information() or []
         for p in all_positions:
             sym = p.get('symbol')
+            if sym in results and "Cerrada" in results[sym]:
+                logger.info(f"[{sym}] Posición ya fue cerrada por el worker respectivo. Omitiendo segundo cierre directo.")
+                continue
+
             try:
                 amt = float(p.get('positionAmt', '0'))
                 if abs(amt) > 1e-9:
@@ -959,13 +969,10 @@ def close_all_positions_endpoint():
     try:
         from src.database import sync_binance_trades_to_db
         sync_binance_trades_to_db(limit_per_symbol=20)
-    except Exception as e_sync:
-        logger.warning(f"Aviso tras cierre al sincronizar trades: {e_sync}")
-        
-    return jsonify({
-        "message": "Operación de cierre masivo ejecutada.",
-        "results": results
-    }), 200
+    except Exception:
+        pass
+    
+    return jsonify({"success": True, "details": results}), 200
 # ------------------------------------------------------------------------
 
 # Función para cargar configuración inicial (llamada desde run_bot.py)
@@ -1076,9 +1083,9 @@ def get_symbol_trade_history(symbol: str):
 def get_all_trades_endpoint():
     """Endpoint para obtener los últimos trades de todos los símbolos para gráficos de rendimiento y curvas de capital."""
     logger = get_logger()
-    limit_param = request.args.get('limit', default=200, type=int)
+    limit_param = request.args.get('limit', default=2000, type=int)
     if limit_param < 1:
-        limit_param = 200
+        limit_param = 2000
     try:
         # Sincronización automática en vivo con Binance Testnet
         try:
@@ -1087,11 +1094,13 @@ def get_all_trades_endpoint():
         except Exception as e_sync:
             logger.debug(f"Aviso durante sincronización de trades con Binance: {e_sync}")
 
+        from src.database import get_all_recent_trades, get_total_database_metrics
         trades = get_all_recent_trades(limit=limit_param)
-        return jsonify({"trades": trades})
+        summary = get_total_database_metrics()
+        return jsonify({"trades": trades, "summary": summary})
     except Exception as e:
         logger.error(f"Error al obtener historial general de trades: {e}", exc_info=True)
-        return jsonify({"error": str(e), "trades": []}), 500
+        return jsonify({"error": str(e), "trades": [], "summary": {}}), 500
 
 @app.route('/api/trades/sync', methods=['POST'])
 def sync_trades_endpoint():

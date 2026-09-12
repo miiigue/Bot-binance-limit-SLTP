@@ -245,13 +245,23 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                 // Monedas en posición
                 const coinsInPos = sortedStatuses.filter(s => s.in_position).length;
 
+                // Fuente autorizada de la base de datos completa (no solo de los 6 pares activos)
+                const authoritativeTotalPnl = (data?.global_db_metrics && data.global_db_metrics.total_pnl !== undefined)
+                    ? parseFloat(data.global_db_metrics.total_pnl)
+                    : totalHistoricalPnl;
+
+                const authoritativeUnrealizedPnl = (data?.total_unrealized_pnl !== undefined)
+                    ? parseFloat(data.total_unrealized_pnl)
+                    : totalCurrentUnrealizedPnl;
+
                 onStatusUpdate({ 
-                    totalPnl: totalHistoricalPnl, 
-                    historicalPnl: totalHistoricalPnl,
-                    unrealizedPnl: totalCurrentUnrealizedPnl,
+                    totalPnl: authoritativeTotalPnl, 
+                    historicalPnl: authoritativeTotalPnl,
+                    unrealizedPnl: authoritativeUnrealizedPnl,
                     coinCount: sortedStatuses.length,
                     coinsInPosition: coinsInPos,
                     sessionStats: data.session_stats,
+                    globalDbMetrics: data.global_db_metrics,
                     bots_running: data.bots_running
                 });
             // ---------------------------------------------------------
