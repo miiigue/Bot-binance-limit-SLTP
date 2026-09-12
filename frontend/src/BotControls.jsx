@@ -74,13 +74,16 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
   };
 
   const handleResetTradesClick = async () => {
-    if (!window.confirm("⚠️ ¿Estás seguro de que deseas REINICIAR TODO EL HISTORIAL DE GANANCIAS Y TRADES?\n\nEsto pondrá el PnL acumulado a 0.00 USDT y borrará los registros antiguos para empezar una nueva etapa limpia.")) return;
+    if (!window.confirm("⚠️ ¿Estás seguro de que deseas REINICIAR TODO EL HISTORIAL DE GANANCIAS Y TRADES?\n\nEsto pondrá el PnL acumulado a 0.00 USDT y borrará los registros antiguos para empezar una nueva etapa limpia desde cero.")) return;
     setIsActionPending(true);
     try {
       const resp = await fetch('/api/trades/reset', { method: 'POST' });
       const data = await resp.json();
       if (resp.ok) {
         notify('🔄 Historial Reiniciado', 'El historial de trades y PnL se restableció a 0.00 USDT.', 'success');
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
       } else {
         notify('Error al Reiniciar', data.error || 'No se pudo reiniciar el historial.', 'error');
       }

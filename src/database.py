@@ -93,6 +93,15 @@ def init_db_schema():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_binance_trade_id ON trades (binance_trade_id)")
         conn.commit() # Commit después de CREATE INDEX
 
+        # Tabla para configuraciones persistentes (ej. corte de sincronización al resetear historial)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bot_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+        """)
+        conn.commit()
+
         logger.info("Esquema de la base de datos inicializado/verificado.")
         return True
     except sqlite3.Error as e:
@@ -278,10 +287,49 @@ def get_all_recent_trades(limit: int = 200) -> list[dict]:
             conn.close()
     return trades
 
+def get_bot_setting(key: str, default: str | None = None) -> str | None:
+    """Obtiene una configuración persistente de la base de datos."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM bot_settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row[0] if row else default
+    except Exception:
+        return default
+    finally:
+        if conn:
+            conn.close()
+
+def set_bot_setting(key: str, value: str) -> bool:
+    """Guarda o actualiza una configuración persistente en la base de datos."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        cursor.execute("INSERT INTO bot_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(value)))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error guardando bot_setting {key}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol: int = 50) -> int:
     """
     Sincroniza en tiempo real los trades completados desde Binance Testnet a la base de datos local SQLite.
     Garantiza que la sección de Rendimiento refleje fielmente cada operación ejecutada en Binance.
+    Respeta el punto de corte establecido tras un reinicio de historial (Reset PnL).
     """
     from src.binance_client import get_user_trade_history
     from src.config_loader import get_trading_symbols
@@ -290,16 +338,26 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
     if not symbols:
         symbols = get_trading_symbols() or []
 
+    cutoff_ms_str = get_bot_setting('trades_sync_cutoff_time_ms')
+    cutoff_ms = int(cutoff_ms_str) if (cutoff_ms_str and cutoff_ms_str.isdigit()) else 0
+
     synced_count = 0
     for sym in symbols:
         try:
-            trades = get_user_trade_history(symbol=sym, limit=limit_per_symbol)
+            trades = get_user_trade_history(
+                symbol=sym,
+                start_time_ms=cutoff_ms if cutoff_ms > 0 else None,
+                limit=limit_per_symbol
+            )
             if not trades:
                 continue
 
             for t in trades:
                 trade_id = t.get('id')
                 if not trade_id:
+                    continue
+                time_ms = int(t.get('time', 0))
+                if cutoff_ms > 0 and time_ms < cutoff_ms:
                     continue
                 if check_if_binance_trade_exists(int(trade_id)):
                     continue
@@ -308,7 +366,6 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                 qty = float(t.get('qty', '0'))
                 price = float(t.get('price', '0'))
                 side = str(t.get('side', 'BUY')).upper()
-                time_ms = int(t.get('time', 0))
                 trade_time = datetime.fromtimestamp(time_ms / 1000) if time_ms > 0 else datetime.now()
 
                 record_trade(
@@ -374,8 +431,9 @@ def get_trade_by_binance_id(binance_trade_id: Union[int, None]) -> Union[dict, N
     except sqlite3.Error as e:
         logger.error(f"Error al obtener trade por Binance ID {binance_trade_id}: {e}", exc_info=True)
         return None
+
 def clear_trade_history() -> bool:
-    """Elimina todos los trades de la base de datos y resetea el contador."""
+    """Elimina todos los trades de la base de datos y guarda timestamp de corte para no re-descargar historial antiguo de Binance."""
     logger = get_logger()
     conn = None
     try:
@@ -386,8 +444,16 @@ def clear_trade_history() -> bool:
             cursor.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
         except sqlite3.Error:
             pass
+        now_ms = int(datetime.now().timestamp() * 1000)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        cursor.execute("INSERT INTO bot_settings (key, value) VALUES ('trades_sync_cutoff_time_ms', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (str(now_ms),))
         conn.commit()
-        logger.info("Historial de trades eliminado exitosamente de la base de datos.")
+        logger.info(f"Historial de trades eliminado exitosamente de la base de datos. Nuevo corte de sincronización: {now_ms}")
         return True
     except sqlite3.Error as e:
         logger.error(f"Error al limpiar historial de trades en DB: {e}", exc_info=True)

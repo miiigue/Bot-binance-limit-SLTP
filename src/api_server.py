@@ -1030,6 +1030,29 @@ def sync_trades_endpoint():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/api/trades/reset', methods=['POST'])
+def reset_trades_endpoint():
+    """Borra el historial de operaciones de la base de datos y establece punto de inicio limpio desde cero."""
+    logger = get_logger()
+    logger.warning("Solicitud POST /api/trades/reset recibida. Reiniciando historial y PnL.")
+    try:
+        from src.database import clear_trade_history
+        success = clear_trade_history()
+        if success:
+            session_manager.reset_stats()
+            with status_lock:
+                for sym, worker in worker_statuses.items():
+                    if hasattr(worker, 'session_pnl'):
+                        worker.session_pnl = Decimal('0')
+                    if hasattr(worker, 'historical_pnl'):
+                        worker.historical_pnl = Decimal('0')
+            return jsonify({"success": True, "message": "Historial de trades y PnL reiniciado a 0.00 USDT."}), 200
+        else:
+            return jsonify({"success": False, "error": "No se pudo limpiar la base de datos."}), 500
+    except Exception as e:
+        logger.error(f"Error al reiniciar historial de trades: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # --- ENDPOINT PARA EXPLORADOR Y RADAR DE MERCADO CON CACHÉ ---
 _market_data_cache = {
     'timestamp': 0,
