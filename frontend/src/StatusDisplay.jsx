@@ -34,7 +34,7 @@ const getPnlColorClass = (pnl) => {
 function LiveDiagnosticsCell({ status }) {
   if (!status) return null;
 
-  // CASO 1: EN POSICIÓN ABIERTA -> Telemetría Visual Unificada (TP + Trailing Stop y Stop Loss)
+  // CASO 1: EN POSICIÓN ABIERTA -> Telemetría Visual Unificada (TP con punto de TS, y SL o Trailing Stop)
   if (status.in_position) {
     const pos = status.position_diagnostics || {};
     const pnlUsdt = pos.pnl_usdt !== undefined ? Number(pos.pnl_usdt) : (parseFloat(status.current_pnl) || 0);
@@ -49,7 +49,7 @@ function LiveDiagnosticsCell({ status }) {
     const hasTp = tp.target_usdt !== null && tp.target_usdt !== undefined && Number(tp.target_usdt) > 0;
     const tpProgress = Math.min(100, Math.max(0, tp.progress_pct || 0));
 
-    // 2. Métricas de Trailing Stop integradas en la barra de TP
+    // 2. Métricas de Trailing Stop
     const ts = pos.ts || {
       enabled: Boolean(pos.trailing_active),
       armed: Boolean(pos.trailing_armed),
@@ -58,7 +58,9 @@ function LiveDiagnosticsCell({ status }) {
       arm_progress_pct: 0
     };
     const hasTs = Boolean(ts.enabled);
-    const tsArmThreshold = ts.activation_threshold ? Number(ts.activation_threshold) : null;
+    const tsArmThreshold = (ts.activation_threshold && Number(ts.activation_threshold) > 0)
+      ? Number(ts.activation_threshold)
+      : (hasTp ? Number(tp.target_usdt) * 0.7 : null);
     const tsArmPosPct = (hasTp && tsArmThreshold && tsArmThreshold > 0)
       ? Math.min(95, Math.max(5, (tsArmThreshold / Number(tp.target_usdt)) * 100))
       : null;
@@ -76,7 +78,7 @@ function LiveDiagnosticsCell({ status }) {
 
     return (
       <div className="flex flex-col gap-1.5 min-w-[240px] max-w-[380px] py-0.5">
-        {/* --- FILA 1: TAKE PROFIT + TRAILING STOP INTEGRADO (RECORRIDO AZUL) --- */}
+        {/* --- FILA 1: TAKE PROFIT (con punto de activación de Trailing Stop visible) --- */}
         {hasTp ? (
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
@@ -87,26 +89,18 @@ function LiveDiagnosticsCell({ status }) {
                 </span>
                 {hasTs && (
                   ts.armed ? (
-                    <span className="text-[10px] font-extrabold px-1 py-0.2 rounded bg-sky-950 text-sky-300 border border-sky-500/60 flex items-center gap-0.5 animate-pulse">
-                      <span>🔵 TS ARMADO</span>
-                      {ts.floor_value !== null && ts.floor_value !== undefined && (
-                        <span>(+{ts.floor_value})</span>
-                      )}
+                    <span className="text-[10px] font-bold text-sky-300 flex items-center gap-1 animate-pulse">
+                      <span>🔵 TS Protegiendo</span>
                     </span>
                   ) : tsArmThreshold ? (
-                    <span className="text-[9px] text-sky-400/80 font-mono hidden sm:inline" title={`Trailing Stop se arma al alcanzar +${tsArmThreshold.toFixed(2)} USDT`}>
+                    <span className="text-[10px] text-sky-400 font-mono hidden sm:inline" title={`Trailing Stop se armará al alcanzar +${tsArmThreshold.toFixed(2)} USDT`}>
                       ⚡ TS: +{tsArmThreshold.toFixed(2)}
                     </span>
                   ) : null
                 )}
               </div>
               <div className="flex items-center gap-1.5 text-[10px]">
-                {ts.armed && ts.tolerance_pct !== null && ts.tolerance_pct !== undefined && (
-                  <span className="text-sky-300 font-bold font-mono">
-                    Tol: {Math.round(ts.tolerance_pct)}%
-                  </span>
-                )}
-                {tp.remaining_usdt !== null && tp.remaining_usdt > 0 && !ts.armed && (
+                {tp.remaining_usdt !== null && tp.remaining_usdt > 0 && (
                   <span className="text-slate-400 font-sans hidden sm:inline">
                     (Faltan: +{Number(tp.remaining_usdt).toFixed(2)})
                   </span>
@@ -117,18 +111,18 @@ function LiveDiagnosticsCell({ status }) {
               </div>
             </div>
 
-            {/* Barra de progreso de TP con marcador y zona de Trailing Stop en Azul */}
+            {/* Barra de progreso de TP con el punto/marcador de Trailing Stop visible */}
             <div className="relative w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
-              {/* Marcador vertical donde se arma el Trailing Stop */}
+              {/* Punto de activación de Trailing Stop en la barra de TP */}
               {hasTs && tsArmPosPct && !ts.armed && (
                 <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-sky-400/80 z-20 shadow-sm shadow-sky-400"
+                  className="absolute top-0 bottom-0 w-1 bg-sky-400 z-20 shadow-sm shadow-sky-400"
                   style={{ left: `${tsArmPosPct}%` }}
                   title={`Umbral de activación Trailing Stop: +${tsArmThreshold} USDT`}
                 />
               )}
 
-              {/* Relleno de la barra: Azul cuando TS está armado, Verde esmeralda en progreso normal */}
+              {/* Relleno de avance hacia TP */}
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
                   tpProgress >= 100 
@@ -150,8 +144,41 @@ function LiveDiagnosticsCell({ status }) {
           </div>
         )}
 
-        {/* --- FILA 2: STOP LOSS (Solo se llena en rojo al haber saldo negativo) --- */}
-        {hasSl ? (
+        {/* --- FILA 2: TRAILING STOP (Cuando está armado reemplaza al SL) O STOP LOSS (Si aún no se armó TS) --- */}
+        {ts.armed ? (
+          /* Al llegar al punto de TS, se QUITA el Stop Loss y APARECE el Trailing Stop en AZUL */
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-extrabold text-sky-300 flex items-center gap-1 animate-pulse">
+                  <span>🔵 TS ACTIVO:</span>
+                  <span>{ts.floor_value !== null && ts.floor_value !== undefined ? `Piso +${ts.floor_value} USDT` : (ts.label || 'Protegiendo')}</span>
+                </span>
+                {ts.peak_value !== null && ts.peak_value !== undefined && (
+                  <span className="text-[10px] text-slate-400 font-sans hidden sm:inline">
+                    (Pico: +{ts.peak_value})
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                <span className="text-slate-300 font-sans">
+                  Tolerancia:
+                </span>
+                <span className="font-black font-mono text-sky-400">
+                  {Math.round(ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100)}%
+                </span>
+              </div>
+            </div>
+            {/* Barra de Trailing Stop en AZUL que muestra la tolerancia de retroceso restante */}
+            <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-sky-900/80">
+              <div
+                className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 shadow-sm shadow-sky-500/50"
+                style={{ width: `${Math.min(100, Math.max(5, ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100))}%` }}
+              />
+            </div>
+          </div>
+        ) : hasSl ? (
+          /* Mientras no se alcance el punto de TS, se vigila el riesgo con el Stop Loss */
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
               <span className="font-extrabold text-rose-300 flex items-center gap-1">
@@ -707,7 +734,6 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               <th scope="col" className="px-2 py-3 text-left text-xs font-extrabold text-slate-100 uppercase tracking-wider w-10"></th>
               <BinanceSortHeader label="Symbol" sortKey="symbol" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Estrategia" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} />
-              <th scope="col" className="px-3 py-3 text-center text-xs font-extrabold text-slate-100 uppercase tracking-wider">Control</th>
               <BinanceSortHeader label="Estado" sortKey="state" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Current PnL" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} />
@@ -773,42 +799,27 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       </span>
                     </td>
 
-                    {/* --- BOTÓN DE PAUSA RÁPIDA --- */}
-                    <td className="px-3 py-3 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={(e) => handleTogglePause(e, status.symbol)}
-                        disabled={pausingSymbols[status.symbol]}
-                        className={`px-2.5 py-1 text-[11px] font-bold rounded-xl border transition-all active:scale-95 shadow-sm flex items-center justify-center gap-1 mx-auto ${
-                          status.is_paused
-                            ? 'bg-amber-950/80 hover:bg-amber-900 text-amber-200 border-amber-500/50'
-                            : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-200 border-emerald-500/50'
-                        }`}
-                        title={status.is_paused ? 'Bot pausado para este par. Clic para reactivar.' : 'Bot activo para este par. Clic para pausar.'}
-                      >
-                        {pausingSymbols[status.symbol] ? (
-                          <span className="animate-spin text-xs">⏳</span>
-                        ) : status.is_paused ? (
-                          <><span>⏸️</span><span>Pausado</span></>
-                        ) : (
-                          <><span>🟢</span><span>Activo</span></>
-                        )}
-                      </button>
-                    </td>
-
                     {/* --- ESTADO --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-xs">
                       <div className="flex flex-col gap-1">
-                        <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-bold rounded-full border ${
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTogglePause(e, status.symbol);
+                          }}
+                          disabled={pausingSymbols[status.symbol]}
+                          title={status.is_paused ? 'Bot pausado. Clic para reactivar.' : 'Bot activo. Clic para pausar.'}
+                          className={`px-2.5 py-0.5 inline-flex items-center justify-center text-xs leading-5 font-bold rounded-full border transition-all active:scale-95 cursor-pointer ${
                             status.state === 'IN_POSITION' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50' :
-                            status.state === 'Paused' || status.is_paused ? 'bg-amber-950/80 text-amber-200 border-amber-500/50' :
+                            status.state === 'Paused' || status.is_paused ? 'bg-amber-950/80 text-amber-200 border-amber-500/50 hover:bg-amber-900' :
                             status.state === 'ERROR' ? 'bg-red-950/80 text-red-200 border-red-500/50' :
                             status.state?.includes('WAITING') ? 'bg-indigo-950/80 text-indigo-200 border-indigo-500/50' :
                             status.state === 'Inactive' ? 'bg-slate-800 text-slate-300 border-slate-700' :
-                            'bg-slate-800 text-slate-200 border-slate-700'
+                            'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-750'
                         }`}>
-                          {status.is_paused && status.state !== 'IN_POSITION' ? '⏸️ Pausado' : (status.state || 'N/A')}
-                        </span>
+                          {pausingSymbols[status.symbol] ? '⏳ ...' : (status.is_paused && status.state !== 'IN_POSITION' ? '⏸️ Pausado' : (status.state || 'N/A'))}
+                        </button>
                         {/* Chips de órdenes pendientes si existen */}
                         {status.pending_entry_order_id && (
                           <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-500/60 shadow-sm" title={`Orden de entrada pendiente ID: ${status.pending_entry_order_id}`}>
@@ -887,7 +898,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                   {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
                   {expandedRows[status.symbol] && (
                     <tr id={`history-${status.symbol}`}>
-                      <td colSpan="10" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
+                      <td colSpan="9" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
                         {loadingHistories[status.symbol] && (
                           <p className="text-xs text-center text-slate-300 font-mono">Cargando historial...</p>
                         )}
@@ -956,7 +967,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               ))
             ) : (
               <tr>
-                <td colSpan="10" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
+                <td colSpan="9" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
                   {isLoading ? 'Cargando estados...' : (error ? `Error: ${error}` : 'No hay datos de bots disponibles.')}
                 </td>
               </tr>
@@ -965,7 +976,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
           {sortedStatuses.length > 0 && (
             <tfoot className="bg-slate-950 border-t-2 border-slate-700 font-mono text-xs">
               <tr className="divide-x divide-slate-800">
-                <td colSpan="5" className="px-3 py-3 text-left font-sans font-extrabold text-slate-200">
+                <td colSpan="4" className="px-3 py-3 text-left font-sans font-extrabold text-slate-200">
                   <div className="flex items-center gap-2">
                     <span className="text-base">📊</span>
                     <span>TOTALES CONSOLIDADOS ({sortedStatuses.length} pares)</span>

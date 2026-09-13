@@ -695,9 +695,10 @@ class TradingBot:
             enable_rsi_ts = bool(getattr(self, 'enable_trailing_rsi_stop', False))
             ts_enabled = enable_pnl_ts or enable_price_ts or enable_rsi_ts
 
-            pnl_ts_armed = bool(getattr(self, 'pnl_trailing_stop_armed', False))
-            price_ts_armed = bool(getattr(self, 'price_trailing_stop_armed', False))
-            rsi_ts_armed = bool(getattr(self, 'rsi_objetivo_activado', False))
+            # CRÍTICO: Un Trailing Stop NUNCA puede estar armado si el PnL no es estrictamente positivo (> 0)
+            pnl_ts_armed = bool(getattr(self, 'pnl_trailing_stop_armed', False)) and (pnl_usdt_val > 0)
+            price_ts_armed = bool(getattr(self, 'price_trailing_stop_armed', False)) and (pnl_usdt_val > 0)
+            rsi_ts_armed = bool(getattr(self, 'rsi_objetivo_activado', False)) and enable_rsi_ts and (pnl_usdt_val > 0)
             any_armed = pnl_ts_armed or price_ts_armed or rsi_ts_armed
 
             ts_diag = {
@@ -714,10 +715,16 @@ class TradingBot:
             }
 
             if ts_enabled:
-                if pnl_ts_armed or (enable_pnl_ts and not any_armed):
+                # Prioridad 1: PnL Trailing Stop (en USDT, compatible directo con TP)
+                if enable_pnl_ts or pnl_ts_armed:
                     ts_diag["type"] = "pnl"
-                    act_val = float(getattr(self, 'pnl_trailing_stop_activation_usdt', 0.05) or 0.05)
-                    drop_val = float(getattr(self, 'pnl_trailing_stop_drop_usdt', 0.02) or 0.02)
+                    act_val = float(getattr(self, 'pnl_trailing_stop_activation_usdt', 0) or 0)
+                    if act_val <= 0 and target_tp_usdt and target_tp_usdt > 0:
+                        act_val = round(target_tp_usdt * 0.7, 2)
+                    drop_val = float(getattr(self, 'pnl_trailing_stop_drop_usdt', 0) or 0)
+                    if drop_val <= 0 and act_val > 0:
+                        drop_val = round(act_val * 0.2, 2)
+
                     ts_diag["activation_threshold"] = act_val
                     ts_diag["armed"] = pnl_ts_armed
 
@@ -725,7 +732,7 @@ class TradingBot:
                         peak_pnl = float(self.pnl_peak_since_activation) if getattr(self, 'pnl_peak_since_activation', None) is not None else pnl_usdt_val
                         if pnl_usdt_val > peak_pnl:
                             peak_pnl = pnl_usdt_val
-                        floor_pnl = peak_pnl - drop_val
+                        floor_pnl = max(0.0, peak_pnl - drop_val)
                         tolerance_val = max(0.0, pnl_usdt_val - floor_pnl)
                         tolerance_pct = max(0.0, min(100.0, (tolerance_val / drop_val * 100.0))) if drop_val > 0 else 100.0
 
@@ -735,11 +742,11 @@ class TradingBot:
                         ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
                         ts_diag["label"] = f"Piso: +{floor_pnl:.2f} USDT"
                     else:
-                        arm_prog = max(0.0, min(100.0, (pnl_usdt_val / act_val * 100.0))) if act_val > 0 else 0.0
+                        arm_prog = max(0.0, min(100.0, (pnl_usdt_val / act_val * 100.0))) if (act_val > 0 and pnl_usdt_val > 0) else 0.0
                         ts_diag["arm_progress_pct"] = round(arm_prog, 1)
                         ts_diag["label"] = f"Arma en: +{act_val:.2f} USDT"
 
-                elif price_ts_armed or (enable_price_ts and not any_armed):
+                elif enable_price_ts or price_ts_armed:
                     ts_diag["type"] = "price"
                     act_pnl = float(getattr(self, 'price_trailing_stop_activation_pnl_usdt', 0.05) or 0.05)
                     dist_pr = float(getattr(self, 'price_trailing_stop_distance_usdt', 0.05) or 0.05)
@@ -761,11 +768,11 @@ class TradingBot:
                         ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
                         ts_diag["label"] = f"Piso: ${floor_pr:.4f}"
                     else:
-                        arm_prog = max(0.0, min(100.0, (pnl_usdt_val / act_pnl * 100.0))) if act_pnl > 0 else 0.0
+                        arm_prog = max(0.0, min(100.0, (pnl_usdt_val / act_pnl * 100.0))) if (act_pnl > 0 and pnl_usdt_val > 0) else 0.0
                         ts_diag["arm_progress_pct"] = round(arm_prog, 1)
                         ts_diag["label"] = f"Arma en: +{act_pnl:.2f} USDT"
 
-                elif rsi_ts_armed or (enable_rsi_ts and not any_armed):
+                elif enable_rsi_ts:
                     ts_diag["type"] = "rsi"
                     ts_diag["armed"] = rsi_ts_armed
                     act_rsi = float(getattr(self, 'rsi_target', 70))
@@ -2496,13 +2503,14 @@ class TradingBot:
 
             # 3. Activación de RSI objetivo y seguimiento del pico para Trailing Stop RSI (MODIFICADO)
             # La activación del rsi_objetivo y el seguimiento del pico se hacen independientemente de si el Trailing Stop está habilitado,
-            if self.last_rsi_value is not None:
-                if not self.rsi_objetivo_activado:
-                    if self.last_rsi_value >= self.rsi_target: # INDENTAR ESTE BLOQUE if
+            if self.last_rsi_value is not None and self.enable_trailing_rsi_stop:
+                pnl_is_pos = (self.last_known_pnl is not None and self.last_known_pnl > Decimal('0'))
+                if not self.rsi_objetivo_activado and pnl_is_pos:
+                    if self.last_rsi_value >= self.rsi_target:
                         self.rsi_objetivo_activado = True
                         self.rsi_peak_since_target = self.last_rsi_value # Inicializar el pico RSI
                         self.rsi_objetivo_alcanzado_en = pd.Timestamp.now(tz='UTC') # Opcional: registrar cuándo se armó
-                        self.logger.info(f"[{self.symbol}] RSI objetivo ({self.rsi_target}) alcanzado. RSI actual: {self.last_rsi_value:.2f}. Se activa TRAILING RSI STOP. Pico inicial: {self.rsi_peak_since_target:.2f}")
+                        self.logger.info(f"[{self.symbol}] RSI objetivo ({self.rsi_target}) alcanzado con PnL positivo ({self.last_known_pnl:.4f}). Se activa TRAILING RSI STOP. Pico inicial: {self.rsi_peak_since_target:.2f}")
                 elif self.rsi_objetivo_activado: # Si ya está activado, actualizar el pico
                     if self.last_rsi_value > self.rsi_peak_since_target:
                         self.logger.info(f"[{self.symbol}] Nuevo pico RSI para TRAILING STOP: {self.last_rsi_value:.2f} (anterior: {self.rsi_peak_since_target:.2f})")
