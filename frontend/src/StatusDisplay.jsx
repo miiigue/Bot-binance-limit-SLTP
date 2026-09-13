@@ -34,7 +34,7 @@ const getPnlColorClass = (pnl) => {
 function LiveDiagnosticsCell({ status }) {
   if (!status) return null;
 
-  // CASO 1: EN POSICIÓN ABIERTA -> Monitor de Salida de 3 Vías (TP, SL y Trailing Stop)
+  // CASO 1: EN POSICIÓN ABIERTA -> Telemetría Visual Unificada (TP + Trailing Stop y Stop Loss)
   if (status.in_position) {
     const pos = status.position_diagnostics || {};
     const pnlUsdt = pos.pnl_usdt !== undefined ? Number(pos.pnl_usdt) : (parseFloat(status.current_pnl) || 0);
@@ -49,20 +49,7 @@ function LiveDiagnosticsCell({ status }) {
     const hasTp = tp.target_usdt !== null && tp.target_usdt !== undefined && Number(tp.target_usdt) > 0;
     const tpProgress = Math.min(100, Math.max(0, tp.progress_pct || 0));
 
-    // 2. Métricas de SL (Escudo de Protección)
-    const slTarget = pos.sl?.target_usdt !== undefined ? pos.sl.target_usdt : pos.sl_target_usdt;
-    const slDist = pos.sl?.distance_usdt !== undefined ? pos.sl.distance_usdt : pos.sl_distance_usdt;
-    const slStatus = pos.sl?.status || (pnlUsdt >= 0 ? 'safe' : 'caution');
-    let slSafety = 100;
-    if (pos.sl?.safety_pct !== undefined) {
-      slSafety = pos.sl.safety_pct;
-    } else if (slTarget) {
-      slSafety = pnlUsdt >= 0 ? 100 : Math.max(0, Math.min(100, ((pnlUsdt - Number(slTarget)) / Math.abs(Number(slTarget))) * 100));
-    }
-    const hasSl = slTarget !== null && slTarget !== undefined;
-    const slProgressWidth = Math.min(100, Math.max(5, slSafety));
-
-    // 3. Métricas de Trailing Stop
+    // 2. Métricas de Trailing Stop integradas en la barra de TP
     const ts = pos.ts || {
       enabled: Boolean(pos.trailing_active),
       armed: Boolean(pos.trailing_armed),
@@ -71,36 +58,86 @@ function LiveDiagnosticsCell({ status }) {
       arm_progress_pct: 0
     };
     const hasTs = Boolean(ts.enabled);
+    const tsArmThreshold = ts.activation_threshold ? Number(ts.activation_threshold) : null;
+    const tsArmPosPct = (hasTp && tsArmThreshold && tsArmThreshold > 0)
+      ? Math.min(95, Math.max(5, (tsArmThreshold / Number(tp.target_usdt)) * 100))
+      : null;
+
+    // 3. Métricas de Stop Loss (Se llena en ROJO únicamente desde saldo negativo, sin amarillo)
+    const slTarget = pos.sl?.target_usdt !== undefined ? pos.sl.target_usdt : pos.sl_target_usdt;
+    const slDist = pos.sl?.distance_usdt !== undefined ? pos.sl.distance_usdt : pos.sl_distance_usdt;
+    const hasSl = slTarget !== null && slTarget !== undefined;
+    
+    // Si pnlUsdt >= 0: la barra está vacía (0%). Solo se llena al haber pérdida proporcionalmente al target
+    let slFillPct = 0;
+    if (pnlUsdt < 0 && slTarget && Number(slTarget) < 0) {
+      slFillPct = Math.min(100, Math.max(0, (Math.abs(pnlUsdt) / Math.abs(Number(slTarget))) * 100));
+    }
 
     return (
-      <div className="flex flex-col gap-1.5 min-w-[240px] max-w-[380px] py-1">
-        {/* --- FILA 1: TAKE PROFIT --- */}
+      <div className="flex flex-col gap-1.5 min-w-[240px] max-w-[380px] py-0.5">
+        {/* --- FILA 1: TAKE PROFIT + TRAILING STOP INTEGRADO (RECORRIDO AZUL) --- */}
         {hasTp ? (
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
-              <span className="font-extrabold text-emerald-300 flex items-center gap-1">
-                <span>🎯 TP:</span>
-                <span>+{Number(tp.target_usdt).toFixed(2)} USDT</span>
-              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-extrabold text-emerald-300 flex items-center gap-1">
+                  <span>🎯 TP:</span>
+                  <span>+{Number(tp.target_usdt).toFixed(2)} USDT</span>
+                </span>
+                {hasTs && (
+                  ts.armed ? (
+                    <span className="text-[10px] font-extrabold px-1 py-0.2 rounded bg-sky-950 text-sky-300 border border-sky-500/60 flex items-center gap-0.5 animate-pulse">
+                      <span>🔵 TS ARMADO</span>
+                      {ts.floor_value !== null && ts.floor_value !== undefined && (
+                        <span>(+{ts.floor_value})</span>
+                      )}
+                    </span>
+                  ) : tsArmThreshold ? (
+                    <span className="text-[9px] text-sky-400/80 font-mono hidden sm:inline" title={`Trailing Stop se arma al alcanzar +${tsArmThreshold.toFixed(2)} USDT`}>
+                      ⚡ TS: +{tsArmThreshold.toFixed(2)}
+                    </span>
+                  ) : null
+                )}
+              </div>
               <div className="flex items-center gap-1.5 text-[10px]">
-                {tp.remaining_usdt !== null && tp.remaining_usdt > 0 && (
+                {ts.armed && ts.tolerance_pct !== null && ts.tolerance_pct !== undefined && (
+                  <span className="text-sky-300 font-bold font-mono">
+                    Tol: {Math.round(ts.tolerance_pct)}%
+                  </span>
+                )}
+                {tp.remaining_usdt !== null && tp.remaining_usdt > 0 && !ts.armed && (
                   <span className="text-slate-400 font-sans hidden sm:inline">
                     (Faltan: +{Number(tp.remaining_usdt).toFixed(2)})
                   </span>
                 )}
-                <span className={`font-black font-mono ${pnlUsdt >= 0 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                <span className={`font-black font-mono ${pnlUsdt >= 0 ? (ts.armed ? 'text-sky-400' : 'text-emerald-400') : 'text-slate-400'}`}>
                   {Math.round(tpProgress)}%
                 </span>
               </div>
             </div>
-            <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
+
+            {/* Barra de progreso de TP con marcador y zona de Trailing Stop en Azul */}
+            <div className="relative w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
+              {/* Marcador vertical donde se arma el Trailing Stop */}
+              {hasTs && tsArmPosPct && !ts.armed && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-sky-400/80 z-20 shadow-sm shadow-sky-400"
+                  style={{ left: `${tsArmPosPct}%` }}
+                  title={`Umbral de activación Trailing Stop: +${tsArmThreshold} USDT`}
+                />
+              )}
+
+              {/* Relleno de la barra: Azul cuando TS está armado, Verde esmeralda en progreso normal */}
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
                   tpProgress >= 100 
                     ? 'bg-emerald-400 animate-pulse' 
-                    : pnlUsdt >= 0 
-                      ? 'bg-gradient-to-r from-teal-500 to-emerald-400' 
-                      : 'bg-slate-700'
+                    : ts.armed
+                      ? 'bg-gradient-to-r from-teal-500 via-sky-500 to-blue-500 shadow-sm shadow-sky-500/50'
+                      : pnlUsdt >= 0 
+                        ? 'bg-gradient-to-r from-teal-500 to-emerald-400' 
+                        : 'bg-slate-700'
                 }`}
                 style={{ width: `${tpProgress}%` }}
               />
@@ -113,7 +150,7 @@ function LiveDiagnosticsCell({ status }) {
           </div>
         )}
 
-        {/* --- FILA 2: STOP LOSS --- */}
+        {/* --- FILA 2: STOP LOSS (Solo se llena en rojo al haber saldo negativo) --- */}
         {hasSl ? (
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
@@ -123,70 +160,28 @@ function LiveDiagnosticsCell({ status }) {
               </span>
               <div className="flex items-center gap-1.5 text-[10px]">
                 <span className="text-slate-300 font-sans">
-                  Colchón: <span className="font-bold font-mono text-emerald-300">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
+                  Colchón: <span className="font-bold font-mono text-slate-200">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
                 </span>
-                <span className={`font-black font-mono ${
-                  slStatus === 'safe' ? 'text-emerald-400' :
-                  slStatus === 'caution' ? 'text-amber-400' :
-                  'text-rose-400 animate-pulse'
-                }`}>
-                  {slStatus === 'safe' ? '🛡️ Seguro' : `${Math.round(slSafety)}%`}
-                </span>
-              </div>
-            </div>
-            <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  slStatus === 'safe'
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
-                    : slStatus === 'caution'
-                      ? 'bg-gradient-to-r from-amber-500 to-amber-400'
-                      : 'bg-gradient-to-r from-rose-600 to-red-500 animate-pulse'
-                }`}
-                style={{ width: `${slProgressWidth}%` }}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        {/* --- FILA 3: TRAILING STOP --- */}
-        {hasTs ? (
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
-              <span className={`font-extrabold flex items-center gap-1 ${ts.armed ? 'text-amber-300' : 'text-slate-400'}`}>
-                <span>{ts.armed ? '🔥' : '⚡'}</span>
-                <span>{ts.armed ? 'TS ARMADO:' : 'TS:'}</span>
-                <span className="font-bold">{ts.label || (ts.armed ? 'Activo' : 'En espera')}</span>
-              </span>
-              <div className="flex items-center gap-1.5 text-[10px]">
-                {ts.armed ? (
-                  <>
-                    {ts.peak_value !== null && ts.peak_value !== undefined && (
-                      <span className="text-slate-400 font-sans hidden sm:inline">
-                        Pico: +{ts.peak_value}
-                      </span>
-                    )}
-                    <span className="font-black font-mono text-amber-300">
-                      {Math.round(ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100)}% tol.
-                    </span>
-                  </>
+                {pnlUsdt >= 0 ? (
+                  <span className="font-black font-mono text-emerald-400">
+                    🛡️ Seguro
+                  </span>
                 ) : (
-                  <span className="text-slate-400 font-sans">
-                    Avance: <span className="font-bold font-mono text-slate-300">{Math.round(ts.arm_progress_pct || 0)}%</span>
+                  <span className="font-black font-mono text-rose-400 animate-pulse">
+                    {Math.round(slFillPct)}% riesgo
                   </span>
                 )}
               </div>
             </div>
+            {/* Barra de SL: 0% (vacía) con saldo positivo. Se llena en ROJO únicamente al haber saldo negativo */}
             <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
-                  ts.armed
-                    ? 'bg-gradient-to-r from-amber-500 via-orange-400 to-amber-300 shadow-sm shadow-amber-500/50'
-                    : 'bg-gradient-to-r from-indigo-500 to-sky-400'
+                  slFillPct >= 80
+                    ? 'bg-gradient-to-r from-red-600 to-rose-500 animate-pulse'
+                    : 'bg-gradient-to-r from-rose-600 to-red-500'
                 }`}
-                style={{
-                  width: `${Math.min(100, Math.max(0, ts.armed ? (ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100) : (ts.arm_progress_pct || 0)))}%`
-                }}
+                style={{ width: `${slFillPct}%` }}
               />
             </div>
           </div>
@@ -205,7 +200,7 @@ function LiveDiagnosticsCell({ status }) {
     );
   }
 
-  // CASO 3: SIN POSICIÓN -> Radar de Condiciones de Entrada
+  // CASO 3: SIN POSICIÓN -> Radar de Condiciones de Entrada (Sin badge redundante de Filtros 0/2)
   const diag = status.entry_diagnostics;
   if (!diag || !Array.isArray(diag.conditions) || diag.conditions.length === 0) {
     return (
@@ -216,73 +211,57 @@ function LiveDiagnosticsCell({ status }) {
     );
   }
 
-  const { conditions, passed_count, total_active, all_met, ratio_text } = diag;
+  const { conditions, all_met, ratio_text } = diag;
 
   return (
-    <div className="flex flex-col gap-1.5 min-w-[230px] max-w-[420px] py-0.5">
-      {/* Resumen Superior */}
-      <div className="flex items-center gap-2">
-        {all_met ? (
-          <span className="px-2 py-0.5 rounded text-[10px] font-black tracking-wide bg-emerald-500 text-slate-950 border border-emerald-400 animate-pulse shadow-sm shadow-emerald-500/50 flex items-center gap-1">
-            <span>⚡</span>
-            <span>SEÑAL COMPLETA ({ratio_text})</span>
-          </span>
-        ) : total_active > 0 && passed_count >= total_active - 1 ? (
-          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-950/90 text-amber-300 border border-amber-500/80 shadow-sm flex items-center gap-1">
-            <span>🟡</span>
-            <span>Casi lista ({ratio_text})</span>
-          </span>
-        ) : (
-          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-900 text-slate-300 border border-slate-700 shadow-sm flex items-center gap-1">
-            <span>🔍</span>
-            <span>Filtros ({ratio_text})</span>
-          </span>
-        )}
-      </div>
+    <div className="flex items-center gap-1 flex-wrap py-0.5 max-w-[420px]">
+      {all_met && (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide bg-emerald-500 text-slate-950 border border-emerald-400 animate-pulse shadow-sm shadow-emerald-500/50">
+          <span>⚡ SEÑAL ({ratio_text})</span>
+        </span>
+      )}
 
-      {/* Badges de filtros individuales */}
-      <div className="flex items-center gap-1 flex-wrap">
-        {conditions.map((c) => {
-          if (!c.active) {
-            return (
-              <span
-                key={c.id}
-                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-500 bg-slate-900/60 border border-slate-800"
-                title={`${c.name}: Desactivado en configuración`}
-              >
-                <span>⚪</span>
-                <span>{c.short_name || c.name}</span>
-              </span>
-            );
-          }
-
-          if (c.passed) {
-            return (
-              <span
-                key={c.id}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-600/60 shadow-sm hover:bg-emerald-900 transition-colors cursor-help"
-                title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
-              >
-                <span className="text-[10px]">✅</span>
-                <span>{c.short_name || c.name}:</span>
-                <span className="font-bold">{c.value}</span>
-              </span>
-            );
-          }
-
+      {/* Badges de filtros individuales directamente sin badge redundante 0/2 */}
+      {conditions.map((c) => {
+        if (!c.active) {
           return (
             <span
               key={c.id}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-rose-950/60 text-rose-300/90 border border-rose-800/50 shadow-sm hover:bg-rose-950 transition-colors cursor-help"
-              title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-500 bg-slate-900/60 border border-slate-800"
+              title={`${c.name}: Desactivado en configuración`}
             >
-              <span className="text-[10px]">❌</span>
-              <span>{c.short_name || c.name}:</span>
-              <span>{c.value}</span>
+              <span>⚪</span>
+              <span>{c.short_name || c.name}</span>
             </span>
           );
-        })}
-      </div>
+        }
+
+        if (c.passed) {
+          return (
+            <span
+              key={c.id}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-600/60 shadow-sm hover:bg-emerald-900 transition-colors cursor-help"
+              title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
+            >
+              <span className="text-[10px]">✅</span>
+              <span>{c.short_name || c.name}:</span>
+              <span className="font-bold">{c.value}</span>
+            </span>
+          );
+        }
+
+        return (
+          <span
+            key={c.id}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-rose-950/60 text-rose-300/90 border border-rose-800/50 shadow-sm hover:bg-rose-950 transition-colors cursor-help"
+            title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
+          >
+            <span className="text-[10px]">❌</span>
+            <span>{c.short_name || c.name}:</span>
+            <span>{c.value}</span>
+          </span>
+        );
+      })}
     </div>
   );
 }

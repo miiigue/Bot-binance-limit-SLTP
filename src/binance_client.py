@@ -324,8 +324,17 @@ def get_futures_position(symbol: str):
             logger.info(f"Posición encontrada para {symbol} ({pos_side}): Cantidad={position_amt:.8f}, Precio Entrada={entry_price:.4f}, PnL no realizado={pnl:.4f}, Leverage={leverage}x")
             return position_info
         else:
-            logger.debug(f"No hay posición abierta para {symbol}.")
-            return None
+            logger.debug(f"No hay posición abierta para {symbol} en Binance (Cantidad = 0).")
+            # Retornar dict con positionAmt='0' para confirmar que Binance respondió y la posición está cerrada
+            default_pos = positions[0] if (positions and len(positions) > 0) else {
+                'symbol': symbol.upper(),
+                'positionAmt': '0.000',
+                'entryPrice': '0.0',
+                'unRealizedProfit': '0.00000000',
+                'positionSide': 'BOTH',
+                'leverage': '0'
+            }
+            return default_pos
 
     except ClientError as e:
         logger.error(f"Error de API al obtener información de posición/riesgo para {symbol}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
@@ -429,7 +438,7 @@ def create_futures_limit_order(symbol: str, side: str, quantity: float, price: f
         logger.error(f"Error al crear orden LIMIT {side} para {symbol} @ {price_str}: {e}", exc_info=True)
         return None
 
-def create_futures_market_order(symbol: str, side: str, quantity: float, reduce_only: bool = False) -> dict | None:
+def create_futures_market_order(symbol: str, side: str, quantity: float, reduce_only: bool = False, position_side: str | None = None) -> dict | None:
     """
     Crea una orden MARKET (a mercado) en Binance Futures.
     Se ejecuta de forma inmediata al precio actual disponible en el order book.
@@ -440,6 +449,7 @@ def create_futures_market_order(symbol: str, side: str, quantity: float, reduce_
         side: 'BUY' o 'SELL'.
         quantity: Cantidad de contratos/monedas a operar.
         reduce_only: Si es True, solo reduce/cierra posición existente (solo en modo unidireccional).
+        position_side: 'LONG', 'SHORT' o 'BOTH' opcional. Si es None, autodetecta según Hedge Mode.
 
     Returns:
         El diccionario de respuesta de la API si la orden se ejecutó exitosamente, None si falló.
@@ -455,7 +465,10 @@ def create_futures_market_order(symbol: str, side: str, quantity: float, reduce_
         logger.error(f"Lado inválido '{side}' para crear orden MARKET.")
         return None
 
-    pos_side = 'LONG' if is_hedge_mode() else 'BOTH'
+    if position_side:
+        pos_side = position_side.upper()
+    else:
+        pos_side = 'LONG' if is_hedge_mode() else 'BOTH'
 
     try:
         logger.info(f"Intentando crear orden MARKET {side} para {quantity} {symbol} (positionSide={pos_side}, reduceOnly={reduce_only})")

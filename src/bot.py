@@ -1616,6 +1616,7 @@ class TradingBot:
             symbol=self.symbol,
             side=close_side,
             quantity=adjusted_qty,
+            reduce_only=True,
             position_side=pos_side
         )
 

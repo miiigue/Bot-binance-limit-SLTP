@@ -939,9 +939,18 @@ def close_all_positions_endpoint():
                     
                     side = 'SELL' if amt > 0 else 'BUY'
                     raw_ps = p.get('positionSide', 'BOTH')
-                    order = create_futures_market_order(sym, side=side, quantity=abs(amt), position_side=raw_ps)
+                    order = create_futures_market_order(sym, side=side, quantity=abs(amt), reduce_only=True, position_side=raw_ps)
                     if order:
                         results[sym] = f"Cerrada en Binance (Orden ID: {order.get('orderId')})"
+                        # Sincronizar worker si existe
+                        if sym in active_workers and active_workers[sym]:
+                            try:
+                                active_workers[sym]._reset_state()
+                                active_workers[sym].in_position = False
+                                active_workers[sym].current_state = BotState.IDLE
+                            except Exception as e_res:
+                                logger.warning(f"Aviso al resetear worker {sym}: {e_res}")
+
                         try:
                             entry_price = float(p.get('entryPrice', 0))
                             close_price = float(order.get('avgPrice', order.get('price', 0)))
@@ -976,6 +985,19 @@ def close_all_positions_endpoint():
             except Exception as e:
                 logger.error(f"Error cerrando posición Binance {sym}: {e}")
                 results[sym] = f"Error: {e}"
+        
+        # 3. Limpiar cualquier worker fantasma cuya posición ya esté en 0 en Binance
+        open_syms = {p.get('symbol') for p in all_positions if abs(float(p.get('positionAmt', 0))) > 1e-9}
+        for symbol, worker in active_workers.items():
+            if symbol not in open_syms and getattr(worker, 'in_position', False):
+                try:
+                    worker._reset_state()
+                    worker.in_position = False
+                    worker.current_state = BotState.IDLE
+                    logger.info(f"[{symbol}] Worker sincronizado a 0 (sin posición real en Binance).")
+                except Exception:
+                    pass
+
     except Exception as e:
         logger.error(f"Error consultando posiciones generales de Binance: {e}")
     
@@ -986,7 +1008,13 @@ def close_all_positions_endpoint():
     except Exception:
         pass
     
-    return jsonify({"success": True, "details": results}), 200
+    return jsonify({
+        "success": True,
+        "results": results,
+        "details": results,
+        "closed_count": len(results),
+        "message": f"Se procesaron {len(results)} posiciones." if results else "No se encontraron posiciones activas en Binance Testnet."
+    }), 200
 # ------------------------------------------------------------------------
 
 # Función para cargar configuración inicial (llamada desde run_bot.py)

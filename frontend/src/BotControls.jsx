@@ -53,10 +53,10 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
       const resp = await fetch('/api/close_all_positions', { method: 'POST' });
       const data = await resp.json();
       if (resp.ok) {
-        const results = data.results || {};
+        const results = data.results || data.details || {};
         const entries = Object.entries(results);
         if (entries.length === 0) {
-          notify('ℹ️ Sin Posiciones', 'No se encontraron posiciones activas en Binance Testnet.', 'info');
+          notify('ℹ️ Sin Posiciones', 'No se encontraron posiciones activas en Binance Testnet. Tablero sincronizado.', 'info');
         } else {
           const failed = entries.filter(([_, status]) => String(status).toLowerCase().includes('fallo') || String(status).toLowerCase().includes('error'));
           if (failed.length > 0) {
