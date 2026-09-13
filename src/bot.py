@@ -621,64 +621,7 @@ class TradingBot:
             self._update_state(BotState.IN_POSITION)
 
             # --- ACTUALIZAR DIAGNÓSTICO DE SALIDA & PROTECCIÓN EN TIEMPO REAL ---
-            try:
-                pnl_usdt_val = float(unrealized_pnl_binance)
-                entry_p_val = float(entry_price_binance)
-                qty_val = float(pos_amt_binance)
-                pos_val_usdt = abs(entry_p_val * qty_val)
-                lev_val = int(getattr(self, 'leverage', 20) or 20)
-                margin_val = (pos_val_usdt / lev_val) if lev_val > 0 else 0.0
-                pnl_pct_val = (pnl_usdt_val / margin_val * 100.0) if margin_val > 0 else 0.0
-
-                target_tp_usdt = None
-                if getattr(self, 'take_profit_usdt', None) and self.take_profit_usdt > Decimal('0'):
-                    target_tp_usdt = float(self.take_profit_usdt)
-                elif getattr(self, 'support_order_take_profit_percent', 0) > 0:
-                    target_tp_usdt = round(pos_val_usdt * (float(self.support_order_take_profit_percent) / 100.0), 4)
-
-                tp_progress = None
-                if target_tp_usdt and target_tp_usdt > 0:
-                    tp_progress = max(0.0, min(100.0, (pnl_usdt_val / target_tp_usdt) * 100.0))
-
-                target_sl_usdt = None
-                if getattr(self, 'stop_loss_usdt', None) and abs(self.stop_loss_usdt) > Decimal('0'):
-                    target_sl_usdt = -abs(float(self.stop_loss_usdt))
-                elif getattr(self, 'support_order_stop_loss_percent', 0) > 0:
-                    target_sl_usdt = -round(pos_val_usdt * (float(self.support_order_stop_loss_percent) / 100.0), 4)
-
-                sl_distance = None
-                if target_sl_usdt is not None:
-                    sl_distance = pnl_usdt_val - target_sl_usdt
-
-                trailing_active = bool(
-                    getattr(self, 'enable_price_trailing_stop', False) or 
-                    getattr(self, 'enable_pnl_trailing_stop', False) or 
-                    getattr(self, 'enable_trailing_rsi_stop', False)
-                )
-                trailing_armed = bool(
-                    getattr(self, 'price_trailing_stop_armed', False) or 
-                    getattr(self, 'pnl_trailing_stop_armed', False) or 
-                    getattr(self, 'rsi_peak_since_target', None) is not None
-                )
-
-                self.position_diagnostics = {
-                    "in_position": True,
-                    "pnl_usdt": round(pnl_usdt_val, 4),
-                    "pnl_pct": round(pnl_pct_val, 2),
-                    "tp_target_usdt": round(target_tp_usdt, 4) if target_tp_usdt is not None else None,
-                    "tp_progress_pct": round(tp_progress, 1) if tp_progress is not None else None,
-                    "sl_target_usdt": round(target_sl_usdt, 4) if target_sl_usdt is not None else None,
-                    "sl_distance_usdt": round(sl_distance, 4) if sl_distance is not None else None,
-                    "trailing_active": trailing_active,
-                    "trailing_armed": trailing_armed,
-                    "entry_price": entry_p_val,
-                    "position_value_usdt": round(pos_val_usdt, 2),
-                    "margin_usdt": round(margin_val, 2),
-                    "timestamp": int(time.time() * 1000)
-                }
-            except Exception as e_pos_diag:
-                self.logger.warning(f"[{self.symbol}] Error calculando position_diagnostics: {e_pos_diag}")
-
+            self.position_diagnostics = self._calculate_position_diagnostics()
             return True
 
         elif pos_amt_binance < Decimal('-1e-9'): # Posición CORTA abierta
@@ -688,6 +631,197 @@ class TradingBot:
             return False
 
         return True # Por defecto, si no se cerró, la posición sigue "abierta" para el bot.
+
+    def _calculate_position_diagnostics(self, current_market_price: Decimal | float | None = None) -> dict:
+        """
+        Calcula las métricas de telemetría en tiempo real para la posición abierta:
+        - Take Profit (meta, avance %, USDT restantes)
+        - Stop Loss (corte, colchón en USDT, % de colchón de seguridad restante, estado)
+        - Trailing Stop (tipo, activación %, piso garantizado, pico alcanzado, tolerancia restante)
+        """
+        try:
+            if not self.in_position or not self.current_position:
+                return {}
+
+            entry_p_val = float(self.current_position.get('entry_price', 0) or 0)
+            qty_val = float(self.current_position.get('quantity', 0) or 0)
+            pnl_usdt_val = float(self.last_known_pnl if self.last_known_pnl is not None else 0)
+            pos_val_usdt = abs(entry_p_val * qty_val)
+            lev_val = int(getattr(self, 'leverage', 20) or 20)
+            margin_val = (pos_val_usdt / lev_val) if lev_val > 0 else 0.0
+            pnl_pct_val = (pnl_usdt_val / margin_val * 100.0) if margin_val > 0 else 0.0
+
+            # 1. TAKE PROFIT (TP)
+            target_tp_usdt = None
+            if getattr(self, 'take_profit_usdt', None) and self.take_profit_usdt > Decimal('0'):
+                target_tp_usdt = float(self.take_profit_usdt)
+            elif getattr(self, 'support_order_take_profit_percent', 0) > 0:
+                target_tp_usdt = round(pos_val_usdt * (float(self.support_order_take_profit_percent) / 100.0), 4)
+
+            tp_progress = None
+            tp_remaining = None
+            if target_tp_usdt and target_tp_usdt > 0:
+                tp_progress = max(0.0, min(100.0, (pnl_usdt_val / target_tp_usdt) * 100.0))
+                tp_remaining = max(0.0, target_tp_usdt - pnl_usdt_val)
+
+            # 2. STOP LOSS (SL)
+            target_sl_usdt = None
+            if getattr(self, 'stop_loss_usdt', None) and abs(self.stop_loss_usdt) > Decimal('0'):
+                target_sl_usdt = -abs(float(self.stop_loss_usdt))
+            elif getattr(self, 'support_order_stop_loss_percent', 0) > 0:
+                target_sl_usdt = -round(pos_val_usdt * (float(self.support_order_stop_loss_percent) / 100.0), 4)
+
+            sl_distance = None
+            safety_pct = 100.0
+            sl_status = "safe"
+            if target_sl_usdt is not None:
+                sl_amount = abs(target_sl_usdt)
+                sl_distance = pnl_usdt_val - target_sl_usdt
+                if pnl_usdt_val >= 0:
+                    safety_pct = 100.0
+                    sl_status = "safe"
+                else:
+                    safety_pct = max(0.0, min(100.0, (sl_distance / sl_amount) * 100.0)) if sl_amount > 0 else 0.0
+                    if safety_pct >= 50.0:
+                        sl_status = "caution"
+                    elif safety_pct >= 25.0:
+                        sl_status = "warning"
+                    else:
+                        sl_status = "critical"
+
+            # 3. TRAILING STOP (TS)
+            enable_pnl_ts = bool(getattr(self, 'enable_pnl_trailing_stop', False))
+            enable_price_ts = bool(getattr(self, 'enable_price_trailing_stop', False))
+            enable_rsi_ts = bool(getattr(self, 'enable_trailing_rsi_stop', False))
+            ts_enabled = enable_pnl_ts or enable_price_ts or enable_rsi_ts
+
+            pnl_ts_armed = bool(getattr(self, 'pnl_trailing_stop_armed', False))
+            price_ts_armed = bool(getattr(self, 'price_trailing_stop_armed', False))
+            rsi_ts_armed = bool(getattr(self, 'rsi_objetivo_activado', False))
+            any_armed = pnl_ts_armed or price_ts_armed or rsi_ts_armed
+
+            ts_diag = {
+                "enabled": ts_enabled,
+                "armed": any_armed,
+                "type": "none",
+                "label": "Inactivo",
+                "activation_threshold": None,
+                "arm_progress_pct": None,
+                "peak_value": None,
+                "floor_value": None,
+                "tolerance_value": None,
+                "tolerance_pct": None,
+            }
+
+            if ts_enabled:
+                if pnl_ts_armed or (enable_pnl_ts and not any_armed):
+                    ts_diag["type"] = "pnl"
+                    act_val = float(getattr(self, 'pnl_trailing_stop_activation_usdt', 0.05) or 0.05)
+                    drop_val = float(getattr(self, 'pnl_trailing_stop_drop_usdt', 0.02) or 0.02)
+                    ts_diag["activation_threshold"] = act_val
+                    ts_diag["armed"] = pnl_ts_armed
+
+                    if pnl_ts_armed:
+                        peak_pnl = float(self.pnl_peak_since_activation) if getattr(self, 'pnl_peak_since_activation', None) is not None else pnl_usdt_val
+                        if pnl_usdt_val > peak_pnl:
+                            peak_pnl = pnl_usdt_val
+                        floor_pnl = peak_pnl - drop_val
+                        tolerance_val = max(0.0, pnl_usdt_val - floor_pnl)
+                        tolerance_pct = max(0.0, min(100.0, (tolerance_val / drop_val * 100.0))) if drop_val > 0 else 100.0
+
+                        ts_diag["peak_value"] = round(peak_pnl, 2)
+                        ts_diag["floor_value"] = round(floor_pnl, 2)
+                        ts_diag["tolerance_value"] = round(tolerance_val, 2)
+                        ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
+                        ts_diag["label"] = f"Piso: +{floor_pnl:.2f} USDT"
+                    else:
+                        arm_prog = max(0.0, min(100.0, (pnl_usdt_val / act_val * 100.0))) if act_val > 0 else 0.0
+                        ts_diag["arm_progress_pct"] = round(arm_prog, 1)
+                        ts_diag["label"] = f"Arma en: +{act_val:.2f} USDT"
+
+                elif price_ts_armed or (enable_price_ts and not any_armed):
+                    ts_diag["type"] = "price"
+                    act_pnl = float(getattr(self, 'price_trailing_stop_activation_pnl_usdt', 0.05) or 0.05)
+                    dist_pr = float(getattr(self, 'price_trailing_stop_distance_usdt', 0.05) or 0.05)
+                    ts_diag["activation_threshold"] = act_pnl
+                    ts_diag["armed"] = price_ts_armed
+
+                    if price_ts_armed:
+                        peak_pr = float(self.price_peak_since_entry) if getattr(self, 'price_peak_since_entry', None) is not None else entry_p_val
+                        curr_pr = float(current_market_price) if current_market_price else entry_p_val
+                        if curr_pr > peak_pr:
+                            peak_pr = curr_pr
+                        floor_pr = peak_pr - dist_pr
+                        tolerance_val = max(0.0, curr_pr - floor_pr)
+                        tolerance_pct = max(0.0, min(100.0, (tolerance_val / dist_pr * 100.0))) if dist_pr > 0 else 100.0
+
+                        ts_diag["peak_value"] = round(peak_pr, 4)
+                        ts_diag["floor_value"] = round(floor_pr, 4)
+                        ts_diag["tolerance_value"] = round(tolerance_val, 4)
+                        ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
+                        ts_diag["label"] = f"Piso: ${floor_pr:.4f}"
+                    else:
+                        arm_prog = max(0.0, min(100.0, (pnl_usdt_val / act_pnl * 100.0))) if act_pnl > 0 else 0.0
+                        ts_diag["arm_progress_pct"] = round(arm_prog, 1)
+                        ts_diag["label"] = f"Arma en: +{act_pnl:.2f} USDT"
+
+                elif rsi_ts_armed or (enable_rsi_ts and not any_armed):
+                    ts_diag["type"] = "rsi"
+                    ts_diag["armed"] = rsi_ts_armed
+                    act_rsi = float(getattr(self, 'rsi_target', 70))
+                    ts_diag["activation_threshold"] = act_rsi
+                    if rsi_ts_armed:
+                        peak_rsi = float(self.rsi_peak_since_target) if getattr(self, 'rsi_peak_since_target', None) is not None else act_rsi
+                        drop_rsi = abs(float(getattr(self, 'rsi_threshold_down', -5)))
+                        floor_rsi = peak_rsi - drop_rsi
+                        curr_rsi = float(self.last_rsi_value) if getattr(self, 'last_rsi_value', None) is not None else peak_rsi
+                        tolerance_val = max(0.0, curr_rsi - floor_rsi)
+                        tolerance_pct = max(0.0, min(100.0, (tolerance_val / drop_rsi * 100.0))) if drop_rsi > 0 else 100.0
+                        ts_diag["peak_value"] = round(peak_rsi, 1)
+                        ts_diag["floor_value"] = round(floor_rsi, 1)
+                        ts_diag["tolerance_value"] = round(tolerance_val, 1)
+                        ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
+                        ts_diag["label"] = f"Corte RSI: {floor_rsi:.1f}"
+                    else:
+                        curr_rsi = float(self.last_rsi_value) if getattr(self, 'last_rsi_value', None) is not None else 0.0
+                        arm_prog = max(0.0, min(100.0, (curr_rsi / act_rsi) * 100.0)) if act_rsi > 0 else 0.0
+                        ts_diag["arm_progress_pct"] = round(arm_prog, 1)
+                        ts_diag["label"] = f"Arma RSI: {act_rsi:.0f}"
+
+            diag = {
+                "in_position": True,
+                "pnl_usdt": round(pnl_usdt_val, 4),
+                "pnl_pct": round(pnl_pct_val, 2),
+                "entry_price": entry_p_val,
+                "position_value_usdt": round(pos_val_usdt, 2),
+                "margin_usdt": round(margin_val, 2),
+                "tp": {
+                    "target_usdt": round(target_tp_usdt, 4) if target_tp_usdt is not None else None,
+                    "progress_pct": round(tp_progress, 1) if tp_progress is not None else None,
+                    "remaining_usdt": round(tp_remaining, 4) if tp_remaining is not None else None,
+                    "hit": bool(target_tp_usdt and pnl_usdt_val >= target_tp_usdt)
+                },
+                "sl": {
+                    "target_usdt": round(target_sl_usdt, 4) if target_sl_usdt is not None else None,
+                    "distance_usdt": round(sl_distance, 4) if sl_distance is not None else None,
+                    "safety_pct": round(safety_pct, 1),
+                    "status": sl_status
+                },
+                "ts": ts_diag,
+                # Claves retrocompatibles
+                "tp_target_usdt": round(target_tp_usdt, 4) if target_tp_usdt is not None else None,
+                "tp_progress_pct": round(tp_progress, 1) if tp_progress is not None else None,
+                "sl_target_usdt": round(target_sl_usdt, 4) if target_sl_usdt is not None else None,
+                "sl_distance_usdt": round(sl_distance, 4) if sl_distance is not None else None,
+                "trailing_active": ts_diag["enabled"],
+                "trailing_armed": ts_diag["armed"],
+                "timestamp": int(time.time() * 1000)
+            }
+            return diag
+        except Exception as e:
+            self.logger.warning(f"[{self.symbol}] Error en _calculate_position_diagnostics: {e}")
+            return {}
+
 
     def _adjust_quantity(self, quantity: Decimal) -> float | None:
         """
@@ -2384,6 +2518,11 @@ class TradingBot:
                         self.exit_reason = f"Trailing_RSI_Stop (Actual={self.last_rsi_value:.2f}, Pico={self.rsi_peak_since_target:.2f}, Drop={self.rsi_threshold_down})"
             elif not exit_signal: # Si no hay señal de salida aún y el Trailing RSI está deshabilitado
                  self.logger.info(f"[{self.symbol}] Salida por Trailing RSI Stop DESHABILITADA.")
+
+            # Actualizar telemetría de posición con los últimos picos evaluados
+            self.position_diagnostics = self._calculate_position_diagnostics(
+                current_market_price=current_market_price if 'current_market_price' in locals() else None
+            )
 
             if exit_signal:
                 best_bid_price = self._get_best_exit_price('SELL')

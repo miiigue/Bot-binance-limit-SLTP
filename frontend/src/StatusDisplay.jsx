@@ -34,77 +34,163 @@ const getPnlColorClass = (pnl) => {
 function LiveDiagnosticsCell({ status }) {
   if (!status) return null;
 
-  // CASO 1: EN POSICIÓN ABIERTA -> Monitor de Salida & Protección
+  // CASO 1: EN POSICIÓN ABIERTA -> Monitor de Salida de 3 Vías (TP, SL y Trailing Stop)
   if (status.in_position) {
     const pos = status.position_diagnostics || {};
-    const hasTp = pos.tp_target_usdt !== null && pos.tp_target_usdt !== undefined && pos.tp_target_usdt > 0;
-    const progress = Math.min(100, Math.max(0, pos.tp_progress_pct || 0));
-    const isPnlPositive = (pos.pnl_usdt || 0) >= 0;
+    const pnlUsdt = pos.pnl_usdt !== undefined ? Number(pos.pnl_usdt) : (parseFloat(status.current_pnl) || 0);
+
+    // 1. Métricas de TP
+    const tp = pos.tp || {
+      target_usdt: pos.tp_target_usdt,
+      progress_pct: pos.tp_progress_pct,
+      remaining_usdt: (pos.tp_target_usdt && pnlUsdt !== undefined) ? Math.max(0, Number(pos.tp_target_usdt) - pnlUsdt) : null,
+      hit: pos.tp_target_usdt ? pnlUsdt >= Number(pos.tp_target_usdt) : false
+    };
+    const hasTp = tp.target_usdt !== null && tp.target_usdt !== undefined && Number(tp.target_usdt) > 0;
+    const tpProgress = Math.min(100, Math.max(0, tp.progress_pct || 0));
+
+    // 2. Métricas de SL (Escudo de Protección)
+    const slTarget = pos.sl?.target_usdt !== undefined ? pos.sl.target_usdt : pos.sl_target_usdt;
+    const slDist = pos.sl?.distance_usdt !== undefined ? pos.sl.distance_usdt : pos.sl_distance_usdt;
+    const slStatus = pos.sl?.status || (pnlUsdt >= 0 ? 'safe' : 'caution');
+    let slSafety = 100;
+    if (pos.sl?.safety_pct !== undefined) {
+      slSafety = pos.sl.safety_pct;
+    } else if (slTarget) {
+      slSafety = pnlUsdt >= 0 ? 100 : Math.max(0, Math.min(100, ((pnlUsdt - Number(slTarget)) / Math.abs(Number(slTarget))) * 100));
+    }
+    const hasSl = slTarget !== null && slTarget !== undefined;
+    const slProgressWidth = Math.min(100, Math.max(5, slSafety));
+
+    // 3. Métricas de Trailing Stop
+    const ts = pos.ts || {
+      enabled: Boolean(pos.trailing_active),
+      armed: Boolean(pos.trailing_armed),
+      label: pos.trailing_armed ? 'ARMADO' : 'Inactivo',
+      tolerance_pct: 100,
+      arm_progress_pct: 0
+    };
+    const hasTs = Boolean(ts.enabled);
 
     return (
-      <div className="flex flex-col gap-1 min-w-[210px] max-w-[340px]">
-        {/* Barra de progreso de Take Profit */}
+      <div className="flex flex-col gap-1.5 min-w-[240px] max-w-[380px] py-1">
+        {/* --- FILA 1: TAKE PROFIT --- */}
         {hasTp ? (
-          <div>
-            <div className="flex items-center justify-between text-[11px] font-mono">
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
               <span className="font-extrabold text-emerald-300 flex items-center gap-1">
                 <span>🎯 TP:</span>
-                <span>+{pos.tp_target_usdt.toFixed(2)} USDT</span>
+                <span>+{Number(tp.target_usdt).toFixed(2)} USDT</span>
               </span>
-              <span className={`font-black ${isPnlPositive ? 'text-emerald-400' : 'text-slate-400'}`}>
-                {Math.round(progress)}%
-              </span>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                {tp.remaining_usdt !== null && tp.remaining_usdt > 0 && (
+                  <span className="text-slate-400 font-sans hidden sm:inline">
+                    (Faltan: +{Number(tp.remaining_usdt).toFixed(2)})
+                  </span>
+                )}
+                <span className={`font-black font-mono ${pnlUsdt >= 0 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  {Math.round(tpProgress)}%
+                </span>
+              </div>
             </div>
-            <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-700/80 mt-1">
+            <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
-                  progress >= 100 
+                  tpProgress >= 100 
                     ? 'bg-emerald-400 animate-pulse' 
-                    : isPnlPositive 
+                    : pnlUsdt >= 0 
                       ? 'bg-gradient-to-r from-teal-500 to-emerald-400' 
                       : 'bg-slate-700'
                 }`}
-                style={{ width: `${progress}%` }}
+                style={{ width: `${tpProgress}%` }}
               />
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 font-bold">
-            <span>🎯</span>
-            <span>Objetivo Dinámico / Trailing</span>
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 font-bold">
+            <span>🎯 TP:</span>
+            <span>Dinámico por Señal / Trailing</span>
           </div>
         )}
 
-        {/* Fila de Stop Loss & Trailing */}
-        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-          {pos.sl_target_usdt !== null && pos.sl_target_usdt !== undefined && (
-            <span 
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-950/70 border border-rose-800/60 text-rose-300 shadow-sm"
-              title={`Nivel Stop Loss: ${pos.sl_target_usdt.toFixed(2)} USDT. Margen de colchón hasta SL: ${pos.sl_distance_usdt !== null ? (pos.sl_distance_usdt >= 0 ? '+' : '') + pos.sl_distance_usdt.toFixed(2) + ' USDT' : 'N/A'}`}
-            >
-              <span>🛑 SL: {pos.sl_target_usdt.toFixed(2)}</span>
-              {pos.sl_distance_usdt !== null && (
-                <span className="text-slate-400 text-[9px] font-normal">
-                  (Colchón: {pos.sl_distance_usdt >= 0 ? `+${pos.sl_distance_usdt.toFixed(2)}` : pos.sl_distance_usdt.toFixed(2)})
+        {/* --- FILA 2: STOP LOSS --- */}
+        {hasSl ? (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
+              <span className="font-extrabold text-rose-300 flex items-center gap-1">
+                <span>🛑 SL:</span>
+                <span>{Number(slTarget).toFixed(2)} USDT</span>
+              </span>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                <span className="text-slate-300 font-sans">
+                  Colchón: <span className="font-bold font-mono text-emerald-300">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
                 </span>
-              )}
-            </span>
-          )}
+                <span className={`font-black font-mono ${
+                  slStatus === 'safe' ? 'text-emerald-400' :
+                  slStatus === 'caution' ? 'text-amber-400' :
+                  'text-rose-400 animate-pulse'
+                }`}>
+                  {slStatus === 'safe' ? '🛡️ Seguro' : `${Math.round(slSafety)}%`}
+                </span>
+              </div>
+            </div>
+            <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  slStatus === 'safe'
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                    : slStatus === 'caution'
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-400'
+                      : 'bg-gradient-to-r from-rose-600 to-red-500 animate-pulse'
+                }`}
+                style={{ width: `${slProgressWidth}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
 
-          {pos.trailing_active && (
-            pos.trailing_armed ? (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-black bg-amber-950/90 border border-amber-500 text-amber-300 animate-pulse shadow-sm">
-                <span>🔥</span>
-                <span>TS ARMADO</span>
+        {/* --- FILA 3: TRAILING STOP --- */}
+        {hasTs ? (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
+              <span className={`font-extrabold flex items-center gap-1 ${ts.armed ? 'text-amber-300' : 'text-slate-400'}`}>
+                <span>{ts.armed ? '🔥' : '⚡'}</span>
+                <span>{ts.armed ? 'TS ARMADO:' : 'TS:'}</span>
+                <span className="font-bold">{ts.label || (ts.armed ? 'Activo' : 'En espera')}</span>
               </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-900 border border-slate-700 text-slate-400">
-                <span>⚡</span>
-                <span>TS Activo</span>
-              </span>
-            )
-          )}
-        </div>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                {ts.armed ? (
+                  <>
+                    {ts.peak_value !== null && ts.peak_value !== undefined && (
+                      <span className="text-slate-400 font-sans hidden sm:inline">
+                        Pico: +{ts.peak_value}
+                      </span>
+                    )}
+                    <span className="font-black font-mono text-amber-300">
+                      {Math.round(ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100)}% tol.
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-slate-400 font-sans">
+                    Avance: <span className="font-bold font-mono text-slate-300">{Math.round(ts.arm_progress_pct || 0)}%</span>
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  ts.armed
+                    ? 'bg-gradient-to-r from-amber-500 via-orange-400 to-amber-300 shadow-sm shadow-amber-500/50'
+                    : 'bg-gradient-to-r from-indigo-500 to-sky-400'
+                }`}
+                style={{
+                  width: `${Math.min(100, Math.max(0, ts.armed ? (ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100) : (ts.arm_progress_pct || 0)))}%`
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
