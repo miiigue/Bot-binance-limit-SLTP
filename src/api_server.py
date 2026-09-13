@@ -847,6 +847,8 @@ def close_position_endpoint(symbol):
                 return jsonify({"error": f"Error al ejecutar orden de cierre para {symbol}."}), 500
         except Exception as e:
             logger.error(f"Error al cerrar posición externa de {symbol}: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+
 @app.route('/api/bot/<symbol>/toggle_pause', methods=['POST'])
 def toggle_bot_pause(symbol):
     global paused_symbols
@@ -896,6 +898,15 @@ def close_all_positions_endpoint():
                 # Cancelar órdenes de salida o TP/SL pendientes primero
                 if hasattr(worker, '_cancel_active_tp_sl_orders'):
                     worker._cancel_active_tp_sl_orders()
+                # Cancelar también orden de entrada límite pendiente si la hubiera
+                if getattr(worker, 'pending_entry_order_id', None):
+                    try:
+                        from src.binance_client import cancel_futures_order
+                        cancel_futures_order(symbol, worker.pending_entry_order_id)
+                        worker.pending_entry_order_id = None
+                        worker.current_state = BotState.IDLE
+                    except Exception as e_ce:
+                        logger.warning(f"[{symbol}] Aviso al cancelar entrada pendiente: {e_ce}")
                 if getattr(worker, 'in_position', False):
                     ok = worker.close_position_now(reason="Cierre Manual Global")
                     results[symbol] = "Cerrada por Worker" if ok else "Fallo en Worker"

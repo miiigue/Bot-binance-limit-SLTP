@@ -19,6 +19,7 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
         notify('Error al Iniciar', result.error, 'error');
       } else {
         notify('🚀 Bots Iniciados', 'Todos los workers están analizando el mercado.', 'success');
+        window.dispatchEvent(new CustomEvent('bot-status-refresh'));
       }
     } catch (e) {
       notify('Error al Iniciar', e.message, 'error');
@@ -36,6 +37,7 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
         notify('Error al Apagar', result.error, 'error');
       } else {
         notify('⏹️ Bots Apagados', 'Se envió la señal de detención a los workers.', 'info');
+        window.dispatchEvent(new CustomEvent('bot-status-refresh'));
       }
     } catch (e) {
       notify('Error al Apagar', e.message, 'error');
@@ -63,6 +65,7 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
             notify('🚨 Posiciones Cerradas', `Se cerraron exitosamente en Binance: ${entries.map(([s]) => s).join(', ')}`, 'success');
           }
         }
+        window.dispatchEvent(new CustomEvent('bot-status-refresh'));
       } else {
         notify('Error al Cerrar Posiciones', data.error || 'No se pudieron cerrar.', 'error');
       }

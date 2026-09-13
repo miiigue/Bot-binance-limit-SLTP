@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import BinanceSortHeader, { sortTableData } from './BinanceSortHeader';
 
 // Clave para guardar/leer en localStorage
@@ -65,6 +65,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
   const [numTradesToShow, setNumTradesToShow] = useState(2); // Por defecto 2 trades
   const [closingSymbols, setClosingSymbols] = useState({}); // { symbol: boolean }
   const [pausingSymbols, setPausingSymbols] = useState({}); // { symbol: boolean }
+  const initialCacheHydratedRef = useRef(false);
 
   // --- ORDENAMIENTO INTERACTIVO ESTILO BINANCE ---
   const [statusSort, setStatusSort] = useState({ key: 'symbol', direction: 'asc' });
@@ -264,6 +265,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     globalDbMetrics: data.global_db_metrics,
                     bots_running: data.bots_running
                 });
+                initialCacheHydratedRef.current = true;
             // ---------------------------------------------------------
              // Guardar los datos exitosos en localStorage (el array ORDENADO de statuses)
             try {
@@ -295,7 +297,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
 
     fetchData(); // Llamar una vez al montar
     const intervalId = setInterval(fetchData, 5000); // Refrescar cada 5s
-    return () => clearInterval(intervalId); // Limpiar intervalo al desmontar
+    window.addEventListener('bot-status-refresh', fetchData);
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('bot-status-refresh', fetchData);
+    };
   }, []);
 
   // --- NUEVA FUNCIÓN PARA CARGAR HISTORIAL DE TRADES ---
@@ -339,30 +345,43 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
   // statusArray ya no es necesario, statuses es el array directamente
   // const statusArray = Object.values(statuses);
 
-  // --- CALCULAR EL TOTAL PNL HISTÓRICO ---
+  // --- TOTALES CONSOLIDADOS PARA LA TABLA Y CABECERA ---
   const totalCumulativePnl = statuses.reduce((acc, status) => {
-    const pnlValue = parseFloat(status.historical_pnl); // Usar historical_pnl
-    if (!isNaN(pnlValue)) {
-      return acc + pnlValue;
+    const pnlValue = parseFloat(status.historical_pnl);
+    return !isNaN(pnlValue) ? acc + pnlValue : acc;
+  }, 0);
+
+  const totalMarginCommitted = statuses.reduce((acc, status) => {
+    if (status.in_position) {
+      const val = Number(status.margin_usdt) || ((Number(status.position_value_usdt) || 50) / (Number(status.leverage) || 20));
+      return !isNaN(val) ? acc + val : acc;
     }
     return acc;
   }, 0);
-  // -------------------------------------
 
-  // --- LLAMAR A onStatusUpdate SI statuses CAMBIA (TAMBIÉN PARA DATOS INICIALES DE CACHÉ) ---
-  useEffect(() => {
-    if (onStatusUpdate) {
-        // NUEVO: CALCULAR MONEDAS EN POSICIÓN TAMBIÉN AQUÍ
-        const coinsInPos = statuses.filter(s => s.in_position).length;
-        onStatusUpdate({ 
-            totalPnl: totalCumulativePnl, 
-            coinCount: statuses.length,
-            coinsInPosition: coinsInPos // Pasar nuevo dato
-            // No pasamos sessionStats aquí porque este useEffect es solo para la caché local
-        });
+  const totalCurrentUnrealizedPnl = statuses.reduce((acc, status) => {
+    if (status.in_position) {
+      const val = parseFloat(status.current_pnl);
+      return !isNaN(val) ? acc + val : acc;
     }
-  }, [totalCumulativePnl, statuses, onStatusUpdate]); // Añadir statuses a la dependencia
-  // -------------------------------------------------------------------------------------
+    return acc;
+  }, 0);
+  // -----------------------------------------------------
+
+  // --- HIDRATAR onStatusUpdate UNA SOLA VEZ CON LA CACHÉ LOCAL AL MONTAR ---
+  useEffect(() => {
+    if (onStatusUpdate && !initialCacheHydratedRef.current && statuses.length > 0) {
+      const coinsInPos = statuses.filter(s => s.in_position).length;
+      onStatusUpdate({ 
+        totalPnl: totalCumulativePnl, 
+        historicalPnl: totalCumulativePnl,
+        unrealizedPnl: totalCurrentUnrealizedPnl,
+        coinCount: statuses.length,
+        coinsInPosition: coinsInPos
+      });
+    }
+  }, []); // Solo al montar una vez para hidratación inicial
+  // -------------------------------------------------------------------------
 
   return (
     <div className="bg-slate-900 border border-slate-700/80 shadow-xl rounded-2xl p-6 mt-6">
@@ -693,12 +712,53 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               ))
             ) : (
               <tr>
-                <td colSpan="12" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
+                <td colSpan="13" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
                   {isLoading ? 'Cargando estados...' : (error ? `Error: ${error}` : 'No hay datos de bots disponibles.')}
                 </td>
               </tr>
             )}
           </tbody>{/* <--- CIERRE DE TBODY */}
+          {sortedStatuses.length > 0 && (
+            <tfoot className="bg-slate-950 border-t-2 border-slate-700 font-mono text-xs">
+              <tr className="divide-x divide-slate-800">
+                <td colSpan="5" className="px-3 py-3 text-left font-sans font-extrabold text-slate-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">📊</span>
+                    <span>TOTALES CONSOLIDADOS ({sortedStatuses.length} pares)</span>
+                  </div>
+                </td>
+                {/* Posición & Margen */}
+                <td className="px-3 py-3 font-bold text-slate-200">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 font-sans">Margen total:</span>
+                    <span className="text-white">${totalMarginCommitted.toFixed(2)} USDT</span>
+                  </div>
+                </td>
+                {/* Current PnL (Flotante) */}
+                <td className="px-3 py-3 font-black text-xs">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 font-sans">Flotante neto:</span>
+                    <span className={totalCurrentUnrealizedPnl < 0 ? 'text-rose-400' : totalCurrentUnrealizedPnl > 0 ? 'text-emerald-400' : 'text-slate-300'}>
+                      {totalCurrentUnrealizedPnl >= 0 ? `+${totalCurrentUnrealizedPnl.toFixed(4)}` : totalCurrentUnrealizedPnl.toFixed(4)} USDT
+                    </span>
+                  </div>
+                </td>
+                {/* Hist. PnL (Realizado de pares) */}
+                <td className="px-3 py-3 font-black text-xs">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 font-sans">Histórico pares:</span>
+                    <span className={totalCumulativePnl < 0 ? 'text-rose-400' : totalCumulativePnl > 0 ? 'text-emerald-400' : 'text-slate-300'}>
+                      {totalCumulativePnl >= 0 ? `+${totalCumulativePnl.toFixed(4)}` : totalCumulativePnl.toFixed(4)} USDT
+                    </span>
+                  </div>
+                </td>
+                {/* Pending orders & error columns */}
+                <td colSpan="5" className="px-3 py-3 text-right text-[11px] text-slate-400 font-sans">
+                  <span>Métricas consolidadas en vivo</span>
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>

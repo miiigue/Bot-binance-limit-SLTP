@@ -195,7 +195,6 @@ function App() {
       }
       setBotsRunning(true);
       playEntrySound();
-      addToast('🚀 Bots Iniciados', 'Todos los workers están analizando el mercado.', 'success');
       return { success: true };
     } catch (error) {
       console.error("Error starting bots:", error);
@@ -212,7 +211,6 @@ function App() {
         throw new Error(errorData.error || `HTTP error ${response.status}`);
       }
       setBotsRunning(false);
-      addToast('🛑 Bots Detenidos', 'Todos los procesos han sido pausados.', 'info');
       return { success: true };
     } catch (error) {
       console.error("Error stopping bots:", error);
@@ -291,10 +289,13 @@ function App() {
               </div>
 
               {botsRunning && headerPnlData?.sessionStats && (
-                <div className="flex items-center gap-1 bg-amber-500/60 border border-amber-600/40 px-1.5 py-0.5 rounded font-mono text-[10px] text-slate-950 font-bold flex-shrink-0" title="Ganancia generada en este ciclo de ejecución">
+                <div 
+                  className="flex items-center gap-1 bg-amber-500/60 border border-amber-600/40 px-1.5 py-0.5 rounded font-mono text-[10px] text-slate-950 font-bold flex-shrink-0" 
+                  title={`Cerrado en sesión: ${(Number(headerPnlData.sessionStats.session_realized_pnl) || 0).toFixed(2)} USDT (Neto con flotante: ${(Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(2)} USDT)`}
+                >
                   <span>Sesión:</span>
-                  <span className={`font-black ${(Number(headerPnlData.sessionStats.session_pnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
-                    {(Number(headerPnlData.sessionStats.session_pnl) || 0) >= 0 ? `+${(Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(2)}` : (Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(2)}
+                  <span className={`font-black ${(Number(headerPnlData.sessionStats.session_realized_pnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData.sessionStats.session_realized_pnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
+                    {(Number(headerPnlData.sessionStats.session_realized_pnl) || 0) >= 0 ? `+${(Number(headerPnlData.sessionStats.session_realized_pnl) || 0).toFixed(2)}` : (Number(headerPnlData.sessionStats.session_realized_pnl) || 0).toFixed(2)}
                   </span>
                 </div>
               )}
@@ -350,12 +351,15 @@ function App() {
                   <span className="text-[10px] text-slate-400">USDT</span>
                 </div>
                 
-                {/* 2. PnL de la Sesión Actual */}
+                {/* 2. PnL de la Sesión Actual (Cerrado en este ciclo) */}
                 {botsRunning && headerPnlData?.sessionStats && (
-                  <div className="flex items-center gap-1.5 bg-amber-500/50 border border-amber-600/50 px-2.5 py-1 rounded-xl shadow-sm text-slate-950" title="PnL acumulado en la sesión de ejecución actual">
-                    <span className="text-xs font-bold text-slate-900">Sesión:</span>
-                    <span className={`text-sm font-mono font-black ${(Number(headerPnlData.sessionStats.session_pnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData.sessionStats.session_pnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
-                      {(Number(headerPnlData.sessionStats.session_pnl) || 0) >= 0 ? `+${(Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(4)}` : (Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(4)} USDT
+                  <div 
+                    className="flex items-center gap-1.5 bg-amber-500/50 border border-amber-600/50 px-2.5 py-1 rounded-xl shadow-sm text-slate-950" 
+                    title={`Ganancia cerrada en esta sesión: ${(Number(headerPnlData.sessionStats.session_realized_pnl) || 0).toFixed(4)} USDT (Neto con flotante: ${(Number(headerPnlData.sessionStats.session_pnl) || 0).toFixed(4)} USDT)`}
+                  >
+                    <span className="text-xs font-bold text-slate-900">Sesión Cerrada:</span>
+                    <span className={`text-sm font-mono font-black ${(Number(headerPnlData.sessionStats.session_realized_pnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData.sessionStats.session_realized_pnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
+                      {(Number(headerPnlData.sessionStats.session_realized_pnl) || 0) >= 0 ? `+${(Number(headerPnlData.sessionStats.session_realized_pnl) || 0).toFixed(4)}` : (Number(headerPnlData.sessionStats.session_realized_pnl) || 0).toFixed(4)} USDT
                     </span>
                   </div>
                 )}
