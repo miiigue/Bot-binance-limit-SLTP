@@ -30,7 +30,176 @@ const getPnlColorClass = (pnl) => {
   if (value < 0) return 'text-rose-400 font-bold';
   return 'text-slate-300 font-bold';
 };
-// ---------------------------------------------
+// --- SUBCOMPONENTE DE DIAGNÓSTICO EN TIEMPO REAL (RADAR & PROTECCIÓN) ---
+function LiveDiagnosticsCell({ status }) {
+  if (!status) return null;
+
+  // CASO 1: EN POSICIÓN ABIERTA -> Monitor de Salida & Protección
+  if (status.in_position) {
+    const pos = status.position_diagnostics || {};
+    const hasTp = pos.tp_target_usdt !== null && pos.tp_target_usdt !== undefined && pos.tp_target_usdt > 0;
+    const progress = Math.min(100, Math.max(0, pos.tp_progress_pct || 0));
+    const isPnlPositive = (pos.pnl_usdt || 0) >= 0;
+
+    return (
+      <div className="flex flex-col gap-1 min-w-[210px] max-w-[340px]">
+        {/* Barra de progreso de Take Profit */}
+        {hasTp ? (
+          <div>
+            <div className="flex items-center justify-between text-[11px] font-mono">
+              <span className="font-extrabold text-emerald-300 flex items-center gap-1">
+                <span>🎯 TP:</span>
+                <span>+{pos.tp_target_usdt.toFixed(2)} USDT</span>
+              </span>
+              <span className={`font-black ${isPnlPositive ? 'text-emerald-400' : 'text-slate-400'}`}>
+                {Math.round(progress)}%
+              </span>
+            </div>
+            <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-700/80 mt-1">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  progress >= 100 
+                    ? 'bg-emerald-400 animate-pulse' 
+                    : isPnlPositive 
+                      ? 'bg-gradient-to-r from-teal-500 to-emerald-400' 
+                      : 'bg-slate-700'
+                }`}
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 font-bold">
+            <span>🎯</span>
+            <span>Objetivo Dinámico / Trailing</span>
+          </div>
+        )}
+
+        {/* Fila de Stop Loss & Trailing */}
+        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+          {pos.sl_target_usdt !== null && pos.sl_target_usdt !== undefined && (
+            <span 
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-950/70 border border-rose-800/60 text-rose-300 shadow-sm"
+              title={`Nivel Stop Loss: ${pos.sl_target_usdt.toFixed(2)} USDT. Margen de colchón hasta SL: ${pos.sl_distance_usdt !== null ? (pos.sl_distance_usdt >= 0 ? '+' : '') + pos.sl_distance_usdt.toFixed(2) + ' USDT' : 'N/A'}`}
+            >
+              <span>🛑 SL: {pos.sl_target_usdt.toFixed(2)}</span>
+              {pos.sl_distance_usdt !== null && (
+                <span className="text-slate-400 text-[9px] font-normal">
+                  (Colchón: {pos.sl_distance_usdt >= 0 ? `+${pos.sl_distance_usdt.toFixed(2)}` : pos.sl_distance_usdt.toFixed(2)})
+                </span>
+              )}
+            </span>
+          )}
+
+          {pos.trailing_active && (
+            pos.trailing_armed ? (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-black bg-amber-950/90 border border-amber-500 text-amber-300 animate-pulse shadow-sm">
+                <span>🔥</span>
+                <span>TS ARMADO</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-900 border border-slate-700 text-slate-400">
+                <span>⚡</span>
+                <span>TS Activo</span>
+              </span>
+            )
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // CASO 2: BOT PAUSADO
+  if (status.is_paused) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-amber-300/80 font-mono italic">
+        <span>⏸️</span>
+        <span>Búsqueda de entradas en pausa</span>
+      </div>
+    );
+  }
+
+  // CASO 3: SIN POSICIÓN -> Radar de Condiciones de Entrada
+  const diag = status.entry_diagnostics;
+  if (!diag || !Array.isArray(diag.conditions) || diag.conditions.length === 0) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-slate-400 font-mono">
+        <span className="animate-spin text-[11px]">🌀</span>
+        <span>Analizando mercado...</span>
+      </div>
+    );
+  }
+
+  const { conditions, passed_count, total_active, all_met, ratio_text } = diag;
+
+  return (
+    <div className="flex flex-col gap-1.5 min-w-[230px] max-w-[420px] py-0.5">
+      {/* Resumen Superior */}
+      <div className="flex items-center gap-2">
+        {all_met ? (
+          <span className="px-2 py-0.5 rounded text-[10px] font-black tracking-wide bg-emerald-500 text-slate-950 border border-emerald-400 animate-pulse shadow-sm shadow-emerald-500/50 flex items-center gap-1">
+            <span>⚡</span>
+            <span>SEÑAL COMPLETA ({ratio_text})</span>
+          </span>
+        ) : total_active > 0 && passed_count >= total_active - 1 ? (
+          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-950/90 text-amber-300 border border-amber-500/80 shadow-sm flex items-center gap-1">
+            <span>🟡</span>
+            <span>Casi lista ({ratio_text})</span>
+          </span>
+        ) : (
+          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-900 text-slate-300 border border-slate-700 shadow-sm flex items-center gap-1">
+            <span>🔍</span>
+            <span>Filtros ({ratio_text})</span>
+          </span>
+        )}
+      </div>
+
+      {/* Badges de filtros individuales */}
+      <div className="flex items-center gap-1 flex-wrap">
+        {conditions.map((c) => {
+          if (!c.active) {
+            return (
+              <span
+                key={c.id}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-500 bg-slate-900/60 border border-slate-800"
+                title={`${c.name}: Desactivado en configuración`}
+              >
+                <span>⚪</span>
+                <span>{c.short_name || c.name}</span>
+              </span>
+            );
+          }
+
+          if (c.passed) {
+            return (
+              <span
+                key={c.id}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-600/60 shadow-sm hover:bg-emerald-900 transition-colors cursor-help"
+                title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
+              >
+                <span className="text-[10px]">✅</span>
+                <span>{c.short_name || c.name}:</span>
+                <span className="font-bold">{c.value}</span>
+              </span>
+            );
+          }
+
+          return (
+            <span
+              key={c.id}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-rose-950/60 text-rose-300/90 border border-rose-800/50 shadow-sm hover:bg-rose-950 transition-colors cursor-help"
+              title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
+            >
+              <span className="text-[10px]">❌</span>
+              <span>{c.short_name || c.name}:</span>
+              <span>{c.value}</span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSelectSymbolForChart }) {
   // Intentar cargar el estado inicial desde localStorage, asegurando que sea un array válido
@@ -82,14 +251,12 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
 
   const statusExtractors = useMemo(() => ({
     symbol: s => s.symbol || '',
+    strategy_name: s => s.strategy_name || '',
     state: s => s.is_paused ? 'Paused' : (s.state || ''),
     margin: s => s.in_position ? (Number(s.margin_usdt) || ((Number(s.position_value_usdt) || 50) / (Number(s.leverage) || 20))) : 0,
     current_pnl: s => s.in_position ? (parseFloat(s.current_pnl) || 0) : -9999999,
     historical_pnl: s => parseFloat(s.historical_pnl) || 0,
-    pending_entry_order_id: s => s.pending_entry_order_id ? 1 : 0,
-    pending_exit_order_id: s => s.pending_exit_order_id ? 1 : 0,
-    pending_tp_order_id: s => s.pending_tp_order_id ? 1 : 0,
-    pending_sl_order_id: s => s.pending_sl_order_id ? 1 : 0,
+    diagnostics: s => s.in_position ? (s.position_diagnostics?.tp_progress_pct || 0) : (s.entry_diagnostics?.passed_count || 0),
     last_error: s => s.last_error || ''
   }), []);
 
@@ -480,10 +647,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Current PnL" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Hist. PnL" sortKey="historical_pnl" currentSort={statusSort} onSort={handleStatusSort} />
-              <BinanceSortHeader label="Pending Entry" sortKey="pending_entry_order_id" currentSort={statusSort} onSort={handleStatusSort} align="center" />
-              <BinanceSortHeader label="Pending Exit" sortKey="pending_exit_order_id" currentSort={statusSort} onSort={handleStatusSort} align="center" />
-              <BinanceSortHeader label="Pending TP" sortKey="pending_tp_order_id" currentSort={statusSort} onSort={handleStatusSort} align="center" />
-              <BinanceSortHeader label="Pending SL" sortKey="pending_sl_order_id" currentSort={statusSort} onSort={handleStatusSort} align="center" />
+              <BinanceSortHeader label="Radar & Diagnóstico en Vivo" sortKey="diagnostics" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Last Error" sortKey="last_error" currentSort={statusSort} onSort={handleStatusSort} />
             </tr>
           </thead>
@@ -569,16 +733,39 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
 
                     {/* --- ESTADO --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-xs">
-                     <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-bold rounded-full border ${
-                         status.state === 'IN_POSITION' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50' :
-                         status.state === 'Paused' || status.is_paused ? 'bg-amber-950/80 text-amber-200 border-amber-500/50' :
-                         status.state === 'ERROR' ? 'bg-red-950/80 text-red-200 border-red-500/50' :
-                         status.state?.includes('WAITING') ? 'bg-indigo-950/80 text-indigo-200 border-indigo-500/50' :
-                         status.state === 'Inactive' ? 'bg-slate-800 text-slate-300 border-slate-700' :
-                         'bg-slate-800 text-slate-200 border-slate-700'
-                     }`}>
-                       {status.is_paused && status.state !== 'IN_POSITION' ? '⏸️ Pausado' : (status.state || 'N/A')}
-                     </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-bold rounded-full border ${
+                            status.state === 'IN_POSITION' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50' :
+                            status.state === 'Paused' || status.is_paused ? 'bg-amber-950/80 text-amber-200 border-amber-500/50' :
+                            status.state === 'ERROR' ? 'bg-red-950/80 text-red-200 border-red-500/50' :
+                            status.state?.includes('WAITING') ? 'bg-indigo-950/80 text-indigo-200 border-indigo-500/50' :
+                            status.state === 'Inactive' ? 'bg-slate-800 text-slate-300 border-slate-700' :
+                            'bg-slate-800 text-slate-200 border-slate-700'
+                        }`}>
+                          {status.is_paused && status.state !== 'IN_POSITION' ? '⏸️ Pausado' : (status.state || 'N/A')}
+                        </span>
+                        {/* Chips de órdenes pendientes si existen */}
+                        {status.pending_entry_order_id && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-500/60 shadow-sm" title={`Orden de entrada pendiente ID: ${status.pending_entry_order_id}`}>
+                            ⏳ Compra #{String(status.pending_entry_order_id).slice(-4)}
+                          </span>
+                        )}
+                        {status.pending_exit_order_id && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-rose-950/90 text-rose-300 border border-rose-500/60 shadow-sm" title={`Orden de salida pendiente ID: ${status.pending_exit_order_id}`}>
+                            ⏳ Cierre #{String(status.pending_exit_order_id).slice(-4)}
+                          </span>
+                        )}
+                        {status.pending_tp_order_id && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-500/60 shadow-sm" title={`TP activo ID: ${status.pending_tp_order_id}`}>
+                            🎯 TP #{String(status.pending_tp_order_id).slice(-4)}
+                          </span>
+                        )}
+                        {status.pending_sl_order_id && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-red-950/90 text-red-300 border border-red-500/60 shadow-sm" title={`SL activo ID: ${status.pending_sl_order_id}`}>
+                            🛑 SL #{String(status.pending_sl_order_id).slice(-4)}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* --- POSICIÓN & MARGEN --- */}
@@ -624,17 +811,9 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       {formatPnl(status.historical_pnl)}
                       </span>
                     </td>
-                     <td className="px-2 py-3 whitespace-nowrap text-xs text-center font-mono">
-                      {status.pending_entry_order_id ? <span className="text-emerald-400 font-bold">SÍ</span> : <span className="text-slate-500">-</span>}
-                    </td>
-                     <td className="px-2 py-3 whitespace-nowrap text-xs text-center font-mono">
-                      {status.pending_exit_order_id ? <span className="text-emerald-400 font-bold">SÍ</span> : <span className="text-slate-500">-</span>}
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap text-xs text-center font-mono">
-                      {status.pending_tp_order_id ? <span className="text-emerald-400 font-bold">SÍ</span> : <span className="text-slate-500">-</span>}
-                    </td>
-                    <td className="px-2 py-3 whitespace-nowrap text-xs text-center font-mono">
-                      {status.pending_sl_order_id ? <span className="text-emerald-400 font-bold">SÍ</span> : <span className="text-slate-500">-</span>}
+                    {/* --- RADAR & DIAGNÓSTICO EN VIVO --- */}
+                    <td className="px-3 py-3 text-xs">
+                      <LiveDiagnosticsCell status={status} />
                     </td>
                     <td className="px-3 py-3 text-xs text-rose-400 font-bold truncate max-w-[120px]">
                       {status.last_error ? 'ERROR' : ''}
@@ -643,7 +822,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                   {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
                   {expandedRows[status.symbol] && (
                     <tr id={`history-${status.symbol}`}>
-                      <td colSpan="12" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
+                      <td colSpan="10" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
                         {loadingHistories[status.symbol] && (
                           <p className="text-xs text-center text-slate-300 font-mono">Cargando historial...</p>
                         )}
@@ -712,7 +891,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               ))
             ) : (
               <tr>
-                <td colSpan="13" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
+                <td colSpan="10" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
                   {isLoading ? 'Cargando estados...' : (error ? `Error: ${error}` : 'No hay datos de bots disponibles.')}
                 </td>
               </tr>
@@ -752,8 +931,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     </span>
                   </div>
                 </td>
-                {/* Pending orders & error columns */}
-                <td colSpan="5" className="px-3 py-3 text-right text-[11px] text-slate-400 font-sans">
+                {/* Diagnóstico & error columns */}
+                <td colSpan="2" className="px-3 py-3 text-right text-[11px] text-slate-400 font-sans">
                   <span>Métricas consolidadas en vivo</span>
                 </td>
               </tr>

@@ -91,6 +91,8 @@ class TradingBot:
         self.pending_exit_order_id = None
         self.pending_tp_order_id = None
         self.pending_sl_order_id = None
+        self.entry_diagnostics = {}
+        self.position_diagnostics = {}
 
         self.logger = get_logger()
         self.params = trading_params
@@ -617,6 +619,66 @@ class TradingBot:
             self.last_known_entry_price = entry_price_binance
             self.last_known_position_size = pos_amt_binance
             self._update_state(BotState.IN_POSITION)
+
+            # --- ACTUALIZAR DIAGNÓSTICO DE SALIDA & PROTECCIÓN EN TIEMPO REAL ---
+            try:
+                pnl_usdt_val = float(unrealized_pnl_binance)
+                entry_p_val = float(entry_price_binance)
+                qty_val = float(pos_amt_binance)
+                pos_val_usdt = abs(entry_p_val * qty_val)
+                lev_val = int(getattr(self, 'leverage', 20) or 20)
+                margin_val = (pos_val_usdt / lev_val) if lev_val > 0 else 0.0
+                pnl_pct_val = (pnl_usdt_val / margin_val * 100.0) if margin_val > 0 else 0.0
+
+                target_tp_usdt = None
+                if getattr(self, 'take_profit_usdt', None) and self.take_profit_usdt > Decimal('0'):
+                    target_tp_usdt = float(self.take_profit_usdt)
+                elif getattr(self, 'support_order_take_profit_percent', 0) > 0:
+                    target_tp_usdt = round(pos_val_usdt * (float(self.support_order_take_profit_percent) / 100.0), 4)
+
+                tp_progress = None
+                if target_tp_usdt and target_tp_usdt > 0:
+                    tp_progress = max(0.0, min(100.0, (pnl_usdt_val / target_tp_usdt) * 100.0))
+
+                target_sl_usdt = None
+                if getattr(self, 'stop_loss_usdt', None) and abs(self.stop_loss_usdt) > Decimal('0'):
+                    target_sl_usdt = -abs(float(self.stop_loss_usdt))
+                elif getattr(self, 'support_order_stop_loss_percent', 0) > 0:
+                    target_sl_usdt = -round(pos_val_usdt * (float(self.support_order_stop_loss_percent) / 100.0), 4)
+
+                sl_distance = None
+                if target_sl_usdt is not None:
+                    sl_distance = pnl_usdt_val - target_sl_usdt
+
+                trailing_active = bool(
+                    getattr(self, 'enable_price_trailing_stop', False) or 
+                    getattr(self, 'enable_pnl_trailing_stop', False) or 
+                    getattr(self, 'enable_trailing_rsi_stop', False)
+                )
+                trailing_armed = bool(
+                    getattr(self, 'price_trailing_stop_armed', False) or 
+                    getattr(self, 'pnl_trailing_stop_armed', False) or 
+                    getattr(self, 'rsi_peak_since_target', None) is not None
+                )
+
+                self.position_diagnostics = {
+                    "in_position": True,
+                    "pnl_usdt": round(pnl_usdt_val, 4),
+                    "pnl_pct": round(pnl_pct_val, 2),
+                    "tp_target_usdt": round(target_tp_usdt, 4) if target_tp_usdt is not None else None,
+                    "tp_progress_pct": round(tp_progress, 1) if tp_progress is not None else None,
+                    "sl_target_usdt": round(target_sl_usdt, 4) if target_sl_usdt is not None else None,
+                    "sl_distance_usdt": round(sl_distance, 4) if sl_distance is not None else None,
+                    "trailing_active": trailing_active,
+                    "trailing_armed": trailing_armed,
+                    "entry_price": entry_p_val,
+                    "position_value_usdt": round(pos_val_usdt, 2),
+                    "margin_usdt": round(margin_val, 2),
+                    "timestamp": int(time.time() * 1000)
+                }
+            except Exception as e_pos_diag:
+                self.logger.warning(f"[{self.symbol}] Error calculando position_diagnostics: {e_pos_diag}")
+
             return True
 
         elif pos_amt_binance < Decimal('-1e-9'): # Posición CORTA abierta
@@ -1055,6 +1117,31 @@ class TradingBot:
             # 2. Obtener y confirmar nuevos niveles de soporte
             confirmed_supports = self._find_support_levels(klines_df)
 
+            # Actualizar diagnóstico de entrada para la interfaz
+            has_sup = bool(confirmed_supports)
+            sup_str = f"{float(max(confirmed_supports)):.4f}" if has_sup else "Buscando..."
+            self.entry_diagnostics = {
+                "strategy": "Soportes",
+                "passed_count": 1 if has_sup else 0,
+                "total_active": 1,
+                "ratio_text": "1/1" if has_sup else "0/1",
+                "all_met": has_sup,
+                "summary": f"🎯 Soporte: {sup_str}" if has_sup else "Buscando soportes",
+                "conditions": [
+                    {
+                        "id": "support_level",
+                        "name": "Nivel Soporte",
+                        "short_name": "Soporte",
+                        "active": True,
+                        "passed": has_sup,
+                        "value": sup_str,
+                        "target": "Soporte Detectado",
+                        "detail": f"Nivel soporte confirmado: {sup_str}" if has_sup else "Sin pivotes bajos suficientes"
+                    }
+                ],
+                "timestamp": int(time.time() * 1000)
+            }
+
             # 3. Decidir sobre la acción a tomar
             if confirmed_supports:
                 best_support = max(confirmed_supports)
@@ -1301,6 +1388,8 @@ class TradingBot:
         # --- Limpiar también estado de trailing de PNL ---
         self.pnl_peak_since_activation = None
         self.pnl_trailing_stop_armed = False
+        # --- Limpiar diagnóstico de posición activa ---
+        self.position_diagnostics = {}
         # --- NUEVO: Limpiar estado de Open Interest ---
         # self.previous_open_interest_usdt = None # <-- YA NO SE NECESITA
         # ----------------------------------------------------
@@ -1340,6 +1429,8 @@ class TradingBot:
             'last_error': self.last_error_message,
             'entry_reason': self.entry_reason,
             'exit_reason': self.exit_reason,
+            'entry_diagnostics': getattr(self, 'entry_diagnostics', {}),
+            'position_diagnostics': getattr(self, 'position_diagnostics', {}),
         }
 
     def get_status(self):
@@ -1781,6 +1872,114 @@ class TradingBot:
                              f"Req Velas Alcistas OK? {'Sí' if condition_required_uptrend_met else 'No'}, "
                              f"Incremento OI OK? {'Sí' if condition_oi_increase_met else 'No'}, "
                              f"Filtro MA OK? {'Sí' if condition_ma_filter_passed else 'No'}")
+
+            # --- CONSTRUCCIÓN DE DIAGNÓSTICO DE ENTRADA EN TIEMPO REAL ---
+            try:
+                cond_list = []
+
+                # 1. RSI en Rango
+                rsi_val_float = round(float(self.last_rsi_value), 2) if self.last_rsi_value is not None else None
+                cond_list.append({
+                    "id": "rsi_range",
+                    "name": "RSI Rango",
+                    "short_name": "RSI",
+                    "active": bool(self.evaluate_rsi_range),
+                    "passed": bool(condition_rsi_in_range),
+                    "value": f"{rsi_val_float:.1f}" if rsi_val_float is not None else "N/A",
+                    "target": f"[{self.rsi_entry_level_low}, {self.rsi_entry_level_high}]",
+                    "detail": f"{rsi_val_float:.1f} en [{self.rsi_entry_level_low}, {self.rsi_entry_level_high}]" if rsi_val_float is not None else "Sin lectura RSI"
+                })
+
+                # 2. Delta RSI
+                delta_val_float = round(float(rsi_delta), 2) if (rsi_delta is not None and isinstance(rsi_delta, (int, float, Decimal))) else None
+                cond_list.append({
+                    "id": "rsi_delta",
+                    "name": "Delta RSI",
+                    "short_name": "ΔRSI",
+                    "active": bool(self.evaluate_rsi_delta),
+                    "passed": bool(condition_rsi_change_meets_thresh_up),
+                    "value": f"{delta_val_float:+.2f}" if delta_val_float is not None else "N/A",
+                    "target": f"≥ {float(self.rsi_threshold_up):+.2f}",
+                    "detail": f"Δ {delta_val_float:+.2f} (mín {float(self.rsi_threshold_up):+.2f})" if delta_val_float is not None else "Sin RSI anterior"
+                })
+
+                # 3. Filtro de Volumen
+                vol_passed = bool(volume_check_passed)
+                vol_active = bool(self.evaluate_volume_filter)
+                vol_data = locals().get('volume_data')
+                if vol_data and len(vol_data) >= 3:
+                    c_vol, a_vol, f_vol = vol_data
+                    vol_ratio = (c_vol / a_vol) if a_vol > 0 else 0
+                    vol_val_str = f"{vol_ratio:.1f}x"
+                    vol_detail = f"Vol actual: {c_vol:.0f} vs SMA: {a_vol:.0f} (Ratio {vol_ratio:.2f}x >= {f_vol}x)"
+                else:
+                    vol_val_str = "OK" if vol_passed else "N/A"
+                    vol_detail = "Filtro activo sin datos SMA" if vol_active else "Filtro desactivado"
+
+                cond_list.append({
+                    "id": "volume",
+                    "name": "Filtro Volumen",
+                    "short_name": "Vol",
+                    "active": vol_active,
+                    "passed": vol_passed,
+                    "value": vol_val_str,
+                    "target": f"≥ {float(getattr(self, 'volume_factor', 1.0)):.1f}x SMA",
+                    "detail": vol_detail
+                })
+
+                # 4. Requisito Velas Alcistas
+                cond_list.append({
+                    "id": "uptrend",
+                    "name": "Velas Alcistas",
+                    "short_name": "Velas",
+                    "active": bool(self.evaluate_required_uptrend),
+                    "passed": bool(condition_required_uptrend_met),
+                    "value": f"{self.required_uptrend_candles}v",
+                    "target": f"{self.required_uptrend_candles} velas",
+                    "detail": f"Requiere {self.required_uptrend_candles} velas alcistas consecutivas"
+                })
+
+                # 5. Open Interest
+                cond_list.append({
+                    "id": "open_interest",
+                    "name": "Open Interest",
+                    "short_name": "OI",
+                    "active": bool(self.evaluate_open_interest_increase),
+                    "passed": bool(condition_oi_increase_met),
+                    "value": str(open_interest_delta_str),
+                    "target": "Aumento (+)",
+                    "detail": f"Δ OI: {open_interest_delta_str} USDT (Actual: {current_oi_value_for_log}, Prev: {previous_oi_value_for_log})"
+                })
+
+                # 6. Filtro Media Móvil
+                cond_list.append({
+                    "id": "ma_filter",
+                    "name": "Filtro MA",
+                    "short_name": "MA",
+                    "active": bool(self.evaluate_ma_filter),
+                    "passed": bool(condition_ma_filter_passed),
+                    "value": f"{price_for_log}",
+                    "target": f"> {ma_value_for_log}",
+                    "detail": f"Precio: {price_for_log} > MA: {ma_value_for_log}"
+                })
+
+                active_conds = [c for c in cond_list if c["active"]]
+                total_active = len(active_conds)
+                passed_cnt = sum(1 for c in active_conds if c["passed"])
+                all_passed = (passed_cnt == total_active) if total_active > 0 else False
+
+                self.entry_diagnostics = {
+                    "strategy": "RSI Momentum",
+                    "passed_count": passed_cnt,
+                    "total_active": total_active,
+                    "ratio_text": f"{passed_cnt}/{total_active}",
+                    "all_met": all_passed,
+                    "summary": "⚡ SEÑAL COMPLETA" if all_passed else (f"🟡 Casi lista ({passed_cnt}/{total_active})" if (total_active > 0 and passed_cnt >= total_active - 1) else f"🔍 Evaluando ({passed_cnt}/{total_active})"),
+                    "conditions": cond_list,
+                    "timestamp": int(time.time() * 1000)
+                }
+            except Exception as e_entry_diag:
+                self.logger.warning(f"[{self.symbol}] Error calculando entry_diagnostics: {e_entry_diag}")
 
             # Evaluar todas las condiciones para la señal de entrada
             if all([condition_rsi_in_range, condition_rsi_change_meets_thresh_up, volume_check_passed, 
@@ -2751,6 +2950,8 @@ class TradingBot:
             "last_error": self.last_error_message,
             "entry_reason": self.entry_reason,
             "exit_reason": self.exit_reason,
+            "entry_diagnostics": getattr(self, "entry_diagnostics", {}),
+            "position_diagnostics": getattr(self, "position_diagnostics", {}),
         }
 
     # --- Lógica de la Estrategia de Soportes ---
