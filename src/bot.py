@@ -536,7 +536,25 @@ class TradingBot:
             final_close_price = None
             final_close_timestamp = datetime.now()
 
-            last_trade = get_last_account_trade(self.symbol, start_time=None)
+            # Calcular start_time a partir del tiempo de entrada para no tomar trades viejos de días anteriores
+            start_query_time = None
+            if old_entry_time:
+                try:
+                    if hasattr(old_entry_time, 'timestamp'):
+                        start_query_time = int(old_entry_time.timestamp() * 1000) - 5000
+                    elif isinstance(old_entry_time, (int, float)):
+                        start_query_time = int(old_entry_time) - 5000
+                except Exception:
+                    pass
+
+            last_trade = get_last_account_trade(self.symbol, start_time=start_query_time)
+
+            if last_trade:
+                trade_time_ms = int(last_trade.get('time', 0))
+                # Validar que el trade de Binance no sea de una operación antigua de días pasados
+                if start_query_time and trade_time_ms < start_query_time:
+                    self.logger.warning(f"[{self.symbol}] Trade de Binance ignorado por ser anterior a la entrada actual.")
+                    last_trade = None
 
             if last_trade:
                 self.logger.info(f"[{self.symbol}] Se encontró trade en historial de Binance: {last_trade}")
@@ -597,7 +615,11 @@ class TradingBot:
             
             # 4. Limpiar y actualizar estado
             self.historical_pnl += final_pnl
-            self.session_pnl += final_pnl # <-- Acumular PNL de sesión aquí
+            now_epoch_ms = int(time.time() * 1000)
+            trade_epoch_ms = int(final_close_timestamp.timestamp() * 1000) if hasattr(final_close_timestamp, 'timestamp') else now_epoch_ms
+            # Solo acumular en sesión si el trade realmente ocurrió en la sesión activa (menos de 2 horas)
+            if (now_epoch_ms - trade_epoch_ms) < 7200000:
+                self.session_pnl += final_pnl
             if self.margin_for_current_position > 0:
                 self.risk_manager.remove_exposure(self.margin_for_current_position)
                 self.logger.info(f"[{self.symbol}] Exposición de MARGEN {self.margin_for_current_position} USDT eliminada.")

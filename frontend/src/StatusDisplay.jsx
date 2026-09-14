@@ -4,13 +4,18 @@ import BinanceSortHeader, { sortTableData } from './BinanceSortHeader';
 // Clave para guardar/leer en localStorage
 const STATUS_CACHE_KEY = 'botStatusesCache';
 
-// Helper para formatear fechas (puedes ajustar el formato)
+// Helper para formatear fechas (interpreta strings UTC de SQLite correctamente para mostrar la hora local)
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
   try {
-    return new Date(dateString).toLocaleString(); // Formato local
+    const raw = String(dateString).trim();
+    const isoString = (raw.includes('T') || raw.includes('Z') || raw.includes('+')) 
+      ? (raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z')
+      : raw.replace(' ', 'T') + 'Z';
+    const parsed = new Date(isoString);
+    return isNaN(parsed.getTime()) ? dateString : parsed.toLocaleString();
   } catch (e) {
-    return dateString; // Devolver original si falla
+    return dateString;
   }
 };
 

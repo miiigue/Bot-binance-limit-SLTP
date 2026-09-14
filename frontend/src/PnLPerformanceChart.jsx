@@ -208,7 +208,14 @@ function PnLPerformanceChart({ symbolsList = [] }) {
         symbol: t.symbol,
         pnl,
         cumulative: runningTotal,
-        time: t.close_timestamp ? new Date(t.close_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : `#${idx + 1}`
+        time: t.close_timestamp ? (() => {
+          const raw = String(t.close_timestamp).trim();
+          const iso = (raw.includes('T') || raw.includes('Z') || raw.includes('+'))
+            ? (raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z')
+            : raw.replace(' ', 'T') + 'Z';
+          const p = new Date(iso);
+          return isNaN(p.getTime()) ? t.close_timestamp : p.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        })() : `#${idx + 1}`
       };
     });
 
