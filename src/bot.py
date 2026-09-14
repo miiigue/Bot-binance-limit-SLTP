@@ -55,6 +55,14 @@ class BotState(Enum):
     PAUSED = "Paused" # <-- Estado de pausa individual
 # ------------------------------------
 
+# Caché global para el Escudo de Desplome de Bitcoin (BTC Crash Shield)
+_btc_crash_cache = {
+    'timestamp': 0.0,
+    'timeframe': '15m',
+    'drop_detected': False,
+    'drop_percent': 0.0,
+}
+
 class TradingBot:
     """
     Clase que encapsula la lógica de trading RSI para UN símbolo específico.
@@ -202,6 +210,30 @@ class TradingBot:
         # --- NUEVO: ESTADO PARA ÓRDENES DE SOPORTE ---
         self.active_support_orders = {} # {price_level: order_id}
         # ---------------------------------------------
+
+        # --- CIRCUIT BREAKERS Y PROTECCIÓN DE RIESGO (4 MECANISMOS) ---
+        self.enable_max_loss_per_symbol = str(trading_params.get('enable_max_loss_per_symbol', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_max_loss_per_symbol'), str) else bool(trading_params.get('enable_max_loss_per_symbol', True))
+        self.max_loss_per_symbol_usdt = _safe_decimal(trading_params.get('max_loss_per_symbol_usdt'), '20.0')
+
+        self.enable_consecutive_losses_cooldown = str(trading_params.get('enable_consecutive_losses_cooldown', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_consecutive_losses_cooldown'), str) else bool(trading_params.get('enable_consecutive_losses_cooldown', True))
+        self.max_consecutive_losses = _safe_int(trading_params.get('max_consecutive_losses'), 2)
+        self.consecutive_losses_cooldown_minutes = _safe_int(trading_params.get('consecutive_losses_cooldown_minutes'), 60)
+
+        self.enable_rolling_performance_filter = str(trading_params.get('enable_rolling_performance_filter', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_rolling_performance_filter'), str) else bool(trading_params.get('enable_rolling_performance_filter', True))
+        self.rolling_trades_window = _safe_int(trading_params.get('rolling_trades_window'), 5)
+        self.rolling_max_losses = _safe_int(trading_params.get('rolling_max_losses'), 4)
+        self.rolling_filter_cooldown_minutes = _safe_int(trading_params.get('rolling_filter_cooldown_minutes'), 120)
+
+        self.enable_btc_crash_shield = str(trading_params.get('enable_btc_crash_shield', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_btc_crash_shield'), str) else bool(trading_params.get('enable_btc_crash_shield', True))
+        self.btc_crash_timeframe = str(trading_params.get('btc_crash_timeframe') or '15m')
+        self.btc_crash_drop_percent = _safe_float(trading_params.get('btc_crash_drop_percent'), 2.0)
+        self.btc_crash_shield_cooldown_minutes = _safe_int(trading_params.get('btc_crash_shield_cooldown_minutes'), 30)
+
+        # Estado dinámico de protecciones
+        self.cooldown_until_ts = 0.0
+        self.pause_reason = ""
+        self.consecutive_losses_count = 0
+        # -----------------------------------------------------------------
 
         # Cliente Binance (se inicializa una vez por bot)
         self.client = get_futures_client()
@@ -414,6 +446,31 @@ class TradingBot:
             if new_order_type in ('LIMIT', 'MARKET'):
                 self.entry_order_type = new_order_type
                 self.logger.info(f"[{self.symbol}] Hot-reload: entry_order_type actualizado a {self.entry_order_type}")
+
+        # --- HOT-RELOAD CIRCUIT BREAKERS ---
+        if 'enable_max_loss_per_symbol' in new_params:
+            self.enable_max_loss_per_symbol = str(new_params['enable_max_loss_per_symbol']).lower() == 'true' if isinstance(new_params['enable_max_loss_per_symbol'], str) else bool(new_params['enable_max_loss_per_symbol'])
+        self.max_loss_per_symbol_usdt = _safe_decimal(new_params.get('max_loss_per_symbol_usdt'), str(self.max_loss_per_symbol_usdt))
+
+        if 'enable_consecutive_losses_cooldown' in new_params:
+            self.enable_consecutive_losses_cooldown = str(new_params['enable_consecutive_losses_cooldown']).lower() == 'true' if isinstance(new_params['enable_consecutive_losses_cooldown'], str) else bool(new_params['enable_consecutive_losses_cooldown'])
+        self.max_consecutive_losses = _safe_int(new_params.get('max_consecutive_losses'), self.max_consecutive_losses)
+        self.consecutive_losses_cooldown_minutes = _safe_int(new_params.get('consecutive_losses_cooldown_minutes'), self.consecutive_losses_cooldown_minutes)
+
+        if 'enable_rolling_performance_filter' in new_params:
+            self.enable_rolling_performance_filter = str(new_params['enable_rolling_performance_filter']).lower() == 'true' if isinstance(new_params['enable_rolling_performance_filter'], str) else bool(new_params['enable_rolling_performance_filter'])
+        self.rolling_trades_window = _safe_int(new_params.get('rolling_trades_window'), self.rolling_trades_window)
+        self.rolling_max_losses = _safe_int(new_params.get('rolling_max_losses'), self.rolling_max_losses)
+        self.rolling_filter_cooldown_minutes = _safe_int(new_params.get('rolling_filter_cooldown_minutes'), self.rolling_filter_cooldown_minutes)
+
+        if 'enable_btc_crash_shield' in new_params:
+            self.enable_btc_crash_shield = str(new_params['enable_btc_crash_shield']).lower() == 'true' if isinstance(new_params['enable_btc_crash_shield'], str) else bool(new_params['enable_btc_crash_shield'])
+        if 'btc_crash_timeframe' in new_params and new_params['btc_crash_timeframe']:
+            self.btc_crash_timeframe = str(new_params['btc_crash_timeframe'])
+        self.btc_crash_drop_percent = _safe_float(new_params.get('btc_crash_drop_percent'), self.btc_crash_drop_percent)
+        self.btc_crash_shield_cooldown_minutes = _safe_int(new_params.get('btc_crash_shield_cooldown_minutes'), self.btc_crash_shield_cooldown_minutes)
+        # -----------------------------------
+
         self.logger.info(f"[{self.symbol}] Parámetros de trading actualizados en caliente exitosamente.")
 
     def _check_initial_position(self):
@@ -620,6 +677,7 @@ class TradingBot:
             # Solo acumular en sesión si el trade realmente ocurrió en la sesión activa (menos de 2 horas)
             if (now_epoch_ms - trade_epoch_ms) < 7200000:
                 self.session_pnl += final_pnl
+            self._on_trade_closed(final_pnl, close_reason)
             if self.margin_for_current_position > 0:
                 self.risk_manager.remove_exposure(self.margin_for_current_position)
                 self.logger.info(f"[{self.symbol}] Exposición de MARGEN {self.margin_for_current_position} USDT eliminada.")
@@ -1163,6 +1221,150 @@ class TradingBot:
 
         return order_filled_and_handled
 
+    def _check_btc_market_crash(self) -> tuple[bool, float]:
+        """
+        Verifica si BTCUSDT ha experimentado una caída brusca en el marco temporal configurado.
+        Utiliza una caché con TTL de 20 segundos para evitar llamadas excesivas a la API entre workers.
+        """
+        global _btc_crash_cache
+        now = time.time()
+        timeframe = getattr(self, 'btc_crash_timeframe', '15m') or '15m'
+        drop_threshold = float(getattr(self, 'btc_crash_drop_percent', 2.0) or 2.0)
+
+        if (now - _btc_crash_cache['timestamp'] < 20.0) and (_btc_crash_cache['timeframe'] == timeframe):
+            return _btc_crash_cache['drop_detected'], _btc_crash_cache['drop_percent']
+
+        try:
+            from src.binance_client import get_historical_klines
+            btc_klines = get_historical_klines('BTCUSDT', timeframe, limit=3)
+            if btc_klines is None or btc_klines.empty:
+                return False, 0.0
+
+            drop_pct = 0.0
+            for idx in [-1, -2]:
+                if len(btc_klines) >= abs(idx):
+                    candle = btc_klines.iloc[idx]
+                    c_open = float(candle['open'])
+                    c_close = float(candle['close'])
+                    c_low = float(candle.get('low', c_close))
+                    if c_open > 0:
+                        c_drop = max(0.0, (c_open - min(c_close, c_low)) / c_open * 100.0)
+                        if c_drop > drop_pct:
+                            drop_pct = c_drop
+
+            is_crash = drop_pct >= drop_threshold
+            _btc_crash_cache['timestamp'] = now
+            _btc_crash_cache['timeframe'] = timeframe
+            _btc_crash_cache['drop_detected'] = is_crash
+            _btc_crash_cache['drop_percent'] = drop_pct
+            return is_crash, drop_pct
+        except Exception as e:
+            self.logger.warning(f"[{self.symbol}] Error al verificar desplome de BTC: {e}")
+            return False, 0.0
+
+    def _check_risk_circuit_breakers(self) -> bool:
+        """
+        Evalúa los 4 mecanismos de protección de riesgo antes de permitir una nueva entrada.
+        Retorna True si el bot debe permanecer o entrar en PAUSA, impidiendo nuevas órdenes.
+        """
+        now = time.time()
+
+        # 0. Si está en Cooldown activo, verificar si ya expiró
+        if getattr(self, 'cooldown_until_ts', 0.0) > 0.0:
+            if now < self.cooldown_until_ts:
+                remaining_m = max(1, int((self.cooldown_until_ts - now) / 60))
+                self.logger.info(f"[{self.symbol}] ⏳ Bot en periodo de enfriamiento ({remaining_m}m restantes). Motivo: {self.pause_reason}")
+                self.is_paused = True
+                self._update_state(BotState.PAUSED)
+                return True
+            else:
+                self.logger.info(f"[{self.symbol}] 🟢 Periodo de enfriamiento finalizado. Reanudando operaciones normales.")
+                self.cooldown_until_ts = 0.0
+                self.pause_reason = ""
+                self.is_paused = False
+                self._update_state(BotState.IDLE)
+
+        # 1. MECANISMO 1: Hard Stop por Pérdida Máxima de la Sesión
+        if getattr(self, 'enable_max_loss_per_symbol', False) and getattr(self, 'max_loss_per_symbol_usdt', Decimal('0')) > Decimal('0'):
+            limit_neg = -abs(self.max_loss_per_symbol_usdt)
+            if getattr(self, 'session_pnl', Decimal('0')) <= limit_neg:
+                self.pause_reason = f"🛑 Hard Stop: Pérdida en sesión ({float(self.session_pnl):.2f} USDT <= -{float(self.max_loss_per_symbol_usdt):.2f} USDT). Requiere reactivación manual."
+                self.logger.warning(f"[{self.symbol}] {self.pause_reason}")
+                self.is_paused = True
+                self._update_state(BotState.PAUSED)
+                return True
+
+        # 2. MECANISMO 2: Racha de pérdidas consecutivas
+        if getattr(self, 'enable_consecutive_losses_cooldown', False) and getattr(self, 'max_consecutive_losses', 0) > 0:
+            if getattr(self, 'consecutive_losses_count', 0) >= self.max_consecutive_losses:
+                cooldown_secs = self.consecutive_losses_cooldown_minutes * 60
+                self.cooldown_until_ts = now + cooldown_secs
+                self.pause_reason = f"⏳ Enfriamiento por {self.consecutive_losses_count} pérdidas consecutivas (pausa {self.consecutive_losses_cooldown_minutes}m)"
+                self.logger.warning(f"[{self.symbol}] {self.pause_reason}")
+                self.is_paused = True
+                self._update_state(BotState.PAUSED)
+                return True
+
+        # 3. MECANISMO 3: Filtro de Rendimiento Reciente (Rolling Window)
+        if getattr(self, 'enable_rolling_performance_filter', False) and getattr(self, 'rolling_trades_window', 0) > 0 and getattr(self, 'rolling_max_losses', 0) > 0:
+            try:
+                from src.database import get_last_n_trades_for_symbol
+                recent_trades = get_last_n_trades_for_symbol(self.symbol, n=self.rolling_trades_window)
+                if len(recent_trades) >= self.rolling_trades_window:
+                    losses_in_window = sum(1 for t in recent_trades if float(t.get('pnl_usdt') or 0.0) < 0.0)
+                    if losses_in_window >= self.rolling_max_losses:
+                        cooldown_secs = self.rolling_filter_cooldown_minutes * 60
+                        self.cooldown_until_ts = now + cooldown_secs
+                        self.pause_reason = f"⏳ Filtro de Rendimiento: {losses_in_window}/{len(recent_trades)} pérdidas en últimos trades (pausa {self.rolling_filter_cooldown_minutes}m)"
+                        self.logger.warning(f"[{self.symbol}] {self.pause_reason}")
+                        self.is_paused = True
+                        self._update_state(BotState.PAUSED)
+                        return True
+            except Exception as e_rf:
+                self.logger.warning(f"[{self.symbol}] Error al evaluar filtro de rendimiento reciente: {e_rf}")
+
+        # 4. MECANISMO 4: Escudo de Desplome de Bitcoin (BTC Crash Shield)
+        if getattr(self, 'enable_btc_crash_shield', False):
+            is_btc_crashing, btc_drop_pct = self._check_btc_market_crash()
+            if is_btc_crashing:
+                cooldown_secs = self.btc_crash_shield_cooldown_minutes * 60
+                self.cooldown_until_ts = now + cooldown_secs
+                self.pause_reason = f"🛡️ Escudo BTC: Desplome de -{btc_drop_pct:.2f}% en BTCUSDT ({self.btc_crash_timeframe}) (pausa {self.btc_crash_shield_cooldown_minutes}m)"
+                self.logger.warning(f"[{self.symbol}] {self.pause_reason}")
+                self.is_paused = True
+                self._update_state(BotState.PAUSED)
+                return True
+
+        return False
+
+    def _on_trade_closed(self, final_pnl: Decimal | float, close_reason: str):
+        """Actualiza contadores de racha de pérdidas y evalúa disparadores inmediatos de protección."""
+        try:
+            pnl_float = float(final_pnl)
+            if pnl_float < -0.0001:
+                self.consecutive_losses_count = getattr(self, 'consecutive_losses_count', 0) + 1
+                self.logger.warning(f"[{self.symbol}] Trade cerrado con pérdida ({pnl_float:.4f} USDT). Racha consecutiva: {self.consecutive_losses_count}")
+                # Si se superó el límite de racha, activar cooldown de inmediato
+                if getattr(self, 'enable_consecutive_losses_cooldown', False) and self.consecutive_losses_count >= getattr(self, 'max_consecutive_losses', 2):
+                    cooldown_secs = self.consecutive_losses_cooldown_minutes * 60
+                    self.cooldown_until_ts = time.time() + cooldown_secs
+                    self.pause_reason = f"⏳ Enfriamiento por {self.consecutive_losses_count} pérdidas consecutivas (pausa {self.consecutive_losses_cooldown_minutes}m)"
+                    self.is_paused = True
+                    self.logger.warning(f"[{self.symbol}] ACTIVADO: {self.pause_reason}")
+            else:
+                if getattr(self, 'consecutive_losses_count', 0) > 0:
+                    self.logger.info(f"[{self.symbol}] Trade positivo ({pnl_float:.4f} USDT). Racha de pérdidas consecutivas reseteada a 0.")
+                self.consecutive_losses_count = 0
+
+            # Evaluar Hard Stop inmediato por pérdida máxima en sesión
+            if getattr(self, 'enable_max_loss_per_symbol', False) and getattr(self, 'max_loss_per_symbol_usdt', Decimal('0')) > Decimal('0'):
+                if getattr(self, 'session_pnl', Decimal('0')) <= -abs(self.max_loss_per_symbol_usdt):
+                    self.pause_reason = f"🛑 Hard Stop: Pérdida en sesión ({float(self.session_pnl):.2f} USDT) superó el límite (-{float(self.max_loss_per_symbol_usdt):.2f} USDT)."
+                    self.is_paused = True
+                    self.logger.warning(f"[{self.symbol}] ACTIVADO: {self.pause_reason}")
+        except Exception as e:
+            self.logger.error(f"[{self.symbol}] Error en _on_trade_closed: {e}")
+
     def run_once(self):
         """
         Ejecuta un ciclo de la lógica del bot.
@@ -1209,6 +1411,14 @@ class TradingBot:
 
             # 4. Si no hay posición ni orden pendiente, buscar nueva entrada
             if not self.in_position and not self.pending_entry_order_id:
+                # Evaluar Circuit Breakers de Riesgo (Hard Stop, Cooldown, Filtro Rendimiento, Escudo BTC)
+                if self._check_risk_circuit_breakers():
+                    if self.active_support_orders:
+                        for price, order_id in list(self.active_support_orders.items()):
+                            cancel_futures_order(self.symbol, order_id)
+                        self.active_support_orders.clear()
+                    return
+
                 if getattr(self, 'is_paused', False):
                     # Si el bot está pausado por el usuario, cancelar cualquier orden de soporte activa y omitir entradas
                     if self.active_support_orders:
@@ -1496,6 +1706,7 @@ class TradingBot:
             if final_pnl is not None:
                 self.historical_pnl += final_pnl
                 self.session_pnl += final_pnl
+                self._on_trade_closed(final_pnl, simplified_reason)
                 self.logger.info(f"[{self.symbol}] PnL acumulado tras cierre: Histórico={self.historical_pnl:.4f}, Sesión={self.session_pnl:.4f}")
         except Exception as e:
             self.logger.error(f"[{self.symbol}] ERROR CRÍTICO en _handle_successful_closure al registrar el trade en la DB: {e}", exc_info=True)
@@ -1594,6 +1805,10 @@ class TradingBot:
             'exit_reason': self.exit_reason,
             'entry_diagnostics': getattr(self, 'entry_diagnostics', {}),
             'position_diagnostics': getattr(self, 'position_diagnostics', {}),
+            'pause_reason': getattr(self, 'pause_reason', ''),
+            'cooldown_until_ts': getattr(self, 'cooldown_until_ts', 0.0),
+            'cooldown_remaining_seconds': max(0, int(getattr(self, 'cooldown_until_ts', 0.0) - time.time())) if getattr(self, 'cooldown_until_ts', 0.0) > 0 else 0,
+            'consecutive_losses': getattr(self, 'consecutive_losses_count', 0),
         }
 
     def get_status(self):
@@ -3122,6 +3337,10 @@ class TradingBot:
             "exit_reason": self.exit_reason,
             "entry_diagnostics": getattr(self, "entry_diagnostics", {}),
             "position_diagnostics": getattr(self, "position_diagnostics", {}),
+            "pause_reason": getattr(self, "pause_reason", ""),
+            "cooldown_until_ts": getattr(self, "cooldown_until_ts", 0.0),
+            "cooldown_remaining_seconds": max(0, int(getattr(self, "cooldown_until_ts", 0.0) - time.time())) if getattr(self, "cooldown_until_ts", 0.0) > 0 else 0,
+            "consecutive_losses": getattr(self, "consecutive_losses_count", 0),
         }
 
     # --- Lógica de la Estrategia de Soportes ---

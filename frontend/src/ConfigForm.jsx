@@ -147,6 +147,21 @@ const defaultConfigValues = {
   dcaVolumeMultiplier: 1.0,
   riskPercentage: 50,
   risk_percentage: 50,
+
+  // --- CIRCUIT BREAKERS Y PROTECCIÓN DE CUENTA ---
+  enableMaxLossPerSymbol: true,
+  maxLossPerSymbolUSDT: 20.0,
+  enableConsecutiveLossesCooldown: true,
+  maxConsecutiveLosses: 2,
+  consecutiveLossesCooldownMinutes: 60,
+  enableRollingPerformanceFilter: true,
+  rollingTradesWindow: 5,
+  rollingMaxLosses: 4,
+  rollingFilterCooldownMinutes: 120,
+  enableBtcCrashShield: true,
+  btcCrashTimeframe: '15m',
+  btcCrashDropPercent: 2.0,
+  btcCrashShieldCooldownMinutes: 30,
 };
 
 // --- Diccionario profesional con Explicación y Ejemplo Práctico para cada Parámetro ---
@@ -347,6 +362,44 @@ const tooltipTexts = {
   entryOrderType: {
     desc: "Define cómo ejecuta el bot las operaciones en Binance: al precio actual o mediante orden límite.",
     example: "MARKET ejecuta inmediatamente al precio disponible. LIMIT busca entrar al mejor precio del libro."
+  },
+
+  // Circuit Breakers y Protección de Riesgo
+  maxLossPerSymbolUSDT: {
+    desc: "Pérdida neta máxima permitida en la sesión para una moneda antes de pausar sus operaciones indefinidamente.",
+    example: "Con 20 USDT, si una moneda acumula -20.00 USDT en la sesión, se bloquean nuevas compras hasta que pulses Reanudar."
+  },
+  maxConsecutiveLosses: {
+    desc: "Número de pérdidas consecutivas (Stop Loss seguidos) que activan un descanso automático temporal (Cooldown).",
+    example: "Con 2, tras 2 Stop Loss seguidos el bot se toma una pausa obligatoria para evitar venganza de mercado."
+  },
+  consecutiveLossesCooldownMinutes: {
+    desc: "Minutos de enfriamiento obligatorio tras alcanzar la racha máxima de pérdidas consecutivas.",
+    example: "60 minutos pausa el bot durante 1 hora y se reactiva automáticamente al terminar el temporizador."
+  },
+  rollingTradesWindow: {
+    desc: "Cantidad de trades recientes analizados de forma móvil para detectar regímenes adversos de mercado.",
+    example: "Con 5, el bot revisa el balance de los últimos 5 trades completados de esa moneda."
+  },
+  rollingMaxLosses: {
+    desc: "Cantidad máxima de trades en negativo tolerados dentro de la ventana de análisis antes de entrar en pausa.",
+    example: "Con 4 (en ventana de 5), si 4 de los últimos 5 trades fueron pérdidas, el mercado no acompaña la estrategia y se pausa."
+  },
+  rollingFilterCooldownMinutes: {
+    desc: "Minutos de pausa cuando se activa el filtro de rendimiento reciente.",
+    example: "120 minutos (2 horas) permite que el mercado cambie de régimen o estructura antes de reintentar."
+  },
+  btcCrashTimeframe: {
+    desc: "Marco temporal de la vela de Bitcoin (BTCUSDT) monitoreada para detectar caídas bruscas del mercado.",
+    example: "Velas de 15m (Recomendado) capturan caídas repentinas de Bitcoin que arrastran a todas las altcoins."
+  },
+  btcCrashDropPercent: {
+    desc: "Porcentaje de caída en una vela de BTC que activa el escudo de emergencia para todas las monedas.",
+    example: "Con 2.0%, si Bitcoin cae 2% o más en una vela de 15m, se suspenden nuevas entradas en altcoins."
+  },
+  btcCrashShieldCooldownMinutes: {
+    desc: "Minutos de suspensión de compras en altcoins tras detectarse un desplome en Bitcoin.",
+    example: "30 minutos de congelación de entradas para esperar a que el precio de BTC se estabilice."
   }
 };
 
@@ -1800,6 +1853,263 @@ function ConfigForm({
           </div>
         </div>
       </fieldset>
+
+      {/* ========================================================================= */}
+      {/* 🛑 PROTECCIÓN DE CUENTA & CIRCUIT BREAKERS (KILL-SWITCHES POR MONEDA) */}
+      {/* ========================================================================= */}
+      <ConfigSection 
+        title="🛑 Protección de Cuenta & Circuit Breakers (Kill-Switches por Moneda)" 
+        className="col-span-1 md:col-span-2 border-2 border-red-500/30 bg-red-950/10 rounded-2xl"
+      >
+        <div className="space-y-6">
+          <p className="text-xs text-slate-300 font-medium">
+            Mecanismos automáticos de mitigación de riesgo para pausar el bot de una moneda o del mercado general cuando se alcanzan límites de pérdida o condiciones adversas:
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+            {/* 1. HARD STOP POR PÉRDIDA MÁXIMA EN SESIÓN */}
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-red-500/40 shadow-sm flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🛑</span>
+                  <div>
+                    <h4 className="text-sm font-bold text-red-300">1. Pérdida Máxima por Moneda (Hard Stop)</h4>
+                    <p className="text-[11px] text-slate-400">Pausa indefinida de la moneda al acumular pérdida neta en sesión.</p>
+                  </div>
+                </div>
+                <Switch
+                  name="enableMaxLossPerSymbol"
+                  checked={formData.enableMaxLossPerSymbol}
+                  onChange={handleChange}
+                />
+              </div>
+
+              {formData.enableMaxLossPerSymbol && (
+                <div className="pt-2 border-t border-slate-800">
+                  <ConfigItem 
+                    labelText="Pérdida Máxima en Sesión (USDT)" 
+                    htmlFor="maxLossPerSymbolUSDT" 
+                    tooltipKey="maxLossPerSymbolUSDT"
+                  >
+                    <NumberInput
+                      id="maxLossPerSymbolUSDT"
+                      name="maxLossPerSymbolUSDT"
+                      value={formData.maxLossPerSymbolUSDT}
+                      onChange={handleChange}
+                      step={1}
+                      min={1}
+                    />
+                  </ConfigItem>
+                  <p className="text-[11px] text-amber-300/90 mt-2">
+                    💡 Si la moneda llega a <strong>-{formData.maxLossPerSymbolUSDT || 20} USDT</strong> en sesión, se detienen nuevas compras hasta pulsar "Reanudar".
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* 2. COOLDOWN POR RACHA DE PÉRDIDAS CONSECUTIVAS */}
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-amber-500/40 shadow-sm flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">⏳</span>
+                  <div>
+                    <h4 className="text-sm font-bold text-amber-300">2. Enfriamiento por Racha de Pérdidas</h4>
+                    <p className="text-[11px] text-slate-400">Descanso automático temporal tras N Stop Loss seguidos.</p>
+                  </div>
+                </div>
+                <Switch
+                  name="enableConsecutiveLossesCooldown"
+                  checked={formData.enableConsecutiveLossesCooldown}
+                  onChange={handleChange}
+                />
+              </div>
+
+              {formData.enableConsecutiveLossesCooldown && (
+                <div className="pt-2 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <ConfigItem 
+                    labelText="Máx Pérdidas Seguidas" 
+                    htmlFor="maxConsecutiveLosses" 
+                    tooltipKey="maxConsecutiveLosses"
+                  >
+                    <NumberInput
+                      id="maxConsecutiveLosses"
+                      name="maxConsecutiveLosses"
+                      value={formData.maxConsecutiveLosses}
+                      onChange={handleChange}
+                      min={1}
+                      max={10}
+                    />
+                  </ConfigItem>
+                  <ConfigItem 
+                    labelText="Minutos de Enfriamiento" 
+                    htmlFor="consecutiveLossesCooldownMinutes" 
+                    tooltipKey="consecutiveLossesCooldownMinutes"
+                  >
+                    <NumberInput
+                      id="consecutiveLossesCooldownMinutes"
+                      name="consecutiveLossesCooldownMinutes"
+                      value={formData.consecutiveLossesCooldownMinutes}
+                      onChange={handleChange}
+                      step={5}
+                      min={1}
+                    />
+                  </ConfigItem>
+                  <div className="col-span-full">
+                    <p className="text-[11px] text-amber-300/90 mt-1">
+                      💡 Pausa el bot por <strong>{formData.consecutiveLossesCooldownMinutes || 60}m</strong> tras sufrir <strong>{formData.maxConsecutiveLosses || 2}</strong> Stop Loss consecutivos.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. FILTRO DE RENDIMIENTO RECIENTE (ROLLING WINDOW) */}
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-indigo-500/40 shadow-sm flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📊</span>
+                  <div>
+                    <h4 className="text-sm font-bold text-indigo-300">3. Filtro de Rendimiento Reciente</h4>
+                    <p className="text-[11px] text-slate-400">Pausa móvil si una alta proporción de trades recientes fueron pérdidas.</p>
+                  </div>
+                </div>
+                <Switch
+                  name="enableRollingPerformanceFilter"
+                  checked={formData.enableRollingPerformanceFilter}
+                  onChange={handleChange}
+                />
+              </div>
+
+              {formData.enableRollingPerformanceFilter && (
+                <div className="pt-2 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <ConfigItem 
+                    labelText="Ventana (Trades)" 
+                    htmlFor="rollingTradesWindow" 
+                    tooltipKey="rollingTradesWindow"
+                  >
+                    <NumberInput
+                      id="rollingTradesWindow"
+                      name="rollingTradesWindow"
+                      value={formData.rollingTradesWindow}
+                      onChange={handleChange}
+                      min={2}
+                      max={20}
+                    />
+                  </ConfigItem>
+                  <ConfigItem 
+                    labelText="Máx Pérdidas en Ventana" 
+                    htmlFor="rollingMaxLosses" 
+                    tooltipKey="rollingMaxLosses"
+                  >
+                    <NumberInput
+                      id="rollingMaxLosses"
+                      name="rollingMaxLosses"
+                      value={formData.rollingMaxLosses}
+                      onChange={handleChange}
+                      min={1}
+                      max={formData.rollingTradesWindow || 10}
+                    />
+                  </ConfigItem>
+                  <ConfigItem 
+                    labelText="Minutos de Pausa" 
+                    htmlFor="rollingFilterCooldownMinutes" 
+                    tooltipKey="rollingFilterCooldownMinutes"
+                  >
+                    <NumberInput
+                      id="rollingFilterCooldownMinutes"
+                      name="rollingFilterCooldownMinutes"
+                      value={formData.rollingFilterCooldownMinutes}
+                      onChange={handleChange}
+                      step={5}
+                      min={1}
+                    />
+                  </ConfigItem>
+                  <div className="col-span-full">
+                    <p className="text-[11px] text-indigo-300/90 mt-1">
+                      💡 Si <strong>{formData.rollingMaxLosses || 4}</strong> de los últimos <strong>{formData.rollingTradesWindow || 5}</strong> trades fueron negativos, pausa por <strong>{formData.rollingFilterCooldownMinutes || 120}m</strong>.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 4. ESCUDO DE DESPLOME DE BITCOIN (BTC MARKET CRASH SHIELD) */}
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-sky-500/40 shadow-sm flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🛡️</span>
+                  <div>
+                    <h4 className="text-sm font-bold text-sky-300">4. Escudo de Desplome de Bitcoin</h4>
+                    <p className="text-[11px] text-slate-400">Suspende entradas en altcoins si BTCUSDT cae abruptamente.</p>
+                  </div>
+                </div>
+                <Switch
+                  name="enableBtcCrashShield"
+                  checked={formData.enableBtcCrashShield}
+                  onChange={handleChange}
+                />
+              </div>
+
+              {formData.enableBtcCrashShield && (
+                <div className="pt-2 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <ConfigItem 
+                    labelText="Vela de Monitoreo" 
+                    htmlFor="btcCrashTimeframe" 
+                    tooltipKey="btcCrashTimeframe"
+                  >
+                    <select
+                      id="btcCrashTimeframe"
+                      name="btcCrashTimeframe"
+                      value={formData.btcCrashTimeframe || '15m'}
+                      onChange={handleChange}
+                      className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold text-gray-900 dark:text-gray-100"
+                    >
+                      <option value="5m">⚡ 5 Minutos</option>
+                      <option value="15m">⏳ 15 Minutos (Recomendado)</option>
+                      <option value="1h">🕒 1 Hora</option>
+                    </select>
+                  </ConfigItem>
+                  <ConfigItem 
+                    labelText="% Caída en Vela BTC" 
+                    htmlFor="btcCrashDropPercent" 
+                    tooltipKey="btcCrashDropPercent"
+                  >
+                    <NumberInput
+                      id="btcCrashDropPercent"
+                      name="btcCrashDropPercent"
+                      value={formData.btcCrashDropPercent}
+                      onChange={handleChange}
+                      step={0.5}
+                      min={0.5}
+                    />
+                  </ConfigItem>
+                  <ConfigItem 
+                    labelText="Minutos de Bloqueo" 
+                    htmlFor="btcCrashShieldCooldownMinutes" 
+                    tooltipKey="btcCrashShieldCooldownMinutes"
+                  >
+                    <NumberInput
+                      id="btcCrashShieldCooldownMinutes"
+                      name="btcCrashShieldCooldownMinutes"
+                      value={formData.btcCrashShieldCooldownMinutes}
+                      onChange={handleChange}
+                      step={5}
+                      min={1}
+                    />
+                  </ConfigItem>
+                  <div className="col-span-full">
+                    <p className="text-[11px] text-sky-300/90 mt-1">
+                      💡 Si Bitcoin cae &ge; <strong>{formData.btcCrashDropPercent || 2.0}%</strong> en <strong>{formData.btcCrashTimeframe || '15m'}</strong>, congela nuevas entradas por <strong>{formData.btcCrashShieldCooldownMinutes || 30}m</strong>.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      </ConfigSection>
 
       <fieldset className="border pt-4 px-4 pb-6 rounded-md border-gray-300 dark:border-gray-600">
         <legend className="text-base font-medium text-gray-900 dark:text-gray-100 px-2">Otros Parámetros</legend>

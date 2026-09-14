@@ -281,6 +281,21 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'dca_max_reentries': _val('dcaMaxReentries', 2),
             'dca_volume_multiplier': _val('dcaVolumeMultiplier', 1.0),
             'risk_percentage': _val('riskPercentage', _val('risk_percentage', 50)),
+
+            # --- NUEVO: Mapeo para los 4 Circuit Breakers de Riesgo ---
+            'enable_max_loss_per_symbol': str(frontend_data.get('enableMaxLossPerSymbol', True)).lower(),
+            'max_loss_per_symbol_usdt': _val('maxLossPerSymbolUSDT', 20.0),
+            'enable_consecutive_losses_cooldown': str(frontend_data.get('enableConsecutiveLossesCooldown', True)).lower(),
+            'max_consecutive_losses': _val('maxConsecutiveLosses', 2),
+            'consecutive_losses_cooldown_minutes': _val('consecutiveLossesCooldownMinutes', 60),
+            'enable_rolling_performance_filter': str(frontend_data.get('enableRollingPerformanceFilter', True)).lower(),
+            'rolling_trades_window': _val('rollingTradesWindow', 5),
+            'rolling_max_losses': _val('rollingMaxLosses', 4),
+            'rolling_filter_cooldown_minutes': _val('rollingFilterCooldownMinutes', 120),
+            'enable_btc_crash_shield': str(frontend_data.get('enableBtcCrashShield', True)).lower(),
+            'btc_crash_timeframe': _val('btcCrashTimeframe', '15m'),
+            'btc_crash_drop_percent': _val('btcCrashDropPercent', 2.0),
+            'btc_crash_shield_cooldown_minutes': _val('btcCrashShieldCooldownMinutes', 30),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -497,7 +512,22 @@ def _build_frontend_config_dict():
             ('dca_price_drop_percent', 'dcaPriceDropPercent'),
             ('dca_max_reentries', 'dcaMaxReentries'),
             ('dca_volume_multiplier', 'dcaVolumeMultiplier'),
-            ('risk_percentage', 'riskPercentage')
+            ('risk_percentage', 'riskPercentage'),
+
+            # --- CIRCUIT BREAKERS Y PROTECCIÓN DE RIESGO ---
+            ('enable_max_loss_per_symbol', 'enableMaxLossPerSymbol'),
+            ('max_loss_per_symbol_usdt', 'maxLossPerSymbolUSDT'),
+            ('enable_consecutive_losses_cooldown', 'enableConsecutiveLossesCooldown'),
+            ('max_consecutive_losses', 'maxConsecutiveLosses'),
+            ('consecutive_losses_cooldown_minutes', 'consecutiveLossesCooldownMinutes'),
+            ('enable_rolling_performance_filter', 'enableRollingPerformanceFilter'),
+            ('rolling_trades_window', 'rollingTradesWindow'),
+            ('rolling_max_losses', 'rollingMaxLosses'),
+            ('rolling_filter_cooldown_minutes', 'rollingFilterCooldownMinutes'),
+            ('enable_btc_crash_shield', 'enableBtcCrashShield'),
+            ('btc_crash_timeframe', 'btcCrashTimeframe'),
+            ('btc_crash_drop_percent', 'btcCrashDropPercent'),
+            ('btc_crash_shield_cooldown_minutes', 'btcCrashShieldCooldownMinutes')
         ]:
             if key_ini in config_dict['TRADING']:
                 frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
@@ -869,8 +899,15 @@ def toggle_bot_pause(symbol):
 
         if worker:
             worker.is_paused = new_paused
-            if not new_paused and getattr(worker, 'state', None) == BotState.PAUSED:
-                worker.state = BotState.IDLE
+            if not new_paused:
+                if getattr(worker, 'state', None) == BotState.PAUSED:
+                    worker.state = BotState.IDLE
+                if hasattr(worker, 'cooldown_until_ts'):
+                    worker.cooldown_until_ts = 0.0
+                if hasattr(worker, 'pause_reason'):
+                    worker.pause_reason = ""
+                if hasattr(worker, 'consecutive_losses_count'):
+                    worker.consecutive_losses_count = 0
 
         action_msg = "pausado" if new_paused else "reanudado"
         logger.info(f"Bot {symbol} ha sido {action_msg} individualmente.")
@@ -1044,7 +1081,7 @@ def load_initial_config():
     for key, value_str in temp_trading_params.items():
         original_value = value_str
         try:
-            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations']:
+            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations', 'max_consecutive_losses', 'consecutive_losses_cooldown_minutes', 'rolling_trades_window', 'rolling_max_losses', 'rolling_filter_cooldown_minutes', 'btc_crash_shield_cooldown_minutes']:
                 if value_str is None or str(value_str).strip() == '':
                     loaded_trading_params[key] = 20 if 'period' in key else 0
                 else:
@@ -1056,7 +1093,7 @@ def load_initial_config():
                          'price_trailing_stop_activation_pnl_usdt',
                          'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt',
                          'support_level_tolerance_percent', 'support_order_stop_loss_percent', 'support_order_take_profit_percent',
-                         'risk_percentage']:
+                         'risk_percentage', 'max_loss_per_symbol_usdt', 'btc_crash_drop_percent']:
                 if value_str is None or str(value_str).strip() == '':
                     loaded_trading_params[key] = 0.0
                 else:
@@ -1065,7 +1102,9 @@ def load_initial_config():
                          'evaluate_downtrend_candles_block', 'evaluate_downtrend_levels_block',
                          'evaluate_required_uptrend', 'enable_take_profit_pnl', 'enable_stop_loss_pnl',
                          'enable_trailing_rsi_stop', 'enable_price_trailing_stop', 'enable_pnl_trailing_stop',
-                         'evaluate_open_interest_increase', 'evaluate_ma_filter', 'evaluate_support_strategy']:
+                         'evaluate_open_interest_increase', 'evaluate_ma_filter', 'evaluate_support_strategy',
+                         'enable_max_loss_per_symbol', 'enable_consecutive_losses_cooldown',
+                         'enable_rolling_performance_filter', 'enable_btc_crash_shield']:
                 loaded_trading_params[key] = str(value_str).lower() == 'true'
             else:
                 loaded_trading_params[key] = value_str

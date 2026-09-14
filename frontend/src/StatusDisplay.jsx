@@ -222,12 +222,33 @@ function LiveDiagnosticsCell({ status }) {
     );
   }
 
-  // CASO 2: BOT PAUSADO
+  // CASO 2: BOT PAUSADO (Manual, Cooldown, Hard Stop o Escudo BTC)
   if (status.is_paused) {
+    const isHardStop = status.pause_reason && status.pause_reason.includes('Hard Stop');
+    const isCooldown = status.cooldown_remaining_seconds > 0;
+    const isBtcShield = status.pause_reason && status.pause_reason.includes('Escudo BTC');
+
+    let badgeClass = 'text-amber-300/90 border-amber-500/40 bg-amber-950/40';
+    let icon = '⏸️';
+    let text = status.pause_reason || 'Búsqueda de entradas en pausa';
+
+    if (isHardStop) {
+      badgeClass = 'text-red-300 border-red-500/50 bg-red-950/60 font-bold';
+      icon = '🛑';
+    } else if (isCooldown) {
+      const mins = Math.max(1, Math.ceil(status.cooldown_remaining_seconds / 60));
+      badgeClass = 'text-amber-300 border-amber-500/50 bg-amber-950/60 font-bold animate-pulse';
+      icon = '⏳';
+      text = `Enfriamiento: ${mins}m restantes (${status.pause_reason || 'Pausa por racha'})`;
+    } else if (isBtcShield) {
+      badgeClass = 'text-sky-300 border-sky-500/50 bg-sky-950/60 font-bold';
+      icon = '🛡️';
+    }
+
     return (
-      <div className="flex items-center gap-1.5 text-xs text-amber-300/80 font-mono italic">
-        <span>⏸️</span>
-        <span>Búsqueda de entradas en pausa</span>
+      <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono border ${badgeClass}`}>
+        <span>{icon}</span>
+        <span>{text}</span>
       </div>
     );
   }
@@ -827,16 +848,26 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                             handleTogglePause(e, status.symbol);
                           }}
                           disabled={pausingSymbols[status.symbol]}
-                          title={status.is_paused ? 'Bot pausado. Clic para reactivar.' : 'Bot activo. Clic para pausar.'}
+                          title={status.is_paused ? `Pausado: ${status.pause_reason || 'Pausa manual'}. Clic para reactivar.` : 'Bot activo. Clic para pausar.'}
                           className={`px-2.5 py-0.5 inline-flex items-center justify-center text-xs leading-5 font-bold rounded-full border transition-all active:scale-95 cursor-pointer ${
                             status.state === 'IN_POSITION' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50' :
+                            status.pause_reason?.includes('Hard Stop') ? 'bg-red-950/90 text-red-200 border-red-500/60 hover:bg-red-900 shadow-sm shadow-red-900/40' :
+                            status.cooldown_remaining_seconds > 0 ? 'bg-amber-950/90 text-amber-200 border-amber-500/60 hover:bg-amber-900 shadow-sm shadow-amber-900/40' :
+                            status.pause_reason?.includes('Escudo BTC') ? 'bg-sky-950/90 text-sky-200 border-sky-500/60 hover:bg-sky-900 shadow-sm shadow-sky-900/40' :
                             status.state === 'Paused' || status.is_paused ? 'bg-amber-950/80 text-amber-200 border-amber-500/50 hover:bg-amber-900' :
                             status.state === 'ERROR' ? 'bg-red-950/80 text-red-200 border-red-500/50' :
                             status.state?.includes('WAITING') ? 'bg-indigo-950/80 text-indigo-200 border-indigo-500/50' :
                             status.state === 'Inactive' ? 'bg-slate-800 text-slate-300 border-slate-700' :
                             'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-750'
                         }`}>
-                          {pausingSymbols[status.symbol] ? '⏳ ...' : (status.is_paused && status.state !== 'IN_POSITION' ? '⏸️ Pausado' : (status.state || 'N/A'))}
+                          {pausingSymbols[status.symbol] ? '⏳ ...' : (
+                            status.is_paused && status.state !== 'IN_POSITION' ? (
+                              status.pause_reason?.includes('Hard Stop') ? '🛑 Hard Stop' :
+                              status.cooldown_remaining_seconds > 0 ? `⏳ Cooldown (${Math.ceil(status.cooldown_remaining_seconds / 60)}m)` :
+                              status.pause_reason?.includes('Escudo BTC') ? '🛡️ Escudo BTC' :
+                              '⏸️ Pausado'
+                            ) : (status.state || 'N/A')
+                          )}
                         </button>
                         {/* Chips de órdenes pendientes si existen */}
                         {status.pending_entry_order_id && (
