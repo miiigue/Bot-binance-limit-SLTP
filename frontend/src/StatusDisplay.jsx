@@ -327,8 +327,13 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
   const [tradeHistories, setTradeHistories] = useState({}); // { symbol: [trade] }
   const [loadingHistories, setLoadingHistories] = useState({}); // { symbol: boolean }
   const [historyErrors, setHistoryErrors] = useState({}); // { symbol: string | null }
-  // --- NUEVO ESTADO PARA EL NÚMERO DE TRADES A MOSTRAR ---
-  const [numTradesToShow, setNumTradesToShow] = useState(2); // Por defecto 2 trades
+  // --- LÍMITE DE TRADES PERSONALIZADO POR MONEDA ---
+  const [coinTradeLimits, setCoinTradeLimits] = useState({}); // { symbol: number }
+  const expandedRowsRef = useRef({});
+  const coinTradeLimitsRef = useRef({});
+  const fetchTradeHistoryRef = useRef();
+  expandedRowsRef.current = expandedRows;
+  coinTradeLimitsRef.current = coinTradeLimits;
   const [closingSymbols, setClosingSymbols] = useState({}); // { symbol: boolean }
   const [pausingSymbols, setPausingSymbols] = useState({}); // { symbol: boolean }
   const initialCacheHydratedRef = useRef(false);
@@ -537,9 +542,17 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
             } catch (e) {
                 console.error("Error saving status to localStorage:", e);
             }
+
+            // Auto-actualizar en vivo los historiales de trades para las monedas actualmente expandidas
+            const expandedSymbols = Object.keys(expandedRowsRef.current || {}).filter(sym => expandedRowsRef.current[sym]);
+            if (expandedSymbols.length > 0 && fetchTradeHistoryRef.current) {
+              expandedSymbols.forEach(sym => {
+                const limit = coinTradeLimitsRef.current[sym] || 20;
+                fetchTradeHistoryRef.current(sym, limit, true);
+              });
+            }
         } else {
              console.warn("La respuesta de /api/status no contenía un array 'statuses' válido:", data);
-             // ¿Qué hacer aquí? Podríamos mantener el estado anterior o limpiarlo.
              // Mantener el estado anterior si ya teníamos algo es más seguro.
              if (statuses.length === 0) {
                  setStatuses([]); // Limpiar solo si no teníamos nada antes
@@ -553,14 +566,13 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
         console.error("Error fetching bot status:", e);
         // Establecer mensaje de error específico sin borrar los datos
         setError("Bot apagado o API no disponible. Mostrando últimos datos conocidos.");
-        // NO HACEMOS setStatuses([]) para mantener los últimos datos visibles
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchData(); // Llamar una vez al montar
-    const intervalId = setInterval(fetchData, 5000); // Refrescar cada 5s
+    const intervalId = setInterval(fetchData, 4000); // Refrescar cada 4s
     window.addEventListener('bot-status-refresh', fetchData);
     return () => {
       clearInterval(intervalId);
@@ -568,16 +580,18 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
     };
   }, []);
 
-  // --- NUEVA FUNCIÓN PARA CARGAR HISTORIAL DE TRADES ---
-  const fetchTradeHistory = async (symbol) => {
-    if (loadingHistories[symbol]) return; // Evitar cargas múltiples
+  // --- FUNCIÓN PARA CARGAR HISTORIAL DE TRADES (AUTO-ACTUALIZABLE POR MONEDA) ---
+  const fetchTradeHistory = async (symbol, customLimit = null, silent = false) => {
+    if (!silent && loadingHistories[symbol]) return;
 
-    setLoadingHistories(prev => ({ ...prev, [symbol]: true }));
+    const limit = customLimit !== null ? customLimit : (coinTradeLimitsRef.current[symbol] ?? 20);
+    if (!silent) {
+      setLoadingHistories(prev => ({ ...prev, [symbol]: true }));
+    }
     setHistoryErrors(prev => ({ ...prev, [symbol]: null }));
 
     try {
-      // --- USAR numTradesToShow EN LA URL ---
-      const response = await fetch(`/api/trades/${symbol}?limit=${numTradesToShow}`);
+      const response = await fetch(`/api/trades/${symbol}?limit=${limit}`);
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.error || `HTTP error! Status: ${response.status}`);
@@ -586,22 +600,67 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
       setTradeHistories(prev => ({ ...prev, [symbol]: historyData }));
     } catch (err) {
       console.error(`Error fetching trade history for ${symbol}:`, err);
-      setHistoryErrors(prev => ({ ...prev, [symbol]: `Error: ${err.message}` }));
-      setTradeHistories(prev => ({ ...prev, [symbol]: [] })); // Limpiar en caso de error
+      if (!silent) {
+        setHistoryErrors(prev => ({ ...prev, [symbol]: `Error: ${err.message}` }));
+        setTradeHistories(prev => ({ ...prev, [symbol]: [] }));
+      }
     } finally {
-      setLoadingHistories(prev => ({ ...prev, [symbol]: false }));
+      if (!silent) {
+        setLoadingHistories(prev => ({ ...prev, [symbol]: false }));
+      }
     }
   };
-  // -----------------------------------------------------
 
-  // --- NUEVA FUNCIÓN PARA EXPANDIR/COLAPSAR FILA ---
+  fetchTradeHistoryRef.current = fetchTradeHistory;
+
+  const handleCoinTradeLimitChange = (symbol, valStr) => {
+    setCoinTradeLimits(prev => ({ ...prev, [symbol]: valStr }));
+    const parsed = parseInt(valStr, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      fetchTradeHistory(symbol, parsed, false);
+    }
+  };
+
+  const handleCoinTradeLimitBlur = (symbol) => {
+    const currentVal = coinTradeLimits[symbol];
+    const parsed = parseInt(currentVal, 10);
+    if (isNaN(parsed) || parsed <= 0) {
+      setCoinTradeLimits(prev => ({ ...prev, [symbol]: 20 }));
+      fetchTradeHistory(symbol, 20, false);
+    }
+  };
+
+  // --- FUNCIÓN PARA EXPANDIR/COLAPSAR FILA ---
   const toggleRow = (symbol) => {
     const isCurrentlyExpanded = expandedRows[symbol];
     setExpandedRows(prev => ({ ...prev, [symbol]: !isCurrentlyExpanded }));
 
-    // Si se está expandiendo y no hay historial cargado (o hubo error), cargar
-    if (!isCurrentlyExpanded && (!tradeHistories[symbol] || historyErrors[symbol])) {
-       fetchTradeHistory(symbol);
+    // Si se está expandiendo, cargar historial con el límite actual de la moneda
+    if (!isCurrentlyExpanded) {
+       const limit = coinTradeLimits[symbol] ?? 20;
+       fetchTradeHistory(symbol, limit, false);
+    }
+  };
+
+  // --- MANEJADOR PARA VACIAR HISTORIAL Y PNL ---
+  const handleResetTradesClick = async () => {
+    if (!window.confirm("⚠️ ¿Deseas reiniciar el historial de trades y poner el PnL a 0.00 USDT?")) return;
+    try {
+      const res = await fetch('/api/trades/reset', { method: 'POST' });
+      if (res.ok) {
+        setTradeHistories({});
+        setStatuses([]);
+        localStorage.removeItem(STATUS_CACHE_KEY);
+        if (onStatusUpdate) {
+          onStatusUpdate({ totalPnl: 0, coinCount: 0, coinsInPosition: 0 });
+        }
+        alert("✅ Historial de trades reiniciado con éxito. La página se recargará.");
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        alert("Error al reiniciar trades.");
+      }
+    } catch (e) {
+      alert(`Error: ${e.message}`);
     }
   };
   // -------------------------------------------------
@@ -659,6 +718,16 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
             Supervisa las posiciones abiertas, margen comprometido, órdenes activas y PnL acumulado por moneda.
           </p>
         </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={handleResetTradesClick}
+            className="text-xs font-bold px-3 py-1.5 rounded-xl bg-red-950/70 hover:bg-red-900 text-red-200 border border-red-700/60 transition-colors flex items-center gap-1.5 shadow-sm"
+            title="Borra el registro de trades pasados de la base de datos y reinicia el PnL a 0.00"
+          >
+            <span>🗑️</span>
+            <span>Vaciar Historial de Trades & PnL</span>
+          </button>
+        </div>
       </div>
       
       {/* Mostrar el mensaje de error de inicio */}
@@ -677,62 +746,6 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
       )}
 
       <div className="overflow-x-auto">
-        {/* --- BARRA DE OPCIONES DE TRADES & RESET --- */}
-        <div className="my-4 flex flex-wrap items-center justify-between gap-3 bg-slate-950/90 p-3 rounded-xl border border-slate-700/80">
-          <div className="flex items-center gap-2">
-            <label htmlFor="numTradesToShowInput" className="text-xs font-bold text-slate-200">
-              Mostrar últimos trades:
-            </label>
-            <input
-              type="number"
-              id="numTradesToShowInput"
-              value={numTradesToShow}
-              onChange={(e) => {
-                const val = parseInt(e.target.value, 10);
-                if (val > 0) {
-                  setNumTradesToShow(val);
-                } else if (e.target.value === '') {
-                  setNumTradesToShow('');
-                }
-              }}
-              onBlur={(e) => {
-                if (e.target.value === '' || parseInt(e.target.value, 10) <= 0) {
-                  setNumTradesToShow(2);
-                }
-              }}
-              className="w-16 px-2 py-1 border border-slate-600 rounded-lg shadow-sm sm:text-xs bg-slate-900 text-white text-center font-mono font-bold"
-              min="1"
-            />
-          </div>
-
-          <button
-            onClick={async () => {
-              if (!window.confirm("⚠️ ¿Deseas reiniciar el historial de trades y poner el PnL a 0.00 USDT?")) return;
-              try {
-                const res = await fetch('/api/trades/reset', { method: 'POST' });
-                if (res.ok) {
-                  setTradeHistories({});
-                  setStatuses([]);
-                  localStorage.removeItem('botStatusesCache');
-                  if (onStatusUpdate) {
-                    onStatusUpdate({ totalPnl: 0, coinCount: 0, coinsInPosition: 0 });
-                  }
-                  alert("✅ Historial de trades reiniciado con éxito. La página se recargará.");
-                  setTimeout(() => window.location.reload(), 1000);
-                } else {
-                  alert("Error al reiniciar trades.");
-                }
-              } catch (e) {
-                alert(`Error: ${e.message}`);
-              }
-            }}
-            className="text-xs font-bold px-3 py-1.5 rounded-xl bg-red-950/70 hover:bg-red-900 text-red-200 border border-red-700/60 transition-colors flex items-center shadow-sm"
-            title="Borra el registro de trades pasados de la base de datos"
-          >
-            🗑️ Vaciar Historial de Trades & PnL
-          </button>
-        </div>
-        {/* ----------------------------------------- */}
         <table className="min-w-full divide-y divide-slate-700">
           <thead className="bg-slate-950 border-b-2 border-slate-700">
             <tr>
@@ -896,8 +909,18 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     <td className="px-3 py-3 text-xs">
                       <LiveDiagnosticsCell status={status} />
                     </td>
-                    <td className="px-3 py-3 text-xs text-rose-400 font-bold truncate max-w-[120px]">
-                      {status.last_error ? 'ERROR' : ''}
+                    <td className="px-3 py-3 text-xs">
+                      {status.last_error ? (
+                        <div 
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-rose-950/90 border border-rose-600/70 text-rose-300 font-semibold text-[11px] cursor-help max-w-[200px]"
+                          title={`Error en ${status.symbol}: ${status.last_error}`}
+                        >
+                          <span className="text-rose-400">⚠️</span>
+                          <span className="truncate">{status.last_error}</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-600 font-mono text-[11px]">—</span>
+                      )}
                     </td>
                   </tr>
                   {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
@@ -913,9 +936,27 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                         {!loadingHistories[status.symbol] && !historyErrors[status.symbol] && (
                           tradeHistories[status.symbol]?.length > 0 ? (
                             <div className="overflow-x-auto">
-                              <h4 className="text-xs font-bold mb-2 text-slate-200">
-                                Últimos {tradeHistories[status.symbol].length} trades cerrados para {status.symbol}:
-                              </h4>
+                              <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-800">
+                                <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                                  <span>Últimos</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="1000"
+                                    value={coinTradeLimits[status.symbol] !== undefined ? coinTradeLimits[status.symbol] : 20}
+                                    onChange={(e) => handleCoinTradeLimitChange(status.symbol, e.target.value)}
+                                    onBlur={() => handleCoinTradeLimitBlur(status.symbol)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="w-16 px-2 py-0.5 text-center font-mono font-bold text-xs bg-slate-900 border border-slate-600 rounded text-amber-400 focus:outline-none focus:border-amber-400"
+                                    title="Ingresa la cantidad de trades que deseas ver para esta moneda"
+                                  />
+                                  <span>trades cerrados para {status.symbol}:</span>
+                                </div>
+                                <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5">
+                                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Auto-actualización en vivo activa"></span>
+                                  <span>{tradeHistories[status.symbol]?.length || 0} trades mostrados • Auto-actualizado</span>
+                                </div>
+                              </div>
                               <table className="min-w-full divide-y divide-slate-800 text-xs font-mono">
                                 <thead className="bg-slate-900 border-b border-slate-700">
                                   <tr>
@@ -962,7 +1003,24 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                })()}
                             </div>
                           ) : (
-                            <p className="text-xs text-center text-slate-400">No hay trades cerrados para {status.symbol}.</p>
+                            <div className="py-3 text-center">
+                              <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-200 mb-2">
+                                <span>Últimos</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="1000"
+                                  value={coinTradeLimits[status.symbol] !== undefined ? coinTradeLimits[status.symbol] : 20}
+                                  onChange={(e) => handleCoinTradeLimitChange(status.symbol, e.target.value)}
+                                  onBlur={() => handleCoinTradeLimitBlur(status.symbol)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-16 px-2 py-0.5 text-center font-mono font-bold text-xs bg-slate-900 border border-slate-600 rounded text-amber-400 focus:outline-none focus:border-amber-400"
+                                  title="Ingresa la cantidad de trades que deseas ver para esta moneda"
+                                />
+                                <span>trades cerrados para {status.symbol}:</span>
+                              </div>
+                              <p className="text-xs text-slate-400">No hay trades cerrados para {status.symbol}.</p>
+                            </div>
                           )
                         )}
                       </td>

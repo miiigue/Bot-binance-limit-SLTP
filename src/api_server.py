@@ -1100,10 +1100,11 @@ def get_symbol_trade_history(symbol: str):
     logger.info(f"Recibida petición GET /api/trades/{symbol}")
     
     # --- LEER Y VALIDAR EL PARÁMETRO 'limit' --- 
-    limit_param = request.args.get('limit', default=2, type=int) # Default 2 como en el frontend
-    if not 1 <= limit_param <= 50: # Poner límites razonables (ej. 1 a 50)
-        logger.warning(f"Parámetro 'limit' ({limit_param}) fuera de rango [1-50]. Usando 2.")
-        limit_param = 2 # Volver al default si está fuera de rango
+    limit_param = request.args.get('limit', default=20, type=int)
+    if limit_param < 1:
+        limit_param = 20
+    elif limit_param > 1000:
+        limit_param = 1000
     # -------------------------------------------
     
     if not symbol:
