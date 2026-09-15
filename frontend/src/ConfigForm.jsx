@@ -96,6 +96,7 @@ const defaultConfigValues = {
   volumeSmaPeriod: 20,
   volumeFactor: 1.5,
   downtrendCheckCandles: 3,
+  downtrendCandlesWindow: 5,
   downtrendLevelCheck: 5,
   requiredUptrendCandles: 0,
   positionSizeUSDT: 50,
@@ -222,8 +223,12 @@ const tooltipTexts = {
     example: "Con factor 1.5 y promedio de 10,000 USDT, la vela actual debe tener al menos 15,000 USDT para comprar."
   },
   downtrendCheckCandles: {
-    desc: "Bloquea compras si se detectan N velas consecutivas cerrando a la baja (velas rojas).",
-    example: "Con 3, si hay 3 velas rojas consecutivas, el bot espera a que frene la caída antes de comprar."
+    desc: "Bloquea compras si dentro de la ventana de velas se detectan N o más velas rojas (cerrando a la baja).",
+    example: "Con 3 en ventana 5, si 3 de las 5 velas son rojas, el bot bloquea la entrada evitando comprar en cascada."
+  },
+  downtrendCandlesWindow: {
+    desc: "Tamaño de la ventana de velas recientes cerradas a inspeccionar en búsqueda de velas rojas.",
+    example: "Con 5, el bot analiza las últimas 5 velas cerradas para contar cuántas fueron rojas."
   },
   downtrendLevelCheck: {
     desc: "Bloquea compras si el RSI ha caído este número de puntos en las velas recientes.",
@@ -492,6 +497,12 @@ function ConfigForm({
           newFormData[key] = propInitialConfig[key];
         }
       }
+      if (propInitialConfig.downtrend_candles_window !== undefined) {
+        newFormData.downtrendCandlesWindow = propInitialConfig.downtrend_candles_window;
+      }
+      if (propInitialConfig.downtrend_check_candles !== undefined) {
+        newFormData.downtrendCheckCandles = propInitialConfig.downtrend_check_candles;
+      }
       if (propInitialConfig.downtrend_level_check !== undefined) {
         newFormData.downtrendLevelCheck = propInitialConfig.downtrend_level_check;
       }
@@ -660,6 +671,8 @@ function ConfigForm({
         strategyAssignments: strategyAssignments,
       };
 
+      if (dataToSend.downtrendCandlesWindow !== undefined) dataToSend.downtrend_candles_window = dataToSend.downtrendCandlesWindow;
+      if (dataToSend.downtrendCheckCandles !== undefined) dataToSend.downtrend_check_candles = dataToSend.downtrendCheckCandles;
       if (dataToSend.downtrendLevelCheck !== undefined) dataToSend.downtrend_level_check = dataToSend.downtrendLevelCheck;
       if (dataToSend.evaluateOpenInterestIncrease !== undefined) dataToSend.evaluate_open_interest_increase = dataToSend.evaluateOpenInterestIncrease;
       if (dataToSend.openInterestPeriod !== undefined) dataToSend.open_interest_period = dataToSend.openInterestPeriod;
@@ -1484,7 +1497,40 @@ function ConfigForm({
               onCheckboxChange={handleChange} 
               tooltipKey="downtrendCheckCandles"
             >
-              <input type="number" name="downtrendCheckCandles" id="downtrendCheckCandles" value={formData.downtrendCheckCandles} onChange={handleChange} className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold"/>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label htmlFor="downtrendCandlesWindow" className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">
+                    Ventana (Velas)
+                  </label>
+                  <input 
+                    type="number" 
+                    name="downtrendCandlesWindow" 
+                    id="downtrendCandlesWindow" 
+                    min="1"
+                    max="50"
+                    value={formData.downtrendCandlesWindow} 
+                    onChange={handleChange} 
+                    className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold"
+                    placeholder="5"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="downtrendCheckCandles" className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">
+                    Máx Rojas
+                  </label>
+                  <input 
+                    type="number" 
+                    name="downtrendCheckCandles" 
+                    id="downtrendCheckCandles" 
+                    min="1"
+                    max="50"
+                    value={formData.downtrendCheckCandles} 
+                    onChange={handleChange} 
+                    className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold"
+                    placeholder="3"
+                  />
+                </div>
+              </div>
             </ConfigItem>
 
             <ConfigItem 

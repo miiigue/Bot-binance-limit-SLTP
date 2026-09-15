@@ -140,6 +140,7 @@ class TradingBot:
                 return Decimal(default_str)
 
         self.downtrend_check_candles = _safe_int(trading_params.get('downtrend_check_candles'), 0)
+        self.downtrend_candles_window = _safe_int(trading_params.get('downtrend_candles_window'), 5)
         self.downtrend_level_check = _safe_int(trading_params.get('downtrend_level_check'), 0)
         self.required_uptrend_candles = _safe_int(trading_params.get('required_uptrend_candles'), 0)
         self.rsi_at_entry = None
@@ -370,6 +371,7 @@ class TradingBot:
             except Exception: return Decimal(default_str)
 
         self.downtrend_check_candles = _safe_int(new_params.get('downtrend_check_candles'), self.downtrend_check_candles)
+        self.downtrend_candles_window = _safe_int(new_params.get('downtrend_candles_window'), self.downtrend_candles_window)
         self.downtrend_level_check = _safe_int(new_params.get('downtrend_level_check'), self.downtrend_level_check)
         self.required_uptrend_candles = _safe_int(new_params.get('required_uptrend_candles'), self.required_uptrend_candles)
         self.rsi_target = _safe_float(new_params.get('rsi_target'), self.rsi_target)
@@ -991,28 +993,50 @@ class TradingBot:
             return None
     # --- End of added method ---
 
+    def _check_downtrend_candles(self, klines_df: pd.DataFrame) -> tuple[bool, int, int]:
+        """
+        Verifica si en la ventana de W velas recientes hay R o más velas rojas (close < open).
+        Retorna (is_blocked, red_count, window_size).
+        is_blocked = True significa que DEBE BLOQUEAR la compra.
+        """
+        window_size = max(1, getattr(self, 'downtrend_candles_window', 5))
+        threshold_red = getattr(self, 'downtrend_check_candles', 3)
+
+        if not getattr(self, 'evaluate_downtrend_candles_block', True):
+            return False, 0, window_size
+
+        if threshold_red <= 0:
+            return False, 0, window_size
+
+        if klines_df is None or len(klines_df) < window_size + 1:
+            self.logger.warning(f"[{self.symbol}] No hay suficientes klines ({len(klines_df) if klines_df is not None else 0}) para ventana de {window_size} velas.")
+            return False, 0, window_size
+
+        # Analizar las últimas 'window_size' velas cerradas (excluyendo la vela actual en curso iloc[-1])
+        recent_closed = klines_df.iloc[-(window_size + 1):-1]
+        
+        red_count = 0
+        for _, row in recent_closed.iterrows():
+            try:
+                c_open = float(row['open'])
+                c_close = float(row['close'])
+                if c_close < c_open:
+                    red_count += 1
+            except Exception:
+                pass
+
+        is_blocked = (red_count >= threshold_red)
+        if is_blocked:
+            self.logger.info(f"[{self.symbol}] BLOQUEO ANTI-CASCADA: {red_count}/{window_size} velas rojas en la ventana (umbral para bloquear: {threshold_red}). Entrada bloqueada.")
+        else:
+            self.logger.debug(f"[{self.symbol}] Filtro velas rojas OK: {red_count}/{window_size} velas rojas (límite bloqueo: {threshold_red}).")
+
+        return is_blocked, red_count, window_size
+
     def _is_recent_downtrend(self, klines_df: pd.DataFrame) -> bool:
-        """Verifica si las 'N' velas cerradas más recientes muestran una tendencia bajista consecutiva."""
-        n = self.downtrend_check_candles # Este 'N' es para el bloqueo por bajada
-        
-        if n < 2: 
-            return False # Si el chequeo de bajada está desactivado, no bloquea
-
-        if len(klines_df) < n + 1: 
-            self.logger.warning(f"[{self.symbol}] No hay suficientes klines ({len(klines_df)}) para chequear tendencia bajista de {n} velas (para bloqueo). Se necesitan al menos {n+1}. Saltando chequeo de bloqueo.")
-            return False # No se puede determinar, no bloquea por precaución
-
-        closes = klines_df['close']
-        
-        for i in range(n - 1): 
-            current_candle_close = closes.iloc[-(2 + i)]
-            previous_candle_close = closes.iloc[-(3 + i)]
-
-            if current_candle_close >= previous_candle_close:
-                return False # No es una tendencia bajista consecutiva, no bloquea
-        
-        self.logger.info(f"[{self.symbol}] BLOQUEO DE ENTRADA: Condición de tendencia bajista reciente ({n} velas) DETECTADA. Entrada bloqueada.")
-        return True # Es tendencia bajista, SÍ bloquea
+        """Compatibilidad hacia atrás: True si está bloqueado por velas rojas."""
+        is_blocked, _, _ = self._check_downtrend_candles(klines_df)
+        return is_blocked
 
     def _calculate_tp_sl_prices(self) -> tuple[Decimal | None, Decimal | None]:
         """
@@ -1670,6 +1694,7 @@ class TradingBot:
                 'take_profit_usdt': float(self.take_profit_usdt),
                 'stop_loss_usdt': float(self.stop_loss_usdt),
                 'downtrend_check_candles': self.downtrend_check_candles,
+                'downtrend_candles_window': self.downtrend_candles_window,
                 'order_timeout_seconds': self.order_timeout_seconds,
                 'entry_order_type': self.entry_order_type,
                 'rsi_target': self.rsi_target,
@@ -2252,6 +2277,17 @@ class TradingBot:
                              f"Incremento OI OK? {'Sí' if condition_oi_increase_met else 'No'}, "
                              f"Filtro MA OK? {'Sí' if condition_ma_filter_passed else 'No'}")
 
+            # --- AÑADIDO: Lógica de Filtro Anti-Cascada (Velas Rojas en Ventana) ---
+            dt_is_blocked, dt_red_cnt, dt_win = self._check_downtrend_candles(klines_df)
+            condition_downtrend_candles_passed = not dt_is_blocked
+
+            # --- AÑADIDO: Lógica de Filtro Niveles de Caída ---
+            condition_downtrend_levels_passed = True
+            dt_levels_detected = False
+            if getattr(self, 'evaluate_downtrend_levels_block', True) and getattr(self, 'downtrend_level_check', 0) > 0:
+                dt_levels_detected = self._check_downtrend_levels(klines_df)
+                condition_downtrend_levels_passed = not dt_levels_detected
+
             # --- CONSTRUCCIÓN DE DIAGNÓSTICO DE ENTRADA EN TIEMPO REAL ---
             try:
                 cond_list = []
@@ -2342,6 +2378,30 @@ class TradingBot:
                     "detail": f"Precio: {price_for_log} > MA: {ma_value_for_log}"
                 })
 
+                # 7. Filtro Anti-Cascada (Velas Rojas en Ventana)
+                cond_list.append({
+                    "id": "downtrend_candles",
+                    "name": "Anti-Cascada Velas",
+                    "short_name": "Rojas",
+                    "active": bool(getattr(self, 'evaluate_downtrend_candles_block', True)),
+                    "passed": bool(condition_downtrend_candles_passed),
+                    "value": f"{dt_red_cnt}/{dt_win}v",
+                    "target": f"< {getattr(self, 'downtrend_check_candles', 3)} rojas",
+                    "detail": f"{dt_red_cnt} rojas de {dt_win} velas (bloquea si ≥ {getattr(self, 'downtrend_check_candles', 3)})"
+                })
+
+                # 8. Filtro Niveles Caída
+                cond_list.append({
+                    "id": "downtrend_levels",
+                    "name": "Nivel Caída",
+                    "short_name": "Caída",
+                    "active": bool(getattr(self, 'evaluate_downtrend_levels_block', True)),
+                    "passed": bool(condition_downtrend_levels_passed),
+                    "value": "Cascada" if dt_levels_detected else "Normal",
+                    "target": f"Sin cascada ({getattr(self, 'downtrend_level_check', 0)}v)",
+                    "detail": f"Caída escalonada detectada en {getattr(self, 'downtrend_level_check', 0)} velas" if dt_levels_detected else "Sin caída escalonada"
+                })
+
                 active_conds = [c for c in cond_list if c["active"]]
                 total_active = len(active_conds)
                 passed_cnt = sum(1 for c in active_conds if c["passed"])
@@ -2362,10 +2422,11 @@ class TradingBot:
 
             # Evaluar todas las condiciones para la señal de entrada
             if all([condition_rsi_in_range, condition_rsi_change_meets_thresh_up, volume_check_passed, 
-                    condition_required_uptrend_met, condition_oi_increase_met, condition_ma_filter_passed]):
+                    condition_required_uptrend_met, condition_oi_increase_met, condition_ma_filter_passed,
+                    condition_downtrend_candles_passed, condition_downtrend_levels_passed]):
                 self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA DETECTADA.")
                 entry_signal = True
-                self.entry_reason = (f"RSI_range/delta/vol/uptrend/oi/MA_Filter") # Razón simplificada
+                self.entry_reason = (f"RSI_range/delta/vol/uptrend/oi/MA_Filter/anti_cascada")
             else:
                 # ... la lógica de log de fallos existente ...
                 # (sin cambios, pero se podría añadir el fallo de MA si se quisiera)
@@ -3046,7 +3107,7 @@ class TradingBot:
                 db_trade_params = {}
                 string_params = ['rsi_type', 'rsi_interval', 'rsi_period', 'rsi_threshold_up', 'rsi_threshold_down', 
                                  'rsi_entry_level_low', 'rsi_entry_level_high', 'volume_sma_period', 
-                                 'volume_factor', 'downtrend_check_candles', 'order_timeout_seconds', 'entry_order_type']
+                                 'volume_factor', 'downtrend_check_candles', 'downtrend_candles_window', 'order_timeout_seconds', 'entry_order_type']
                 float_params = ['position_size_usdt', 'take_profit_usdt', 'stop_loss_usdt', 'rsi_target',
                                 'price_trailing_stop_distance_usdt', 'price_trailing_stop_activation_pnl_usdt',
                                 'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt']

@@ -233,7 +233,8 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'volume_sma_period': _val('volumeSmaPeriod', 20),
             'volume_factor': _val('volumeFactor', 1.5),
             'downtrend_check_candles': _val('downtrendCheckCandles', 3),
-            'downtrend_level_check': _val('downtrend_level_check', 5),
+            'downtrend_candles_window': _val('downtrendCandlesWindow', 5),
+            'downtrend_level_check': _val('downtrend_level_check', _val('downtrendLevelCheck', 5)),
             'required_uptrend_candles': _val('requiredUptrendCandles', 0),
             'position_size_usdt': _val('positionSizeUSDT', 50),
             'stop_loss_usdt': _val('stopLossUSDT', 20),
@@ -469,6 +470,7 @@ def _build_frontend_config_dict():
             ('volume_sma_period', 'volumeSmaPeriod'),
             ('volume_factor', 'volumeFactor'),
             ('downtrend_check_candles', 'downtrendCheckCandles'),
+            ('downtrend_candles_window', 'downtrendCandlesWindow'),
             ('downtrend_level_check', 'downtrendLevelCheck'),
             ('required_uptrend_candles', 'requiredUptrendCandles'),
             ('position_size_usdt', 'positionSizeUSDT'),
@@ -1081,7 +1083,7 @@ def load_initial_config():
     for key, value_str in temp_trading_params.items():
         original_value = value_str
         try:
-            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations', 'max_consecutive_losses', 'consecutive_losses_cooldown_minutes', 'rolling_trades_window', 'rolling_max_losses', 'rolling_filter_cooldown_minutes', 'btc_crash_shield_cooldown_minutes']:
+            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_candles_window', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations', 'max_consecutive_losses', 'consecutive_losses_cooldown_minutes', 'rolling_trades_window', 'rolling_max_losses', 'rolling_filter_cooldown_minutes', 'btc_crash_shield_cooldown_minutes']:
                 if value_str is None or str(value_str).strip() == '':
                     loaded_trading_params[key] = 20 if 'period' in key else 0
                 else:
