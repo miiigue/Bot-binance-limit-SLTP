@@ -63,6 +63,10 @@ _btc_crash_cache = {
     'drop_percent': 0.0,
 }
 
+# Caché global para el Filtro de Régimen de Mercado / Tendencia Macro (HTF SuperTrend / EMA)
+# Formato: {cache_key: {'timestamp': float, 'is_bullish': bool, 'detail': str, 'value': float}}
+_market_regime_cache = {}
+
 class TradingBot:
     """
     Clase que encapsula la lógica de trading RSI para UN símbolo específico.
@@ -229,6 +233,15 @@ class TradingBot:
         self.btc_crash_timeframe = str(trading_params.get('btc_crash_timeframe') or '15m')
         self.btc_crash_drop_percent = _safe_float(trading_params.get('btc_crash_drop_percent'), 2.0)
         self.btc_crash_shield_cooldown_minutes = _safe_int(trading_params.get('btc_crash_shield_cooldown_minutes'), 30)
+
+        # --- FILTRO DE RÉGIMEN DE MERCADO (TENDENCIA MACRO) ---
+        self.enable_market_regime_filter = str(trading_params.get('enable_market_regime_filter', 'False')).lower() == 'true' if isinstance(trading_params.get('enable_market_regime_filter'), str) else bool(trading_params.get('enable_market_regime_filter', False))
+        self.market_regime_mode = str(trading_params.get('market_regime_mode', 'symbol')).lower()
+        self.market_regime_indicator = str(trading_params.get('market_regime_indicator', 'supertrend')).lower()
+        self.market_regime_timeframe = str(trading_params.get('market_regime_timeframe') or '1h')
+        self.market_regime_ema_period = _safe_int(trading_params.get('market_regime_ema_period'), 50)
+        self.market_regime_supertrend_period = _safe_int(trading_params.get('market_regime_supertrend_period'), 10)
+        self.market_regime_supertrend_multiplier = _safe_float(trading_params.get('market_regime_supertrend_multiplier'), 3.0)
 
         # Estado dinámico de protecciones
         self.cooldown_until_ts = 0.0
@@ -471,6 +484,19 @@ class TradingBot:
             self.btc_crash_timeframe = str(new_params['btc_crash_timeframe'])
         self.btc_crash_drop_percent = _safe_float(new_params.get('btc_crash_drop_percent'), self.btc_crash_drop_percent)
         self.btc_crash_shield_cooldown_minutes = _safe_int(new_params.get('btc_crash_shield_cooldown_minutes'), self.btc_crash_shield_cooldown_minutes)
+
+        # --- HOT-RELOAD RÉGIMEN DE MERCADO ---
+        if 'enable_market_regime_filter' in new_params:
+            self.enable_market_regime_filter = str(new_params['enable_market_regime_filter']).lower() == 'true' if isinstance(new_params['enable_market_regime_filter'], str) else bool(new_params['enable_market_regime_filter'])
+        if 'market_regime_mode' in new_params and new_params['market_regime_mode']:
+            self.market_regime_mode = str(new_params['market_regime_mode']).lower()
+        if 'market_regime_indicator' in new_params and new_params['market_regime_indicator']:
+            self.market_regime_indicator = str(new_params['market_regime_indicator']).lower()
+        if 'market_regime_timeframe' in new_params and new_params['market_regime_timeframe']:
+            self.market_regime_timeframe = str(new_params['market_regime_timeframe'])
+        self.market_regime_ema_period = _safe_int(new_params.get('market_regime_ema_period'), self.market_regime_ema_period)
+        self.market_regime_supertrend_period = _safe_int(new_params.get('market_regime_supertrend_period'), self.market_regime_supertrend_period)
+        self.market_regime_supertrend_multiplier = _safe_float(new_params.get('market_regime_supertrend_multiplier'), self.market_regime_supertrend_multiplier)
         # -----------------------------------
 
         self.logger.info(f"[{self.symbol}] Parámetros de trading actualizados en caliente exitosamente.")
@@ -1285,6 +1311,116 @@ class TradingBot:
         except Exception as e:
             self.logger.warning(f"[{self.symbol}] Error al verificar desplome de BTC: {e}")
             return False, 0.0
+
+    def _evaluate_htf_trend_for_symbol(self, target_symbol: str) -> tuple[bool, str, float]:
+        """
+        Evalúa si target_symbol está en tendencia alcista en su marco temporal mayor (HTF).
+        Utiliza _market_regime_cache con TTL de 45 segundos para no saturar la API de Binance.
+        Retorna (is_bullish, detail_text, indicator_value).
+        """
+        global _market_regime_cache
+        now = time.time()
+        tf = getattr(self, 'market_regime_timeframe', '1h') or '1h'
+        ind = getattr(self, 'market_regime_indicator', 'supertrend') or 'supertrend'
+        ema_p = int(getattr(self, 'market_regime_ema_period', 50) or 50)
+        st_p = int(getattr(self, 'market_regime_supertrend_period', 10) or 10)
+        st_m = float(getattr(self, 'market_regime_supertrend_multiplier', 3.0) or 3.0)
+
+        cache_key = f"{target_symbol}_{tf}_{ind}_{ema_p if ind == 'ema' else f'{st_p}_{st_m}'}"
+        cached = _market_regime_cache.get(cache_key)
+        if cached and (now - cached['timestamp'] < 45.0):
+            return cached['is_bullish'], cached['detail'], cached['value']
+
+        try:
+            from src.binance_client import get_historical_klines
+            limit_needed = max(ema_p + 15, st_p + 25, 60)
+            klines = get_historical_klines(target_symbol, tf, limit=limit_needed)
+            if klines is None or klines.empty or len(klines) < 15:
+                if cached:
+                    return cached['is_bullish'], cached['detail'], cached['value']
+                return True, f"{target_symbol}: Sin datos HTF", 0.0
+
+            if ind == 'ema':
+                from src.rsi_calculator import calculate_ema
+                ema_series = calculate_ema(klines['close'], period=ema_p)
+                if ema_series is None or ema_series.empty or pd.isna(ema_series.iloc[-1]):
+                    return True, f"{target_symbol}: Error EMA", 0.0
+                last_close = float(klines['close'].iloc[-1])
+                ema_val = float(ema_series.iloc[-1])
+                is_bull = (last_close >= ema_val)
+                detail = f"{target_symbol} {tf}: {'🟢' if is_bull else '🔴'} ({last_close:.4f} vs EMA{ema_p}: {ema_val:.4f})"
+                val = ema_val
+            else:
+                from src.rsi_calculator import calculate_supertrend
+                st_df = calculate_supertrend(klines, period=st_p, multiplier=st_m)
+                if st_df is None or st_df.empty:
+                    return True, f"{target_symbol}: Error SuperTrend", 0.0
+                is_bull = bool(st_df['is_bullish'].iloc[-1])
+                st_val = float(st_df['supertrend'].iloc[-1])
+                detail = f"{target_symbol} {tf}: {'🟢 Alcista' if is_bull else '🔴 Bajista'} (SuperTrend: {st_val:.4f})"
+                val = st_val
+
+            _market_regime_cache[cache_key] = {
+                'timestamp': now,
+                'is_bullish': is_bull,
+                'detail': detail,
+                'value': val
+            }
+            return is_bull, detail, val
+        except Exception as e:
+            self.logger.warning(f"[{self.symbol}] Error al evaluar tendencia HTF para {target_symbol}: {e}")
+            if cached:
+                return cached['is_bullish'], cached['detail'], cached['value']
+            return True, f"{target_symbol}: Error", 0.0
+
+    def _check_market_regime(self) -> tuple[bool, str, dict]:
+        """
+        Evalúa el régimen de mercado general según el modo configurado:
+        - 'symbol': Evalúa la tendencia HTF de la propia moneda.
+        - 'btc': Evalúa la tendencia HTF de BTCUSDT.
+        - 'both': Exige que AMBOS (BTC y la propia moneda) estén alcistas.
+        Retorna (is_passed, summary_text, details_dict).
+        """
+        if not getattr(self, 'enable_market_regime_filter', False):
+            return True, "Filtro desactivado", {}
+
+        mode = str(getattr(self, 'market_regime_mode', 'symbol')).lower()
+        eval_symbol = (mode in ['symbol', 'both'])
+        eval_btc = (mode in ['btc', 'both'])
+
+        sym_bull, sym_detail, sym_val = (True, "", 0.0)
+        btc_bull, btc_detail, btc_val = (True, "", 0.0)
+
+        if eval_symbol:
+            sym_bull, sym_detail, sym_val = self._evaluate_htf_trend_for_symbol(self.symbol)
+        if eval_btc:
+            btc_bull, btc_detail, btc_val = self._evaluate_htf_trend_for_symbol('BTCUSDT')
+
+        is_passed = (sym_bull and btc_bull)
+
+        if mode == 'both':
+            summary = f"BTC: {'🟢' if btc_bull else '🔴'} | {self.symbol}: {'🟢' if sym_bull else '🔴'}"
+        elif mode == 'btc':
+            summary = f"BTC: {'🟢 Alcista' if btc_bull else '🔴 Bajista'}"
+        else:
+            summary = f"{self.symbol}: {'🟢 Alcista' if sym_bull else '🔴 Bajista'}"
+
+        details = {
+            'mode': mode,
+            'passed': is_passed,
+            'sym_bullish': sym_bull,
+            'btc_bullish': btc_bull,
+            'sym_detail': sym_detail,
+            'btc_detail': btc_detail,
+            'summary': summary
+        }
+
+        if not is_passed:
+            self.logger.info(f"[{self.symbol}] BLOQUEO RÉGIMEN DE MERCADO: {summary}. Nueva entrada LONG bloqueada.")
+        else:
+            self.logger.debug(f"[{self.symbol}] Régimen de mercado OK: {summary}.")
+
+        return is_passed, summary, details
 
     def _check_risk_circuit_breakers(self) -> bool:
         """
@@ -2288,6 +2424,10 @@ class TradingBot:
                 dt_levels_detected = self._check_downtrend_levels(klines_df)
                 condition_downtrend_levels_passed = not dt_levels_detected
 
+            # --- AÑADIDO: Lógica de Filtro Régimen de Mercado (Tendencia Macro HTF) ---
+            regime_passed, regime_summary, regime_details = self._check_market_regime()
+            condition_market_regime_passed = regime_passed
+
             # --- CONSTRUCCIÓN DE DIAGNÓSTICO DE ENTRADA EN TIEMPO REAL ---
             try:
                 cond_list = []
@@ -2402,6 +2542,18 @@ class TradingBot:
                     "detail": f"Caída escalonada detectada en {getattr(self, 'downtrend_level_check', 0)} velas" if dt_levels_detected else "Sin caída escalonada"
                 })
 
+                # 9. Filtro Régimen de Mercado (Tendencia Macro HTF)
+                cond_list.append({
+                    "id": "market_regime",
+                    "name": "Régimen Macro",
+                    "short_name": "Macro",
+                    "active": bool(getattr(self, 'enable_market_regime_filter', False)),
+                    "passed": bool(condition_market_regime_passed),
+                    "value": "Alcista" if condition_market_regime_passed else "Bajista",
+                    "target": f"Alcista ({getattr(self, 'market_regime_timeframe', '1h')})",
+                    "detail": regime_summary
+                })
+
                 active_conds = [c for c in cond_list if c["active"]]
                 total_active = len(active_conds)
                 passed_cnt = sum(1 for c in active_conds if c["passed"])
@@ -2423,10 +2575,11 @@ class TradingBot:
             # Evaluar todas las condiciones para la señal de entrada
             if all([condition_rsi_in_range, condition_rsi_change_meets_thresh_up, volume_check_passed, 
                     condition_required_uptrend_met, condition_oi_increase_met, condition_ma_filter_passed,
-                    condition_downtrend_candles_passed, condition_downtrend_levels_passed]):
+                    condition_downtrend_candles_passed, condition_downtrend_levels_passed,
+                    condition_market_regime_passed]):
                 self.logger.info(f"[{self.symbol}] CONDICIÓN DE ENTRADA COMBINADA DETECTADA.")
                 entry_signal = True
-                self.entry_reason = (f"RSI_range/delta/vol/uptrend/oi/MA_Filter/anti_cascada")
+                self.entry_reason = (f"RSI_range/delta/vol/uptrend/oi/MA_Filter/anti_cascada/market_regime")
             else:
                 # ... la lógica de log de fallos existente ...
                 # (sin cambios, pero se podría añadir el fallo de MA si se quisiera)

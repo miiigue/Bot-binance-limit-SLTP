@@ -163,6 +163,15 @@ const defaultConfigValues = {
   btcCrashTimeframe: '15m',
   btcCrashDropPercent: 2.0,
   btcCrashShieldCooldownMinutes: 30,
+
+  // --- RÉGIMEN DE MERCADO (TENDENCIA MACRO HTF) ---
+  enableMarketRegimeFilter: false,
+  marketRegimeMode: 'symbol',
+  marketRegimeIndicator: 'supertrend',
+  marketRegimeTimeframe: '1h',
+  marketRegimeEmaPeriod: 50,
+  marketRegimeSupertrendPeriod: 10,
+  marketRegimeSupertrendMultiplier: 3.0,
 };
 
 // --- Diccionario profesional con Explicación y Ejemplo Práctico para cada Parámetro ---
@@ -241,6 +250,36 @@ const tooltipTexts = {
   evaluateOpenInterestIncrease: {
     desc: "Exige que el Interés Abierto (capital institucional en futuros) esté aumentando en el período fijado.",
     example: "Con período '5m', verifica que el dinero en contratos de futuros haya subido en los últimos 5 min."
+  },
+
+  // Régimen de Mercado (Tendencia Macro HTF)
+  enableMarketRegimeFilter: {
+    desc: "Solo permite abrir compras LONG si la tendencia en temporalidad mayor (HTF) es alcista.",
+    example: "Si Bitcoin o la moneda están en tendencia bajista, pausa compras preventivamente para no quedar atrapado en caídas."
+  },
+  marketRegimeMode: {
+    desc: "Ámbito de evaluación: Individual (cada moneda mira su propia gráfica 1h), Global (mira solo BTCUSDT), o Ambos (doble filtro estricto).",
+    example: "Con 'Individual', si SOL cae en 1h se bloquea SOL pero ETH puede seguir operando si está alcista."
+  },
+  marketRegimeIndicator: {
+    desc: "Indicador técnico para determinar la tendencia: SuperTrend (con banda ATR de volatilidad) o EMA (Media Móvil Exponencial).",
+    example: "SuperTrend es el más confiable porque su banda de volatilidad evita señales falsas cuando el mercado lateraliza."
+  },
+  marketRegimeTimeframe: {
+    desc: "Marco temporal superior (HTF) analizado para definir la tendencia de fondo.",
+    example: "'1h' es el estándar recomendado para bots que operan en 1m a 5m."
+  },
+  marketRegimeEmaPeriod: {
+    desc: "Período de la Media Móvil Exponencial (EMA). El precio debe estar por encima de la EMA para autorizar compras.",
+    example: "Con 50 en 1h, exige que el precio esté por encima de la EMA 50."
+  },
+  marketRegimeSupertrendPeriod: {
+    desc: "Período del ATR para calcular el rango de volatilidad del SuperTrend.",
+    example: "10 velas es la configuración estándar de TradingView."
+  },
+  marketRegimeSupertrendMultiplier: {
+    desc: "Multiplicador de volatilidad ATR. Mayor valor = banda más ancha y menos cambios de tendencia.",
+    example: "3.0 es el valor óptimo estándar para filtrar fluctuaciones menores."
   },
 
   // Media Móvil
@@ -506,6 +545,27 @@ function ConfigForm({
       if (propInitialConfig.downtrend_level_check !== undefined) {
         newFormData.downtrendLevelCheck = propInitialConfig.downtrend_level_check;
       }
+      if (propInitialConfig.enable_market_regime_filter !== undefined) {
+        newFormData.enableMarketRegimeFilter = Boolean(propInitialConfig.enable_market_regime_filter === true || propInitialConfig.enable_market_regime_filter === 'true');
+      }
+      if (propInitialConfig.market_regime_mode !== undefined) {
+        newFormData.marketRegimeMode = propInitialConfig.market_regime_mode;
+      }
+      if (propInitialConfig.market_regime_indicator !== undefined) {
+        newFormData.marketRegimeIndicator = propInitialConfig.market_regime_indicator;
+      }
+      if (propInitialConfig.market_regime_timeframe !== undefined) {
+        newFormData.marketRegimeTimeframe = propInitialConfig.market_regime_timeframe;
+      }
+      if (propInitialConfig.market_regime_ema_period !== undefined) {
+        newFormData.marketRegimeEmaPeriod = Number(propInitialConfig.market_regime_ema_period);
+      }
+      if (propInitialConfig.market_regime_supertrend_period !== undefined) {
+        newFormData.marketRegimeSupertrendPeriod = Number(propInitialConfig.market_regime_supertrend_period);
+      }
+      if (propInitialConfig.market_regime_supertrend_multiplier !== undefined) {
+        newFormData.marketRegimeSupertrendMultiplier = Number(propInitialConfig.market_regime_supertrend_multiplier);
+      }
       if (propInitialConfig.riskPercentage !== undefined || propInitialConfig.risk_percentage !== undefined) {
         const rp = Number(propInitialConfig.riskPercentage ?? propInitialConfig.risk_percentage);
         setRiskPercentage(rp);
@@ -674,6 +734,13 @@ function ConfigForm({
       if (dataToSend.downtrendCandlesWindow !== undefined) dataToSend.downtrend_candles_window = dataToSend.downtrendCandlesWindow;
       if (dataToSend.downtrendCheckCandles !== undefined) dataToSend.downtrend_check_candles = dataToSend.downtrendCheckCandles;
       if (dataToSend.downtrendLevelCheck !== undefined) dataToSend.downtrend_level_check = dataToSend.downtrendLevelCheck;
+      if (dataToSend.enableMarketRegimeFilter !== undefined) dataToSend.enable_market_regime_filter = dataToSend.enableMarketRegimeFilter;
+      if (dataToSend.marketRegimeMode !== undefined) dataToSend.market_regime_mode = dataToSend.marketRegimeMode;
+      if (dataToSend.marketRegimeIndicator !== undefined) dataToSend.market_regime_indicator = dataToSend.marketRegimeIndicator;
+      if (dataToSend.marketRegimeTimeframe !== undefined) dataToSend.market_regime_timeframe = dataToSend.marketRegimeTimeframe;
+      if (dataToSend.marketRegimeEmaPeriod !== undefined) dataToSend.market_regime_ema_period = dataToSend.marketRegimeEmaPeriod;
+      if (dataToSend.marketRegimeSupertrendPeriod !== undefined) dataToSend.market_regime_supertrend_period = dataToSend.marketRegimeSupertrendPeriod;
+      if (dataToSend.marketRegimeSupertrendMultiplier !== undefined) dataToSend.market_regime_supertrend_multiplier = dataToSend.marketRegimeSupertrendMultiplier;
       if (dataToSend.evaluateOpenInterestIncrease !== undefined) dataToSend.evaluate_open_interest_increase = dataToSend.evaluateOpenInterestIncrease;
       if (dataToSend.openInterestPeriod !== undefined) dataToSend.open_interest_period = dataToSend.openInterestPeriod;
       if (dataToSend.evaluateMaFilter !== undefined) dataToSend.evaluate_ma_filter = dataToSend.evaluateMaFilter;
@@ -1553,6 +1620,136 @@ function ConfigForm({
               tooltipKey="requiredUptrendCandles"
             >
               <input type="number" name="requiredUptrendCandles" id="requiredUptrendCandles" value={formData.requiredUptrendCandles} onChange={handleChange} className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold"/>
+            </ConfigItem>
+          </div>
+
+          {/* Tarjeta de Régimen de Mercado / Tendencia Macro HTF */}
+          <div className="mt-3">
+            <ConfigItem
+              labelText="Filtro de Régimen de Mercado (Tendencia Macro HTF - Solo Operar en Alcista)"
+              htmlFor="marketRegimeMode"
+              checkboxName="enableMarketRegimeFilter"
+              isChecked={!!formData.enableMarketRegimeFilter}
+              onCheckboxChange={handleChange}
+              tooltipKey="enableMarketRegimeFilter"
+            >
+              <div className="space-y-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label htmlFor="marketRegimeMode" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Ámbito de Evaluación
+                    </label>
+                    <select
+                      name="marketRegimeMode"
+                      id="marketRegimeMode"
+                      value={formData.marketRegimeMode || 'symbol'}
+                      onChange={handleChange}
+                      disabled={!formData.enableMarketRegimeFilter}
+                      className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-xs font-semibold disabled:opacity-50"
+                    >
+                      <option value="symbol">🪙 Individual (Cada Moneda)</option>
+                      <option value="btc">₿ Global (Solo Bitcoin)</option>
+                      <option value="both">🛡️ Ambos (Doble Confirmación)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="marketRegimeIndicator" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Indicador de Tendencia
+                    </label>
+                    <select
+                      name="marketRegimeIndicator"
+                      id="marketRegimeIndicator"
+                      value={formData.marketRegimeIndicator || 'supertrend'}
+                      onChange={handleChange}
+                      disabled={!formData.enableMarketRegimeFilter}
+                      className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-xs font-semibold disabled:opacity-50"
+                    >
+                      <option value="supertrend">📈 SuperTrend (Recomendado)</option>
+                      <option value="ema">〰️ Media Móvil (EMA)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="marketRegimeTimeframe" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Temporalidad Macro (HTF)
+                    </label>
+                    <select
+                      name="marketRegimeTimeframe"
+                      id="marketRegimeTimeframe"
+                      value={formData.marketRegimeTimeframe || '1h'}
+                      onChange={handleChange}
+                      disabled={!formData.enableMarketRegimeFilter}
+                      className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-xs font-semibold disabled:opacity-50"
+                    >
+                      <option value="15m">15 Minutos (15m)</option>
+                      <option value="1h">1 Hora (1h - Recomendado)</option>
+                      <option value="4h">4 Horas (4h - Macro)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Parámetros dinámicos según el indicador */}
+                {formData.marketRegimeIndicator === 'ema' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-gray-200 dark:border-gray-800">
+                    <div>
+                      <label htmlFor="marketRegimeEmaPeriod" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Período EMA (ej: 50 o 200)
+                      </label>
+                      <input
+                        type="number"
+                        name="marketRegimeEmaPeriod"
+                        id="marketRegimeEmaPeriod"
+                        min="5"
+                        max="500"
+                        value={formData.marketRegimeEmaPeriod || 50}
+                        onChange={handleChange}
+                        disabled={!formData.enableMarketRegimeFilter}
+                        className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-xs font-semibold disabled:opacity-50"
+                      />
+                    </div>
+                    <div className="flex items-center text-xs text-gray-500 dark:text-gray-400 italic pt-4">
+                      ℹ️ El bot solo comprará si el precio está por encima de la EMA {formData.marketRegimeEmaPeriod || 50} en {formData.marketRegimeTimeframe || '1h'}.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-gray-200 dark:border-gray-800">
+                    <div>
+                      <label htmlFor="marketRegimeSupertrendPeriod" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Período ATR (Default: 10)
+                      </label>
+                      <input
+                        type="number"
+                        name="marketRegimeSupertrendPeriod"
+                        id="marketRegimeSupertrendPeriod"
+                        min="1"
+                        max="50"
+                        value={formData.marketRegimeSupertrendPeriod || 10}
+                        onChange={handleChange}
+                        disabled={!formData.enableMarketRegimeFilter}
+                        className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-xs font-semibold disabled:opacity-50"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="marketRegimeSupertrendMultiplier" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Multiplicador ATR (Default: 3.0)
+                      </label>
+                      <input
+                        type="number"
+                        name="marketRegimeSupertrendMultiplier"
+                        id="marketRegimeSupertrendMultiplier"
+                        min="0.5"
+                        max="10"
+                        step="0.1"
+                        value={formData.marketRegimeSupertrendMultiplier || 3.0}
+                        onChange={handleChange}
+                        disabled={!formData.enableMarketRegimeFilter}
+                        className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-xs font-semibold disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </ConfigItem>
           </div>
         </div>

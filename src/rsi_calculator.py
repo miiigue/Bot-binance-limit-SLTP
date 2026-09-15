@@ -67,6 +67,113 @@ def calculate_rsi(close_prices: pd.Series, period: int = 14, rsi_type: str = 'WI
         logger.error(f"Error inesperado al calcular RSI: {e}", exc_info=True)
         return None
 
+def calculate_ema(close_prices: pd.Series, period: int = 50) -> pd.Series | None:
+    """Calcula la Media Móvil Exponencial (EMA)."""
+    logger = get_logger()
+    if not isinstance(close_prices, pd.Series) or len(close_prices) < period:
+        logger.warning(f"Datos insuficientes para EMA de período {period} (datos: {len(close_prices) if isinstance(close_prices, pd.Series) else 0})")
+        return None
+    try:
+        close = close_prices.astype(float)
+        return close.ewm(span=period, adjust=False).mean()
+    except Exception as e:
+        logger.error(f"Error al calcular EMA({period}): {e}")
+        return None
+
+def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> pd.DataFrame | None:
+    """
+    Calcula el indicador SuperTrend estándar según la fórmula oficial (TradingView / ATR).
+    
+    Args:
+        df: DataFrame con columnas 'high', 'low', 'close'.
+        period: Período del ATR (default 10).
+        multiplier: Multiplicador de volatilidad (default 3.0).
+        
+    Returns:
+        pd.DataFrame con columnas:
+          - 'supertrend': Valor numérico de la línea SuperTrend.
+          - 'trend': 1 si es ALCISTA (Verde / Bullish), -1 si es BAJISTA (Rojo / Bearish).
+          - 'is_bullish': Booleano (True = Alcista, False = Bajista).
+        O None si faltan datos.
+    """
+    logger = get_logger()
+    if df is None or len(df) < period + 2:
+        logger.warning(f"Datos insuficientes para SuperTrend({period}, {multiplier}) (filas: {len(df) if df is not None else 0})")
+        return None
+
+    try:
+        high = df['high'].astype(float).values
+        low = df['low'].astype(float).values
+        close = df['close'].astype(float).values
+        n = len(df)
+
+        # 1. True Range (TR)
+        tr = np.zeros(n)
+        tr[0] = high[0] - low[0]
+        for i in range(1, n):
+            tr[i] = max(
+                high[i] - low[i],
+                abs(high[i] - close[i - 1]),
+                abs(low[i] - close[i - 1])
+            )
+
+        # 2. Average True Range (ATR) usando suavizado de Wilder
+        atr = np.zeros(n)
+        atr[period - 1] = np.mean(tr[:period])
+        for i in range(period, n):
+            atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
+
+        # 3. Bandas Básicas
+        hl2 = (high + low) / 2.0
+        basic_upper = hl2 + (multiplier * atr)
+        basic_lower = hl2 - (multiplier * atr)
+
+        # 4. Bandas Finales y Dirección de Tendencia
+        final_upper = np.zeros(n)
+        final_lower = np.zeros(n)
+        trend = np.zeros(n, dtype=int)
+        supertrend = np.zeros(n)
+
+        # Iteración secuencial
+        for i in range(period, n):
+            # Final Upper Band
+            if (basic_upper[i] < final_upper[i - 1]) or (close[i - 1] > final_upper[i - 1]):
+                final_upper[i] = basic_upper[i]
+            else:
+                final_upper[i] = final_upper[i - 1]
+
+            # Final Lower Band
+            if (basic_lower[i] > final_lower[i - 1]) or (close[i - 1] < final_lower[i - 1]):
+                final_lower[i] = basic_lower[i]
+            else:
+                final_lower[i] = final_lower[i - 1]
+
+            # Dirección de Tendencia
+            prev_trend = trend[i - 1] if i > period else 1
+            if prev_trend == 1:
+                if close[i] < final_lower[i]:
+                    trend[i] = -1
+                    supertrend[i] = final_upper[i]
+                else:
+                    trend[i] = 1
+                    supertrend[i] = final_lower[i]
+            else:
+                if close[i] > final_upper[i]:
+                    trend[i] = 1
+                    supertrend[i] = final_lower[i]
+                else:
+                    trend[i] = -1
+                    supertrend[i] = final_upper[i]
+
+        result = pd.DataFrame(index=df.index)
+        result['supertrend'] = supertrend
+        result['trend'] = trend
+        result['is_bullish'] = (trend == 1)
+        return result
+    except Exception as e:
+        logger.error(f"Error al calcular SuperTrend({period}, {multiplier}): {e}", exc_info=True)
+        return None
+
 # --- Bloque de ejemplo para probar la función --- 
 if __name__ == '__main__':
     # Configurar logger para poder ver los mensajes del ejemplo

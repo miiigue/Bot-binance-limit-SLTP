@@ -104,5 +104,19 @@
     "enable_btc_crash_shield": true,
     "btc_crash_timeframe": "15m",
     "btc_crash_drop_percent": 2.0,
-    "btc_crash_shield_cooldown_minutes": 30
+    "btc_crash_shield_cooldown_minutes": 30,
+    "enableMarketRegimeFilter": false,
+    "marketRegimeMode": "symbol",
+    "marketRegimeIndicator": "supertrend",
+    "marketRegimeTimeframe": "1h",
+    "marketRegimeEmaPeriod": 50,
+    "marketRegimeSupertrendPeriod": 10,
+    "marketRegimeSupertrendMultiplier": 3.0,
+    "enable_market_regime_filter": false,
+    "market_regime_mode": "symbol",
+    "market_regime_indicator": "supertrend",
+    "market_regime_timeframe": "1h",
+    "market_regime_ema_period": 50,
+    "market_regime_supertrend_period": 10,
+    "market_regime_supertrend_multiplier": 3.0
 }

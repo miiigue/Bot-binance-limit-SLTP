@@ -297,6 +297,15 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'btc_crash_timeframe': _val('btcCrashTimeframe', '15m'),
             'btc_crash_drop_percent': _val('btcCrashDropPercent', 2.0),
             'btc_crash_shield_cooldown_minutes': _val('btcCrashShieldCooldownMinutes', 30),
+
+            # --- NUEVO: Mapeo para Filtro de Régimen de Mercado (Tendencia Macro) ---
+            'enable_market_regime_filter': str(frontend_data.get('enableMarketRegimeFilter', False)).lower(),
+            'market_regime_mode': _val('marketRegimeMode', 'symbol'),
+            'market_regime_indicator': _val('marketRegimeIndicator', 'supertrend'),
+            'market_regime_timeframe': _val('marketRegimeTimeframe', '1h'),
+            'market_regime_ema_period': _val('marketRegimeEmaPeriod', 50),
+            'market_regime_supertrend_period': _val('marketRegimeSupertrendPeriod', 10),
+            'market_regime_supertrend_multiplier': _val('marketRegimeSupertrendMultiplier', 3.0),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -529,7 +538,16 @@ def _build_frontend_config_dict():
             ('enable_btc_crash_shield', 'enableBtcCrashShield'),
             ('btc_crash_timeframe', 'btcCrashTimeframe'),
             ('btc_crash_drop_percent', 'btcCrashDropPercent'),
-            ('btc_crash_shield_cooldown_minutes', 'btcCrashShieldCooldownMinutes')
+            ('btc_crash_shield_cooldown_minutes', 'btcCrashShieldCooldownMinutes'),
+
+            # --- FILTRO DE RÉGIMEN DE MERCADO (TENDENCIA MACRO) ---
+            ('enable_market_regime_filter', 'enableMarketRegimeFilter'),
+            ('market_regime_mode', 'marketRegimeMode'),
+            ('market_regime_indicator', 'marketRegimeIndicator'),
+            ('market_regime_timeframe', 'marketRegimeTimeframe'),
+            ('market_regime_ema_period', 'marketRegimeEmaPeriod'),
+            ('market_regime_supertrend_period', 'marketRegimeSupertrendPeriod'),
+            ('market_regime_supertrend_multiplier', 'marketRegimeSupertrendMultiplier')
         ]:
             if key_ini in config_dict['TRADING']:
                 frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
@@ -1083,7 +1101,7 @@ def load_initial_config():
     for key, value_str in temp_trading_params.items():
         original_value = value_str
         try:
-            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_candles_window', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations', 'max_consecutive_losses', 'consecutive_losses_cooldown_minutes', 'rolling_trades_window', 'rolling_max_losses', 'rolling_filter_cooldown_minutes', 'btc_crash_shield_cooldown_minutes']:
+            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_candles_window', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations', 'max_consecutive_losses', 'consecutive_losses_cooldown_minutes', 'rolling_trades_window', 'rolling_max_losses', 'rolling_filter_cooldown_minutes', 'btc_crash_shield_cooldown_minutes', 'market_regime_ema_period', 'market_regime_supertrend_period']:
                 if value_str is None or str(value_str).strip() == '':
                     loaded_trading_params[key] = 20 if 'period' in key else 0
                 else:
@@ -1095,7 +1113,7 @@ def load_initial_config():
                          'price_trailing_stop_activation_pnl_usdt',
                          'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt',
                          'support_level_tolerance_percent', 'support_order_stop_loss_percent', 'support_order_take_profit_percent',
-                         'risk_percentage', 'max_loss_per_symbol_usdt', 'btc_crash_drop_percent']:
+                         'risk_percentage', 'max_loss_per_symbol_usdt', 'btc_crash_drop_percent', 'market_regime_supertrend_multiplier']:
                 if value_str is None or str(value_str).strip() == '':
                     loaded_trading_params[key] = 0.0
                 else:
@@ -1106,7 +1124,7 @@ def load_initial_config():
                          'enable_trailing_rsi_stop', 'enable_price_trailing_stop', 'enable_pnl_trailing_stop',
                          'evaluate_open_interest_increase', 'evaluate_ma_filter', 'evaluate_support_strategy',
                          'enable_max_loss_per_symbol', 'enable_consecutive_losses_cooldown',
-                         'enable_rolling_performance_filter', 'enable_btc_crash_shield']:
+                         'enable_rolling_performance_filter', 'enable_btc_crash_shield', 'enable_market_regime_filter']:
                 loaded_trading_params[key] = str(value_str).lower() == 'true'
             else:
                 loaded_trading_params[key] = value_str
