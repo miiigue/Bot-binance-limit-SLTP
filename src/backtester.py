@@ -203,6 +203,9 @@ def normalize_config(cfg: dict) -> dict:
         'rsi_period': to_int(get_val('rsiPeriod', 'rsi_period', 14), 14),
         'evaluate_rsi_delta': to_bool(get_val('evaluateRsiDelta', 'evaluate_rsi_delta', True), True),
         'rsi_threshold_up': to_float(get_val('rsiThresholdUp', 'rsi_threshold_up', 1.0), 1.0),
+        'rsi_candles_window': to_int(get_val('rsiCandlesWindow', 'rsi_candles_window', 3), 3),
+        'rsi_positive_candles_required': to_int(get_val('rsiPositiveCandlesRequired', 'rsi_positive_candles_required', 2), 2),
+        'rsi_positive_delta_min': to_float(get_val('rsiPositiveDeltaMin', 'rsi_positive_delta_min', 0.0), 0.0),
         'evaluate_rsi_range': to_bool(get_val('evaluateRsiRange', 'evaluate_rsi_range', True), True),
         'rsi_entry_level_low': to_float(get_val('rsiEntryLevelLow', 'rsi_entry_level_low', 30.0), 30.0),
         'rsi_entry_level_high': to_float(get_val('rsiEntryLevelHigh', 'rsi_entry_level_high', 75.0), 75.0),
@@ -478,9 +481,24 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
                 if c['evaluate_rsi_range'] and not (c['rsi_entry_level_low'] <= curr_rsi <= c['rsi_entry_level_high']):
                     continue
 
-                # 2. Delta RSI
-                if c['evaluate_rsi_delta'] and not ((curr_rsi - prev_rsi) >= c['rsi_threshold_up']):
-                    continue
+                # 2. Delta RSI y Ventana de Velas Positivas
+                if c['evaluate_rsi_delta']:
+                    if not ((curr_rsi - prev_rsi) >= c['rsi_threshold_up']):
+                        continue
+                    r_win = c.get('rsi_candles_window', 3)
+                    r_req = c.get('rsi_positive_candles_required', 2)
+                    r_min_d = c.get('rsi_positive_delta_min', 0.0)
+                    if r_req > 0:
+                        pos_cnt = 0
+                        start_idx = max(1, (i - 1) - r_win + 1)
+                        for k in range(start_idx, i):
+                            diff = rsis[k] - rsis[k - 1]
+                            if r_min_d > 0.0:
+                                if diff >= r_min_d: pos_cnt += 1
+                            else:
+                                if diff > 0.0: pos_cnt += 1
+                        if pos_cnt < r_req:
+                            continue
 
                 # 3. Filtro Volumen
                 if c['evaluate_volume_filter']:

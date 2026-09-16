@@ -89,6 +89,9 @@ const defaultConfigValues = {
   rsiInterval: '5m',
   rsiPeriod: 14,
   rsiThresholdUp: 1.5,
+  rsiCandlesWindow: 3,
+  rsiPositiveCandlesRequired: 2,
+  rsiPositiveDeltaMin: 0.0,
   rsiThresholdDown: -1.0,
   rsiEntryLevelLow: 30,
   rsiEntryLevelHigh: 75,
@@ -214,6 +217,18 @@ const tooltipTexts = {
   rsiThresholdUp: {
     desc: "Aumento mínimo de RSI requerido en la última medición respecto al ciclo anterior (Delta RSI) para validar impulso.",
     example: "Con 1.0, si el RSI sube de 35.0 a 36.5 (delta +1.5), se considera señal válida de rebote."
+  },
+  rsiCandlesWindow: {
+    desc: "Ventana de velas cerradas recientes a evaluar para confirmar impulso continuado del RSI.",
+    example: "Con 3 velas, evalúa la evolución del RSI a lo largo de las 3 velas previas completas."
+  },
+  rsiPositiveCandlesRequired: {
+    desc: "Cantidad mínima de velas dentro de la ventana que deben haber tenido RSI creciente respecto a su vela previa.",
+    example: "Con 2 velas requeridas en ventana de 3, al menos 2 velas deben haber registrado subida de RSI para confirmar impulso continuo."
+  },
+  rsiPositiveDeltaMin: {
+    desc: "Incremento mínimo de puntos RSI por cada vela positiva (+Δ). Si es 0 o vacío, cualquier aumento (> 0) califica. Si se coloca un valor (ej: 1.0), cada vela requerida debe haber aumentado al menos esa magnitud.",
+    example: "0.0 para evaluar subida natural (> 0), o 1.0 para exigir que cada vela suba al menos 1.0 punto de RSI."
   },
   rsiEntryLevelLow: {
     desc: "Nivel mínimo de RSI permitido para abrir compra. Evita comprar durante caídas libres extremas.",
@@ -536,6 +551,15 @@ function ConfigForm({
           newFormData[key] = propInitialConfig[key];
         }
       }
+      if (propInitialConfig.rsi_candles_window !== undefined) {
+        newFormData.rsiCandlesWindow = propInitialConfig.rsi_candles_window;
+      }
+      if (propInitialConfig.rsi_positive_candles_required !== undefined) {
+        newFormData.rsiPositiveCandlesRequired = propInitialConfig.rsi_positive_candles_required;
+      }
+      if (propInitialConfig.rsi_positive_delta_min !== undefined) {
+        newFormData.rsiPositiveDeltaMin = propInitialConfig.rsi_positive_delta_min;
+      }
       if (propInitialConfig.downtrend_candles_window !== undefined) {
         newFormData.downtrendCandlesWindow = propInitialConfig.downtrend_candles_window;
       }
@@ -731,6 +755,9 @@ function ConfigForm({
         strategyAssignments: strategyAssignments,
       };
 
+      if (dataToSend.rsiCandlesWindow !== undefined) dataToSend.rsi_candles_window = dataToSend.rsiCandlesWindow;
+      if (dataToSend.rsiPositiveCandlesRequired !== undefined) dataToSend.rsi_positive_candles_required = dataToSend.rsiPositiveCandlesRequired;
+      if (dataToSend.rsiPositiveDeltaMin !== undefined) dataToSend.rsi_positive_delta_min = dataToSend.rsiPositiveDeltaMin;
       if (dataToSend.downtrendCandlesWindow !== undefined) dataToSend.downtrend_candles_window = dataToSend.downtrendCandlesWindow;
       if (dataToSend.downtrendCheckCandles !== undefined) dataToSend.downtrend_check_candles = dataToSend.downtrendCheckCandles;
       if (dataToSend.downtrendLevelCheck !== undefined) dataToSend.downtrend_level_check = dataToSend.downtrendLevelCheck;
@@ -1464,6 +1491,121 @@ function ConfigForm({
               />
             </ConfigItem>
           </div>
+
+          {/* Calculadora en Vivo de Comisiones Binance Futures (VIP 0) */}
+          {(() => {
+            const posSize = Number(formData.positionSizeUSDT) || 0;
+            const lev = Number(formData.leverage) || 1;
+            const notional = posSize * lev;
+            const isMakerEntry = (formData.entryOrderType || 'LIMIT') === 'LIMIT';
+            const entryRate = isMakerEntry ? 0.0002 : 0.0005;
+            const entryFee = notional * entryRate;
+
+            // Salida por Take Profit (Taker 0.05% orden mercado de salida)
+            const tpRate = 0.0005;
+            const tpExitFee = notional * tpRate;
+            const tpRoundTripFee = entryFee + tpExitFee;
+            const targetTP = Math.abs(Number(formData.takeProfitUSDT) || 0);
+            const netTP = targetTP > 0 ? (targetTP - tpRoundTripFee) : 0;
+
+            // Salida por Stop Loss (STOP_MARKET es Taker 0.05%, STOP es Maker 0.02%)
+            const isSlMaker = (formData.stopLossOrderType === 'STOP');
+            const slRate = isSlMaker ? 0.0002 : 0.0005;
+            const slExitFee = notional * slRate;
+            const slRoundTripFee = entryFee + slExitFee;
+            const targetSL = Math.abs(Number(formData.stopLossUSDT) || 0);
+            const realTotalSL = targetSL > 0 ? (targetSL + slRoundTripFee) : 0;
+
+            return (
+              <div className="col-span-full mt-2.5 p-3.5 rounded-xl border border-slate-700/90 bg-slate-900/90 shadow-md backdrop-blur-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-700/70">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-base">💰</span>
+                    <span className="text-xs font-bold text-slate-200 tracking-wide uppercase">
+                      Calculadora de Comisiones Binance Futures en Vivo (VIP 0)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="text-slate-400">
+                      Nocional por Operación: <strong className="text-amber-300 font-mono">${notional.toFixed(2)} USDT</strong>
+                    </span>
+                    <span className="text-slate-600 hidden sm:inline">|</span>
+                    <span className="text-slate-400">
+                      Apertura: <strong className={isMakerEntry ? "text-emerald-400 font-mono" : "text-amber-400 font-mono"}>
+                        ${entryFee.toFixed(4)} USDT ({isMakerEntry ? 'Maker 0.02%' : 'Taker 0.05%'})
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                  {/* Escenario GANA (Take Profit) */}
+                  <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-950/25 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-400 flex items-center">
+                        <span className="mr-1.5">🟢</span> Si Gana (Take Profit)
+                      </span>
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-medium">
+                        Bruto: +${targetTP.toFixed(2)} USDT
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 space-y-1 font-light">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Comisión Apertura ({isMakerEntry ? 'Maker 0.02%' : 'Taker 0.05%'}):</span>
+                        <span className="font-mono text-slate-300">-${entryFee.toFixed(4)} USDT</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Comisión Cierre TP (Taker 0.05%):</span>
+                        <span className="font-mono text-slate-300">-${tpExitFee.toFixed(4)} USDT</span>
+                      </div>
+                      <div className="flex justify-between pt-1 border-t border-emerald-500/20 font-medium">
+                        <span className="text-slate-400">Total Comisiones Binance (Ida + Vuelta):</span>
+                        <span className="font-mono text-rose-400">-${tpRoundTripFee.toFixed(4)} USDT</span>
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-emerald-500/30 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-emerald-300">Ganancia Limpia en Balance:</span>
+                      <span className="text-sm font-bold font-mono text-emerald-400">
+                        +{netTP > 0 ? netTP.toFixed(4) : targetTP.toFixed(2)} USDT
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Escenario PIERDE (Stop Loss) */}
+                  <div className="p-3 rounded-lg border border-rose-500/30 bg-rose-950/25 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-rose-400 flex items-center">
+                        <span className="mr-1.5">🔴</span> Si Pierde (Stop Loss)
+                      </span>
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-medium">
+                        Bruto: -${targetSL.toFixed(2)} USDT
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 space-y-1 font-light">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Comisión Apertura ({isMakerEntry ? 'Maker 0.02%' : 'Taker 0.05%'}):</span>
+                        <span className="font-mono text-slate-300">-${entryFee.toFixed(4)} USDT</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Comisión Cierre SL ({isSlMaker ? 'Maker 0.02%' : 'Taker 0.05%'}):</span>
+                        <span className="font-mono text-slate-300">-${slExitFee.toFixed(4)} USDT</span>
+                      </div>
+                      <div className="flex justify-between pt-1 border-t border-rose-500/20 font-medium">
+                        <span className="text-slate-400">Total Comisiones Binance (Ida + Vuelta):</span>
+                        <span className="font-mono text-rose-400">-${slRoundTripFee.toFixed(4)} USDT</span>
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-rose-500/30 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-rose-300">Pérdida Real Total en Balance:</span>
+                      <span className="text-sm font-bold font-mono text-rose-400">
+                        -{realTotalSL > 0 ? realTotalSL.toFixed(4) : targetSL.toFixed(2)} USDT
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </fieldset>
       {/* ------------------------------------------- */}
@@ -1524,6 +1666,71 @@ function ConfigForm({
             <ConfigItem labelText="RSI Límite Superior" htmlFor="rsiEntryLevelHigh" tooltipKey="rsiEntryLevelHigh">
               <input type="number" name="rsiEntryLevelHigh" id="rsiEntryLevelHigh" value={formData.rsiEntryLevelHigh} onChange={handleChange} step="any" className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 text-xs sm:text-sm font-semibold"/>
             </ConfigItem>
+          </div>
+
+          {/* Sub-bloque: Ventana de Velas RSI Positivas y Magnitud Mínima */}
+          <div className="mt-3 p-3.5 rounded-lg border border-indigo-200/70 dark:border-indigo-900/60 bg-indigo-50/40 dark:bg-indigo-950/20">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center">
+                <span className="mr-1.5">📈</span> Ventana de Velas de Impulso RSI (Consistencia Positiva)
+              </div>
+              <span className="text-[11px] text-indigo-500 dark:text-indigo-400 font-medium">
+                {formData.evaluateRsiDelta ? 'Activo con Delta' : 'Inactivo (Delta desactivado)'}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label htmlFor="rsiCandlesWindow" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  Ventana de Velas (N)
+                </label>
+                <input
+                  type="number"
+                  name="rsiCandlesWindow"
+                  id="rsiCandlesWindow"
+                  min="1"
+                  max="20"
+                  value={formData.rsiCandlesWindow ?? 3}
+                  onChange={handleChange}
+                  className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 text-xs sm:text-sm font-semibold"
+                  placeholder="3"
+                />
+                <span className="text-[10px] text-gray-500 dark:text-gray-400">Total de velas recientes a evaluar (ej: 3)</span>
+              </div>
+              <div>
+                <label htmlFor="rsiPositiveCandlesRequired" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  Velas Positivas Requeridas
+                </label>
+                <input
+                  type="number"
+                  name="rsiPositiveCandlesRequired"
+                  id="rsiPositiveCandlesRequired"
+                  min="1"
+                  max="20"
+                  value={formData.rsiPositiveCandlesRequired ?? 2}
+                  onChange={handleChange}
+                  className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 text-xs sm:text-sm font-semibold"
+                  placeholder="2"
+                />
+                <span className="text-[10px] text-gray-500 dark:text-gray-400">Velas en la ventana que deben subir (ej: 2)</span>
+              </div>
+              <div>
+                <label htmlFor="rsiPositiveDeltaMin" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  Magnitud Mínima por Vela (+Δ)
+                </label>
+                <input
+                  type="number"
+                  name="rsiPositiveDeltaMin"
+                  id="rsiPositiveDeltaMin"
+                  step="0.1"
+                  min="0"
+                  value={formData.rsiPositiveDeltaMin ?? 0}
+                  onChange={handleChange}
+                  className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 text-xs sm:text-sm font-semibold"
+                  placeholder="0.0"
+                />
+                <span className="text-[10px] text-gray-500 dark:text-gray-400">0 o blanco = cualquier subida (&gt;0). Ej: 1.0 = subida ≥ 1</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1956,6 +2163,21 @@ function ConfigForm({
               tooltipKey="takeProfitUSDT"
             >
               <input type="number" name="takeProfitUSDT" id="takeProfitUSDT" value={formData.takeProfitUSDT} onChange={handleChange} step="any" className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold" min="0"/>
+              {(() => {
+                const notional = (Number(formData.positionSizeUSDT) || 0) * (Number(formData.leverage) || 1);
+                const isMaker = (formData.entryOrderType || 'LIMIT') === 'LIMIT';
+                const entryFee = notional * (isMaker ? 0.0002 : 0.0005);
+                const tpExitFee = notional * 0.0005;
+                const totalFees = entryFee + tpExitFee;
+                const target = Math.abs(Number(formData.takeProfitUSDT) || 0);
+                const net = Math.max(0, target - totalFees);
+                return (
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 font-light leading-tight">
+                    <div>Limpio estimado: <strong className="text-emerald-500 dark:text-emerald-400 font-mono font-medium">~+${net.toFixed(2)} USDT</strong></div>
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500">Comisiones Binance: -${totalFees.toFixed(3)} USDT</div>
+                  </div>
+                );
+              })()}
             </ConfigItem>
 
             <ConfigItem 
@@ -1967,6 +2189,22 @@ function ConfigForm({
               tooltipKey="stopLossUSDT"
             >
               <input type="number" name="stopLossUSDT" id="stopLossUSDT" value={formData.stopLossUSDT} onChange={handleChange} step="any" className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold" placeholder="Ej: 20"/>
+              {(() => {
+                const notional = (Number(formData.positionSizeUSDT) || 0) * (Number(formData.leverage) || 1);
+                const isMaker = (formData.entryOrderType || 'LIMIT') === 'LIMIT';
+                const entryFee = notional * (isMaker ? 0.0002 : 0.0005);
+                const isSlMaker = (formData.stopLossOrderType === 'STOP');
+                const slExitFee = notional * (isSlMaker ? 0.0002 : 0.0005);
+                const totalFees = entryFee + slExitFee;
+                const target = Math.abs(Number(formData.stopLossUSDT) || 0);
+                const realLoss = target + totalFees;
+                return (
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 font-light leading-tight">
+                    <div>Pérdida real estimada: <strong className="text-rose-500 dark:text-rose-400 font-mono font-medium">~-${realLoss.toFixed(2)} USDT</strong></div>
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500">Comisiones Binance: -${totalFees.toFixed(3)} USDT</div>
+                  </div>
+                );
+              })()}
             </ConfigItem>
           </div>
 

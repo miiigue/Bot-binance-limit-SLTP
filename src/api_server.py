@@ -226,6 +226,9 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'rsi_interval': _val('rsiInterval', '5m'),
             'rsi_period': _val('rsiPeriod', 14),
             'rsi_threshold_up': _val('rsiThresholdUp', 8),
+            'rsi_candles_window': _val('rsiCandlesWindow', _val('rsi_candles_window', 3)),
+            'rsi_positive_candles_required': _val('rsiPositiveCandlesRequired', _val('rsi_positive_candles_required', 2)),
+            'rsi_positive_delta_min': _val('rsiPositiveDeltaMin', _val('rsi_positive_delta_min', 0.0)),
             'rsi_threshold_down': _val('rsiThresholdDown', -8),
             'rsi_entry_level_low': _val('rsiEntryLevelLow', 25),
             'rsi_entry_level_high': _val('rsiEntryLevelHigh', 75),
@@ -472,6 +475,9 @@ def _build_frontend_config_dict():
             ('rsi_interval', 'rsiInterval'),
             ('rsi_period', 'rsiPeriod'),
             ('rsi_threshold_up', 'rsiThresholdUp'),
+            ('rsi_candles_window', 'rsiCandlesWindow'),
+            ('rsi_positive_candles_required', 'rsiPositiveCandlesRequired'),
+            ('rsi_positive_delta_min', 'rsiPositiveDeltaMin'),
             ('rsi_threshold_down', 'rsiThresholdDown'),
             ('rsi_entry_level_low', 'rsiEntryLevelLow'),
             ('rsi_entry_level_high', 'rsiEntryLevelHigh'),
@@ -1101,12 +1107,12 @@ def load_initial_config():
     for key, value_str in temp_trading_params.items():
         original_value = value_str
         try:
-            if key in ['rsi_period', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_candles_window', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations', 'max_consecutive_losses', 'consecutive_losses_cooldown_minutes', 'rolling_trades_window', 'rolling_max_losses', 'rolling_filter_cooldown_minutes', 'btc_crash_shield_cooldown_minutes', 'market_regime_ema_period', 'market_regime_supertrend_period']:
+            if key in ['rsi_period', 'rsi_candles_window', 'rsi_positive_candles_required', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_candles_window', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations', 'max_consecutive_losses', 'consecutive_losses_cooldown_minutes', 'rolling_trades_window', 'rolling_max_losses', 'rolling_filter_cooldown_minutes', 'btc_crash_shield_cooldown_minutes', 'market_regime_ema_period', 'market_regime_supertrend_period']:
                 if value_str is None or str(value_str).strip() == '':
                     loaded_trading_params[key] = 20 if 'period' in key else 0
                 else:
                     loaded_trading_params[key] = int(value_str)
-            elif key in ['rsi_threshold_up', 'rsi_threshold_down', 'rsi_entry_level_low', 'rsi_entry_level_high',
+            elif key in ['rsi_threshold_up', 'rsi_positive_delta_min', 'rsi_threshold_down', 'rsi_entry_level_low', 'rsi_entry_level_high',
                          'rsi_target',
                          'volume_factor', 'position_size_usdt', 'stop_loss_usdt', 'take_profit_usdt',
                          'price_trailing_stop_distance_usdt',

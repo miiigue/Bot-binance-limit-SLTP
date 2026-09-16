@@ -263,6 +263,9 @@ class TradingBot:
             self.rsi_period = _safe_int(self.params.get('rsi_period'), 14)
             self.rsi_type = str(self.params.get('rsi_type', 'WILDER')).upper().strip()
             self.rsi_threshold_up = _safe_float(self.params.get('rsi_threshold_up'), 1.5)
+            self.rsi_candles_window = _safe_int(self.params.get('rsi_candles_window'), 3)
+            self.rsi_positive_candles_required = _safe_int(self.params.get('rsi_positive_candles_required'), 2)
+            self.rsi_positive_delta_min = _safe_float(self.params.get('rsi_positive_delta_min'), 0.0)
             self.rsi_threshold_down = _safe_float(self.params.get('rsi_threshold_down'), -1.0)
             self.rsi_entry_level_low = _safe_float(self.params.get('rsi_entry_level_low'), 25.0)
             self.rsi_entry_level_high = _safe_float(self.params.get('rsi_entry_level_high'), 75.0)
@@ -427,6 +430,9 @@ class TradingBot:
         if 'rsi_type' in new_params:
             self.rsi_type = str(new_params['rsi_type']).upper().strip()
         self.rsi_threshold_up = _safe_float(new_params.get('rsi_threshold_up'), self.rsi_threshold_up)
+        self.rsi_candles_window = _safe_int(new_params.get('rsi_candles_window'), getattr(self, 'rsi_candles_window', 3))
+        self.rsi_positive_candles_required = _safe_int(new_params.get('rsi_positive_candles_required'), getattr(self, 'rsi_positive_candles_required', 2))
+        self.rsi_positive_delta_min = _safe_float(new_params.get('rsi_positive_delta_min'), getattr(self, 'rsi_positive_delta_min', 0.0))
         self.rsi_threshold_down = _safe_float(new_params.get('rsi_threshold_down'), self.rsi_threshold_down)
         self.rsi_entry_level_low = _safe_float(new_params.get('rsi_entry_level_low'), self.rsi_entry_level_low)
         self.rsi_entry_level_high = _safe_float(new_params.get('rsi_entry_level_high'), self.rsi_entry_level_high)
@@ -1823,6 +1829,9 @@ class TradingBot:
                 'rsi_interval': self.rsi_interval,
                 'rsi_period': self.rsi_period,
                 'rsi_threshold_up': self.rsi_threshold_up,
+                'rsi_candles_window': getattr(self, 'rsi_candles_window', 3),
+                'rsi_positive_candles_required': getattr(self, 'rsi_positive_candles_required', 2),
+                'rsi_positive_delta_min': getattr(self, 'rsi_positive_delta_min', 0.0),
                 'rsi_threshold_down': self.rsi_threshold_down,
                 'rsi_entry_level_low': self.rsi_entry_level_low,
                 'rsi_entry_level_high': self.rsi_entry_level_high,
@@ -2309,25 +2318,54 @@ class TradingBot:
                 rsi_value_str = f"{self.last_rsi_value:.2f}" if self.last_rsi_value is not None else "N/A"
                 self.logger.info(f"[{self.symbol}] Chequeo RSI en Rango (Activado) [{self.rsi_entry_level_low}, {self.rsi_entry_level_high}]? No (RSI={rsi_value_str})")
 
+            # --- EVALUACIÓN DE VENTANA DE VELAS RSI POSITIVAS Y MAGNITUD ---
+            rsi_window = getattr(self, 'rsi_candles_window', 3)
+            rsi_req_pos = getattr(self, 'rsi_positive_candles_required', 2)
+            rsi_min_delta = float(getattr(self, 'rsi_positive_delta_min', 0.0))
+            
+            rsi_window_passed = True
+            positive_rsi_candles_count = 0
+            evaluated_window_size = 0
+
+            if self.evaluate_rsi_delta and rsi_req_pos > 0 and rsi_values is not None and len(rsi_values) > 1:
+                rsi_diffs = rsi_values.diff().dropna()
+                if not rsi_diffs.empty:
+                    actual_window = min(rsi_window, len(rsi_diffs))
+                    recent_diffs = rsi_diffs.tail(actual_window)
+                    evaluated_window_size = len(recent_diffs)
+                    
+                    for diff_val in recent_diffs:
+                        val = float(diff_val)
+                        if rsi_min_delta > 0.0:
+                            if val >= rsi_min_delta:
+                                positive_rsi_candles_count += 1
+                        else:
+                            if val > 0.0:
+                                positive_rsi_candles_count += 1
+                    
+                    if positive_rsi_candles_count < rsi_req_pos:
+                        rsi_window_passed = False
+                        self.logger.info(f"[{self.symbol}] Chequeo Ventana RSI NO CUMPLIDO: {positive_rsi_candles_count}/{rsi_req_pos} velas positivas en ventana de {actual_window} (mín delta: {rsi_min_delta:.2f})")
+                    else:
+                        self.logger.info(f"[{self.symbol}] Chequeo Ventana RSI CUMPLIDO: {positive_rsi_candles_count}/{rsi_req_pos} velas positivas en ventana de {actual_window} (mín delta: {rsi_min_delta:.2f})")
+
             # --- Definir condition_rsi_change_meets_thresh_up y rsi_delta_str ---
             condition_rsi_change_meets_thresh_up = False
             rsi_delta_str = "N/A" # Valor por defecto para el log
 
-            if rsi_delta is not None: # rsi_delta se calculó antes
-                rsi_delta_str = f"{rsi_delta:.2f}" # Formatear para el log
-                if not self.evaluate_rsi_delta: # Si la evaluación de delta RSI está DESACTIVADA
-                    condition_rsi_change_meets_thresh_up = True # Considerar esta condición como cumplida
-                    self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: Evaluación DESACTIVADA (evaluate_rsi_delta=False). Condición de delta cumplida por defecto. (Delta real: {rsi_delta_str})")
-                elif rsi_delta >= self.rsi_threshold_up: # Si está ACTIVADA, evaluar normalmente
-                    condition_rsi_change_meets_thresh_up = True
-            else: # rsi_delta es None
-                if not self.evaluate_rsi_delta: # Si la evaluación está DESACTIVADA
-                    condition_rsi_change_meets_thresh_up = True
-                    self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: Evaluación DESACTIVADA (evaluate_rsi_delta=False). Condición de delta cumplida por defecto. (Delta real: {rsi_delta_str})")
-                # Si rsi_delta es None y la evaluación está activada, condition_rsi_change_meets_thresh_up permanece False.
-            
-            if self.evaluate_rsi_delta: # Log de la condición de delta solo si la evaluación está activa
-                self.logger.info(f"[{self.symbol}] Chequeo Delta RSI (Activado) >= {self.rsi_threshold_up}? {'Sí' if condition_rsi_change_meets_thresh_up else 'No'} (Delta={rsi_delta_str})")
+            if not self.evaluate_rsi_delta: # Si la evaluación de delta RSI está DESACTIVADA
+                condition_rsi_change_meets_thresh_up = True
+                self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: Evaluación DESACTIVADA (evaluate_rsi_delta=False). Condición de delta cumplida por defecto.")
+            else:
+                single_delta_ok = False
+                if rsi_delta is not None:
+                    rsi_delta_str = f"{rsi_delta:.2f}"
+                    if rsi_delta >= self.rsi_threshold_up:
+                        single_delta_ok = True
+                condition_rsi_change_meets_thresh_up = single_delta_ok and rsi_window_passed
+                self.logger.info(f"[{self.symbol}] Chequeo Delta RSI (Activado): Inmediato={single_delta_ok} (Delta={rsi_delta_str} >= {self.rsi_threshold_up}), "
+                                 f"Ventana={rsi_window_passed} ({positive_rsi_candles_count}/{rsi_req_pos} en {evaluated_window_size} velas). "
+                                 f"Resultado={'Sí' if condition_rsi_change_meets_thresh_up else 'No'}")
             # --------------------------------------------------------------------
 
             # Condición 1: Cambio (Delta) en RSI cumple el umbral positivo (Lógica ya modificada previamente)
@@ -2445,17 +2483,24 @@ class TradingBot:
                     "detail": f"{rsi_val_float:.1f} en [{self.rsi_entry_level_low}, {self.rsi_entry_level_high}]" if rsi_val_float is not None else "Sin lectura RSI"
                 })
 
-                # 2. Delta RSI
+                # 2. Delta RSI y Ventana Positiva
                 delta_val_float = round(float(rsi_delta), 2) if (rsi_delta is not None and isinstance(rsi_delta, (int, float, Decimal))) else None
+                detail_parts = []
+                if delta_val_float is not None:
+                    detail_parts.append(f"Δ {delta_val_float:+.2f} (mín {float(self.rsi_threshold_up):+.2f})")
+                if rsi_req_pos > 0:
+                    delta_desc = f"≥{rsi_min_delta:.1f}" if rsi_min_delta > 0 else ">0"
+                    detail_parts.append(f"{positive_rsi_candles_count}/{evaluated_window_size} vel+ ({delta_desc}, req {rsi_req_pos})")
+
                 cond_list.append({
                     "id": "rsi_delta",
                     "name": "Delta RSI",
                     "short_name": "ΔRSI",
                     "active": bool(self.evaluate_rsi_delta),
                     "passed": bool(condition_rsi_change_meets_thresh_up),
-                    "value": f"{delta_val_float:+.2f}" if delta_val_float is not None else "N/A",
-                    "target": f"≥ {float(self.rsi_threshold_up):+.2f}",
-                    "detail": f"Δ {delta_val_float:+.2f} (mín {float(self.rsi_threshold_up):+.2f})" if delta_val_float is not None else "Sin RSI anterior"
+                    "value": f"{delta_val_float:+.2f} ({positive_rsi_candles_count}/{evaluated_window_size}v+)" if delta_val_float is not None else "N/A",
+                    "target": f"≥ {float(self.rsi_threshold_up):+.2f} ({rsi_req_pos}v+)",
+                    "detail": " | ".join(detail_parts) if detail_parts else "Sin RSI anterior"
                 })
 
                 # 3. Filtro de Volumen
@@ -3259,9 +3304,10 @@ class TradingBot:
                 # Construcción de db_trade_params mejorada
                 db_trade_params = {}
                 string_params = ['rsi_type', 'rsi_interval', 'rsi_period', 'rsi_threshold_up', 'rsi_threshold_down', 
+                                 'rsi_candles_window', 'rsi_positive_candles_required',
                                  'rsi_entry_level_low', 'rsi_entry_level_high', 'volume_sma_period', 
                                  'volume_factor', 'downtrend_check_candles', 'downtrend_candles_window', 'order_timeout_seconds', 'entry_order_type']
-                float_params = ['position_size_usdt', 'take_profit_usdt', 'stop_loss_usdt', 'rsi_target',
+                float_params = ['position_size_usdt', 'take_profit_usdt', 'stop_loss_usdt', 'rsi_target', 'rsi_positive_delta_min',
                                 'price_trailing_stop_distance_usdt', 'price_trailing_stop_activation_pnl_usdt',
                                 'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt']
                 bool_params = ['enable_price_trailing_stop', 'enable_pnl_trailing_stop', 'evaluate_rsi_delta', 
