@@ -128,6 +128,13 @@ const defaultConfigValues = {
   enablePnlTrailingStop: true,
   pnlTrailingStopActivationUSDT: 0.1,
   pnlTrailingStopDropUSDT: 0.05,
+  enableEmergencyCrashExit: false,
+  enableCrashRsiDrop: true,
+  crashRsiDropThreshold: 8.0,
+  enableCrashPriceDrop: true,
+  crashPriceDropPercent: 1.5,
+  enableCrashPnlDrop: true,
+  crashPnlDropThresholdUSDT: 5.0,
   evaluateOpenInterestIncrease: true,
   openInterestPeriod: '5m',
   evaluateMaFilter: false,
@@ -409,6 +416,36 @@ const tooltipTexts = {
     example: "Con 0.05 USDT y pico de +4.00 USDT, cierra si baja a +3.95 USDT, asegurando +3.95 USDT."
   },
 
+  // Salida de Emergencia por Crash (Anti-Desplome)
+  enableEmergencyCrashExit: {
+    desc: "Cierra inmediatamente a mercado la posición si el mercado sufre un desplome violento (crash), antes de esperar al Stop Loss total.",
+    example: "Si el precio o el RSI colapsan en segundos, rescata el capital remanente vendiendo al instante."
+  },
+  enableCrashRsiDrop: {
+    desc: "Trigger 1: Dispara la salida de emergencia si el RSI sufre un desplome repentino entre velas consecutivas.",
+    example: "Con 8.0 puntos, si el RSI cae bruscamente de 45 a 36 (caída de 9 puntos en una vela), eyecta la posición."
+  },
+  crashRsiDropThreshold: {
+    desc: "Puntos de caída súbita en el indicador RSI entre la vela anterior y la actual para activar la eyectada de emergencia.",
+    example: "8.0 a 10.0 puntos identifica velas de colapso institucional o ventas masivas de pánico."
+  },
+  enableCrashPriceDrop: {
+    desc: "Trigger 2: Dispara la salida de emergencia si el precio cae rápidamente un porcentaje determinado desde el precio de entrada.",
+    example: "Con 1.5%, si compraste a $100 y el precio se desploma a $98.50, cierra de inmediato sin esperar el Stop Loss final."
+  },
+  crashPriceDropPercent: {
+    desc: "Porcentaje de caída veloz del precio desde el punto de entrada para gatillar la salida anti-desplome.",
+    example: "1.5% a 2.0% protege contra velas rojas gigantes que suelen romper soportes."
+  },
+  enableCrashPnlDrop: {
+    desc: "Trigger 3: Dispara la salida de emergencia si la pérdida no realizada (PnL flotante) alcanza un umbral acelerado en USDT.",
+    example: "Con 5.0 USDT, si tu posición acumula -5.00 USDT de pérdida en segundos, cierra a mercado para prevenir una pérdida mayor."
+  },
+  crashPnlDropThresholdUSDT: {
+    desc: "Pérdida en USDT en flotante que gatilla el corte preventivo de emergencia.",
+    example: "5.0 USDT para limitar la pérdida a un tercio o la mitad de tu Stop Loss habitual."
+  },
+
   // Otros Parámetros
   cycleSleepSeconds: {
     desc: "Pausa en segundos entre cada ciclo de análisis y evaluación del bot.",
@@ -589,6 +626,27 @@ function ConfigForm({
       }
       if (propInitialConfig.market_regime_supertrend_multiplier !== undefined) {
         newFormData.marketRegimeSupertrendMultiplier = Number(propInitialConfig.market_regime_supertrend_multiplier);
+      }
+      if (propInitialConfig.enable_emergency_crash_exit !== undefined) {
+        newFormData.enableEmergencyCrashExit = Boolean(propInitialConfig.enable_emergency_crash_exit === true || propInitialConfig.enable_emergency_crash_exit === 'true');
+      }
+      if (propInitialConfig.enable_crash_rsi_drop !== undefined) {
+        newFormData.enableCrashRsiDrop = Boolean(propInitialConfig.enable_crash_rsi_drop === true || propInitialConfig.enable_crash_rsi_drop === 'true');
+      }
+      if (propInitialConfig.crash_rsi_drop_threshold !== undefined) {
+        newFormData.crashRsiDropThreshold = Number(propInitialConfig.crash_rsi_drop_threshold);
+      }
+      if (propInitialConfig.enable_crash_price_drop !== undefined) {
+        newFormData.enableCrashPriceDrop = Boolean(propInitialConfig.enable_crash_price_drop === true || propInitialConfig.enable_crash_price_drop === 'true');
+      }
+      if (propInitialConfig.crash_price_drop_percent !== undefined) {
+        newFormData.crashPriceDropPercent = Number(propInitialConfig.crash_price_drop_percent);
+      }
+      if (propInitialConfig.enable_crash_pnl_drop !== undefined) {
+        newFormData.enableCrashPnlDrop = Boolean(propInitialConfig.enable_crash_pnl_drop === true || propInitialConfig.enable_crash_pnl_drop === 'true');
+      }
+      if (propInitialConfig.crash_pnl_drop_threshold_usdt !== undefined) {
+        newFormData.crashPnlDropThresholdUSDT = Number(propInitialConfig.crash_pnl_drop_threshold_usdt);
       }
       if (propInitialConfig.riskPercentage !== undefined || propInitialConfig.risk_percentage !== undefined) {
         const rp = Number(propInitialConfig.riskPercentage ?? propInitialConfig.risk_percentage);
@@ -785,6 +843,13 @@ function ConfigForm({
       if (dataToSend.dcaPriceDropPercent !== undefined) dataToSend.dca_price_drop_percent = dataToSend.dcaPriceDropPercent;
       if (dataToSend.dcaMaxReentries !== undefined) dataToSend.dca_max_reentries = dataToSend.dcaMaxReentries;
       if (dataToSend.dcaVolumeMultiplier !== undefined) dataToSend.dca_volume_multiplier = dataToSend.dcaVolumeMultiplier;
+      if (dataToSend.enableEmergencyCrashExit !== undefined) dataToSend.enable_emergency_crash_exit = dataToSend.enableEmergencyCrashExit;
+      if (dataToSend.enableCrashRsiDrop !== undefined) dataToSend.enable_crash_rsi_drop = dataToSend.enableCrashRsiDrop;
+      if (dataToSend.crashRsiDropThreshold !== undefined) dataToSend.crash_rsi_drop_threshold = dataToSend.crashRsiDropThreshold;
+      if (dataToSend.enableCrashPriceDrop !== undefined) dataToSend.enable_crash_price_drop = dataToSend.enableCrashPriceDrop;
+      if (dataToSend.crashPriceDropPercent !== undefined) dataToSend.crash_price_drop_percent = dataToSend.crashPriceDropPercent;
+      if (dataToSend.enableCrashPnlDrop !== undefined) dataToSend.enable_crash_pnl_drop = dataToSend.enableCrashPnlDrop;
+      if (dataToSend.crashPnlDropThresholdUSDT !== undefined) dataToSend.crash_pnl_drop_threshold_usdt = dataToSend.crashPnlDropThresholdUSDT;
 
       const result = await onSave(dataToSend);
       if (result?.success || !result?.error) {
@@ -2333,6 +2398,105 @@ function ConfigForm({
             </ConfigItem>
           </div>
         </div>
+
+        {/* 4. SALIDA DE EMERGENCIA POR CRASH (PROTECCIÓN ANTI-DESPLOME) */}
+        <div className="space-y-3 pt-3 border-t border-slate-700/60">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="text-xs font-bold text-rose-400 dark:text-rose-400 uppercase tracking-wider flex items-center">
+              <span className="mr-1.5">🚨</span> 4. Salida de Emergencia por Crash (Protección Anti-Desplome)
+            </div>
+            <label className="inline-flex items-center space-x-2 text-xs font-semibold text-rose-300 cursor-pointer bg-rose-950/40 px-3 py-1 rounded-full border border-rose-800/60 hover:bg-rose-900/50 transition-colors self-start sm:self-auto">
+              <input
+                type="checkbox"
+                name="enableEmergencyCrashExit"
+                id="enableEmergencyCrashExit"
+                checked={!!formData.enableEmergencyCrashExit}
+                onChange={handleChange}
+                className="h-4 w-4 text-rose-600 focus:ring-rose-500 border-gray-300 rounded"
+              />
+              <span>Master Switch (Activar Protección Crash)</span>
+            </label>
+          </div>
+          <p className="text-[11px] text-slate-400 dark:text-slate-400 leading-relaxed font-light">
+            Eyecta la posición completa de inmediato con una orden <strong className="text-white font-mono">MARKET SELL (reduceOnly)</strong> si se detecta un desplome violento del mercado, cerrando antes de esperar al Stop Loss para minimizar pérdidas. Dispone de 3 disparadores independientes:
+          </p>
+          <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 transition-opacity duration-200 ${!formData.enableEmergencyCrashExit ? 'opacity-50 pointer-events-none' : ''}`}>
+            {/* Trigger 1: Colapso RSI */}
+            <ConfigItem
+              labelText="Trigger 1: Caída Súbita RSI (Puntos)"
+              htmlFor="crashRsiDropThreshold"
+              checkboxName="enableCrashRsiDrop"
+              isChecked={!!formData.enableCrashRsiDrop}
+              onCheckboxChange={handleChange}
+              tooltipKey="crashRsiDropThreshold"
+            >
+              <input
+                type="number"
+                id="crashRsiDropThreshold"
+                name="crashRsiDropThreshold"
+                value={formData.crashRsiDropThreshold}
+                onChange={handleChange}
+                disabled={!formData.enableEmergencyCrashExit || !formData.enableCrashRsiDrop}
+                className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-rose-500 focus:border-rose-500 sm:text-sm font-semibold disabled:opacity-50"
+                step="0.5"
+                min="1.0"
+              />
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
+                Cierra si ΔRSI entre velas es ≤ -{formData.crashRsiDropThreshold || 8.0} pts
+              </span>
+            </ConfigItem>
+
+            {/* Trigger 2: Caída % Precio */}
+            <ConfigItem
+              labelText="Trigger 2: Caída Precio desde Entrada (%)"
+              htmlFor="crashPriceDropPercent"
+              checkboxName="enableCrashPriceDrop"
+              isChecked={!!formData.enableCrashPriceDrop}
+              onCheckboxChange={handleChange}
+              tooltipKey="crashPriceDropPercent"
+            >
+              <input
+                type="number"
+                id="crashPriceDropPercent"
+                name="crashPriceDropPercent"
+                value={formData.crashPriceDropPercent}
+                onChange={handleChange}
+                disabled={!formData.enableEmergencyCrashExit || !formData.enableCrashPriceDrop}
+                className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-rose-500 focus:border-rose-500 sm:text-sm font-semibold disabled:opacity-50"
+                step="0.1"
+                min="0.1"
+              />
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
+                Cierra si el precio cae ≥ {formData.crashPriceDropPercent || 1.5}% desde entrada
+              </span>
+            </ConfigItem>
+
+            {/* Trigger 3: PnL Flotante Acelerado */}
+            <ConfigItem
+              labelText="Trigger 3: Pérdida PnL Flotante (USDT)"
+              htmlFor="crashPnlDropThresholdUSDT"
+              checkboxName="enableCrashPnlDrop"
+              isChecked={!!formData.enableCrashPnlDrop}
+              onCheckboxChange={handleChange}
+              tooltipKey="crashPnlDropThresholdUSDT"
+            >
+              <input
+                type="number"
+                id="crashPnlDropThresholdUSDT"
+                name="crashPnlDropThresholdUSDT"
+                value={formData.crashPnlDropThresholdUSDT}
+                onChange={handleChange}
+                disabled={!formData.enableEmergencyCrashExit || !formData.enableCrashPnlDrop}
+                className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-rose-500 focus:border-rose-500 sm:text-sm font-semibold disabled:opacity-50"
+                step="0.5"
+                min="0.5"
+              />
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
+                Cierra si PnL actual es ≤ -{formData.crashPnlDropThresholdUSDT || 5.0} USDT
+              </span>
+            </ConfigItem>
+          </div>
+        </div>
       </fieldset>
 
       {/* ========================================================================= */}
@@ -2774,6 +2938,13 @@ function ConfigForm({
                                     🔄 DCA: {cfg.dcaMaxReentries || 2}x {cfg.dcaReentryMode === 'next_support' ? 'Soportes' : `@ ${cfg.dcaPriceDropPercent || 1.5}%`} ({cfg.dcaVolumeMultiplier || 1}x)
                                   </span>
                                 )}
+
+                                 {/* Salida Crash */}
+                                 {(cfg.enableEmergencyCrashExit === true || String(cfg.enableEmergencyCrashExit).toLowerCase() === 'true') && (
+                                   <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60" title="Protección Anti-Desplome Activa">
+                                     🚨 Crash Exit
+                                   </span>
+                                 )}
 
                                 {/* Ciclo */}
                                 {cfg.cycleSleepSeconds && (

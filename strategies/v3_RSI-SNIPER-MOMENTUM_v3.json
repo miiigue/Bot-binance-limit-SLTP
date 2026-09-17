@@ -124,5 +124,19 @@
     "market_regime_timeframe": "1h",
     "market_regime_ema_period": 50,
     "market_regime_supertrend_period": 10,
-    "market_regime_supertrend_multiplier": 3.0
+    "market_regime_supertrend_multiplier": 3.0,
+    "enableEmergencyCrashExit": false,
+    "enable_emergency_crash_exit": false,
+    "enableCrashRsiDrop": true,
+    "enable_crash_rsi_drop": true,
+    "crashRsiDropThreshold": 8.0,
+    "crash_rsi_drop_threshold": 8.0,
+    "enableCrashPriceDrop": true,
+    "enable_crash_price_drop": true,
+    "crashPriceDropPercent": 1.5,
+    "crash_price_drop_percent": 1.5,
+    "enableCrashPnlDrop": true,
+    "enable_crash_pnl_drop": true,
+    "crashPnlDropThresholdUSDT": 5.0,
+    "crash_pnl_drop_threshold_usdt": 5.0
 }

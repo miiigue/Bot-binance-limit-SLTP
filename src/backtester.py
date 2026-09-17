@@ -252,6 +252,15 @@ def normalize_config(cfg: dict) -> dict:
         'dca_max_reentries': to_int(get_val('dcaMaxReentries', 'dca_max_reentries', 2), 2),
         'dca_volume_multiplier': to_float(get_val('dcaVolumeMultiplier', 'dca_volume_multiplier', 1.0), 1.0),
 
+        # Salida de Emergencia por Crash (Anti-Desplome)
+        'enable_emergency_crash_exit': to_bool(get_val('enableEmergencyCrashExit', 'enable_emergency_crash_exit', False), False),
+        'enable_crash_rsi_drop': to_bool(get_val('enableCrashRsiDrop', 'enable_crash_rsi_drop', True), True),
+        'crash_rsi_drop_threshold': to_float(get_val('crashRsiDropThreshold', 'crash_rsi_drop_threshold', 8.0), 8.0),
+        'enable_crash_price_drop': to_bool(get_val('enableCrashPriceDrop', 'enable_crash_price_drop', True), True),
+        'crash_price_drop_percent': to_float(get_val('crashPriceDropPercent', 'crash_price_drop_percent', 1.5), 1.5),
+        'enable_crash_pnl_drop': to_bool(get_val('enableCrashPnlDrop', 'enable_crash_pnl_drop', True), True),
+        'crash_pnl_drop_threshold_usdt': to_float(get_val('crashPnlDropThresholdUSDT', 'crash_pnl_drop_threshold_usdt', 5.0), 5.0),
+
         'symbols_to_trade': str(get_val('symbolsToTrade', 'symbols_to_trade', ''))
     }
 
@@ -604,8 +613,31 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
                 exit_reason = 'Trailing Stop Precio'
                 is_taker = True
 
+            # Salida de Emergencia por Crash (Anti-Desplome: 3 Triggers)
+            if not exit_triggered and c['enable_emergency_crash_exit']:
+                # Trigger 1: Colapso Súbito de RSI entre velas
+                prev_c_rsi = rsis[i - 2] if i >= 2 else curr_rsi
+                rsi_delta = curr_rsi - prev_c_rsi
+                if c['enable_crash_rsi_drop'] and rsi_delta <= -c['crash_rsi_drop_threshold']:
+                    exit_triggered = True
+                    exit_price = c_close
+                    exit_reason = f'Crash RSI (ΔRSI={rsi_delta:.1f})'
+                    is_taker = True
+                # Trigger 2: Caída Porcentual Rápida del Precio desde Entrada
+                elif c['enable_crash_price_drop'] and floating_dip_pct >= c['crash_price_drop_percent']:
+                    exit_triggered = True
+                    exit_price = entry_price * (1.0 - c['crash_price_drop_percent'] / 100.0)
+                    exit_reason = f'Crash Precio (-{c["crash_price_drop_percent"]}%)'
+                    is_taker = True
+                # Trigger 3: Pérdida Acelerada en PnL Flotante
+                elif c['enable_crash_pnl_drop'] and (c_low - entry_price) * quantity <= -c['crash_pnl_drop_threshold_usdt']:
+                    exit_triggered = True
+                    exit_price = max(c_low, entry_price - (c['crash_pnl_drop_threshold_usdt'] / quantity))
+                    exit_reason = f'Crash PnL (-${c["crash_pnl_drop_threshold_usdt"]})'
+                    is_taker = True
+
             # 5. DCA Re-entradas
-            elif c['enable_dca_reentry'] and dca_count < c['dca_max_reentries']:
+            if not exit_triggered and c['enable_dca_reentry'] and dca_count < c['dca_max_reentries']:
                 target_dca_price = entry_price * (1.0 - c['dca_price_drop_percent'] / 100.0)
                 if c_low <= target_dca_price:
                     dca_count += 1
@@ -617,7 +649,7 @@ def run_strategy_backtest(symbol: str, df: pd.DataFrame, config: dict, initial_b
                     entry_price = total_cost / quantity
 
             # 6. Stop Loss (solo si está activado)
-            elif sl_price and c_low <= sl_price:
+            elif not exit_triggered and sl_price and c_low <= sl_price:
                 exit_triggered = True
                 exit_price = sl_price
                 exit_reason = f'Stop Loss (-{c["support_order_stop_loss_percent"]}%)' if evaluate_support else f'Stop Loss (-${abs(c["stop_loss_usdt"])})'

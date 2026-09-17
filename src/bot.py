@@ -243,6 +243,16 @@ class TradingBot:
         self.market_regime_supertrend_period = _safe_int(trading_params.get('market_regime_supertrend_period'), 10)
         self.market_regime_supertrend_multiplier = _safe_float(trading_params.get('market_regime_supertrend_multiplier'), 3.0)
 
+        # --- SALIDA DE EMERGENCIA POR CRASH (ANTI-DESPLOME: 3 TRIGGERS) ---
+        self.enable_emergency_crash_exit = str(trading_params.get('enable_emergency_crash_exit', 'false')).lower() == 'true' if isinstance(trading_params.get('enable_emergency_crash_exit'), str) else bool(trading_params.get('enable_emergency_crash_exit', False))
+        self.enable_crash_rsi_drop = str(trading_params.get('enable_crash_rsi_drop', 'true')).lower() == 'true' if isinstance(trading_params.get('enable_crash_rsi_drop'), str) else bool(trading_params.get('enable_crash_rsi_drop', True))
+        self.crash_rsi_drop_threshold = _safe_float(trading_params.get('crash_rsi_drop_threshold'), 8.0)
+        self.enable_crash_price_drop = str(trading_params.get('enable_crash_price_drop', 'true')).lower() == 'true' if isinstance(trading_params.get('enable_crash_price_drop'), str) else bool(trading_params.get('enable_crash_price_drop', True))
+        self.crash_price_drop_percent = _safe_float(trading_params.get('crash_price_drop_percent'), 1.5)
+        self.enable_crash_pnl_drop = str(trading_params.get('enable_crash_pnl_drop', 'true')).lower() == 'true' if isinstance(trading_params.get('enable_crash_pnl_drop'), str) else bool(trading_params.get('enable_crash_pnl_drop', True))
+        self.crash_pnl_drop_threshold_usdt = _safe_float(trading_params.get('crash_pnl_drop_threshold_usdt'), 5.0)
+        # ------------------------------------------------------------------
+
         # Estado dinámico de protecciones
         self.cooldown_until_ts = 0.0
         self.pause_reason = ""
@@ -504,6 +514,20 @@ class TradingBot:
         self.market_regime_supertrend_period = _safe_int(new_params.get('market_regime_supertrend_period'), self.market_regime_supertrend_period)
         self.market_regime_supertrend_multiplier = _safe_float(new_params.get('market_regime_supertrend_multiplier'), self.market_regime_supertrend_multiplier)
         # -----------------------------------
+
+        # --- HOT-RELOAD SALIDA DE EMERGENCIA POR CRASH ---
+        if 'enable_emergency_crash_exit' in new_params:
+            self.enable_emergency_crash_exit = str(new_params['enable_emergency_crash_exit']).lower() == 'true' if isinstance(new_params['enable_emergency_crash_exit'], str) else bool(new_params['enable_emergency_crash_exit'])
+        if 'enable_crash_rsi_drop' in new_params:
+            self.enable_crash_rsi_drop = str(new_params['enable_crash_rsi_drop']).lower() == 'true' if isinstance(new_params['enable_crash_rsi_drop'], str) else bool(new_params['enable_crash_rsi_drop'])
+        self.crash_rsi_drop_threshold = _safe_float(new_params.get('crash_rsi_drop_threshold'), getattr(self, 'crash_rsi_drop_threshold', 8.0))
+        if 'enable_crash_price_drop' in new_params:
+            self.enable_crash_price_drop = str(new_params['enable_crash_price_drop']).lower() == 'true' if isinstance(new_params['enable_crash_price_drop'], str) else bool(new_params['enable_crash_price_drop'])
+        self.crash_price_drop_percent = _safe_float(new_params.get('crash_price_drop_percent'), getattr(self, 'crash_price_drop_percent', 1.5))
+        if 'enable_crash_pnl_drop' in new_params:
+            self.enable_crash_pnl_drop = str(new_params['enable_crash_pnl_drop']).lower() == 'true' if isinstance(new_params['enable_crash_pnl_drop'], str) else bool(new_params['enable_crash_pnl_drop'])
+        self.crash_pnl_drop_threshold_usdt = _safe_float(new_params.get('crash_pnl_drop_threshold_usdt'), getattr(self, 'crash_pnl_drop_threshold_usdt', 5.0))
+        # ------------------------------------------------
 
         self.logger.info(f"[{self.symbol}] Parámetros de trading actualizados en caliente exitosamente.")
 
@@ -2188,7 +2212,7 @@ class TradingBot:
             else:
                 self.logger.error(f"[{self.symbol}] Fallo al colocar la orden MARKET SELL para cerrar posición (Razón: {reason}).")
                 self._set_error_state(f"Failed to place market exit order (reason: {reason}).")
-        elif reason and any(kw in reason.lower() for kw in ['stop_loss', 'emergency', 'trailing']):
+        elif reason and any(kw in reason.lower() for kw in ['stop_loss', 'emergency', 'trailing', 'crash']):
             # Para salidas de emergencia (SL, trailing stops), usar MARKET para garantizar ejecución
             self.logger.warning(f"[{self.symbol}] Salida de emergencia ({reason}): usando orden MARKET SELL con reduceOnly para garantizar cierre.")
             self.current_exit_reason = reason
@@ -2918,6 +2942,46 @@ class TradingBot:
                         self.exit_reason = f"stop_loss_percent_reached (-{self.support_order_stop_loss_percent}%)"
             elif not exit_signal: 
                 self.logger.info(f"[{self.symbol}] Salida por Stop Loss DESHABILITADA.")
+
+            # --- SALIDA DE EMERGENCIA POR CRASH (ANTI-DESPLOME: 3 TRIGGERS) ---
+            if not exit_signal and getattr(self, 'enable_emergency_crash_exit', False):
+                # Trigger 1: Colapso Súbito de RSI en la vela actual respecto a la previa (Delta RSI)
+                if getattr(self, 'enable_crash_rsi_drop', True) and self.last_rsi_value is not None and self.previous_rsi_value is not None:
+                    rsi_delta_now = float(self.last_rsi_value) - float(self.previous_rsi_value)
+                    crash_threshold = float(getattr(self, 'crash_rsi_drop_threshold', 8.0))
+                    if rsi_delta_now <= -crash_threshold:
+                        self.logger.warning(f"[{self.symbol}] 🚨 CRASH TRIGGER 1 DISPARADO (Colapso RSI): "
+                                            f"ΔRSI={rsi_delta_now:.2f} <= -{crash_threshold:.2f} "
+                                            f"(RSI: {self.previous_rsi_value:.2f} -> {self.last_rsi_value:.2f}). "
+                                            f"Eyectando posición a mercado de inmediato.")
+                        exit_signal = True
+                        self.exit_reason = f"emergency_crash_exit_rsi (ΔRSI={rsi_delta_now:.2f} <= -{crash_threshold:.2f})"
+
+                # Trigger 2: Caída Porcentual Rápida del Precio desde Entrada (% Drop)
+                if not exit_signal and getattr(self, 'enable_crash_price_drop', True) and self.current_position:
+                    entry_p = self.current_position.get('entry_price', Decimal('0'))
+                    if entry_p > Decimal('0'):
+                        curr_p = Decimal(str(klines_df['close'].iloc[-1]))
+                        price_drop_pct = float((entry_p - curr_p) / entry_p * Decimal('100'))
+                        max_drop_pct = float(getattr(self, 'crash_price_drop_percent', 1.5))
+                        if price_drop_pct >= max_drop_pct:
+                            self.logger.warning(f"[{self.symbol}] 🚨 CRASH TRIGGER 2 DISPARADO (Caída Porcentual): "
+                                                f"Caída={price_drop_pct:.2f}% >= Umbral={max_drop_pct:.2f}% "
+                                                f"(Entrada: {entry_p}, Actual: {curr_p}). "
+                                                f"Eyectando posición a mercado de inmediato.")
+                            exit_signal = True
+                            self.exit_reason = f"emergency_crash_exit_price_drop (-{price_drop_pct:.2f}% >= -{max_drop_pct:.2f}%)"
+
+                # Trigger 3: Desplome Rápido de PnL Flotante (Flash PnL Drop)
+                if not exit_signal and getattr(self, 'enable_crash_pnl_drop', True) and self.last_known_pnl is not None:
+                    pnl_loss_threshold = float(getattr(self, 'crash_pnl_drop_threshold_usdt', 5.0))
+                    if float(self.last_known_pnl) <= -pnl_loss_threshold:
+                        self.logger.warning(f"[{self.symbol}] 🚨 CRASH TRIGGER 3 DISPARADO (Pérdida PnL Anticipada): "
+                                            f"PnL actual={self.last_known_pnl:.4f} <= -{pnl_loss_threshold:.2f} USDT. "
+                                            f"Eyectando posición a mercado antes de Stop Loss total.")
+                        exit_signal = True
+                        self.exit_reason = f"emergency_crash_exit_pnl_drop (PnL={self.last_known_pnl:.4f} <= -{pnl_loss_threshold:.2f} USDT)"
+            # --- FIN SALIDA DE EMERGENCIA POR CRASH ---
 
             # --- INICIO NUEVA LÓGICA: TRAILING STOP POR PRECIO ---
             if not exit_signal and self.enable_price_trailing_stop:

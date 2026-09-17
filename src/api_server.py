@@ -309,6 +309,15 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'market_regime_ema_period': _val('marketRegimeEmaPeriod', 50),
             'market_regime_supertrend_period': _val('marketRegimeSupertrendPeriod', 10),
             'market_regime_supertrend_multiplier': _val('marketRegimeSupertrendMultiplier', 3.0),
+
+            # --- SALIDA DE EMERGENCIA POR CRASH ---
+            'enable_emergency_crash_exit': str(frontend_data.get('enableEmergencyCrashExit', False)).lower(),
+            'enable_crash_rsi_drop': str(frontend_data.get('enableCrashRsiDrop', True)).lower(),
+            'crash_rsi_drop_threshold': _val('crashRsiDropThreshold', 8.0),
+            'enable_crash_price_drop': str(frontend_data.get('enableCrashPriceDrop', True)).lower(),
+            'crash_price_drop_percent': _val('crashPriceDropPercent', 1.5),
+            'enable_crash_pnl_drop': str(frontend_data.get('enableCrashPnlDrop', True)).lower(),
+            'crash_pnl_drop_threshold_usdt': _val('crashPnlDropThresholdUSDT', 5.0),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -553,7 +562,16 @@ def _build_frontend_config_dict():
             ('market_regime_timeframe', 'marketRegimeTimeframe'),
             ('market_regime_ema_period', 'marketRegimeEmaPeriod'),
             ('market_regime_supertrend_period', 'marketRegimeSupertrendPeriod'),
-            ('market_regime_supertrend_multiplier', 'marketRegimeSupertrendMultiplier')
+            ('market_regime_supertrend_multiplier', 'marketRegimeSupertrendMultiplier'),
+
+            # --- SALIDA DE EMERGENCIA POR CRASH ---
+            ('enable_emergency_crash_exit', 'enableEmergencyCrashExit'),
+            ('enable_crash_rsi_drop', 'enableCrashRsiDrop'),
+            ('crash_rsi_drop_threshold', 'crashRsiDropThreshold'),
+            ('enable_crash_price_drop', 'enableCrashPriceDrop'),
+            ('crash_price_drop_percent', 'crashPriceDropPercent'),
+            ('enable_crash_pnl_drop', 'enableCrashPnlDrop'),
+            ('crash_pnl_drop_threshold_usdt', 'crashPnlDropThresholdUSDT'),
         ]:
             if key_ini in config_dict['TRADING']:
                 frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
@@ -1119,7 +1137,8 @@ def load_initial_config():
                          'price_trailing_stop_activation_pnl_usdt',
                          'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt',
                          'support_level_tolerance_percent', 'support_order_stop_loss_percent', 'support_order_take_profit_percent',
-                         'risk_percentage', 'max_loss_per_symbol_usdt', 'btc_crash_drop_percent', 'market_regime_supertrend_multiplier']:
+                         'risk_percentage', 'max_loss_per_symbol_usdt', 'btc_crash_drop_percent', 'market_regime_supertrend_multiplier',
+                         'crash_rsi_drop_threshold', 'crash_price_drop_percent', 'crash_pnl_drop_threshold_usdt']:
                 if value_str is None or str(value_str).strip() == '':
                     loaded_trading_params[key] = 0.0
                 else:
@@ -1130,7 +1149,8 @@ def load_initial_config():
                          'enable_trailing_rsi_stop', 'enable_price_trailing_stop', 'enable_pnl_trailing_stop',
                          'evaluate_open_interest_increase', 'evaluate_ma_filter', 'evaluate_support_strategy',
                          'enable_max_loss_per_symbol', 'enable_consecutive_losses_cooldown',
-                         'enable_rolling_performance_filter', 'enable_btc_crash_shield', 'enable_market_regime_filter']:
+                         'enable_rolling_performance_filter', 'enable_btc_crash_shield', 'enable_market_regime_filter',
+                         'enable_emergency_crash_exit', 'enable_crash_rsi_drop', 'enable_crash_price_drop', 'enable_crash_pnl_drop']:
                 loaded_trading_params[key] = str(value_str).lower() == 'true'
             else:
                 loaded_trading_params[key] = value_str
