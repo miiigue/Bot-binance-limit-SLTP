@@ -1079,43 +1079,6 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
   return (
     <div className="space-y-6">
       
-      {/* 1. Header y Banner Informativo */}
-      <div className="bg-gradient-to-r from-indigo-900/40 via-purple-900/30 to-blue-900/40 border border-indigo-700/40 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-2xl">🧪</span>
-              <h2 className="text-xl font-bold text-white tracking-wide">
-                Laboratorio de Backtesting Cuantitativo
-              </h2>
-              <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-                Binance Futures Data
-              </span>
-              {results?.is_portfolio && (
-                <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                  🌐 Portafolio ({results.symbols_count} pares)
-                </span>
-              )}
-            </div>
-            <p className="text-sm text-gray-300 max-w-3xl">
-              Simula y valida tus estrategias con datos reales de Binance vela por vela. Evalúa una moneda individual o prueba **todo tu portafolio en simultáneo** para identificar las mejores monedas.
-            </p>
-          </div>
-
-          {results && (
-            <button
-              type="button"
-              onClick={handleApplyToLiveBot}
-              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-900/40 transition-all flex items-center gap-2 active:scale-95 text-xs whitespace-nowrap"
-              title="Copiar estos parámetros exactos al bot activo"
-            >
-              <span>🚀</span>
-              <span>Aplicar al Bot en Vivo</span>
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Selector de Pestañas: Laboratorio de Simulación vs Historial de Pruebas */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-200 dark:border-gray-700/80 pb-3">
         <div className="flex items-center gap-2">
@@ -1155,23 +1118,37 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
           </button>
         </div>
 
-        {loadedHistoryItem && activeTab === 'lab' && (
-          <div className="flex items-center gap-2 bg-indigo-950/60 border border-indigo-700/50 px-3 py-1.5 rounded-xl">
-            <span className="text-xs text-indigo-300 font-light">
-              📁 Viendo prueba guardada: <b className="font-medium text-white">{loadedHistoryItem.strategy_name}</b> ({loadedHistoryItem.timestamp?.substring(5, 16)})
-            </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          {loadedHistoryItem && activeTab === 'lab' && (
+            <div className="flex items-center gap-2 bg-indigo-950/60 border border-indigo-700/50 px-3 py-1.5 rounded-xl">
+              <span className="text-xs text-indigo-300 font-light">
+                📁 Viendo prueba guardada: <b className="font-medium text-white">{loadedHistoryItem.strategy_name}</b> ({loadedHistoryItem.timestamp?.substring(5, 16)})
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoadedHistoryItem(null);
+                }}
+                className="text-[11px] font-medium text-gray-400 hover:text-white px-2 py-0.5 bg-gray-800 rounded-lg hover:bg-gray-700 transition"
+                title="Volver a los parámetros actuales"
+              >
+                ✕ Desvincular
+              </button>
+            </div>
+          )}
+
+          {results && (
             <button
               type="button"
-              onClick={() => {
-                setLoadedHistoryItem(null);
-              }}
-              className="text-[11px] font-medium text-gray-400 hover:text-white px-2 py-0.5 bg-gray-800 rounded-lg hover:bg-gray-700 transition"
-              title="Volver a los parámetros actuales"
+              onClick={handleApplyToLiveBot}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl shadow-md shadow-emerald-900/30 transition-all flex items-center gap-1.5 active:scale-95 text-xs whitespace-nowrap"
+              title="Copiar estos parámetros exactos al bot activo"
             >
-              ✕ Desvincular
+              <span>🚀</span>
+              <span>Aplicar al Bot en Vivo</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* VISTA: HISTORIAL DE PRUEBAS */}
@@ -1785,6 +1762,16 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
                         </span>
                       )}
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={handleApplyToLiveBot}
+                      className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl shadow-md shadow-emerald-900/30 transition-all flex items-center gap-1.5 active:scale-95 text-xs whitespace-nowrap self-start sm:self-auto ml-auto"
+                      title="Copiar estos parámetros exactos al bot activo"
+                    >
+                      <span>🚀</span>
+                      <span>Aplicar al Bot en Vivo</span>
+                    </button>
                   </div>
 
                   {/* Badges Técnicos Congelados de la Estrategia de esta Prueba */}
