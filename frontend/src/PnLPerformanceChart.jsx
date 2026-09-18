@@ -106,7 +106,21 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     }
   };
 
-  // Helper para obtener el PnL real de un trade (incluso si pnl_usdt vino en 0 pero hubo diferencia de precios)
+  // Helper para obtener la comisión cobrada por Binance
+  const getTradeCommission = (t) => {
+    const comm = parseFloat(t.commission_usdt);
+    if (!isNaN(comm) && comm > 0) return comm;
+    // Estimación automática si la columna viniese vacía
+    const openP = parseFloat(t.open_price) || 0;
+    const closeP = parseFloat(t.close_price) || openP;
+    const qty = parseFloat(t.quantity) || 0;
+    const posSize = parseFloat(t.position_size_usdt) || (openP * qty);
+    const entryNotional = (openP * qty) > 0 ? (openP * qty) : posSize;
+    const exitNotional = (closeP * qty) > 0 ? (closeP * qty) : entryNotional;
+    return (entryNotional * 0.0002) + (exitNotional * 0.0005);
+  };
+
+  // Helper para obtener el PnL neto real de un trade (después de deducir comisiones)
   const getTradePnL = (t) => {
     const raw = parseFloat(t.pnl_usdt);
     if (!isNaN(raw) && Math.abs(raw) > 1e-6) return raw;
@@ -114,9 +128,20 @@ function PnLPerformanceChart({ symbolsList = [] }) {
     const closeP = parseFloat(t.close_price);
     const qty = parseFloat(t.quantity);
     if (!isNaN(openP) && !isNaN(closeP) && !isNaN(qty) && openP > 0 && closeP > 0 && qty > 0 && Math.abs(openP - closeP) > 1e-8) {
-      return (t.trade_type === 'SHORT' ? (openP - closeP) : (closeP - openP)) * qty;
+      const gross = (t.trade_type === 'SHORT' ? (openP - closeP) : (closeP - openP)) * qty;
+      const comm = getTradeCommission(t);
+      return gross - comm;
     }
     return !isNaN(raw) ? raw : 0;
+  };
+
+  // Helper para obtener el PnL bruto (antes de comisiones de Binance)
+  const getTradeGrossPnL = (t) => {
+    const gross = parseFloat(t.gross_pnl_usdt);
+    if (!isNaN(gross) && Math.abs(gross) > 1e-6) return gross;
+    const net = getTradePnL(t);
+    const comm = getTradeCommission(t);
+    return net + comm;
   };
 
   // Helper para extraer el nombre de la estrategia de un trade
@@ -178,6 +203,10 @@ function PnLPerformanceChart({ symbolsList = [] }) {
   const grossLoss = Math.abs(losingTrades.reduce((acc, t) => acc + getTradePnL(t), 0));
   const netPnL = grossProfit - grossLoss;
   const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : (grossProfit > 0 ? '∞' : '1.00');
+
+  // Comisiones totales Binance y PnL Bruto de mercado
+  const totalCommissions = filteredTrades.reduce((acc, t) => acc + getTradeCommission(t), 0);
+  const totalGrossPnL = filteredTrades.reduce((acc, t) => acc + getTradeGrossPnL(t), 0);
 
   const avgWin = winningTrades.length > 0 ? grossProfit / winningTrades.length : 0;
   const avgLoss = losingTrades.length > 0 ? grossLoss / losingTrades.length : 0;
@@ -415,7 +444,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
       'Precio Salida',
       'Cantidad',
       'Tamaño USDT',
-      'PnL Realizado USDT',
+      'PnL Neto USDT',
+      'Comisión Binance USDT',
+      'PnL Bruto USDT',
       'Razón Cierre'
     ];
 
@@ -430,7 +461,9 @@ function PnLPerformanceChart({ symbolsList = [] }) {
       t.close_price || 0,
       t.quantity || 0,
       t.position_size_usdt || 0,
-      t.pnl_usdt || 0,
+      getTradePnL(t).toFixed(4),
+      getTradeCommission(t).toFixed(4),
+      getTradeGrossPnL(t).toFixed(4),
       `"${t.close_reason || ''}"`
     ]);
 
@@ -761,8 +794,8 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           </div>
         </div>
 
-        {/* 6 Tarjetas de Métricas Clave */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 my-4">
+        {/* 7 Tarjetas de Métricas Clave (incluyendo Comisiones Oficiales Binance) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 my-4">
           
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
             <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
@@ -777,16 +810,31 @@ function PnLPerformanceChart({ symbolsList = [] }) {
             </span>
           </div>
 
+          {/* Tarjeta de PnL Neto Realizado */}
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
             <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
-              <span>💰 PnL Realizado</span>
-              <Tooltip title="PnL Realizado Neto" text="Suma acumulada de todas las ganancias y pérdidas de las posiciones que ya han sido cerradas definitivamente." />
+              <span>💰 PnL Neto Real</span>
+              <Tooltip title="PnL Neto Realizado" text="Suma neta definitiva que ingresó o salió de tu billetera de Binance (PnL Bruto de mercado menos todas las comisiones pagadas a Binance)." />
             </span>
             <span className={`text-xl font-bold font-mono ${netPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
               {netPnL >= 0 ? `+${netPnL.toFixed(2)}` : netPnL.toFixed(2)} <span className="text-xs">USDT</span>
             </span>
-            <span className="text-[10px] text-gray-400 block mt-0.5">
-              {totalTrades} operaciones cerradas
+            <span className="text-[10px] text-gray-400 block mt-0.5 font-mono">
+              Bruto: {totalGrossPnL >= 0 ? `+${totalGrossPnL.toFixed(1)}` : totalGrossPnL.toFixed(1)} USDT
+            </span>
+          </div>
+
+          {/* NUEVA TARJETA: Comisiones Totales Pagadas a Binance */}
+          <div className="p-3 bg-amber-950/20 dark:bg-amber-950/30 rounded-xl border border-amber-500/50 shadow-sm">
+            <span className="text-[11px] font-semibold text-amber-500 dark:text-amber-400 uppercase tracking-wider flex items-center justify-between">
+              <span>💸 Comisiones Binance</span>
+              <Tooltip title="Comisiones Totales Binance" text="Total de comisiones oficiales cobradas por Binance Futures en órdenes de entrada (Maker 0.02% / Taker 0.05%) y salida (0.05% Taker). Descontadas automáticamente del saldo." />
+            </span>
+            <span className="text-xl font-bold font-mono text-amber-400">
+              -${totalCommissions.toFixed(2)} <span className="text-xs text-gray-400 font-normal">USDT</span>
+            </span>
+            <span className="text-[10px] text-gray-400 block mt-0.5 font-mono">
+              {totalTrades > 0 ? `~${(totalCommissions / totalTrades).toFixed(3)} USDT/op` : '0 USDT'}
             </span>
           </div>
 
@@ -799,7 +847,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
               {profitFactor}
             </span>
             <span className="text-[10px] text-gray-400 block mt-0.5">
-              Bruto: +${grossProfit.toFixed(1)} / -${grossLoss.toFixed(1)}
+              Neto: +${grossProfit.toFixed(1)} / -${grossLoss.toFixed(1)}
             </span>
           </div>
 

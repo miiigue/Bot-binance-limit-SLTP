@@ -709,10 +709,17 @@ class TradingBot:
                 else:
                     final_pnl = Decimal('0')
             
-            # 3. Guardar en la base de datos
+            # 3. Guardar en la base de datos con comisiones oficiales deducidas
             open_ts_for_db = old_entry_time.to_pydatetime() if isinstance(old_entry_time, (pd.Timestamp, datetime)) and hasattr(old_entry_time, 'to_pydatetime') else (old_entry_time if isinstance(old_entry_time, datetime) else datetime.utcnow())
             close_ts_for_db = final_close_timestamp.to_pydatetime() if isinstance(final_close_timestamp, (pd.Timestamp, datetime)) and hasattr(final_close_timestamp, 'to_pydatetime') else (final_close_timestamp if isinstance(final_close_timestamp, datetime) else datetime.utcnow())
             pos_size_calc = float(old_entry_price * old_quantity) if (old_entry_price and old_quantity) else 0.0
+            close_size_calc = float(final_close_price * old_quantity) if (final_close_price and old_quantity) else pos_size_calc
+
+            entry_rate = 0.0002 if str(self.entry_order_type).upper() == 'LIMIT' else 0.0005
+            exit_rate = 0.0005
+            comm_calc = round((pos_size_calc * entry_rate) + (close_size_calc * exit_rate), 4)
+            gross_pnl_val = round(float(final_pnl), 4)
+            net_pnl_val = round(gross_pnl_val - comm_calc, 4)
 
             record_trade(
                 symbol=self.symbol,
@@ -723,19 +730,22 @@ class TradingBot:
                 close_price=float(final_close_price) if final_close_price else 0.0,
                 quantity=float(old_quantity) if old_quantity else 0.0,
                 position_size_usdt=pos_size_calc,
-                pnl_usdt=float(final_pnl),
+                pnl_usdt=net_pnl_val,
+                gross_pnl_usdt=gross_pnl_val,
+                commission_usdt=comm_calc,
                 close_reason=close_reason
             )
-            self.logger.info(f"[{self.symbol}] Trade CERRADO y guardado en DB. Razón: {close_reason}, PNL: {final_pnl:.4f}")
+            self.logger.info(f"[{self.symbol}] Trade CERRADO y guardado en DB. Razón: {close_reason}, PNL Neto: {net_pnl_val:.4f}, PNL Bruto: {gross_pnl_val:.4f}, Comisión: {comm_calc:.4f}")
             
-            # 4. Limpiar y actualizar estado
-            self.historical_pnl += final_pnl
+            # 4. Limpiar y actualizar estado (usando PnL Neto)
+            net_pnl_dec = Decimal(str(net_pnl_val))
+            self.historical_pnl += net_pnl_dec
             now_epoch_ms = int(time.time() * 1000)
             trade_epoch_ms = int(final_close_timestamp.timestamp() * 1000) if hasattr(final_close_timestamp, 'timestamp') else now_epoch_ms
             # Solo acumular en sesión si el trade realmente ocurrió en la sesión activa (menos de 2 horas)
             if (now_epoch_ms - trade_epoch_ms) < 7200000:
-                self.session_pnl += final_pnl
-            self._on_trade_closed(final_pnl, close_reason)
+                self.session_pnl += net_pnl_dec
+            self._on_trade_closed(net_pnl_dec, close_reason)
             if self.margin_for_current_position > 0:
                 self.risk_manager.remove_exposure(self.margin_for_current_position)
                 self.logger.info(f"[{self.symbol}] Exposición de MARGEN {self.margin_for_current_position} USDT eliminada.")
@@ -1875,10 +1885,19 @@ class TradingBot:
                 'pnl_trailing_stop_drop_usdt': float(self.pnl_trailing_stop_drop_usdt)
             }
 
+            entry_rate_dec = Decimal('0.0002') if str(self.entry_order_type).upper() == 'LIMIT' else Decimal('0.0005')
+            exit_rate_dec = Decimal('0.0005')
+            entry_notional_dec = entry_price * quantity_dec
+            exit_notional_dec = close_price_dec * quantity_dec
+            comm_dec = (entry_notional_dec * entry_rate_dec) + (exit_notional_dec * exit_rate_dec)
+            gross_pnl_dec = final_pnl if final_pnl is not None else Decimal('0')
+            net_pnl_dec = gross_pnl_dec - comm_dec
+
             self.logger.info(f"[{self.symbol}] _handle_successful_closure: Intentando registrar con los siguientes datos -> "
                              f"Symbol: {self.symbol}, Strategy: {strat_to_record}, Type: LONG, OpenTS: {open_ts_for_db}, CloseTS: {close_ts_for_db}, "
                              f"OpenPrice: {float(entry_price)}, ClosePrice: {float(close_price_dec)}, Qty: {float(quantity_dec)}, "
-                             f"PosSizeUSDT: {float(position_size_usdt_est)}, PNL: {float(final_pnl)}, Reason: '{simplified_reason}', "
+                             f"PosSizeUSDT: {float(position_size_usdt_est)}, PNL_Neto: {float(net_pnl_dec)}, PNL_Bruto: {float(gross_pnl_dec)}, "
+                             f"Comision: {float(comm_dec)}, Reason: '{simplified_reason}', "
                              f"Params: {db_trade_params}, BinanceTradeID: {actual_binance_trade_id_for_db}")
 
             record_trade(
@@ -1890,18 +1909,20 @@ class TradingBot:
                 close_price=float(close_price_dec),
                 quantity=float(quantity_dec),
                 position_size_usdt=float(position_size_usdt_est),
-                pnl_usdt=float(final_pnl),
+                pnl_usdt=float(net_pnl_dec),
+                gross_pnl_usdt=float(gross_pnl_dec),
+                commission_usdt=float(comm_dec),
                 close_reason=simplified_reason,
                 parameters=db_trade_params,
                 binance_trade_id=actual_binance_trade_id_for_db,
                 strategy_name=strat_to_record
             )
-            self.logger.info(f"[{self.symbol}] _handle_successful_closure: Trade registrado exitosamente en DB.")
-            if final_pnl is not None:
-                self.historical_pnl += final_pnl
-                self.session_pnl += final_pnl
-                self._on_trade_closed(final_pnl, simplified_reason)
-                self.logger.info(f"[{self.symbol}] PnL acumulado tras cierre: Histórico={self.historical_pnl:.4f}, Sesión={self.session_pnl:.4f}")
+            self.logger.info(f"[{self.symbol}] _handle_successful_closure: Trade registrado exitosamente en DB (Neto: {net_pnl_dec:.4f}, Comisión: {comm_dec:.4f}).")
+            if net_pnl_dec is not None:
+                self.historical_pnl += net_pnl_dec
+                self.session_pnl += net_pnl_dec
+                self._on_trade_closed(net_pnl_dec, simplified_reason)
+                self.logger.info(f"[{self.symbol}] PnL neto acumulado tras cierre: Histórico={self.historical_pnl:.4f}, Sesión={self.session_pnl:.4f}")
         except Exception as e:
             self.logger.error(f"[{self.symbol}] ERROR CRÍTICO en _handle_successful_closure al registrar el trade en la DB: {e}", exc_info=True)
             self.logger.error(f"[{self.symbol}] Datos que se intentaron registrar: Symbol: {self.symbol}, Type: LONG, OpenTS: {open_ts_for_db}, CloseTS: {close_ts_for_db}, "
@@ -3407,7 +3428,9 @@ class TradingBot:
                         close_price=float(old_entry_price), # PNL Cero
                         quantity=float(old_quantity),
                         position_size_usdt=float(abs(old_entry_price * old_quantity)),
-                        pnl_usdt=0.0, 
+                        pnl_usdt=0.0,
+                        gross_pnl_usdt=0.0,
+                        commission_usdt=0.0,
                         close_reason=db_reason,
                         parameters=db_trade_params,
                         binance_trade_id=None

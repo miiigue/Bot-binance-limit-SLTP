@@ -1045,7 +1045,9 @@ def close_all_positions_endpoint():
                                     pass
                             if close_price <= 0:
                                 close_price = entry_price
-                            pnl = (close_price - entry_price) * abs(amt) if side == 'SELL' else (entry_price - close_price) * abs(amt)
+                            gross_pnl = (close_price - entry_price) * abs(amt) if side == 'SELL' else (entry_price - close_price) * abs(amt)
+                            comm = round((entry_price * abs(amt) * 0.0002) + (close_price * abs(amt) * 0.0005), 4)
+                            net_pnl = round(gross_pnl - comm, 4)
                             record_trade(
                                 symbol=sym,
                                 trade_type="LONG" if side == 'SELL' else "SHORT",
@@ -1055,7 +1057,9 @@ def close_all_positions_endpoint():
                                 position_size_usdt=entry_price * abs(amt),
                                 close_timestamp=datetime.now(),
                                 close_price=close_price,
-                                pnl_usdt=pnl,
+                                pnl_usdt=net_pnl,
+                                gross_pnl_usdt=gross_pnl,
+                                commission_usdt=comm,
                                 close_reason="Cierre Manual Global Testnet",
                                 binance_trade_id=order.get('orderId')
                             )
@@ -1636,29 +1640,20 @@ def clear_backtest_history_endpoint():
 @app.route('/api/strategies/ranked_performance', methods=['GET'])
 def get_strategies_ranked_performance():
     """
-    Devuelve todas las estrategias guardadas con sus métricas de rendimiento
-    extraídas del historial de backtest, ordenadas de mayor a menor según su
-    Patrimonio Neto Real (net_equity_pnl) o PnL Realizado.
+    Devuelve las pruebas de simulación registradas en el historial de backtest,
+    ordenadas de mayor a menor según su rendimiento (net_equity_pnl o net_pnl),
+    para la vista previa de depuración del historial.
     """
     logger = get_logger()
     try:
         metric = request.args.get('metric', 'net_equity_pnl') # 'net_equity_pnl' o 'net_pnl'
-        
-        saved_files = []
-        if os.path.exists(STRATEGIES_PATH):
-            saved_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
-        
-        all_strat_names = [os.path.splitext(f)[0] for f in saved_files]
-        
         history = load_backtest_history()
-        strat_stats = {}
         
+        ranked_list = []
         for item in history:
             s = item.get('summary', item) if isinstance(item, dict) else {}
-            name = s.get('strategy_name')
-            if not name:
-                continue
-            
+            run_id = s.get('id') or item.get('id') or ''
+            name = s.get('strategy_name') or 'Configuración Actual'
             equity = float(s.get('net_equity_pnl', s.get('net_pnl', 0.0)) or 0.0)
             pnl = float(s.get('net_pnl', 0.0) or 0.0)
             win_rate = float(s.get('win_rate_pct', 0.0) or 0.0)
@@ -1666,42 +1661,26 @@ def get_strategies_ranked_performance():
             trapped = int(s.get('trapped_coins_count', 0) or 0)
             period = s.get('period_label') or f"{s.get('days_tested', 0)} días"
             is_portfolio = bool(s.get('is_portfolio', False))
+            ts = s.get('timestamp') or item.get('timestamp') or ''
             
             curr_val = equity if metric == 'net_equity_pnl' else pnl
             
-            if name not in strat_stats or curr_val > strat_stats[name]['sort_value']:
-                strat_stats[name] = {
-                    'name': name,
-                    'net_equity_pnl': round(equity, 2),
-                    'net_pnl': round(pnl, 2),
-                    'win_rate_pct': round(win_rate, 1),
-                    'total_trades': trades,
-                    'trapped_coins_count': trapped,
-                    'period_label': period,
-                    'is_portfolio': is_portfolio,
-                    'sort_value': curr_val,
-                    'has_backtest': True
-                }
+            ranked_list.append({
+                'id': run_id,
+                'name': name,
+                'net_equity_pnl': round(equity, 2),
+                'net_pnl': round(pnl, 2),
+                'win_rate_pct': round(win_rate, 1),
+                'total_trades': trades,
+                'trapped_coins_count': trapped,
+                'period_label': period,
+                'is_portfolio': is_portfolio,
+                'timestamp': ts,
+                'sort_value': curr_val,
+                'has_backtest': True
+            })
         
-        ranked_list = []
-        for name in all_strat_names:
-            if name in strat_stats:
-                ranked_list.append(strat_stats[name])
-            else:
-                ranked_list.append({
-                    'name': name,
-                    'net_equity_pnl': 0.0,
-                    'net_pnl': 0.0,
-                    'win_rate_pct': 0.0,
-                    'total_trades': 0,
-                    'trapped_coins_count': 0,
-                    'period_label': 'Sin prueba registrada',
-                    'is_portfolio': False,
-                    'sort_value': -999999.0,
-                    'has_backtest': False
-                })
-        
-        ranked_list.sort(key=lambda x: (x['has_backtest'], x['sort_value'], x['win_rate_pct'], x['total_trades']), reverse=True)
+        ranked_list.sort(key=lambda x: (x['sort_value'], x['win_rate_pct'], x['total_trades']), reverse=True)
         
         for idx, item in enumerate(ranked_list):
             item['rank'] = idx + 1
@@ -1709,118 +1688,76 @@ def get_strategies_ranked_performance():
         return jsonify({
             "strategies": ranked_list,
             "total_count": len(ranked_list),
-            "tested_count": len(strat_stats),
+            "tested_count": len(ranked_list),
             "metric_used": metric
         }), 200
     except Exception as e:
-        logger.error(f"Error al calcular ranking de estrategias: {e}", exc_info=True)
+        logger.error(f"Error al calcular ranking de historial de pruebas: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/strategies/prune_least_profitable', methods=['POST'])
 def prune_least_profitable_strategies():
     """
-    Conserva las Top N estrategias más rentables/eficaces y elimina las demás
-    del directorio de estrategias (y opcionalmente del historial de backtests).
+    Conserva las Top N pruebas de simulación con mejor rendimiento en el historial de backtest
+    y descarta las pruebas obsoletas o menos rentables del historial.
+    IMPORTANTE: NUNCA borra archivos de estrategias guardadas en el disco.
     """
     logger = get_logger()
     try:
         data = request.get_json() or {}
         keep_count = int(data.get('keep_count', 10))
         metric = data.get('metric', 'net_equity_pnl')
-        prune_history = bool(data.get('prune_history', True))
         
         if keep_count < 1:
-            return jsonify({"error": "La cantidad de estrategias a mantener debe ser al menos 1."}), 400
-
-        if not os.path.exists(STRATEGIES_PATH):
-            return jsonify({"error": "No existe la carpeta de estrategias."}), 404
-            
-        saved_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
-        all_strat_names = [os.path.splitext(f)[0] for f in saved_files]
-        
-        if len(all_strat_names) <= keep_count:
-            return jsonify({
-                "message": f"Solo hay {len(all_strat_names)} estrategias guardadas. No hay ninguna que eliminar para conservar {keep_count}.",
-                "kept_strategies": all_strat_names,
-                "deleted_strategies": [],
-                "pruned_history_count": 0
-            }), 200
+            return jsonify({"error": "La cantidad de pruebas a mantener debe ser al menos 1."}), 400
 
         history = load_backtest_history()
-        strat_stats = {}
-        for item in history:
+        if not history:
+            return jsonify({
+                "message": "El historial de pruebas de backtest está vacío.",
+                "kept_count": 0,
+                "pruned_count": 0
+            }), 200
+
+        if len(history) <= keep_count:
+            return jsonify({
+                "message": f"Solo hay {len(history)} pruebas en el historial. No hay ninguna prueba que eliminar para conservar {keep_count}.",
+                "kept_count": len(history),
+                "pruned_count": 0
+            }), 200
+
+        def get_sort_metric(item):
             s = item.get('summary', item) if isinstance(item, dict) else {}
-            name = s.get('strategy_name')
-            if not name:
-                continue
             equity = float(s.get('net_equity_pnl', s.get('net_pnl', 0.0)) or 0.0)
             pnl = float(s.get('net_pnl', 0.0) or 0.0)
-            win_rate = float(s.get('win_rate_pct', 0.0) or 0.0)
+            wr = float(s.get('win_rate_pct', 0.0) or 0.0)
             trades = int(s.get('total_trades', 0) or 0)
-            curr_val = equity if metric == 'net_equity_pnl' else pnl
-            if name not in strat_stats or curr_val > strat_stats[name]['sort_value']:
-                strat_stats[name] = {
-                    'name': name,
-                    'sort_value': curr_val,
-                    'win_rate': win_rate,
-                    'trades': trades,
-                    'has_backtest': True
-                }
+            val = equity if metric == 'net_equity_pnl' else pnl
+            return (val, wr, trades)
 
-        ranked_list = []
-        for name in all_strat_names:
-            if name in strat_stats:
-                ranked_list.append(strat_stats[name])
-            else:
-                ranked_list.append({
-                    'name': name,
-                    'sort_value': -999999.0,
-                    'win_rate': 0.0,
-                    'trades': 0,
-                    'has_backtest': False
-                })
+        sorted_history = sorted(history, key=get_sort_metric, reverse=True)
+        kept_history = sorted_history[:keep_count]
+        pruned_history = sorted_history[keep_count:]
+        pruned_count = len(pruned_history)
 
-        ranked_list.sort(key=lambda x: (x['has_backtest'], x['sort_value'], x['win_rate'], x['trades']), reverse=True)
+        for fpath in [BACKTEST_HISTORY_FILE, BACKTEST_HISTORY_BACKUP_FILE]:
+            try:
+                with open(fpath, 'w', encoding='utf-8') as f:
+                    json.dump(kept_history, f, indent=2, ensure_ascii=False)
+            except Exception as he:
+                logger.warning(f"Error actualizando historial de backtests en {fpath}: {he}")
 
-        kept_strategies = [s['name'] for s in ranked_list[:keep_count]]
-        delete_strategies = [s['name'] for s in ranked_list[keep_count:]]
-
-        deleted_success = []
-        for strat_name in delete_strategies:
-            file_path = os.path.join(STRATEGIES_PATH, f"{strat_name}.json")
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                    deleted_success.append(strat_name)
-                    logger.info(f"Estrategia eliminada en depuración Top {keep_count}: {strat_name}")
-                except Exception as del_err:
-                    logger.warning(f"No se pudo eliminar {file_path}: {del_err}")
-
-        pruned_history_count = 0
-        if prune_history and history:
-            original_len = len(history)
-            new_history = [
-                item for item in history
-                if (item.get('summary', item).get('strategy_name') not in delete_strategies)
-            ]
-            pruned_history_count = original_len - len(new_history)
-            for fpath in [BACKTEST_HISTORY_FILE, BACKTEST_HISTORY_BACKUP_FILE]:
-                try:
-                    with open(fpath, 'w', encoding='utf-8') as f:
-                        json.dump(new_history, f, indent=2, ensure_ascii=False)
-                except Exception as he:
-                    logger.warning(f"Error actualizando historial tras poda en {fpath}: {he}")
+        logger.info(f"Historial de backtests depurado: conservadas {len(kept_history)} mejores pruebas, descartadas {pruned_count} pruebas del historial. Las estrategias guardadas en disco no fueron modificadas.")
 
         return jsonify({
             "success": True,
-            "message": f"Depuración completada: se conservaron las {len(kept_strategies)} mejores estrategias y se eliminaron {len(deleted_success)} menos rentables.",
-            "kept_strategies": kept_strategies,
-            "deleted_strategies": deleted_success,
-            "pruned_history_count": pruned_history_count
+            "message": f"Historial depurado exitosamente: se conservaron las {len(kept_history)} mejores simulaciones y se eliminaron {pruned_count} pruebas anteriores del historial. Tus estrategias guardadas están 100% preservadas.",
+            "kept_count": len(kept_history),
+            "pruned_count": pruned_count
         }), 200
 
     except Exception as e:
-        logger.error(f"Error al depurar estrategias menos rentables: {e}", exc_info=True)
+        logger.error(f"Error al depurar historial de pruebas de backtest: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/backtest/symbols', methods=['GET'])

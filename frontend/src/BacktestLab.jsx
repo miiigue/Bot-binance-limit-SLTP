@@ -241,11 +241,10 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
     return sortTableData(filtered, historySort, historyExtractors);
   }, [historyList, historyFilter, historySort, historyExtractors]);
 
-  // Modal y lógica para depurar y conservar Top N estrategias más rentables
+  // Modal y lógica para depurar y conservar Top N pruebas históricas
   const [isPruneModalOpen, setIsPruneModalOpen] = useState(false);
   const [pruneKeepCount, setPruneKeepCount] = useState(10);
   const [pruneMetric, setPruneMetric] = useState('net_equity_pnl');
-  const [pruneHistory, setPruneHistory] = useState(true);
   const [pruneRankings, setPruneRankings] = useState([]);
   const [isLoadingRankings, setIsLoadingRankings] = useState(false);
   const [isPruning, setIsPruning] = useState(false);
@@ -277,16 +276,16 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
 
   const handleExecutePrune = async () => {
     if (pruneKeepCount < 1) {
-      alert("Por favor ingresa un número válido de estrategias a conservar (al menos 1).");
+      alert("Por favor ingresa un número válido de pruebas a conservar (al menos 1).");
       return;
     }
     const toDeleteCount = Math.max(0, pruneRankings.length - pruneKeepCount);
     if (toDeleteCount === 0) {
-      alert(`Solo hay ${pruneRankings.length} estrategias guardadas. No hay ninguna que eliminar para conservar ${pruneKeepCount}.`);
+      alert(`Solo hay ${pruneRankings.length} pruebas en el historial. No hay ninguna prueba que eliminar para conservar ${pruneKeepCount}.`);
       return;
     }
 
-    if (!window.confirm(`¿Confirmas eliminar ${toDeleteCount} estrategias menos rentables y conservar únicamente el Top ${pruneKeepCount}? Se borrarán los archivos .json de las estrategias descartadas.`)) {
+    if (!window.confirm(`¿Confirmas depurar el historial y conservar únicamente las ${pruneKeepCount} mejores pruebas? Se eliminarán ${toDeleteCount} pruebas obsoletas del historial de backtests. Tus estrategias guardadas en la biblioteca NO se modificarán.`)) {
       return;
     }
 
@@ -298,27 +297,21 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
         body: JSON.stringify({
           keep_count: pruneKeepCount,
           metric: pruneMetric,
-          prune_history: pruneHistory
+          prune_history: true
         })
       });
       const data = await res.json();
       if (res.ok) {
         if (addToast) {
-          addToast('Depuración Completada', data.message || `Se conservaron las ${pruneKeepCount} mejores estrategias.`, 'success');
+          addToast('Historial Depurado', data.message || `Se conservaron las ${pruneKeepCount} mejores pruebas en el historial.`, 'success');
         }
         setIsPruneModalOpen(false);
-        // Recargar estrategias guardadas
-        const resStrat = await fetch('/api/strategies');
-        if (resStrat.ok) {
-          const strats = await resStrat.json();
-          setSavedStrategies(strats);
-        }
         fetchHistory();
       } else {
-        throw new Error(data.error || "Error al depurar estrategias.");
+        throw new Error(data.error || "Error al depurar el historial de pruebas.");
       }
     } catch (err) {
-      console.error("Error depurando estrategias:", err);
+      console.error("Error depurando historial:", err);
       if (addToast) addToast('Error', err.message, 'error');
     } finally {
       setIsPruning(false);
@@ -1606,16 +1599,8 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-medium text-slate-200 flex items-center">
                 <span>Estrategia Prueba</span>
-                <Tooltip title="Estrategia de Prueba" text="Permite seleccionar si se prueba la configuración activa actual del bot o una de las estrategias guardadas en el historial." example="Selecciona 'sniper' o 'agresivo' para comparar su rentabilidad histórica." />
+                <Tooltip title="Estrategia de Prueba" text="Permite seleccionar si se prueba la configuración activa actual del bot o una de las estrategias guardadas en la biblioteca." example="Selecciona 'sniper' o 'agresivo' para comparar su rentabilidad histórica." />
               </label>
-              <button
-                type="button"
-                onClick={handleOpenPruneModal}
-                className="text-[10px] text-amber-400 hover:text-amber-300 font-medium underline cursor-pointer"
-                title="Depurar y conservar solo las N mejores estrategias más rentables"
-              >
-                Conservar Top
-              </button>
             </div>
             <select
               value={strategySource}
@@ -2617,10 +2602,10 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
                 <span className="text-2xl">🏆</span>
                 <div>
                   <h3 className="text-base font-medium text-white">
-                    Depurar Estrategias
+                    Depurar Historial de Pruebas
                   </h3>
                   <p className="text-xs text-slate-300 font-light">
-                    Filtra automáticamente las estrategias con mejor desempeño histórico y elimina las menos eficientes.
+                    Conserva automáticamente las mejores simulaciones ejecutadas en el historial y elimina las pruebas obsoletas. Tus archivos de estrategias guardadas en la biblioteca <strong className="text-emerald-400 font-medium">NO se modifican ni se borran</strong>.
                   </p>
                 </div>
               </div>
@@ -2638,20 +2623,20 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
               {/* Cantidad a conservar */}
               <div>
                 <label className="block text-xs font-medium text-slate-200 mb-1">
-                  Cantidad Conservar:
+                  Cantidad de Pruebas a Conservar:
                 </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
                     min="1"
-                    max={pruneRankings.length || 29}
+                    max={pruneRankings.length || 50}
                     value={pruneKeepCount}
                     onChange={(e) => setPruneKeepCount(Math.max(1, parseInt(e.target.value) || 1))}
                     className="w-24 px-3 py-1.5 bg-slate-900 border border-slate-600 rounded-xl text-sm font-medium text-amber-400 focus:ring-1 focus:ring-amber-400 outline-none"
                   />
                   {/* Pills de acceso rápido */}
                   <div className="flex items-center gap-1">
-                    {[5, 8, 10, 15].map(cnt => (
+                    {[5, 8, 10, 15, 20].map(cnt => (
                       <button
                         key={cnt}
                         type="button"
@@ -2672,7 +2657,7 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
               {/* Métrica de clasificación */}
               <div>
                 <label className="block text-xs font-medium text-slate-200 mb-1">
-                  Criterio Clasificación:
+                  Criterio de Rendimiento:
                 </label>
                 <div className="inline-flex rounded-xl bg-slate-900 p-1 border border-slate-700 w-full">
                   <button
@@ -2705,7 +2690,7 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
             {isLoadingRankings ? (
               <div className="py-12 text-center text-slate-400 text-sm font-mono font-light">
                 <span className="animate-spin inline-block mr-2">⏳</span>
-                Calculando ranking de rendimiento de estrategias...
+                Calculando ranking de rendimiento de pruebas históricas...
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2714,19 +2699,24 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
                   <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                     <span className="text-xs font-medium text-emerald-400 flex items-center gap-1.5">
                       <span>🟢</span>
-                      <span>Estrategias Conservadas ({Math.min(pruneKeepCount, pruneRankings.length)})</span>
+                      <span>Pruebas Conservadas ({Math.min(pruneKeepCount, pruneRankings.length)})</span>
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono font-light">Top {pruneKeepCount} más rentables</span>
+                    <span className="text-[10px] text-slate-400 font-mono font-light">Top {pruneKeepCount} mejores</span>
                   </div>
                   <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 font-mono text-xs">
                     {pruneRankings.slice(0, pruneKeepCount).map((s, idx) => (
                       <div
-                        key={s.name}
+                        key={s.id || idx}
                         className="flex items-center justify-between p-2 rounded-lg bg-emerald-950/20 border border-emerald-500/30 hover:bg-emerald-950/40 transition"
                       >
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-amber-400 text-[11px] w-5">#{idx + 1}</span>
-                          <span className="font-normal font-sans text-white text-xs">{s.name}</span>
+                          <div>
+                            <span className="font-normal font-sans text-white text-xs block">{s.name}</span>
+                            <span className="text-[10px] text-slate-400 block font-sans font-light">
+                              {s.period_label || 'Histórico'}
+                            </span>
+                          </div>
                         </div>
                         <div className="text-right">
                           <span className="font-medium text-emerald-400">
@@ -2746,31 +2736,36 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
                   <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                     <span className="text-xs font-medium text-rose-400 flex items-center gap-1.5">
                       <span>🔴</span>
-                      <span>Estrategias Descartadas ({Math.max(0, pruneRankings.length - pruneKeepCount)})</span>
+                      <span>Pruebas Descartadas ({Math.max(0, pruneRankings.length - pruneKeepCount)})</span>
                     </span>
                     <span className="text-[10px] text-slate-400 font-mono font-light">Menor rendimiento</span>
                   </div>
                   <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 font-mono text-xs">
                     {pruneRankings.length <= pruneKeepCount ? (
                       <div className="text-center py-8 text-slate-500 text-xs italic">
-                        No hay estrategias para eliminar con este corte.
+                        No hay pruebas para eliminar con este corte.
                       </div>
                     ) : (
                       pruneRankings.slice(pruneKeepCount).map((s, idx) => (
                         <div
-                          key={s.name}
+                          key={s.id || idx}
                           className="flex items-center justify-between p-2 rounded-lg bg-rose-950/20 border border-rose-500/30 hover:bg-rose-950/40 transition opacity-80"
                         >
                           <div className="flex items-center gap-2">
                             <span className="text-slate-500 text-[11px] w-5">#{pruneKeepCount + idx + 1}</span>
-                            <span className="font-sans font-medium text-slate-300 text-xs line-through">{s.name}</span>
+                            <div>
+                              <span className="font-sans font-medium text-slate-300 text-xs line-through block">{s.name}</span>
+                              <span className="text-[10px] text-slate-500 block font-sans font-light">
+                                {s.period_label || 'Histórico'}
+                              </span>
+                            </div>
                           </div>
                           <div className="text-right">
                             <span className={(s.net_equity_pnl || 0) >= 0 ? 'text-slate-300' : 'text-rose-400 font-bold'}>
                               {(s.net_equity_pnl || 0) >= 0 ? '+' : ''}${(s.net_equity_pnl || 0).toFixed(1)} USDT
                             </span>
                             <span className="text-[10px] text-slate-500 block font-sans">
-                              {s.has_backtest ? `${s.win_rate_pct}% WR • ${s.trapped_coins_count} atrapadas` : 'Sin pruebas'}
+                              {s.win_rate_pct}% WR • {s.total_trades} trades
                             </span>
                           </div>
                         </div>
@@ -2781,18 +2776,12 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
               </div>
             )}
 
-            {/* Checkbox Opcional de Historial */}
-            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-950 border border-slate-800">
-              <input
-                type="checkbox"
-                id="pruneHistoryCheck"
-                checked={pruneHistory}
-                onChange={(e) => setPruneHistory(e.target.checked)}
-                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-900 border-slate-700 cursor-pointer"
-              />
-              <label htmlFor="pruneHistoryCheck" className="text-xs text-slate-200 cursor-pointer font-medium select-none">
-                Limpiar también del Historial de Backtests los registros de las estrategias eliminadas (mantiene el historial sincronizado).
-              </label>
+            {/* Banner Informativo de Protección de Estrategias */}
+            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-300">
+              <span className="text-base">🛡️</span>
+              <span>
+                Esta acción <strong>solo elimina registros del historial de simulaciones</strong>. Tus archivos de estrategias guardadas en la biblioteca están 100% protegidos y nunca serán modificados ni eliminados.
+              </span>
             </div>
 
             {/* Acciones del Modal */}
@@ -2812,19 +2801,19 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
                   pruneRankings.length <= pruneKeepCount
                     ? 'bg-slate-800 opacity-50 cursor-not-allowed text-slate-500'
                     : isPruning
-                      ? 'bg-red-800 opacity-70 cursor-wait'
-                      : 'bg-red-600 hover:bg-red-500 shadow-red-900/40 active:scale-95'
+                      ? 'bg-amber-800 opacity-70 cursor-wait'
+                      : 'bg-amber-600 hover:bg-amber-500 shadow-amber-900/40 active:scale-95'
                 }`}
               >
                 {isPruning ? (
                   <>
                     <span className="animate-spin text-sm">⏳</span>
-                    <span>Depurando Estrategias...</span>
+                    <span>Depurando Historial...</span>
                   </>
                 ) : (
                   <>
-                    <span>🗑️</span>
-                    <span>Confirmar y Borrar {Math.max(0, pruneRankings.length - pruneKeepCount)} Estrategias</span>
+                    <span>🏆</span>
+                    <span>Confirmar y Conservar Top {pruneKeepCount} Pruebas</span>
                   </>
                 )}
               </button>

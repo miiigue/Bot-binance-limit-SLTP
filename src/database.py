@@ -54,6 +54,8 @@ def init_db_schema():
             quantity REAL NOT NULL,
             position_size_usdt REAL, 
             pnl_usdt REAL,
+            gross_pnl_usdt REAL DEFAULT 0.0,
+            commission_usdt REAL DEFAULT 0.0,
             close_reason TEXT,
             parameters TEXT, -- JSON string para guardar los parámetros de trading usados
             binance_trade_id INTEGER UNIQUE -- Esta columna se creará con la restricción UNIQUE si la tabla se crea nueva.
@@ -61,48 +63,32 @@ def init_db_schema():
         """)
         conn.commit() # Commit después de CREATE TABLE
 
-        # Intentar añadir la columna explícitamente SOLO si la tabla ya existía 
-        # y la columna podría faltar. Esto es para migraciones.
-        # Sin embargo, para evitar el error "Cannot add a UNIQUE column", 
-        # la mejor práctica si esta columna es nueva es recrear la tabla 
-        # (borrando el .db) o manejar la migración de datos de forma más compleja.
-        # Por ahora, simplificaremos asumiendo que si la tabla existe, 
-        # y este código se ejecuta, el usuario debe asegurarse de que el esquema es compatible 
-        # o borrar el .db para una nueva creación.
-
-        # Solo intentar añadir la columna si no existe, SIN la restricción UNIQUE aquí,
-        # ya que ALTER TABLE no puede añadir UNIQUE a una tabla con datos.
-        # La restricción UNIQUE se aplica si la tabla se crea desde cero con la columna.
-        # Si la tabla ya existe y la columna se añade, NO tendrá la restricción UNIQUE con este ALTER.
-        # ESTO ES UNA LIMITACIÓN DE SQLITE con ALTER TABLE.
-        # LA SOLUCIÓN REAL ES BORRAR EL DB SI SE AÑADE UNA COLUMNA CON UNIQUE.
+        # Intentar añadir columnas si la tabla ya existía (migración de esquema)
         try:
-            # Primero verificar si la columna existe
             cursor.execute("PRAGMA table_info(trades)")
             columns = [info[1] for info in cursor.fetchall()]
             if 'binance_trade_id' not in columns:
-                cursor.execute("ALTER TABLE trades ADD COLUMN binance_trade_id INTEGER") # Sin UNIQUE aquí
+                cursor.execute("ALTER TABLE trades ADD COLUMN binance_trade_id INTEGER")
                 conn.commit()
-                logger.info("Columna 'binance_trade_id' (sin UNIQUE) añadida a la tabla 'trades' existente.")
-            else:
-                logger.info("Columna 'binance_trade_id' ya existe.")
-        except sqlite3.Error as e_alter:
-            logger.warning(f"Advertencia durante el intento de ALTER TABLE para binance_trade_id: {e_alter}")
-
-        # Intentar crear el índice. Esto funcionará si la columna existe.
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_binance_trade_id ON trades (binance_trade_id)")
-        conn.commit() # Commit después de CREATE INDEX
-
-        # Verificar si la columna strategy_name existe en trades (para multi-estrategia)
-        try:
-            cursor.execute("PRAGMA table_info(trades)")
-            cols = [info[1] for info in cursor.fetchall()]
-            if 'strategy_name' not in cols:
+                logger.info("Columna 'binance_trade_id' añadida a la tabla 'trades'.")
+            if 'strategy_name' not in columns:
                 cursor.execute("ALTER TABLE trades ADD COLUMN strategy_name TEXT")
                 conn.commit()
                 logger.info("Columna 'strategy_name' añadida a la tabla 'trades'.")
-        except Exception as e_sn:
-            logger.warning(f"Aviso verificando columna strategy_name en trades: {e_sn}")
+            if 'commission_usdt' not in columns:
+                cursor.execute("ALTER TABLE trades ADD COLUMN commission_usdt REAL DEFAULT 0.0")
+                conn.commit()
+                logger.info("Columna 'commission_usdt' añadida a la tabla 'trades'.")
+            if 'gross_pnl_usdt' not in columns:
+                cursor.execute("ALTER TABLE trades ADD COLUMN gross_pnl_usdt REAL DEFAULT 0.0")
+                conn.commit()
+                logger.info("Columna 'gross_pnl_usdt' añadida a la tabla 'trades'.")
+        except sqlite3.Error as e_alter:
+            logger.warning(f"Advertencia durante chequeo de columnas en trades: {e_alter}")
+
+        # Intentar crear el índice para binance_trade_id
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_binance_trade_id ON trades (binance_trade_id)")
+        conn.commit()
 
         # Tabla para configuraciones persistentes (ej. corte de sincronización al resetear historial)
         cursor.execute("""
@@ -112,6 +98,50 @@ def init_db_schema():
         )
         """)
         conn.commit()
+
+        # Migración automática de comisiones para operaciones históricas existentes
+        try:
+            cursor.execute("SELECT value FROM bot_settings WHERE key = 'trades_commission_migrated_v2'")
+            migrated_row = cursor.fetchone()
+            if not migrated_row:
+                cursor.execute("SELECT id, symbol, open_price, close_price, quantity, position_size_usdt, pnl_usdt, parameters FROM trades WHERE commission_usdt IS NULL OR commission_usdt = 0.0")
+                unmigrated = cursor.fetchall()
+                if unmigrated:
+                    logger.info(f"Aplicando migración de comisiones Binance a {len(unmigrated)} trades existentes...")
+                    for r_tr in unmigrated:
+                        t_id, sym, op, cp, qty, pos_size, old_pnl, p_str = r_tr
+                        old_pnl = float(old_pnl or 0.0)
+                        op = float(op or 0.0)
+                        cp = float(cp or 0.0)
+                        qty = float(qty or 0.0)
+                        pos_size = float(pos_size or 0.0)
+
+                        entry_notional = (op * qty) if (op > 0 and qty > 0) else pos_size
+                        if entry_notional <= 0:
+                            entry_notional = 1500.0 # Nocional estimado $125 * 12x
+                        exit_notional = (cp * qty) if (cp > 0 and qty > 0) else entry_notional
+
+                        entry_rate = 0.0002
+                        if p_str:
+                            try:
+                                p_dict = json.loads(p_str)
+                                if str(p_dict.get('entry_order_type', '')).upper() == 'MARKET':
+                                    entry_rate = 0.0005
+                            except Exception:
+                                pass
+                        exit_rate = 0.0005
+
+                        comm = round((entry_notional * entry_rate) + (exit_notional * exit_rate), 4)
+                        gross = old_pnl
+                        net = round(gross - comm, 4)
+
+                        cursor.execute("UPDATE trades SET gross_pnl_usdt = ?, commission_usdt = ?, pnl_usdt = ? WHERE id = ?", (gross, comm, net, t_id))
+                    conn.commit()
+                    logger.info("Migración de comisiones de Binance finalizada con éxito.")
+                cursor.execute("INSERT INTO bot_settings (key, value) VALUES ('trades_commission_migrated_v2', '1') ON CONFLICT(key) DO UPDATE SET value = '1'")
+                conn.commit()
+        except Exception as e_mig:
+            logger.warning(f"Aviso durante migración de comisiones históricas: {e_mig}")
 
         # Limpiar trades dummy con PnL = 0 originados por sincronizaciones erróneas de órdenes de entrada
         try:
@@ -138,9 +168,11 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
                  close_reason: Union[str, None] = None, # Unificar estilo para None
                  parameters: Union[dict, None] = None,   # Unificar estilo para None
                  binance_trade_id: Union[int, None] = None, # <-- CAMBIO AQUÍ y Unificar
-                 strategy_name: Union[str, None] = None):
+                 strategy_name: Union[str, None] = None,
+                 commission_usdt: Union[float, None] = None,
+                 gross_pnl_usdt: Union[float, None] = None):
     """
-    Registra un trade completado o una posición abierta en la base de datos, incluyendo la estrategia responsable.
+    Registra un trade completado o una posición abierta en la base de datos, incluyendo comisiones oficiales Binance y PnL neto.
     """
     logger = get_logger()
     # Si no se pasó explícito, intentar inferir de parameters o de la configuración del símbolo
@@ -153,11 +185,41 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
         except Exception:
             strategy_name = ''
 
+    # Deducción y cálculo automático de comisiones Binance
+    open_price_f = float(open_price or 0.0)
+    close_price_f = float(close_price or open_price or 0.0)
+    qty_f = float(quantity or 0.0)
+    pos_size_f = float(position_size_usdt or 0.0)
+
+    if commission_usdt is None:
+        entry_rate = 0.0002
+        if parameters and str(parameters.get('entry_order_type', '')).upper() == 'MARKET':
+            entry_rate = 0.0005
+        exit_rate = 0.0005
+
+        entry_notional = (open_price_f * qty_f) if (open_price_f > 0 and qty_f > 0) else pos_size_f
+        if entry_notional <= 0:
+            entry_notional = 1500.0
+        exit_notional = (close_price_f * qty_f) if (close_price_f > 0 and qty_f > 0) else entry_notional
+        commission_usdt = round((entry_notional * entry_rate) + (exit_notional * exit_rate), 4)
+    else:
+        commission_usdt = round(float(commission_usdt), 4)
+
+    if gross_pnl_usdt is None:
+        gross_pnl_usdt = round(float(pnl_usdt or 0.0), 4)
+        pnl_usdt = round(gross_pnl_usdt - commission_usdt, 4)
+    else:
+        gross_pnl_usdt = round(float(gross_pnl_usdt), 4)
+        if pnl_usdt is not None:
+            pnl_usdt = round(float(pnl_usdt), 4)
+        else:
+            pnl_usdt = round(gross_pnl_usdt - commission_usdt, 4)
+
     # Convertir el diccionario de parámetros a JSON string si se proporciona
     parameters_json = json.dumps(parameters) if parameters else None
 
     # <<< DETAILED LOGGING OF PARAMETERS RECEIVED BY record_trade >>>
-    logger.info(f"record_trade (database.py): symbol='{symbol}', type='{trade_type}', strategy='{strategy_name}', open_ts={open_timestamp}, close_ts={close_timestamp}, open_p={open_price}, close_p={close_price}, qty={quantity}, pos_size_usdt={position_size_usdt}, PNL_USDT={pnl_usdt}, reason='{close_reason}', binance_id={binance_trade_id}, params_json_len={len(parameters_json) if parameters_json else 0}")
+    logger.info(f"record_trade (database.py): symbol='{symbol}', type='{trade_type}', strategy='{strategy_name}', open_ts={open_timestamp}, close_ts={close_timestamp}, open_p={open_price}, close_p={close_price}, qty={quantity}, pos_size_usdt={position_size_usdt}, PNL_NETO={pnl_usdt}, PNL_BRUTO={gross_pnl_usdt}, COMISION={commission_usdt}, reason='{close_reason}', binance_id={binance_trade_id}")
 
     conn = None
     try:
@@ -166,14 +228,14 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
         cursor.execute("""
         INSERT INTO trades (symbol, trade_type, open_timestamp, close_timestamp, 
                           open_price, close_price, quantity, position_size_usdt, 
-                          pnl_usdt, close_reason, parameters, binance_trade_id, strategy_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason, parameters, binance_trade_id, strategy_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (symbol, trade_type, open_timestamp, close_timestamp, 
               open_price, close_price, quantity, position_size_usdt, 
-              pnl_usdt, close_reason, parameters_json, binance_trade_id, strategy_name)) # <-- AÑADIR binance_trade_id y strategy_name
+              pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason, parameters_json, binance_trade_id, strategy_name))
         conn.commit()
         trade_id = cursor.lastrowid
-        logger.info(f"Trade registrado con éxito en SQLite DB (ID: {trade_id}, Símbolo: {symbol}, Estrategia: {strategy_name}). Binance Trade ID: {binance_trade_id if binance_trade_id else 'N/A'}")
+        logger.info(f"Trade registrado con éxito en SQLite DB (ID: {trade_id}, Símbolo: {symbol}, Estrategia: {strategy_name}, PnL Neto: {pnl_usdt}, Comisión: {commission_usdt}). Binance Trade ID: {binance_trade_id if binance_trade_id else 'N/A'}")
         return trade_id
     except sqlite3.IntegrityError as ie:
         # Esto podría ocurrir si intentamos insertar un binance_trade_id que ya existe (debido a la restricción UNIQUE)
@@ -233,6 +295,8 @@ def get_total_database_metrics() -> dict:
     conn = None
     default_res = {
         "total_pnl": 0.0,
+        "total_commission_usdt": 0.0,
+        "total_gross_pnl": 0.0,
         "total_trades": 0,
         "winning_trades": 0,
         "losing_trades": 0,
@@ -254,6 +318,8 @@ def get_total_database_metrics() -> dict:
             SELECT 
                 COUNT(*) as total_trades,
                 SUM(IFNULL(pnl_usdt, 0)) as total_pnl,
+                SUM(IFNULL(commission_usdt, 0)) as total_commission_usdt,
+                SUM(IFNULL(gross_pnl_usdt, IFNULL(pnl_usdt, 0))) as total_gross_pnl,
                 SUM(CASE WHEN pnl_usdt > 0.00001 THEN 1 ELSE 0 END) as wins,
                 SUM(CASE WHEN pnl_usdt < -0.00001 THEN 1 ELSE 0 END) as losses,
                 SUM(CASE WHEN pnl_usdt > 0.00001 THEN pnl_usdt ELSE 0 END) as gross_profit,
@@ -266,6 +332,8 @@ def get_total_database_metrics() -> dict:
             wins = int(row['wins'] or 0)
             losses = int(row['losses'] or 0)
             pnl = float(row['total_pnl'] or 0.0)
+            comm = float(row['total_commission_usdt'] or 0.0)
+            gross = float(row['total_gross_pnl'] or 0.0)
             gp = float(row['gross_profit'] or 0.0)
             gl = float(row['gross_loss'] or 0.0)
             pf = f"{(gp / gl):.2f}" if gl > 0 else ("∞" if gp > 0 else "1.00")
@@ -273,6 +341,8 @@ def get_total_database_metrics() -> dict:
             
             default_res.update({
                 "total_pnl": pnl,
+                "total_commission_usdt": comm,
+                "total_gross_pnl": gross,
                 "total_trades": tot,
                 "winning_trades": wins,
                 "losing_trades": losses,
@@ -333,15 +403,6 @@ def get_total_database_metrics() -> dict:
 def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
     """
     Recupera los últimos N trades cerrados para un símbolo específico desde la base de datos.
-
-    Args:
-        symbol (str): El símbolo a buscar (ej. 'BTCUSDT').
-        n (int): El número máximo de trades a devolver. Por defecto 10.
-
-    Returns:
-        list[dict]: Una lista de diccionarios, donde cada diccionario representa un trade
-                    con claves correspondientes a las columnas de la tabla 'trades'.
-                    La lista estará vacía si no hay trades para el símbolo.
     """
     logger = get_logger()
     conn = None
@@ -356,7 +417,7 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
         query = """
         SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
                open_price, close_price, quantity, position_size_usdt,
-               pnl_usdt, close_reason, parameters
+               pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason, parameters, strategy_name
         FROM trades
         WHERE symbol = ?
         ORDER BY close_timestamp DESC
@@ -364,19 +425,7 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
         """
         cursor.execute(query, (symbol.upper(), n))
         rows = cursor.fetchall()
-
-        # Convertir las filas (sqlite3.Row) a diccionarios estándar
         trades = [dict(row) for row in rows]
-        
-        # Opcional: Convertir parámetros JSON string de vuelta a dict si es necesario
-        # for trade in trades:
-        #     if 'parameters' in trade and isinstance(trade['parameters'], str):
-        #         try:
-        #             trade['parameters'] = json.loads(trade['parameters'])
-        #         except json.JSONDecodeError:
-        #             get_logger().warning(f"Could not decode parameters JSON for trade {trade.get('id')}")
-        #             trade['parameters'] = {} # O dejar como string?
-
     except sqlite3.Error as e:
         logger.error(f"Error al acceder a la base de datos para obtener trades de {symbol}: {e}", exc_info=True)
     finally:
@@ -402,7 +451,7 @@ def get_all_recent_trades(limit: int = 2000) -> list[dict]:
         query = """
         SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
                open_price, close_price, quantity, position_size_usdt,
-               pnl_usdt, close_reason, parameters, strategy_name
+               pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason, parameters, strategy_name
         FROM (
             SELECT * FROM trades
             ORDER BY id DESC
@@ -528,6 +577,17 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                 except Exception:
                     strat_for_sym = 'Global'
 
+                # Calcular comisión Binance (ida maker 0.02% + vuelta taker 0.05% o comisión directa si está presente)
+                raw_comm = abs(float(t.get('commission', '0')))
+                if raw_comm > 0:
+                    entry_comm_est = entry_price_est * qty * 0.0002
+                    total_comm = round(raw_comm + entry_comm_est, 4)
+                else:
+                    total_comm = round((entry_price_est * qty * 0.0002) + (price * qty * 0.0005), 4)
+
+                gross_pnl = realized_pnl
+                net_pnl = round(gross_pnl - total_comm, 4)
+
                 record_trade(
                     symbol=sym,
                     trade_type="LONG" if side == 'SELL' else "SHORT",
@@ -537,7 +597,9 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                     position_size_usdt=entry_price_est * qty,
                     close_timestamp=trade_time,
                     close_price=price,
-                    pnl_usdt=realized_pnl,
+                    pnl_usdt=net_pnl,
+                    gross_pnl_usdt=gross_pnl,
+                    commission_usdt=total_comm,
                     close_reason="Binance Testnet Sync",
                     binance_trade_id=int(trade_id),
                     strategy_name=strat_for_sym

@@ -411,8 +411,9 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
         close_reason: t => t.close_reason || '',
         open_price: t => t.open_price || 0,
         close_price: t => t.close_price || 0,
-        quantity: t => t.quantity || 0,
         pnl_usdt: t => parseFloat(t.pnl_usdt) || 0,
+        commission_usdt: t => parseFloat(t.commission_usdt) || 0,
+        gross_pnl_usdt: t => parseFloat(t.gross_pnl_usdt !== undefined ? t.gross_pnl_usdt : t.pnl_usdt) || 0,
         id: t => t.id || ''
       });
     }
@@ -996,37 +997,59 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                     <BinanceSortHeader label="Entrada" sortKey="open_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
                                     <BinanceSortHeader label="Salida" sortKey="close_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
                                     <BinanceSortHeader label="Cantidad" sortKey="quantity" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
-                                    <BinanceSortHeader label="PnL" sortKey="pnl_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
+                                    <BinanceSortHeader label="Comisión" sortKey="commission_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" tooltipInfo={{ title: "Comisión Binance", desc: "Comisión oficial descontada por Binance Futures en este trade (entrada + salida)." }} />
+                                    <BinanceSortHeader label="PnL Neto" sortKey="pnl_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" tooltipInfo={{ title: "PnL Neto", desc: "Ganancia o pérdida real acreditada/debitada de tu billetera de Binance." }} />
                                     <BinanceSortHeader label="ID" sortKey="id" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800">
-                                  {(sortedSubTrades[status.symbol] || tradeHistories[status.symbol]).map(trade => (
-                                    <tr key={trade.id} className="hover:bg-slate-900/60">
-                                      <td className="px-2 py-1 whitespace-nowrap text-slate-300">{formatDate(trade.close_timestamp)}</td>
-                                      <td className="px-2 py-1 whitespace-nowrap text-slate-300">{trade.close_reason || 'N/A'}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap text-slate-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
-                                      <td className={`px-2 py-1 text-right whitespace-nowrap ${getPnlColorClass(trade.pnl_usdt)}`}>
-                                        {formatPnl(trade.pnl_usdt)}
-                                      </td>
-                                      <td className="px-2 py-1 whitespace-nowrap text-slate-400">{trade.id}</td>
-                                    </tr>
-                                  ))}
+                                  {(sortedSubTrades[status.symbol] || tradeHistories[status.symbol]).map(trade => {
+                                    const comm = parseFloat(trade.commission_usdt || 0);
+                                    const gross = parseFloat(trade.gross_pnl_usdt !== undefined ? trade.gross_pnl_usdt : trade.pnl_usdt);
+                                    return (
+                                      <tr key={trade.id} className="hover:bg-slate-900/60">
+                                        <td className="px-2 py-1 whitespace-nowrap text-slate-300">{formatDate(trade.close_timestamp)}</td>
+                                        <td className="px-2 py-1 whitespace-nowrap text-slate-300">{trade.close_reason || 'N/A'}</td>
+                                        <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
+                                        <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
+                                        <td className="px-2 py-1 text-right whitespace-nowrap text-slate-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
+                                        <td className="px-2 py-1 text-right whitespace-nowrap text-amber-400 font-mono font-medium">
+                                          -{comm.toFixed(4)}
+                                        </td>
+                                        <td className={`px-2 py-1 text-right whitespace-nowrap font-bold ${getPnlColorClass(trade.pnl_usdt)}`} title={`PnL Bruto de Mercado: ${gross >= 0 ? '+' : ''}${gross.toFixed(4)} USDT`}>
+                                          {formatPnl(trade.pnl_usdt)}
+                                        </td>
+                                        <td className="px-2 py-1 whitespace-nowrap text-slate-400">{trade.id}</td>
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                               {(() => {
-                                 const totalHistoryPnl = tradeHistories[status.symbol].reduce((acc, trade) => {
-                                   const pnl = parseFloat(trade.pnl_usdt);
-                                   return isNaN(pnl) ? acc : acc + pnl;
-                                 }, 0);
+                                 const list = tradeHistories[status.symbol] || [];
+                                 let totalNet = 0;
+                                 let totalComm = 0;
+                                 let totalGross = 0;
+                                 list.forEach(trade => {
+                                   const net = parseFloat(trade.pnl_usdt);
+                                   const c = parseFloat(trade.commission_usdt || 0);
+                                   const g = parseFloat(trade.gross_pnl_usdt !== undefined ? trade.gross_pnl_usdt : (net + c));
+                                   if (!isNaN(net)) totalNet += net;
+                                   if (!isNaN(c)) totalComm += c;
+                                   if (!isNaN(g)) totalGross += g;
+                                 });
                                  return (
-                                   <div className="mt-2 text-right pr-4">
-                                     <span className="font-bold text-xs text-slate-200">
-                                       Total PnL de la lista: 
-                                       <span className={`ml-2 font-mono ${getPnlColorClass(totalHistoryPnl)}`}>
-                                         {formatPnl(totalHistoryPnl)}
+                                   <div className="mt-2 flex flex-wrap items-center justify-end gap-3 text-xs pr-4 font-mono">
+                                     <span className="text-slate-400">
+                                       Comisiones: <span className="text-amber-400 font-bold">-${totalComm.toFixed(4)} USDT</span>
+                                     </span>
+                                     <span className="text-slate-400">
+                                       PnL Bruto: <span className="text-slate-200 font-bold">{totalGross >= 0 ? `+${totalGross.toFixed(4)}` : totalGross.toFixed(4)} USDT</span>
+                                     </span>
+                                     <span className="font-bold text-slate-200">
+                                       Total PnL Neto: 
+                                       <span className={`ml-1.5 font-bold ${getPnlColorClass(totalNet)}`}>
+                                         {formatPnl(totalNet)}
                                        </span>
                                      </span>
                                    </div>
