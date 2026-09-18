@@ -401,6 +401,27 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
     });
   };
 
+  // Helper para comisiones Binance por trade
+  const getTradeCommission = (t) => {
+    const c = parseFloat(t.commission_usdt);
+    if (!isNaN(c) && c > 0.00001) return c;
+    const op = parseFloat(t.open_price) || 0;
+    const cp = parseFloat(t.close_price) || op;
+    const qty = parseFloat(t.quantity) || 0;
+    const notional = (op > 0 && qty > 0) ? (op * qty) : (parseFloat(t.position_size_usdt) || 1500);
+    const exitNotional = (cp > 0 && qty > 0) ? (cp * qty) : notional;
+    return Number(((notional * 0.0002) + (exitNotional * 0.0005)).toFixed(4));
+  };
+
+  // Helper para PnL Bruto de mercado por trade
+  const getTradeGrossPnL = (t) => {
+    const g = parseFloat(t.gross_pnl_usdt);
+    if (!isNaN(g) && g !== 0) return g;
+    const net = parseFloat(t.pnl_usdt) || 0;
+    const comm = getTradeCommission(t);
+    return Number((net + comm).toFixed(4));
+  };
+
   const sortedSubTrades = useMemo(() => {
     const map = {};
     for (const sym of Object.keys(tradeHistories)) {
@@ -412,8 +433,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
         open_price: t => t.open_price || 0,
         close_price: t => t.close_price || 0,
         pnl_usdt: t => parseFloat(t.pnl_usdt) || 0,
-        commission_usdt: t => parseFloat(t.commission_usdt) || 0,
-        gross_pnl_usdt: t => parseFloat(t.gross_pnl_usdt !== undefined ? t.gross_pnl_usdt : t.pnl_usdt) || 0,
+        commission_usdt: t => getTradeCommission(t),
+        gross_pnl_usdt: t => getTradeGrossPnL(t),
         id: t => t.id || ''
       });
     }
@@ -1004,8 +1025,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                 </thead>
                                 <tbody className="divide-y divide-slate-800">
                                   {(sortedSubTrades[status.symbol] || tradeHistories[status.symbol]).map(trade => {
-                                    const comm = parseFloat(trade.commission_usdt || 0);
-                                    const gross = parseFloat(trade.gross_pnl_usdt !== undefined ? trade.gross_pnl_usdt : trade.pnl_usdt);
+                                    const comm = getTradeCommission(trade);
+                                    const gross = getTradeGrossPnL(trade);
                                     return (
                                       <tr key={trade.id} className="hover:bg-slate-900/60">
                                         <td className="px-2 py-1 whitespace-nowrap text-slate-300">{formatDate(trade.close_timestamp)}</td>
@@ -1013,10 +1034,10 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                         <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
                                         <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
                                         <td className="px-2 py-1 text-right whitespace-nowrap text-slate-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
-                                        <td className="px-2 py-1 text-right whitespace-nowrap text-amber-400 font-mono font-medium">
+                                        <td className="px-2 py-1 text-right whitespace-nowrap text-amber-400 font-mono font-medium" title="Comisión Binance (entrada + salida)">
                                           -{comm.toFixed(4)}
                                         </td>
-                                        <td className={`px-2 py-1 text-right whitespace-nowrap font-bold ${getPnlColorClass(trade.pnl_usdt)}`} title={`PnL Bruto de Mercado: ${gross >= 0 ? '+' : ''}${gross.toFixed(4)} USDT`}>
+                                        <td className={`px-2 py-1 text-right whitespace-nowrap font-bold ${getPnlColorClass(trade.pnl_usdt)}`} title={`PnL Bruto de Mercado: ${gross >= 0 ? '+' : ''}${gross.toFixed(4)} USDT (Comisión: -${comm.toFixed(4)} USDT)`}>
                                           {formatPnl(trade.pnl_usdt)}
                                         </td>
                                         <td className="px-2 py-1 whitespace-nowrap text-slate-400">{trade.id}</td>
@@ -1032,11 +1053,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                  let totalGross = 0;
                                  list.forEach(trade => {
                                    const net = parseFloat(trade.pnl_usdt);
-                                   const c = parseFloat(trade.commission_usdt || 0);
-                                   const g = parseFloat(trade.gross_pnl_usdt !== undefined ? trade.gross_pnl_usdt : (net + c));
+                                   const c = getTradeCommission(trade);
+                                   const g = getTradeGrossPnL(trade);
                                    if (!isNaN(net)) totalNet += net;
-                                   if (!isNaN(c)) totalComm += c;
-                                   if (!isNaN(g)) totalGross += g;
+                                   totalComm += c;
+                                   totalGross += g;
                                  });
                                  return (
                                    <div className="mt-2 flex flex-wrap items-center justify-end gap-3 text-xs pr-4 font-mono">

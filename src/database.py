@@ -99,51 +99,91 @@ def init_db_schema():
         """)
         conn.commit()
 
-        # Migración automática de comisiones para operaciones históricas existentes
+        # 1. Limpieza y purga automática de trades duplicados entre el bot y Binance Testnet Sync
         try:
-            cursor.execute("SELECT value FROM bot_settings WHERE key = 'trades_commission_migrated_v2'")
-            migrated_row = cursor.fetchone()
-            if not migrated_row:
-                cursor.execute("SELECT id, symbol, open_price, close_price, quantity, position_size_usdt, pnl_usdt, parameters FROM trades WHERE commission_usdt IS NULL OR commission_usdt = 0.0")
-                unmigrated = cursor.fetchall()
-                if unmigrated:
-                    logger.info(f"Aplicando migración de comisiones Binance a {len(unmigrated)} trades existentes...")
-                    for r_tr in unmigrated:
-                        t_id, sym, op, cp, qty, pos_size, old_pnl, p_str = r_tr
-                        old_pnl = float(old_pnl or 0.0)
-                        op = float(op or 0.0)
-                        cp = float(cp or 0.0)
-                        qty = float(qty or 0.0)
-                        pos_size = float(pos_size or 0.0)
+            cursor.execute("""
+                SELECT id, symbol, close_timestamp FROM trades 
+                WHERE close_reason != 'Binance Testnet Sync' AND close_timestamp IS NOT NULL
+            """)
+            bot_trades = cursor.fetchall()
+            deleted_dups_count = 0
+            for bt in bot_trades:
+                bt_id, bt_sym, bt_ts = bt
+                try:
+                    cursor.execute("""
+                        DELETE FROM trades 
+                        WHERE symbol = ? 
+                          AND close_reason = 'Binance Testnet Sync'
+                          AND id != ?
+                          AND abs(strftime('%s', close_timestamp) - strftime('%s', ?)) <= 60
+                    """, (bt_sym, bt_id, bt_ts))
+                    deleted_dups_count += cursor.rowcount
+                except Exception:
+                    pass
 
-                        entry_notional = (op * qty) if (op > 0 and qty > 0) else pos_size
-                        if entry_notional <= 0:
-                            entry_notional = 1500.0 # Nocional estimado $125 * 12x
-                        exit_notional = (cp * qty) if (cp > 0 and qty > 0) else entry_notional
+            # Purga de posibles registros con el mismo binance_trade_id duplicado
+            try:
+                cursor.execute("""
+                    DELETE FROM trades 
+                    WHERE binance_trade_id IS NOT NULL 
+                      AND id NOT IN (
+                          SELECT MIN(id) FROM trades WHERE binance_trade_id IS NOT NULL GROUP BY symbol, binance_trade_id
+                      )
+                """)
+                deleted_dups_count += cursor.rowcount
+            except Exception:
+                pass
 
-                        entry_rate = 0.0002
-                        if p_str:
-                            try:
-                                p_dict = json.loads(p_str)
-                                if str(p_dict.get('entry_order_type', '')).upper() == 'MARKET':
-                                    entry_rate = 0.0005
-                            except Exception:
-                                pass
-                        exit_rate = 0.0005
-
-                        comm = round((entry_notional * entry_rate) + (exit_notional * exit_rate), 4)
-                        gross = old_pnl
-                        net = round(gross - comm, 4)
-
-                        cursor.execute("UPDATE trades SET gross_pnl_usdt = ?, commission_usdt = ?, pnl_usdt = ? WHERE id = ?", (gross, comm, net, t_id))
-                    conn.commit()
-                    logger.info("Migración de comisiones de Binance finalizada con éxito.")
-                cursor.execute("INSERT INTO bot_settings (key, value) VALUES ('trades_commission_migrated_v2', '1') ON CONFLICT(key) DO UPDATE SET value = '1'")
+            if deleted_dups_count > 0:
                 conn.commit()
-        except Exception as e_mig:
-            logger.warning(f"Aviso durante migración de comisiones históricas: {e_mig}")
+                logger.info(f"Purga automática de trades duplicados completada: {deleted_dups_count} registros duplicados eliminados.")
+        except Exception as e_dup:
+            logger.warning(f"Aviso en limpieza de duplicados: {e_dup}")
 
-        # Limpiar trades dummy con PnL = 0 originados por sincronizaciones erróneas de órdenes de entrada
+        # 2. Asegurar que TODAS las operaciones existentes tengan su comisión y PnL neto/bruto calculados
+        try:
+            cursor.execute("""
+                SELECT id, symbol, open_price, close_price, quantity, position_size_usdt, pnl_usdt, gross_pnl_usdt, parameters 
+                FROM trades 
+                WHERE commission_usdt IS NULL OR commission_usdt <= 0.00001
+            """)
+            need_comm = cursor.fetchall()
+            if need_comm:
+                logger.info(f"Calculando comisiones Binance para {len(need_comm)} trades sin comisión...")
+                for row in need_comm:
+                    t_id, sym, op, cp, qty, pos_size, cur_pnl, g_pnl, p_str = row
+                    cur_pnl = float(cur_pnl or 0.0)
+                    op = float(op or 0.0)
+                    cp = float(cp or 0.0)
+                    qty = float(qty or 0.0)
+                    pos_size = float(pos_size or 0.0)
+
+                    entry_notional = (op * qty) if (op > 0 and qty > 0) else pos_size
+                    if entry_notional <= 0:
+                        entry_notional = 1500.0 # Nocional estimado $125 * 12x
+                    exit_notional = (cp * qty) if (cp > 0 and qty > 0) else entry_notional
+
+                    entry_rate = 0.0002
+                    if p_str:
+                        try:
+                            p_dict = json.loads(p_str)
+                            if str(p_dict.get('entry_order_type', '')).upper() == 'MARKET':
+                                entry_rate = 0.0005
+                        except Exception:
+                            pass
+                    exit_rate = 0.0005
+
+                    comm = round((entry_notional * entry_rate) + (exit_notional * exit_rate), 4)
+                    gross = float(g_pnl) if (g_pnl is not None and float(g_pnl) != 0.0) else cur_pnl
+                    net = round(gross - comm, 4)
+
+                    cursor.execute("UPDATE trades SET gross_pnl_usdt = ?, commission_usdt = ?, pnl_usdt = ? WHERE id = ?", (gross, comm, net, t_id))
+                conn.commit()
+                logger.info("Recálculo y actualización de comisiones Binance finalizado con éxito.")
+        except Exception as e_comm:
+            logger.warning(f"Aviso durante cálculo de comisiones en trades: {e_comm}")
+
+        # 3. Limpiar trades dummy con PnL = 0 originados por sincronizaciones erróneas de órdenes de entrada
         try:
             cursor.execute("DELETE FROM trades WHERE close_reason = 'Binance Testnet Sync' AND abs(ifnull(pnl_usdt, 0)) < 1e-6")
             conn.commit()
@@ -225,6 +265,32 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
     try:
         conn = sqlite3.connect(DATABASE_FILE, timeout=10)
         cursor = conn.cursor()
+
+        # Si este trade es registrado por el bot (no Binance Sync) y ya existe un trade reciente de 'Binance Testnet Sync' en los últimos 60s,
+        # enriquecerlo y actualizarlo en vez de crear un duplicado
+        if close_reason != 'Binance Testnet Sync' and close_timestamp:
+            try:
+                close_epoch = int(close_timestamp.timestamp()) if hasattr(close_timestamp, 'timestamp') else int(datetime.now().timestamp())
+                cursor.execute("""
+                    SELECT id FROM trades 
+                    WHERE symbol = ? 
+                      AND close_reason = 'Binance Testnet Sync'
+                      AND abs(strftime('%s', close_timestamp) - ?) <= 60
+                    ORDER BY id DESC LIMIT 1
+                """, (symbol, close_epoch))
+                existing_sync = cursor.fetchone()
+                if existing_sync:
+                    cursor.execute("""
+                        UPDATE trades 
+                        SET close_reason = ?, strategy_name = ?, parameters = ?, pnl_usdt = ?, gross_pnl_usdt = ?, commission_usdt = ?
+                        WHERE id = ?
+                    """, (close_reason, strategy_name, parameters_json, pnl_usdt, gross_pnl_usdt, commission_usdt, existing_sync[0]))
+                    conn.commit()
+                    logger.info(f"Trade {existing_sync[0]} para {symbol} enriquecido con motivo del bot: '{close_reason}' (duplicado prevenido).")
+                    return existing_sync[0]
+            except Exception as e_enrich:
+                logger.debug(f"Aviso al verificar duplicado en record_trade: {e_enrich}")
+
         cursor.execute("""
         INSERT INTO trades (symbol, trade_type, open_timestamp, close_timestamp, 
                           open_price, close_price, quantity, position_size_usdt, 
@@ -400,6 +466,33 @@ def get_total_database_metrics() -> dict:
 # ----------------------------------------
 
 # --- NUEVA FUNCIÓN ---
+def _enrich_trade_commission_fields(t: dict) -> dict:
+    """Garantiza que el trade devuelto tenga campos válidos de comisión y PnL bruto/neto calculados."""
+    c = float(t.get('commission_usdt') or 0.0)
+    op = float(t.get('open_price') or 0.0)
+    cp = float(t.get('close_price') or op or 0.0)
+    qty = float(t.get('quantity') or 0.0)
+    pos_sz = float(t.get('position_size_usdt') or (op * qty) or 1500.0)
+    ent = (op * qty) if (op > 0 and qty > 0) else pos_sz
+    ext = (cp * qty) if (cp > 0 and qty > 0) else ent
+
+    if c <= 0.00001 and (ent > 0 or ext > 0):
+        c = round((ent * 0.0002) + (ext * 0.0005), 4)
+        t['commission_usdt'] = c
+    else:
+        t['commission_usdt'] = round(c, 4)
+
+    cur_pnl = float(t.get('pnl_usdt') or 0.0)
+    cur_gross = t.get('gross_pnl_usdt')
+    if cur_gross is None or float(cur_gross) == 0.0:
+        t['gross_pnl_usdt'] = cur_pnl
+        t['pnl_usdt'] = round(cur_pnl - c, 4)
+    else:
+        t['gross_pnl_usdt'] = round(float(cur_gross), 4)
+        t['pnl_usdt'] = round(cur_pnl, 4)
+    return t
+
+# --- NUEVA FUNCIÓN ---
 def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
     """
     Recupera los últimos N trades cerrados para un símbolo específico desde la base de datos.
@@ -409,11 +502,9 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
     trades = []
     try:
         conn = sqlite3.connect(DATABASE_FILE)
-        # Asegurar que devolvemos las columnas como diccionarios
         conn.row_factory = sqlite3.Row 
         cursor = conn.cursor()
 
-        # Consulta SQL para obtener los últimos N trades ordenados por fecha de cierre
         query = """
         SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
                open_price, close_price, quantity, position_size_usdt,
@@ -425,7 +516,7 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
         """
         cursor.execute(query, (symbol.upper(), n))
         rows = cursor.fetchall()
-        trades = [dict(row) for row in rows]
+        trades = [_enrich_trade_commission_fields(dict(row)) for row in rows]
     except sqlite3.Error as e:
         logger.error(f"Error al acceder a la base de datos para obtener trades de {symbol}: {e}", exc_info=True)
     finally:
@@ -461,7 +552,7 @@ def get_all_recent_trades(limit: int = 2000) -> list[dict]:
         """
         cursor.execute(query, (limit,))
         rows = cursor.fetchall()
-        trades = [dict(row) for row in rows]
+        trades = [_enrich_trade_commission_fields(dict(row)) for row in rows]
     except sqlite3.Error as e:
         logger.error(f"Error al obtener todos los trades recientes en DB: {e}", exc_info=True)
     finally:
@@ -564,6 +655,33 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                 price = float(t.get('price', '0'))
                 side = str(t.get('side', 'BUY')).upper()
                 trade_time = datetime.fromtimestamp(time_ms / 1000) if time_ms > 0 else datetime.now()
+
+                # Verificar si ya existe una operación registrada para este cierre en SQLite
+                # (evita duplicar trades que el bot ya registró al cerrar la posición)
+                trade_epoch = int(time_ms / 1000) if time_ms > 0 else int(datetime.now().timestamp())
+                existing_trade_id = None
+                try:
+                    conn_chk = sqlite3.connect(DATABASE_FILE, timeout=5)
+                    cur_chk = conn_chk.cursor()
+                    cur_chk.execute("""
+                        SELECT id, binance_trade_id FROM trades 
+                        WHERE symbol = ? 
+                          AND abs(strftime('%s', close_timestamp) - ?) <= 60
+                        ORDER BY id DESC LIMIT 1
+                    """, (sym, trade_epoch))
+                    ex_row = cur_chk.fetchone()
+                    if ex_row:
+                        existing_trade_id = ex_row[0]
+                        if not ex_row[1]:
+                            cur_chk.execute("UPDATE trades SET binance_trade_id = ? WHERE id = ?", (int(trade_id), existing_trade_id))
+                            conn_chk.commit()
+                    conn_chk.close()
+                except Exception as e_chk:
+                    logger.debug(f"Aviso al verificar duplicado en sync: {e_chk}")
+
+                if existing_trade_id:
+                    # El trade ya fue registrado por el bot, no duplicar
+                    continue
 
                 # Para un trade de salida SELL (cierre de LONG), el precio de entrada se calcula:
                 entry_price_est = price - (realized_pnl / qty) if (qty > 0 and side == 'SELL') else (price + (realized_pnl / qty) if qty > 0 else price)
