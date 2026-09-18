@@ -321,7 +321,10 @@ export default function BacktestLab({ activeConfig, addToast, onApplyStrategyToC
   const fetchHistory = async () => {
     setIsLoadingHistory(true);
     try {
-      const res = await fetch('/api/backtest/history');
+      const res = await fetch(`/api/backtest/history?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {

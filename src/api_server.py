@@ -1462,15 +1462,23 @@ BACKTEST_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 BACKTEST_HISTORY_BACKUP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backtest_history.backup.json')
 
 def load_backtest_history():
-    for fpath in [BACKTEST_HISTORY_FILE, BACKTEST_HISTORY_BACKUP_FILE]:
-        if os.path.exists(fpath):
-            try:
-                with open(fpath, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    if isinstance(data, list) and len(data) > 0:
-                        return data
-            except Exception:
-                pass
+    if os.path.exists(BACKTEST_HISTORY_FILE):
+        try:
+            with open(BACKTEST_HISTORY_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return data
+        except Exception as e:
+            get_logger().warning(f"Error leyendo {BACKTEST_HISTORY_FILE}, intentando backup: {e}")
+
+    if os.path.exists(BACKTEST_HISTORY_BACKUP_FILE):
+        try:
+            with open(BACKTEST_HISTORY_BACKUP_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return data
+        except Exception:
+            pass
     return []
 
 def save_backtest_history_item(result_data: dict, payload: dict):
@@ -1594,7 +1602,10 @@ def get_backtest_history_endpoint():
     try:
         history = load_backtest_history()
         summaries = [item.get('summary', {}) for item in history if 'summary' in item]
-        return jsonify(summaries), 200
+        resp = jsonify(summaries)
+        resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        resp.headers['Pragma'] = 'no-cache'
+        return resp, 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1612,7 +1623,9 @@ def get_backtest_history_item_endpoint(run_id):
                 sum_ts = item.get('summary', {}).get('timestamp')
                 res['executed_at'] = res.get('executed_at') or res.get('timestamp') or sum_ts
                 res['timestamp'] = res.get('timestamp') or sum_ts or res['executed_at']
-                return jsonify(res), 200
+                resp = jsonify(res)
+                resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+                return resp, 200
         return jsonify({"error": "Simulación no encontrada en el historial"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1622,8 +1635,12 @@ def delete_backtest_history_item_endpoint(run_id):
     try:
         history = load_backtest_history()
         new_history = [item for item in history if item.get('summary', {}).get('id') != run_id]
-        with open(BACKTEST_HISTORY_FILE, 'w', encoding='utf-8') as f:
-            json.dump(new_history, f, indent=2, ensure_ascii=False)
+        for fpath in [BACKTEST_HISTORY_FILE, BACKTEST_HISTORY_BACKUP_FILE]:
+            try:
+                with open(fpath, 'w', encoding='utf-8') as f:
+                    json.dump(new_history, f, indent=2, ensure_ascii=False)
+            except Exception as fe:
+                get_logger().warning(f"Error actualizando {fpath}: {fe}")
         return jsonify({"success": True, "deleted_id": run_id}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1631,8 +1648,12 @@ def delete_backtest_history_item_endpoint(run_id):
 @app.route('/api/backtest/history', methods=['DELETE'])
 def clear_backtest_history_endpoint():
     try:
-        with open(BACKTEST_HISTORY_FILE, 'w', encoding='utf-8') as f:
-            json.dump([], f)
+        for fpath in [BACKTEST_HISTORY_FILE, BACKTEST_HISTORY_BACKUP_FILE]:
+            try:
+                with open(fpath, 'w', encoding='utf-8') as f:
+                    json.dump([], f)
+            except Exception as fe:
+                get_logger().warning(f"Error vaciando {fpath}: {fe}")
         return jsonify({"success": True, "message": "Historial vaciado con éxito"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
