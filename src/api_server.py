@@ -5,7 +5,7 @@ import os
 import sys
 import configparser
 import json # <--- AÑADIR IMPORT JSON
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 import threading
 import time # Necesario para sleep
@@ -23,7 +23,16 @@ from datetime import datetime
 # Importar funciones y variables usando importaciones ABSOLUTAS (desde src)
 from src.config_loader import load_config, reload_config, get_trading_symbols, CONFIG_FILE_PATH
 from src.logger_setup import setup_logging, get_logger
-from src.database import get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, clear_trade_history, get_all_recent_trades
+from src.database import (
+    get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, clear_trade_history, get_all_recent_trades,
+    count_users, create_user, get_user_by_id, get_user_by_identifier, update_last_login,
+    approve_user, reject_user, add_investor_transaction, get_all_investors_summary,
+    get_investor_portfolio, get_investor_transactions, DATABASE_FILE
+)
+from src.auth import (
+    hash_password, verify_password, generate_jwt, decode_jwt,
+    token_required, admin_required
+)
 from src.bot import TradingBot, BotState 
 from src.binance_client import get_account_balance_usdt, reset_futures_client, get_futures_client
 from src.backtester import get_historical_klines_paginated, run_strategy_backtest, run_portfolio_backtest
@@ -591,6 +600,325 @@ def _build_frontend_config_dict():
     frontend_config['multiStrategyEnabled'] = is_multi_strategy_enabled()
     frontend_config['strategyAssignments'] = get_symbol_strategy_assignments()
     return frontend_config
+
+
+# =====================================================================
+# --- ENDPOINTS DE AUTENTICACIÓN Y ROLES (JWT & ESQUEMA A + C) ---
+# =====================================================================
+
+@app.route('/api/auth/setup_status', methods=['GET'])
+def auth_setup_status_endpoint():
+    """Verifica si el sistema requiere el registro del Super Administrador inicial."""
+    try:
+        total = count_users()
+        return jsonify({
+            "status": "success",
+            "needs_initial_admin": (total == 0),
+            "total_users": total
+        })
+    except Exception as e:
+        api_logger.error(f"Error en setup_status: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/auth/register', methods=['POST'])
+def auth_register_endpoint():
+    """
+    Registro de usuarios:
+    - Esquema A: Si es el primer usuario, se crea como 'admin' activo automáticamente.
+    - Esquema C: Si ya existe un admin, se crea como 'investor' en estado 'pending' (requiere aprobación).
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        username = str(data.get('username', '')).strip()
+        password = str(data.get('password', '')).strip()
+        email = str(data.get('email', '')).strip().lower()
+
+        if not username or not password:
+            return jsonify({"status": "error", "message": "Nombre de usuario y contraseña son obligatorios."}), 400
+
+        if len(password) < 6:
+            return jsonify({"status": "error", "message": "La contraseña debe tener al menos 6 caracteres."}), 400
+
+        # Validar si ya existe el usuario o correo
+        if get_user_by_identifier(username):
+            return jsonify({"status": "error", "message": "El nombre de usuario ya está registrado."}), 400
+
+        if email and get_user_by_identifier(email):
+            return jsonify({"status": "error", "message": "El correo electrónico ya está registrado."}), 400
+
+        total_users = count_users()
+        pwd_hash = hash_password(password)
+
+        if total_users == 0:
+            # Esquema A: Primer usuario se convierte en Super Admin activo
+            user_id = create_user(username=username, email=email, password_hash=pwd_hash, role='admin', status='active')
+            if not user_id:
+                return jsonify({"status": "error", "message": "Error al registrar el Super Administrador."}), 500
+
+            token = generate_jwt(user_id=user_id, username=username, role='admin')
+            user_data = {
+                "id": user_id,
+                "username": username,
+                "email": email,
+                "role": "admin",
+                "status": "active"
+            }
+            api_logger.info(f"Super Administrador inicial registrado exitosamente: {username}")
+            return jsonify({
+                "status": "success",
+                "message": "¡Super Administrador inicial creado con éxito! Tienes acceso total.",
+                "token": token,
+                "user": user_data,
+                "is_first_user": True
+            })
+        else:
+            # Esquema C: Siguientes usuarios quedan pendientes de aprobación
+            user_id = create_user(username=username, email=email, password_hash=pwd_hash, role='investor', status='pending')
+            if not user_id:
+                return jsonify({"status": "error", "message": "Error al registrar la solicitud."}), 500
+
+            api_logger.info(f"Nueva solicitud de inversionista registrada (pendiente): {username}")
+            return jsonify({
+                "status": "success",
+                "message": "Registro completado con éxito. Tu cuenta está en revisión y debe ser aprobada por el Administrador antes de que puedas ingresar.",
+                "pending_approval": True
+            })
+    except Exception as e:
+        api_logger.error(f"Error en endpoint de registro: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def auth_login_endpoint():
+    """Inicio de sesión para Administradores e Inversionistas."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        identifier = str(data.get('identifier', data.get('username', ''))).strip()
+        password = str(data.get('password', '')).strip()
+
+        if not identifier or not password:
+            return jsonify({"status": "error", "message": "Por favor ingresa usuario/correo y contraseña."}), 400
+
+        user = get_user_by_identifier(identifier)
+        if not user:
+            return jsonify({"status": "error", "message": "Credenciales inválidas o usuario no existe."}), 401
+
+        if not verify_password(password, user['password_hash']):
+            return jsonify({"status": "error", "message": "Credenciales inválidas."}), 401
+
+        if user['status'] == 'pending':
+            return jsonify({
+                "status": "error",
+                "message": "Tu cuenta está pendiente de aprobación por el Administrador. Te notificaremos cuando esté activa.",
+                "code": "ACCOUNT_PENDING"
+            }), 403
+
+        if user['status'] == 'rejected':
+            return jsonify({
+                "status": "error",
+                "message": "Tu solicitud de acceso ha sido rechazada por el Administrador.",
+                "code": "ACCOUNT_REJECTED"
+            }), 403
+
+        # Actualizar último acceso y emitir token
+        update_last_login(user['id'])
+        token = generate_jwt(user_id=user['id'], username=user['username'], role=user['role'])
+        user_data = {
+            "id": user['id'],
+            "username": user['username'],
+            "email": user['email'],
+            "role": user['role'],
+            "status": user['status']
+        }
+        api_logger.info(f"Sesión iniciada: {user['username']} (Rol: {user['role']})")
+        return jsonify({
+            "status": "success",
+            "message": "Inicio de sesión exitoso.",
+            "token": token,
+            "user": user_data
+        })
+    except Exception as e:
+        api_logger.error(f"Error en login: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/auth/me', methods=['GET'])
+@token_required
+def auth_me_endpoint():
+    """Obtiene el perfil y rol del usuario autenticado actual."""
+    user = get_user_by_id(request.current_user['user_id'])
+    if not user:
+        return jsonify({"status": "error", "message": "Usuario no encontrado."}), 404
+    return jsonify({"status": "success", "user": user})
+
+
+# =====================================================================
+# --- ENDPOINTS EXCLUSIVOS PARA EL INVERSIONISTA (SOLO LECTURA / MI TORTA) ---
+# =====================================================================
+
+@app.route('/api/investor/portfolio', methods=['GET'])
+@token_required
+def investor_portfolio_endpoint():
+    """Retorna los datos del portafolio personal del inversionista autenticado."""
+    try:
+        user_id = request.current_user['user_id']
+        live_balance = None
+        try:
+            live_balance = get_account_balance_usdt()
+        except Exception:
+            pass
+
+        portfolio = get_investor_portfolio(user_id, live_pool_balance=live_balance)
+        if not portfolio:
+            return jsonify({"status": "error", "message": "No se encontraron datos para este inversionista."}), 404
+
+        return jsonify({"status": "success", "portfolio": portfolio})
+    except Exception as e:
+        api_logger.error(f"Error en investor_portfolio: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/investor/statement', methods=['GET'])
+@token_required
+def investor_statement_endpoint():
+    """Retorna los datos completos para generar el Estado de Cuenta Oficial en PDF."""
+    try:
+        user_id = request.current_user['user_id']
+        live_balance = None
+        try:
+            live_balance = get_account_balance_usdt()
+        except Exception:
+            pass
+
+        portfolio = get_investor_portfolio(user_id, live_pool_balance=live_balance)
+        if not portfolio:
+            return jsonify({"status": "error", "message": "No se encontraron datos para este inversionista."}), 404
+
+        recent_trades = get_all_recent_trades(limit=50)
+        return jsonify({
+            "status": "success",
+            "statement": {
+                "generated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "portfolio": portfolio,
+                "recent_trades": recent_trades
+            }
+        })
+    except Exception as e:
+        api_logger.error(f"Error en investor_statement: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =====================================================================
+# --- ENDPOINTS EXCLUSIVOS DEL SUPER ADMINISTRADOR (GESTIÓN & BACKUP) ---
+# =====================================================================
+
+@app.route('/api/admin/investors', methods=['GET'])
+@admin_required
+def admin_investors_endpoint():
+    """Retorna la lista completa de inversionistas, solicitudes y resumen del pool."""
+    try:
+        live_balance = None
+        try:
+            live_balance = get_account_balance_usdt()
+        except Exception:
+            pass
+
+        summary = get_all_investors_summary(live_pool_balance=live_balance)
+        return jsonify({"status": "success", "data": summary})
+    except Exception as e:
+        api_logger.error(f"Error en admin_investors: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/approve_user', methods=['POST'])
+@admin_required
+def admin_approve_user_endpoint():
+    """Aprueba la cuenta de un inversionista y le asigna su capital inicial."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        user_id = data.get('user_id')
+        initial_capital = float(data.get('initial_capital', 0.0) or 0.0)
+
+        if not user_id:
+            return jsonify({"status": "error", "message": "El campo user_id es requerido."}), 400
+
+        success = approve_user(user_id=int(user_id), initial_capital=initial_capital)
+        if success:
+            api_logger.info(f"Usuario {user_id} aprobado por el Admin con capital inicial de ${initial_capital} USDT")
+            return jsonify({"status": "success", "message": "Usuario aprobado correctamente y capital registrado."})
+        return jsonify({"status": "error", "message": "No se pudo aprobar al usuario."}), 500
+    except Exception as e:
+        api_logger.error(f"Error en admin_approve_user: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/reject_user', methods=['POST'])
+@admin_required
+def admin_reject_user_endpoint():
+    """Rechaza la solicitud de un usuario."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        user_id = data.get('user_id')
+
+        if not user_id:
+            return jsonify({"status": "error", "message": "El campo user_id es requerido."}), 400
+
+        success = reject_user(user_id=int(user_id))
+        if success:
+            api_logger.info(f"Usuario {user_id} rechazado por el Admin.")
+            return jsonify({"status": "success", "message": "Solicitud rechazada."})
+        return jsonify({"status": "error", "message": "No se pudo rechazar al usuario."}), 500
+    except Exception as e:
+        api_logger.error(f"Error en admin_reject_user: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/modify_capital', methods=['POST'])
+@admin_required
+def admin_modify_capital_endpoint():
+    """Registra una nueva inyección o retiro de capital para un inversionista."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        user_id = data.get('user_id')
+        amount = float(data.get('amount', 0.0) or 0.0)
+        tx_type = str(data.get('type', 'DEPOSIT')).upper()
+        notes = str(data.get('notes', '')).strip()
+
+        if not user_id or amount <= 0 or tx_type not in ('DEPOSIT', 'WITHDRAWAL'):
+            return jsonify({"status": "error", "message": "Datos de movimiento de capital inválidos."}), 400
+
+        success = add_investor_transaction(user_id=int(user_id), amount_usdt=amount, transaction_type=tx_type, notes=notes)
+        if success:
+            api_logger.info(f"Movimiento {tx_type} de ${amount} USDT registrado para usuario {user_id}")
+            return jsonify({"status": "success", "message": f"Movimiento de {tx_type} registrado exitosamente."})
+        return jsonify({"status": "error", "message": "Error al registrar el movimiento."}), 500
+    except Exception as e:
+        api_logger.error(f"Error en admin_modify_capital: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/backup_db', methods=['GET'])
+@admin_required
+def admin_backup_db_endpoint():
+    """Descarga directa de la base de datos SQLite (.db) como archivo adjunto."""
+    try:
+        if not os.path.exists(DATABASE_FILE):
+            return jsonify({"status": "error", "message": "El archivo de base de datos no existe."}), 404
+
+        timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+        download_filename = f"backup_binance_bot_{timestamp_str}.db"
+
+        api_logger.info(f"Generando descarga de backup de base de datos: {download_filename}")
+        return send_file(
+            DATABASE_FILE,
+            as_attachment=True,
+            download_name=download_filename,
+            mimetype='application/x-sqlite3'
+        )
+    except Exception as e:
+        api_logger.error(f"Error al generar backup de DB: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route('/api/config', methods=['GET'])

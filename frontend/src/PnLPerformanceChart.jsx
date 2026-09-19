@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import Tooltip from './Tooltip';
 
-function PnLPerformanceChart({ symbolsList = [] }) {
+function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
   const [trades, setTrades] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -673,32 +673,34 @@ function PnLPerformanceChart({ symbolsList = [] }) {
             </div>
           </div>
 
-          {/* Formulario de Ajuste de Límite */}
-          <form onSubmit={handleSaveRiskLimit} className="flex items-center gap-2 flex-shrink-0 bg-gray-950/70 p-2 rounded-xl border border-gray-800">
-            <label htmlFor="riskInput" className="text-xs text-gray-300 font-medium whitespace-nowrap pl-1 flex items-center gap-1">
-              <span>Ajustar Límite:</span>
-              <Tooltip title="Ajuste de Riesgo Máximo" text="Guarda el porcentaje máximo de riesgo permitido para el bot tanto en Binance como en la configuración del servidor." />
-            </label>
-            <div className="relative w-20">
-              <input
-                id="riskInput"
-                type="number"
-                min="1"
-                max="100"
-                value={riskPercentageInput}
-                onChange={(e) => setRiskPercentageInput(e.target.value)}
-                className="w-full text-xs font-bold font-mono bg-gray-900 border border-gray-700 rounded-lg py-1.5 pl-2.5 pr-6 text-white text-center focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-              />
-              <span className="absolute inset-y-0 right-2 flex items-center text-xs text-gray-400 pointer-events-none font-bold">%</span>
-            </div>
-            <button
-              type="submit"
-              disabled={isSavingRisk}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 text-white text-xs font-bold rounded-lg shadow transition active:scale-95 whitespace-nowrap"
-            >
-              {isSavingRisk ? 'Guardando...' : '💾 Guardar'}
-            </button>
-          </form>
+          {/* Formulario de Ajuste de Límite (Solo Admin) */}
+          {!readOnly && (
+            <form onSubmit={handleSaveRiskLimit} className="flex items-center gap-2 flex-shrink-0 bg-gray-950/70 p-2 rounded-xl border border-gray-800">
+              <label htmlFor="riskInput" className="text-xs text-gray-300 font-medium whitespace-nowrap pl-1 flex items-center gap-1">
+                <span>Ajustar Límite:</span>
+                <Tooltip title="Ajuste de Riesgo Máximo" text="Guarda el porcentaje máximo de riesgo permitido para el bot tanto en Binance como en la configuración del servidor." />
+              </label>
+              <div className="relative w-20">
+                <input
+                  id="riskInput"
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={riskPercentageInput}
+                  onChange={(e) => setRiskPercentageInput(e.target.value)}
+                  className="w-full text-xs font-bold font-mono bg-gray-900 border border-gray-700 rounded-lg py-1.5 pl-2.5 pr-6 text-white text-center focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                />
+                <span className="absolute inset-y-0 right-2 flex items-center text-xs text-gray-400 pointer-events-none font-bold">%</span>
+              </div>
+              <button
+                type="submit"
+                disabled={isSavingRisk}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 text-white text-xs font-bold rounded-lg shadow transition active:scale-95 whitespace-nowrap"
+              >
+                {isSavingRisk ? 'Guardando...' : '💾 Guardar'}
+              </button>
+            </form>
+          )}
 
         </div>
 

@@ -17,14 +17,14 @@ from .logger_setup import get_logger
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATABASE_FILE = os.path.join(BASE_DIR, 'trades_limit.db')
 
-def get_db_connection():
-    """Establece una conexión con la base de datos SQLite."""
+def get_db_connection(timeout=10):
+    """Establece una conexión con la base de datos SQLite con timeout y modo WAL habilitado."""
     logger = get_logger()
-    conn = None
     try:
-        # connect() creará el archivo si no existe
-        conn = sqlite3.connect(DATABASE_FILE)
-        # logger.debug(f"Conexión a SQLite DB '{DATABASE_FILE}' establecida.")
+        conn = sqlite3.connect(DATABASE_FILE, timeout=timeout)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys=ON;")
         return conn
     except sqlite3.Error as e:
         logger.critical(f"Error CRÍTICO al conectar/crear SQLite DB '{DATABASE_FILE}': {e}")
@@ -160,6 +160,33 @@ def init_db_schema():
         CREATE TABLE IF NOT EXISTS bot_settings (
             key TEXT PRIMARY KEY,
             value TEXT
+        )
+        """)
+        conn.commit()
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'investor',
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at DATETIME NOT NULL,
+            last_login DATETIME
+        )
+        """)
+        conn.commit()
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS investor_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            amount_usdt REAL NOT NULL,
+            transaction_type TEXT NOT NULL,
+            notes TEXT,
+            created_at DATETIME NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
         """)
         conn.commit()
@@ -863,6 +890,321 @@ def clear_trade_history() -> bool:
     finally:
         if conn:
             conn.close()
+
+# =====================================================================
+# --- GESTIÓN DE USUARIOS, AUTENTICACIÓN Y CAPITAL DE INVERSIONISTAS ---
+# =====================================================================
+
+def count_users() -> int:
+    """Retorna la cantidad total de usuarios registrados en el sistema."""
+    conn = get_db_connection()
+    if not conn:
+        return 0
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM users")
+        row = cursor.fetchone()
+        return row[0] if row else 0
+    except Exception as e:
+        get_logger().error(f"Error al contar usuarios: {e}")
+        return 0
+    finally:
+        conn.close()
+
+def create_user(username: str, email: str, password_hash: str, role: str = 'investor', status: str = 'pending') -> int:
+    """Crea un nuevo usuario en la base de datos y retorna su ID."""
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        cursor = conn.cursor()
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""
+            INSERT INTO users (username, email, password_hash, role, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (username.strip(), email.strip().lower() if email else None, password_hash, role, status, now_str))
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.IntegrityError as ie:
+        get_logger().warning(f"IntegrityError al crear usuario '{username}': {ie}")
+        return None
+    except Exception as e:
+        get_logger().error(f"Error al crear usuario: {e}", exc_info=True)
+        return None
+    finally:
+        conn.close()
+
+def get_user_by_id(user_id: int) -> dict:
+    """Obtiene un usuario por su ID (sin devolver el password_hash)."""
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, email, role, status, created_at, last_login FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        get_logger().error(f"Error al obtener usuario por ID {user_id}: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_user_by_identifier(identifier: str) -> dict:
+    """Busca un usuario por username o email (incluye password_hash para verificación)."""
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, username, email, password_hash, role, status, created_at, last_login 
+            FROM users 
+            WHERE LOWER(username) = LOWER(?) OR (email IS NOT NULL AND LOWER(email) = LOWER(?))
+        """, (identifier.strip(), identifier.strip()))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        get_logger().error(f"Error al buscar usuario por identificador '{identifier}': {e}")
+        return None
+    finally:
+        conn.close()
+
+def update_last_login(user_id: int):
+    """Actualiza la fecha y hora del último inicio de sesión."""
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        cursor = conn.cursor()
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("UPDATE users SET last_login = ? WHERE id = ?", (now_str, user_id))
+        conn.commit()
+    except Exception as e:
+        get_logger().error(f"Error al actualizar last_login para usuario {user_id}: {e}")
+    finally:
+        conn.close()
+
+def approve_user(user_id: int, initial_capital: float = 0.0) -> bool:
+    """Aprueba una cuenta pendiente y registra su capital inicial si es mayor que 0."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET status = 'active' WHERE id = ?", (user_id,))
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if initial_capital > 0:
+            cursor.execute("""
+                INSERT INTO investor_transactions (user_id, amount_usdt, transaction_type, notes, created_at)
+                VALUES (?, ?, 'INITIAL', 'Aporte inicial al aprobar cuenta', ?)
+            """, (user_id, float(initial_capital), now_str))
+        conn.commit()
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al aprobar usuario {user_id}: {e}", exc_info=True)
+        return False
+    finally:
+        conn.close()
+
+def reject_user(user_id: int) -> bool:
+    """Rechaza una cuenta de usuario."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET status = 'rejected' WHERE id = ?", (user_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al rechazar usuario {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def add_investor_transaction(user_id: int, amount_usdt: float, transaction_type: str, notes: str = '') -> bool:
+    """Registra una transacción de capital (DEPOSIT, WITHDRAWAL, INITIAL)."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""
+            INSERT INTO investor_transactions (user_id, amount_usdt, transaction_type, notes, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, float(amount_usdt), transaction_type.upper(), notes, now_str))
+        conn.commit()
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al registrar transacción para usuario {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_investor_transactions(user_id: int) -> list:
+    """Retorna el historial de movimientos de capital de un inversionista."""
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, amount_usdt, transaction_type, notes, created_at 
+            FROM investor_transactions 
+            WHERE user_id = ? 
+            ORDER BY id DESC
+        """, (user_id,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        get_logger().error(f"Error al obtener transacciones de usuario {user_id}: {e}")
+        return []
+    finally:
+        conn.close()
+
+def get_all_investors_summary(live_pool_balance: float = None) -> dict:
+    """
+    Retorna el resumen maestro para el Super Administrador:
+    - Lista de usuarios con capital aportado, participación %, valor actual, PnL y ROI.
+    - Totales de capital acumulado (AUM).
+    - Solicitudes pendientes de aprobación.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return {"investors": [], "pending_users": [], "pool_stats": {}}
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, email, role, status, created_at, last_login FROM users ORDER BY id ASC")
+        all_users = [dict(r) for r in cursor.fetchall()]
+
+        cursor.execute("""
+            SELECT user_id, 
+                   SUM(CASE WHEN transaction_type IN ('INITIAL', 'DEPOSIT') THEN amount_usdt ELSE 0 END) as total_deposits,
+                   SUM(CASE WHEN transaction_type = 'WITHDRAWAL' THEN amount_usdt ELSE 0 END) as total_withdrawals
+            FROM investor_transactions
+            GROUP BY user_id
+        """)
+        capital_by_user = {}
+        for row in cursor.fetchall():
+            net_cap = float(row['total_deposits'] or 0.0) - float(row['total_withdrawals'] or 0.0)
+            capital_by_user[row['user_id']] = max(0.0, net_cap)
+
+        active_investors = []
+        pending_users = []
+        total_deposited_pool = 0.0
+
+        for u in all_users:
+            u_id = u['id']
+            net_cap = capital_by_user.get(u_id, 0.0)
+            u['net_capital'] = round(net_cap, 2)
+            
+            if u['status'] == 'pending':
+                pending_users.append(u)
+            elif u['status'] == 'active':
+                total_deposited_pool += net_cap
+                active_investors.append(u)
+
+        pool_balance = float(live_pool_balance) if live_pool_balance is not None and live_pool_balance > 0 else total_deposited_pool
+
+        for inv in active_investors:
+            cap = inv['net_capital']
+            share_pct = (cap / total_deposited_pool * 100.0) if total_deposited_pool > 0 else 0.0
+            current_value = (pool_balance * (share_pct / 100.0)) if total_deposited_pool > 0 else cap
+            net_pnl = current_value - cap
+            roi_pct = (net_pnl / cap * 100.0) if cap > 0 else 0.0
+
+            inv['share_percentage'] = round(share_pct, 2)
+            inv['current_value'] = round(current_value, 2)
+            inv['net_pnl'] = round(net_pnl, 2)
+            inv['roi_percentage'] = round(roi_pct, 2)
+
+        pool_stats = {
+            "total_deposited_pool": round(total_deposited_pool, 2),
+            "live_pool_balance": round(pool_balance, 2),
+            "total_pool_pnl": round(pool_balance - total_deposited_pool, 2),
+            "total_pool_roi": round(((pool_balance - total_deposited_pool) / total_deposited_pool * 100.0) if total_deposited_pool > 0 else 0.0, 2),
+            "active_investors_count": len(active_investors),
+            "pending_users_count": len(pending_users)
+        }
+
+        return {
+            "investors": active_investors,
+            "pending_users": pending_users,
+            "pool_stats": pool_stats
+        }
+    except Exception as e:
+        get_logger().error(f"Error al obtener resumen de inversionistas: {e}", exc_info=True)
+        return {"investors": [], "pending_users": [], "pool_stats": {}}
+    finally:
+        conn.close()
+
+def get_investor_portfolio(user_id: int, live_pool_balance: float = None) -> dict:
+    """
+    Retorna la información financiera exclusiva del inversionista:
+    - Su capital aportado
+    - Su pedazo de la torta (% del fondo)
+    - Su balance actual estimado
+    - Su ganancia neta ($) y ROI (%)
+    - Historial de sus transacciones
+    """
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, email, role, status, created_at FROM users WHERE id = ?", (user_id,))
+        user_row = cursor.fetchone()
+        if not user_row:
+            return None
+        user_info = dict(user_row)
+
+        cursor.execute("""
+            SELECT id, amount_usdt, transaction_type, notes, created_at 
+            FROM investor_transactions 
+            WHERE user_id = ? 
+            ORDER BY id DESC
+        """, (user_id,))
+        user_txs = [dict(r) for r in cursor.fetchall()]
+
+        user_deposits = sum(r['amount_usdt'] for r in user_txs if r['transaction_type'] in ('INITIAL', 'DEPOSIT'))
+        user_withdrawals = sum(r['amount_usdt'] for r in user_txs if r['transaction_type'] == 'WITHDRAWAL')
+        user_net_capital = max(0.0, user_deposits - user_withdrawals)
+
+        cursor.execute("""
+            SELECT 
+                SUM(CASE WHEN it.transaction_type IN ('INITIAL', 'DEPOSIT') THEN it.amount_usdt ELSE 0 END) as total_dep,
+                SUM(CASE WHEN it.transaction_type = 'WITHDRAWAL' THEN it.amount_usdt ELSE 0 END) as total_wd
+            FROM investor_transactions it
+            JOIN users u ON u.id = it.user_id
+            WHERE u.status = 'active'
+        """)
+        pool_row = cursor.fetchone()
+        total_pool_dep = float(pool_row['total_dep'] or 0.0) - float(pool_row['total_wd'] or 0.0)
+        total_pool_dep = max(0.0, total_pool_dep)
+
+        pool_balance = float(live_pool_balance) if live_pool_balance is not None and live_pool_balance > 0 else total_pool_dep
+
+        share_pct = (user_net_capital / total_pool_dep * 100.0) if total_pool_dep > 0 else 0.0
+        current_value = (pool_balance * (share_pct / 100.0)) if total_pool_dep > 0 else user_net_capital
+        net_pnl = current_value - user_net_capital
+        roi_pct = (net_pnl / user_net_capital * 100.0) if user_net_capital > 0 else 0.0
+
+        return {
+            "user": user_info,
+            "capital_invested": round(user_net_capital, 2),
+            "share_percentage": round(share_pct, 2),
+            "current_value": round(current_value, 2),
+            "net_pnl": round(net_pnl, 2),
+            "roi_percentage": round(roi_pct, 2),
+            "total_pool_balance": round(pool_balance, 2),
+            "transactions": user_txs
+        }
+    except Exception as e:
+        get_logger().error(f"Error al obtener portafolio del inversionista {user_id}: {e}", exc_info=True)
+        return None
+    finally:
+        conn.close()
 
 # --- FIN NUEVAS FUNCIONES ---
 
