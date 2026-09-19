@@ -3,8 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <script>
+      // 1. Redireccion forzosa a HTTPS institucional para habilitar instalacion nativa
       if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-        location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+        location.replace('https://178.105.192.140.sslip.io' + location.pathname + location.search + location.hash);
+      }
+
+      // 2. Captura INMEDIATA del evento nativo de instalacion antes de que cargue React
+      window.__wtn_install_prompt = null;
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__wtn_install_prompt = e;
+        console.log('[WTN] Prompt nativo de instalacion capturado globalmente.');
+        window.dispatchEvent(new CustomEvent('wtn-install-ready'));
+      });
+
+      // 3. Registrar Service Worker de inmediato
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+          .then(function (reg) {
+            console.log('[WTN] Service Worker activo:', reg.scope);
+          })
+          .catch(function (err) {
+            console.warn('[WTN] Service Worker error:', err);
+          });
       }
     </script>
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
@@ -23,14 +44,5 @@
   <body class="bg-slate-950 text-slate-100 antialiased selection:bg-amber-500/30 selection:text-amber-200">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch((err) => {
-            console.log('SW registration error:', err);
-          });
-        });
-      }
-    </script>
   </body>
-</html> 
+</html>

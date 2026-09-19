@@ -33,7 +33,7 @@ server {
     }
 
     location / {
-        return 301 https://$host$request_uri;
+        return 301 https://178.105.192.140.sslip.io$request_uri;
     }
 }
 
@@ -47,6 +47,16 @@ server {
 
     root /opt/bot-binance/frontend/dist;
     index index.html;
+
+    location /sw.js {
+        add_header Cache-Control "no-cache";
+        expires 0;
+    }
+
+    location /manifest.json {
+        add_header Cache-Control "no-cache";
+        add_header Content-Type "application/manifest+json";
+    }
 
     location / {
         try_files $uri $uri/ /index.html;

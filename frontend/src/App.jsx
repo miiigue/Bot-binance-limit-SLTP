@@ -67,16 +67,32 @@ function MainDashboard() {
     }
   }, [isInvestor, activeTab]);
 
-  // Soporte PWA - Interceptar evento de instalación en navegadores compatibles
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  // Interceptar y sincronizar el evento nativo de instalación
+  const [deferredPrompt, setDeferredPrompt] = useState(() => (typeof window !== 'undefined' && window.__wtn_install_prompt) || null);
 
   useEffect(() => {
     const handleBeforeInstall = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
+      window.__wtn_install_prompt = e;
     };
+    const handleReady = () => {
+      if (window.__wtn_install_prompt) {
+        setDeferredPrompt(window.__wtn_install_prompt);
+      }
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('wtn-install-ready', handleReady);
+
+    if (window.__wtn_install_prompt) {
+      setDeferredPrompt(window.__wtn_install_prompt);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('wtn-install-ready', handleReady);
+    };
   }, []);
 
   // Sistema de Audio y Notificaciones Toast

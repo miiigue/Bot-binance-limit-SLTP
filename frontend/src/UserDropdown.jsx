@@ -13,10 +13,10 @@ export default function UserDropdown({
   const [isOpen, setIsOpen] = useState(false);
   const [copiedAccount, setCopiedAccount] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
-  const [downloadSuccessToast, setDownloadSuccessToast] = useState(false);
+  const [desktopDownloadToast, setDesktopDownloadToast] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Detectar si la app ya corre en modo PWA instalado (Standalone)
+  // Detectar si la app ya corre en modo standalone instalado
   useEffect(() => {
     const isRunningStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
@@ -58,24 +58,17 @@ export default function UserDropdown({
     setTimeout(() => setCopiedAccount(false), 2000);
   };
 
-  // Descarga directa e inmediata del instalador/lanzador de la app
-  const triggerDirectDownload = () => {
+  // Descarga exclusiva para PC de escritorio si el navegador no tiene instalador nativo
+  const triggerDesktopDownload = () => {
     const currentOrigin = (window.location.origin || 'https://178.105.192.140.sslip.io').replace('http:', 'https:');
-    const userAgent = (navigator.userAgent || '').toLowerCase();
-    const isAppleMobile = /iphone|ipad|ipod/.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-    if (isAppleMobile) {
-      alert('Para añadir a tu iPhone/iPad: Presiona Compartir 📤 en la barra de Safari y toca "Agregar al inicio" 📲.');
-      return;
-    }
-
-    // 1. Descargar Acceso Directo de Aplicación Windows / Desktop (.bat)
+    // 1. Script BAT para iniciar en ventana independiente de app nativa sin barras de navegador
     const batContent = `@echo off\r\n` +
       `title WTN ALGO-TRADING (Binance) - WTN Solutions LLC\r\n` +
       `echo ==================================================================\r\n` +
       `echo        WTN ALGO-TRADING (Binance) - WTN Solutions LLC\r\n` +
       `echo ==================================================================\r\n` +
-      `echo Iniciando plataforma en modo aplicacion de escritorio...\r\n` +
+      `echo Iniciando aplicacion de escritorio...\r\n` +
       `start msedge --app="${currentOrigin}" --window-size=1440,900 || start chrome --app="${currentOrigin}" --window-size=1440,900 || start ${currentOrigin}\r\n` +
       `exit\r\n`;
 
@@ -89,7 +82,7 @@ export default function UserDropdown({
     document.body.removeChild(batLink);
     URL.revokeObjectURL(batUrl);
 
-    // 2. Descargar Acceso Directo Oficial (.url)
+    // 2. Acceso directo .url para Windows
     const urlContent = `[InternetShortcut]\r\nURL=${currentOrigin}/\r\nIconIndex=0\r\nIconFile=${currentOrigin}/favicon.ico\r\n`;
     const blobUrl = new Blob([urlContent], { type: 'application/internet-shortcut' });
     const urlUrl = URL.createObjectURL(blobUrl);
@@ -101,37 +94,54 @@ export default function UserDropdown({
     document.body.removeChild(urlLink);
     URL.revokeObjectURL(urlUrl);
 
-    setDownloadSuccessToast(true);
-    setTimeout(() => setDownloadSuccessToast(false), 5000);
+    setDesktopDownloadToast(true);
+    setTimeout(() => setDesktopDownloadToast(false), 5000);
   };
 
-  // Manejar instalación y descarga de la App
-  const handleInstallClick = () => {
+  // Manejar instalación de la aplicación
+  const handleInstallClick = async () => {
     setIsOpen(false);
     if (isStandalone) {
-      alert('La aplicación WTN ALGO-TRADING ya se encuentra instalada y activa en este dispositivo.');
+      alert('La aplicación WTN ALGO-TRADING ya se encuentra instalada en este dispositivo.');
       return;
     }
 
-    // Si el navegador soporta el diálogo nativo de 1 clic (Chrome/Edge/Android en HTTPS)
-    if (deferredPrompt) {
+    const promptEvent = window.__wtn_install_prompt || deferredPrompt;
+
+    // 1. Si el navegador tiene listo el prompt nativo de instalación (Android / Chrome / Edge)
+    if (promptEvent) {
       try {
-        deferredPrompt.prompt();
-        deferredPrompt.userChoice.then((choiceResult) => {
-          if (choiceResult && choiceResult.outcome === 'accepted') {
-            console.log('El usuario aceptó la instalación nativa de la app');
-          }
-          if (onTriggerInstall) onTriggerInstall();
-        });
+        await promptEvent.prompt();
+        const choice = await promptEvent.userChoice;
+        if (choice && choice.outcome === 'accepted') {
+          console.log('[WTN] Instalación nativa aceptada.');
+          setIsStandalone(true);
+        }
+        window.__wtn_install_prompt = null;
+        if (onTriggerInstall) onTriggerInstall();
       } catch (err) {
-        console.warn('Fallo en prompt diferido, ejecutando descarga directa:', err);
-        triggerDirectDownload();
+        console.warn('Error al invocar prompt de instalación:', err);
       }
-    } else {
-      // Si no está disponible el evento (ej: ventana de incógnito, navegador sin PWA, o escritorio),
-      // DESCARGA AUTOMÁTICA DIRECTA del instalador sin pedir nada manual al usuario.
-      triggerDirectDownload();
+      return;
     }
+
+    // 2. Si el prompt no está disponible inmediatamente (ej: iOS o móvil con prompt pendiente)
+    const userAgent = (navigator.userAgent || '').toLowerCase();
+    const isApple = /iphone|ipad|ipod/.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isMobile = /android|iphone|ipad|ipod|mobile/.test(userAgent);
+
+    if (isApple) {
+      alert('En iPhone/iPad: Presiona el botón Compartir 📤 en la barra de Safari y selecciona "Agregar a pantalla de inicio" 📲 para instalar.');
+      return;
+    }
+
+    if (isMobile) {
+      alert('Para instalar en tu teléfono: Toca el menú (tres puntos ⋮) en Chrome y presiona "Instalar aplicación" para colocarla en tu pantalla de inicio.');
+      return;
+    }
+
+    // 3. Únicamente en computadoras de escritorio (Windows / PC): descargar lanzador
+    triggerDesktopDownload();
   };
 
   // Manejar apertura de correo de soporte
@@ -255,7 +265,7 @@ export default function UserDropdown({
           {/* Opciones Principales de Acción */}
           <div className="p-2 space-y-1">
             
-            {/* 1. Descargar / Instalar App */}
+            {/* 1. Instalar App */}
             <button
               type="button"
               onClick={handleInstallClick}
@@ -267,10 +277,10 @@ export default function UserDropdown({
                 </div>
                 <div className="min-w-0">
                   <div className="font-bold text-slate-100 group-hover:text-amber-300 transition-colors">
-                    {isStandalone ? 'App Instalada' : 'Descargar App'}
+                    {isStandalone ? 'App Instalada' : 'Instalar App'}
                   </div>
                   <div className="text-[10px] text-slate-400">
-                    {isStandalone ? 'Modo Aplicación Activo' : 'Descarga directa para PC y teléfonos'}
+                    {isStandalone ? 'Modo Aplicación Activo' : 'Instalar en teléfono o computadora'}
                   </div>
                 </div>
               </div>
@@ -279,7 +289,7 @@ export default function UserDropdown({
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
                   : 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
               }`}>
-                {isStandalone ? '✓ Activa' : 'Descargar'}
+                {isStandalone ? '✓ Instalada' : 'Instalar'}
               </span>
             </button>
 
@@ -356,13 +366,13 @@ export default function UserDropdown({
         </div>
       )}
 
-      {/* Notificación Toast de Descarga Exitosa */}
-      {downloadSuccessToast && (
+      {/* Notificación Toast de Lanzador de Escritorio */}
+      {desktopDownloadToast && (
         <div className="fixed bottom-5 right-5 z-50 bg-slate-900 border border-amber-500/50 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5">
-          <span className="text-xl">📥</span>
+          <span className="text-xl">💻</span>
           <div className="text-xs">
-            <div className="font-black text-amber-300">¡Descarga Iniciada!</div>
-            <div className="text-slate-300">El lanzador de WTN ALGO-TRADING se ha guardado en tus descargas.</div>
+            <div className="font-black text-amber-300">¡Lanzador de Escritorio Descargado!</div>
+            <div className="text-slate-300">Abre el archivo para iniciar la app en modo independiente.</div>
           </div>
         </div>
       )}
