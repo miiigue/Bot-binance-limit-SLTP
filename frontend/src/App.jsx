@@ -11,6 +11,7 @@ import MarketExplorer from './MarketExplorer';
 import BotControls from './BotControls';
 import ToastContainer from './ToastContainer';
 import BacktestLab from './BacktestLab';
+import UserDropdown from './UserDropdown';
 import { isSoundEnabled, setSoundEnabled, playProfitSound, playEntrySound, playLossSound } from './soundEffects';
 import './index.css';
 
@@ -65,6 +66,18 @@ function MainDashboard() {
       setActiveTab('my_investment');
     }
   }, [isInvestor, activeTab]);
+
+  // Soporte PWA - Interceptar evento de instalación en navegadores compatibles
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+  useEffect(() => {
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
 
   // Sistema de Audio y Notificaciones Toast
   const [soundOn, setSoundOn] = useState(() => isSoundEnabled());
@@ -354,35 +367,25 @@ function MainDashboard() {
           
           {/* Vista Móvil (< md) */}
           <div className="flex flex-col gap-1.5 md:hidden">
-            <div className="flex items-center justify-between gap-1 min-w-0">
+            <div className="flex items-center justify-between gap-1.5 min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="text-sm font-black tracking-tight text-slate-950 truncate">WTN ALGO-TRADING</span>
-                <span className="bg-slate-950 text-amber-300 text-[9px] px-1 py-0.2 rounded font-mono font-bold">
-                  {isAdmin ? '👑 ADMIN' : '💼 INVERSOR'}
+                <span className="bg-slate-950 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shadow-sm">
+                  BINANCE
                 </span>
-                <button
-                  type="button"
-                  onClick={handleToggleSound}
-                  className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                    soundOn ? 'bg-slate-950 text-emerald-300' : 'bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  {soundOn ? '🔊' : '🔇'}
-                </button>
               </div>
 
-              {/* Usuario & Logout Móvil */}
-              <div className="flex items-center gap-1">
-                <span className="text-[11px] font-bold text-slate-900 max-w-[80px] truncate">{user?.username}</span>
-                <button
-                  type="button"
-                  onClick={logout}
-                  title="Cerrar Sesión"
-                  className="px-2 py-0.5 bg-slate-950 text-rose-300 rounded font-bold text-[10px]"
-                >
-                  Salir
-                </button>
-              </div>
+              {/* Menú Desplegable Profesional de Usuario Móvil */}
+              <UserDropdown
+                user={user}
+                isAdmin={isAdmin}
+                isInvestor={isInvestor}
+                logout={logout}
+                soundOn={soundOn}
+                handleToggleSound={handleToggleSound}
+                deferredPrompt={deferredPrompt}
+                onTriggerInstall={() => setDeferredPrompt(null)}
+              />
             </div>
 
             {/* Fila 2 Móvil: PnL y Flotante */}
@@ -477,29 +480,17 @@ function MainDashboard() {
                 </div>
               )}
 
-              {/* Perfil & Logout */}
-              <div className="flex items-center gap-2 bg-slate-950 px-3 py-1 rounded-xl border border-slate-800 shadow">
-                <span className="text-sm">{isAdmin ? '👑' : '💼'}</span>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-bold text-white max-w-[110px] truncate">{user?.username}</span>
-                  {user?.account_number && (
-                    <span className="text-[9px] font-mono font-bold text-amber-400 -mt-0.5">{user.account_number}</span>
-                  )}
-                </div>
-                <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
-                  isAdmin ? 'bg-amber-400 text-slate-950' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                }`}>
-                  {isAdmin ? 'Admin' : 'Inversor'}
-                </span>
-                <button
-                  type="button"
-                  onClick={logout}
-                  title="Cerrar Sesión"
-                  className="ml-1 text-slate-400 hover:text-rose-400 text-xs font-bold p-1 transition"
-                >
-                  🚪
-                </button>
-              </div>
+              {/* Menú Desplegable Profesional de Usuario */}
+              <UserDropdown
+                user={user}
+                isAdmin={isAdmin}
+                isInvestor={isInvestor}
+                logout={logout}
+                soundOn={soundOn}
+                handleToggleSound={handleToggleSound}
+                deferredPrompt={deferredPrompt}
+                onTriggerInstall={() => setDeferredPrompt(null)}
+              />
             </div>
           </div>
         </div>
