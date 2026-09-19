@@ -12,9 +12,8 @@ export default function UserDropdown({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [copiedAccount, setCopiedAccount] = useState(false);
-  const [copiedEmail, setCopiedEmail] = useState(false);
-  const [showIosGuide, setShowIosGuide] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [downloadSuccessToast, setDownloadSuccessToast] = useState(false);
   const dropdownRef = useRef(null);
 
   // Detectar si la app ya corre en modo PWA instalado (Standalone)
@@ -35,7 +34,6 @@ export default function UserDropdown({
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
         setIsOpen(false);
-        setShowIosGuide(false);
       }
     }
     if (isOpen) {
@@ -60,38 +58,79 @@ export default function UserDropdown({
     setTimeout(() => setCopiedAccount(false), 2000);
   };
 
-  const handleCopyEmail = (e) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(supportEmail);
-    setCopiedEmail(true);
-    setTimeout(() => setCopiedEmail(false), 2000);
+  // Descarga directa e inmediata del instalador/lanzador de la app
+  const triggerDirectDownload = () => {
+    const currentOrigin = (window.location.origin || 'https://178.105.192.140.sslip.io').replace('http:', 'https:');
+    const userAgent = (navigator.userAgent || '').toLowerCase();
+    const isAppleMobile = /iphone|ipad|ipod/.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    if (isAppleMobile) {
+      alert('Para añadir a tu iPhone/iPad: Presiona Compartir 📤 en la barra de Safari y toca "Agregar al inicio" 📲.');
+      return;
+    }
+
+    // 1. Descargar Acceso Directo de Aplicación Windows / Desktop (.bat)
+    const batContent = `@echo off\r\n` +
+      `title WTN ALGO-TRADING (Binance) - WTN Solutions LLC\r\n` +
+      `echo ==================================================================\r\n` +
+      `echo        WTN ALGO-TRADING (Binance) - WTN Solutions LLC\r\n` +
+      `echo ==================================================================\r\n` +
+      `echo Iniciando plataforma en modo aplicacion de escritorio...\r\n` +
+      `start msedge --app="${currentOrigin}" --window-size=1440,900 || start chrome --app="${currentOrigin}" --window-size=1440,900 || start ${currentOrigin}\r\n` +
+      `exit\r\n`;
+
+    const blobBat = new Blob([batContent], { type: 'application/x-bat' });
+    const batUrl = URL.createObjectURL(blobBat);
+    const batLink = document.createElement('a');
+    batLink.href = batUrl;
+    batLink.download = 'WTN-ALGO-TRADING-Desktop.bat';
+    document.body.appendChild(batLink);
+    batLink.click();
+    document.body.removeChild(batLink);
+    URL.revokeObjectURL(batUrl);
+
+    // 2. Descargar Acceso Directo Oficial (.url)
+    const urlContent = `[InternetShortcut]\r\nURL=${currentOrigin}/\r\nIconIndex=0\r\nIconFile=${currentOrigin}/favicon.ico\r\n`;
+    const blobUrl = new Blob([urlContent], { type: 'application/internet-shortcut' });
+    const urlUrl = URL.createObjectURL(blobUrl);
+    const urlLink = document.createElement('a');
+    urlLink.href = urlUrl;
+    urlLink.download = 'WTN-ALGO-TRADING.url';
+    document.body.appendChild(urlLink);
+    urlLink.click();
+    document.body.removeChild(urlLink);
+    URL.revokeObjectURL(urlUrl);
+
+    setDownloadSuccessToast(true);
+    setTimeout(() => setDownloadSuccessToast(false), 5000);
   };
 
-  // Detectar si es dispositivo iOS (iPhone / iPad / iPod)
-  const isIos = () => {
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    return /iphone|ipad|ipod/.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  };
-
-  // Manejar instalación de PWA
+  // Manejar instalación y descarga de la App
   const handleInstallClick = () => {
     setIsOpen(false);
     if (isStandalone) {
-      alert('La aplicación WTN ALGO-TRADING ya se encuentra instalada en este dispositivo.');
+      alert('La aplicación WTN ALGO-TRADING ya se encuentra instalada y activa en este dispositivo.');
       return;
     }
+
+    // Si el navegador soporta el diálogo nativo de 1 clic (Chrome/Edge/Android en HTTPS)
     if (deferredPrompt) {
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then((choiceResult) => {
-        if (choiceResult.outcome === 'accepted') {
-          console.log('El usuario aceptó instalar la PWA');
-        }
-        if (onTriggerInstall) onTriggerInstall();
-      });
-    } else if (isIos()) {
-      setShowIosGuide(true);
+      try {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult && choiceResult.outcome === 'accepted') {
+            console.log('El usuario aceptó la instalación nativa de la app');
+          }
+          if (onTriggerInstall) onTriggerInstall();
+        });
+      } catch (err) {
+        console.warn('Fallo en prompt diferido, ejecutando descarga directa:', err);
+        triggerDirectDownload();
+      }
     } else {
-      setShowIosGuide(true); // Mostrar guía universal si no hay evento diferido
+      // Si no está disponible el evento (ej: ventana de incógnito, navegador sin PWA, o escritorio),
+      // DESCARGA AUTOMÁTICA DIRECTA del instalador sin pedir nada manual al usuario.
+      triggerDirectDownload();
     }
   };
 
@@ -216,7 +255,7 @@ export default function UserDropdown({
           {/* Opciones Principales de Acción */}
           <div className="p-2 space-y-1">
             
-            {/* 1. Descargar / Instalar PWA */}
+            {/* 1. Descargar / Instalar App */}
             <button
               type="button"
               onClick={handleInstallClick}
@@ -228,10 +267,10 @@ export default function UserDropdown({
                 </div>
                 <div className="min-w-0">
                   <div className="font-bold text-slate-100 group-hover:text-amber-300 transition-colors">
-                    {isStandalone ? 'App Instalada' : 'Descargar App (PWA)'}
+                    {isStandalone ? 'App Instalada' : 'Descargar App'}
                   </div>
                   <div className="text-[10px] text-slate-400">
-                    {isStandalone ? 'Modo Aplicación Activo' : 'Instalar en iPhone, Android o PC'}
+                    {isStandalone ? 'Modo Aplicación Activo' : 'Descarga directa para PC y teléfonos'}
                   </div>
                 </div>
               </div>
@@ -240,7 +279,7 @@ export default function UserDropdown({
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
                   : 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
               }`}>
-                {isStandalone ? '✓ Activa' : 'Instalar'}
+                {isStandalone ? '✓ Activa' : 'Descargar'}
               </span>
             </button>
 
@@ -317,58 +356,13 @@ export default function UserDropdown({
         </div>
       )}
 
-      {/* Modal Guía de Instalación PWA (iOS / Móviles) */}
-      {showIosGuide && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-slate-700 max-w-sm w-full rounded-2xl p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">📲</span>
-                <h3 className="text-sm font-black text-white">Instalar WTN Trading</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowIosGuide(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Puedes instalar esta plataforma directamente en tu pantalla de inicio como una aplicación nativa de alto rendimiento:
-            </p>
-
-            <div className="space-y-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800 text-xs">
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-[11px] flex-shrink-0 mt-0.5">1</span>
-                <div>
-                  <span className="font-bold text-white">En Safari (iPhone / iPad):</span> Toca el botón <strong>Compartir</strong> (icono <span className="text-cyan-400">📤</span> en la barra inferior).
-                </div>
-              </div>
-
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-[11px] flex-shrink-0 mt-0.5">2</span>
-                <div>
-                  Desplázate hacia abajo y presiona <strong className="text-amber-300">"Agregar a pantalla de inicio"</strong> 📲.
-                </div>
-              </div>
-
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-[11px] flex-shrink-0 mt-0.5">3</span>
-                <div>
-                  En Android/Chrome: Haz clic en el menú (tres puntos ⋮) y selecciona <strong className="text-amber-300">"Instalar aplicación"</strong>.
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowIosGuide(false)}
-              className="w-full py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs transition shadow-md"
-            >
-              Entendido
-            </button>
+      {/* Notificación Toast de Descarga Exitosa */}
+      {downloadSuccessToast && (
+        <div className="fixed bottom-5 right-5 z-50 bg-slate-900 border border-amber-500/50 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5">
+          <span className="text-xl">📥</span>
+          <div className="text-xs">
+            <div className="font-black text-amber-300">¡Descarga Iniciada!</div>
+            <div className="text-slate-300">El lanzador de WTN ALGO-TRADING se ha guardado en tus descargas.</div>
           </div>
         </div>
       )}

@@ -21,30 +21,19 @@ if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     certbot certonly --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email
 fi
 
-echo "4. Escribiendo configuracion hibrida en Nginx (HTTP + HTTPS)..."
+echo "4. Escribiendo configuracion en Nginx con redireccion automatica a HTTPS..."
 cat << 'EOF' > /etc/nginx/sites-available/bot-binance
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name 178.105.192.140.sslip.io 178.105.192.140.nip.io 178.105.192.140 _;
 
-    root /opt/bot-binance/frontend/dist;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
     }
 
-    location /api/ {
-        proxy_pass http://127.0.0.1:5002/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 300s;
-        proxy_connect_timeout 75s;
+    location / {
+        return 301 https://$host$request_uri;
     }
 }
 
