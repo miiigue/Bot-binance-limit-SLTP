@@ -1807,10 +1807,8 @@ class TradingBot:
                         trade_qty_api = Decimal(trade_detail.get('qty', '0'))
                         trade_side_api = trade_detail.get('side', '').upper()
 
-                        # Comparar orderId, lado y cantidad (con una pequeña tolerancia)
-                        if trade_order_id == binance_order_id_of_closure and \
-                           trade_side_api == 'SELL' and \
-                           abs(trade_qty_api - quantity_dec) < (quantity_dec * Decimal('0.01')): # Tolerancia del 1% en cantidad
+                        # Comparar orderId y lado (soporta ejecuciones divididas en múltiples fills)
+                        if trade_order_id == str(binance_order_id_of_closure) and trade_side_api == 'SELL':
 
                             pnl_from_api_str = trade_detail.get('realizedPnl')
                             if pnl_from_api_str is not None:

@@ -794,8 +794,8 @@ function PnLPerformanceChart({ symbolsList = [] }) {
           </div>
         </div>
 
-        {/* 7 Tarjetas de Métricas Clave (incluyendo Comisiones Oficiales Binance) */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 my-4">
+        {/* 4 Tarjetas de Métricas Clave (incluyendo Comisiones Oficiales Binance) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 my-4">
           
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
             <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
@@ -824,7 +824,7 @@ function PnLPerformanceChart({ symbolsList = [] }) {
             </span>
           </div>
 
-          {/* NUEVA TARJETA: Comisiones Totales Pagadas a Binance */}
+          {/* Comisiones Totales Pagadas a Binance */}
           <div className="p-3 bg-amber-950/20 dark:bg-amber-950/30 rounded-xl border border-amber-500/50 shadow-sm">
             <span className="text-[11px] font-semibold text-amber-500 dark:text-amber-400 uppercase tracking-wider flex items-center justify-between">
               <span>💸 Comisiones Binance</span>
@@ -835,45 +835,6 @@ function PnLPerformanceChart({ symbolsList = [] }) {
             </span>
             <span className="text-[10px] text-gray-400 block mt-0.5 font-mono">
               {totalTrades > 0 ? `~${(totalCommissions / totalTrades).toFixed(3)} USDT/op` : '0 USDT'}
-            </span>
-          </div>
-
-          <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
-              <span>⚖️ Profit Factor</span>
-              <Tooltip title="Factor de Rentabilidad (Profit Factor)" text="Relación matemática entre las ganancias brutas y las pérdidas brutas. Mayor a 1 significa cuenta rentable." example="Si ganaste $300 y perdiste $100, el Profit Factor es 3.00." />
-            </span>
-            <span className="text-xl font-bold font-mono text-blue-500">
-              {profitFactor}
-            </span>
-            <span className="text-[10px] text-gray-400 block mt-0.5">
-              Neto: +${grossProfit.toFixed(1)} / -${grossLoss.toFixed(1)}
-            </span>
-          </div>
-
-          <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
-              <span>📉 Max Drawdown</span>
-              <Tooltip title="Máxima Caída (Drawdown)" text="La mayor reducción de capital que sufrió la cuenta desde su punto más alto hasta su valle más profundo." example="Indica la peor racha de pérdidas que ha soportado la estrategia hasta el momento." />
-            </span>
-            <span className="text-xl font-bold font-mono text-amber-500">
-              -${maxDrawdownUSDT.toFixed(2)}
-            </span>
-            <span className="text-[10px] text-gray-400 block mt-0.5">
-              -{maxDrawdownPercent}% desde pico
-            </span>
-          </div>
-
-          <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
-              <span>📐 Ratio Win/Loss</span>
-              <Tooltip title="Ratio Ganancia / Pérdida Promedio" text="Mide cuánto dinero ganas en promedio en una operación ganadora comparado con lo que pierdes en una perdedora." example="1.5:1 significa que el trade ganador promedio gana un 50% más de lo que pierde un trade negativo." />
-            </span>
-            <span className="text-xl font-bold font-mono text-purple-400">
-              {realizedRiskReward}:1
-            </span>
-            <span className="text-[10px] text-gray-400 block mt-0.5">
-              +${avgWin.toFixed(2)} vs -${avgLoss.toFixed(2)}
             </span>
           </div>
 

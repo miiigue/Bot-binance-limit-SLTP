@@ -33,6 +33,85 @@ def get_db_connection():
         logger.critical(f"Error inesperado al conectar con SQLite: {e}")
         return None
 
+def purge_duplicate_trades() -> int:
+    """
+    Purga definitiva y robusta de operaciones duplicadas en SQLite.
+    Identifica colisiones entre trades registrados por el bot y sincronizaciones de Binance Testnet Sync.
+    Elimina los registros duplicados de Binance Testnet Sync conservando el trade original del bot con su motivo.
+    """
+    logger = get_logger()
+    conn = None
+    try:
+        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id, symbol, close_reason, close_timestamp, pnl_usdt, binance_trade_id FROM trades ORDER BY id ASC")
+        rows = [dict(r) for r in cursor.fetchall()]
+        if not rows:
+            return 0
+
+        # Separar trades del bot y trades de sincronización
+        bot_trades = [r for r in rows if str(r.get('close_reason', '')).strip() != 'Binance Testnet Sync' and r.get('close_timestamp')]
+        sync_trades = [r for r in rows if str(r.get('close_reason', '')).strip() == 'Binance Testnet Sync' and r.get('close_timestamp')]
+
+        ids_to_delete = set()
+
+        for bt in bot_trades:
+            bt_sym = str(bt.get('symbol', '')).upper().strip()
+            try:
+                bt_dt = pd.to_datetime(bt['close_timestamp'])
+            except Exception:
+                continue
+
+            for st in sync_trades:
+                if st['id'] in ids_to_delete:
+                    continue
+                st_sym = str(st.get('symbol', '')).upper().strip()
+                if bt_sym != st_sym:
+                    continue
+
+                try:
+                    st_dt = pd.to_datetime(st['close_timestamp'])
+                    diff_sec = abs((bt_dt - st_dt).total_seconds())
+                    if diff_sec <= 180: # Ventana de hasta 3 minutos entre bot y sync
+                        ids_to_delete.add(st['id'])
+                        logger.info(f"Purge duplicate: Trade sync ID={st['id']} ({st_sym}) eliminado por duplicidad con trade bot ID={bt['id']} (diff: {diff_sec:.1f}s)")
+                except Exception:
+                    pass
+
+        # Purga de posibles registros con el mismo binance_trade_id repetido
+        seen_b_ids = {}
+        for r in rows:
+            b_id = r.get('binance_trade_id')
+            if b_id:
+                sym = str(r.get('symbol', '')).upper().strip()
+                k = (sym, int(b_id))
+                if k in seen_b_ids:
+                    ids_to_delete.add(r['id'])
+                else:
+                    seen_b_ids[k] = r['id']
+
+        # Limpiar trades dummy con PnL = 0 de Binance Testnet Sync
+        for r in sync_trades:
+            pnl_val = float(r.get('pnl_usdt') or 0.0)
+            if abs(pnl_val) < 1e-6:
+                ids_to_delete.add(r['id'])
+
+        if ids_to_delete:
+            placeholders = ','.join('?' for _ in ids_to_delete)
+            cursor.execute(f"DELETE FROM trades WHERE id IN ({placeholders})", list(ids_to_delete))
+            conn.commit()
+            logger.info(f"Purga exitosa: {len(ids_to_delete)} trades duplicados/inválidos eliminados de la base de datos.")
+
+        return len(ids_to_delete)
+    except Exception as e:
+        logger.warning(f"Aviso en purge_duplicate_trades: {e}")
+        return 0
+    finally:
+        if conn:
+            conn.close()
+
 def init_db_schema():
     """Inicializa el esquema de la base de datos si no existe."""
     logger = get_logger()
@@ -58,39 +137,25 @@ def init_db_schema():
             commission_usdt REAL DEFAULT 0.0,
             close_reason TEXT,
             parameters TEXT, -- JSON string para guardar los parámetros de trading usados
-            binance_trade_id INTEGER UNIQUE -- Esta columna se creará con la restricción UNIQUE si la tabla se crea nueva.
+            binance_trade_id INTEGER UNIQUE, -- Para evitar duplicados de Binance
+            strategy_name TEXT -- Estrategia que ejecutó el trade
         )
         """)
-        conn.commit() # Commit después de CREATE TABLE
-
-        # Intentar añadir columnas si la tabla ya existía (migración de esquema)
-        try:
-            cursor.execute("PRAGMA table_info(trades)")
-            columns = [info[1] for info in cursor.fetchall()]
-            if 'binance_trade_id' not in columns:
-                cursor.execute("ALTER TABLE trades ADD COLUMN binance_trade_id INTEGER")
-                conn.commit()
-                logger.info("Columna 'binance_trade_id' añadida a la tabla 'trades'.")
-            if 'strategy_name' not in columns:
-                cursor.execute("ALTER TABLE trades ADD COLUMN strategy_name TEXT")
-                conn.commit()
-                logger.info("Columna 'strategy_name' añadida a la tabla 'trades'.")
-            if 'commission_usdt' not in columns:
-                cursor.execute("ALTER TABLE trades ADD COLUMN commission_usdt REAL DEFAULT 0.0")
-                conn.commit()
-                logger.info("Columna 'commission_usdt' añadida a la tabla 'trades'.")
-            if 'gross_pnl_usdt' not in columns:
-                cursor.execute("ALTER TABLE trades ADD COLUMN gross_pnl_usdt REAL DEFAULT 0.0")
-                conn.commit()
-                logger.info("Columna 'gross_pnl_usdt' añadida a la tabla 'trades'.")
-        except sqlite3.Error as e_alter:
-            logger.warning(f"Advertencia durante chequeo de columnas en trades: {e_alter}")
-
-        # Intentar crear el índice para binance_trade_id
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_binance_trade_id ON trades (binance_trade_id)")
         conn.commit()
 
-        # Tabla para configuraciones persistentes (ej. corte de sincronización al resetear historial)
+        # Asegurar columnas gross_pnl_usdt y commission_usdt
+        cursor.execute("PRAGMA table_info(trades)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'gross_pnl_usdt' not in columns:
+            cursor.execute("ALTER TABLE trades ADD COLUMN gross_pnl_usdt REAL DEFAULT 0.0")
+            conn.commit()
+        if 'commission_usdt' not in columns:
+            cursor.execute("ALTER TABLE trades ADD COLUMN commission_usdt REAL DEFAULT 0.0")
+            conn.commit()
+        if 'strategy_name' not in columns:
+            cursor.execute("ALTER TABLE trades ADD COLUMN strategy_name TEXT")
+            conn.commit()
+
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS bot_settings (
             key TEXT PRIMARY KEY,
@@ -99,46 +164,8 @@ def init_db_schema():
         """)
         conn.commit()
 
-        # 1. Limpieza y purga automática de trades duplicados entre el bot y Binance Testnet Sync
-        try:
-            cursor.execute("""
-                SELECT id, symbol, close_timestamp FROM trades 
-                WHERE close_reason != 'Binance Testnet Sync' AND close_timestamp IS NOT NULL
-            """)
-            bot_trades = cursor.fetchall()
-            deleted_dups_count = 0
-            for bt in bot_trades:
-                bt_id, bt_sym, bt_ts = bt
-                try:
-                    cursor.execute("""
-                        DELETE FROM trades 
-                        WHERE symbol = ? 
-                          AND close_reason = 'Binance Testnet Sync'
-                          AND id != ?
-                          AND abs(strftime('%s', close_timestamp) - strftime('%s', ?)) <= 60
-                    """, (bt_sym, bt_id, bt_ts))
-                    deleted_dups_count += cursor.rowcount
-                except Exception:
-                    pass
-
-            # Purga de posibles registros con el mismo binance_trade_id duplicado
-            try:
-                cursor.execute("""
-                    DELETE FROM trades 
-                    WHERE binance_trade_id IS NOT NULL 
-                      AND id NOT IN (
-                          SELECT MIN(id) FROM trades WHERE binance_trade_id IS NOT NULL GROUP BY symbol, binance_trade_id
-                      )
-                """)
-                deleted_dups_count += cursor.rowcount
-            except Exception:
-                pass
-
-            if deleted_dups_count > 0:
-                conn.commit()
-                logger.info(f"Purga automática de trades duplicados completada: {deleted_dups_count} registros duplicados eliminados.")
-        except Exception as e_dup:
-            logger.warning(f"Aviso en limpieza de duplicados: {e_dup}")
+        # 1. Limpieza y purga automática robusta de trades duplicados
+        purge_duplicate_trades()
 
         # 2. Asegurar que TODAS las operaciones existentes tengan su comisión y PnL neto/bruto calculados
         try:
@@ -318,6 +345,10 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
 def get_cumulative_pnl_by_symbol() -> dict: # Cambiado para devolver dict directamente
     """Calcula el PnL acumulado para cada símbolo desde la tabla 'trades'."""
     logger = get_logger()
+    try:
+        purge_duplicate_trades()
+    except Exception:
+        pass
     conn = None
     cumulative_pnl = {} # Diccionario para guardar {symbol: total_pnl}
 
@@ -358,6 +389,10 @@ def get_cumulative_pnl_by_symbol() -> dict: # Cambiado para devolver dict direct
 
 def get_total_database_metrics() -> dict:
     """Calcula las métricas financieras globales consolidadas directamente desde SQLite."""
+    try:
+        purge_duplicate_trades()
+    except Exception:
+        pass
     conn = None
     default_res = {
         "total_pnl": 0.0,
@@ -498,6 +533,10 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
     Recupera los últimos N trades cerrados para un símbolo específico desde la base de datos.
     """
     logger = get_logger()
+    try:
+        purge_duplicate_trades()
+    except Exception:
+        pass
     conn = None
     trades = []
     try:
@@ -532,6 +571,10 @@ def get_all_recent_trades(limit: int = 2000) -> list[dict]:
     para alimentar gráficos de rendimiento y curvas de capital (Equity Curve).
     """
     logger = get_logger()
+    try:
+        purge_duplicate_trades()
+    except Exception:
+        pass
     conn = None
     trades = []
     try:
@@ -666,7 +709,7 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                     cur_chk.execute("""
                         SELECT id, binance_trade_id FROM trades 
                         WHERE symbol = ? 
-                          AND abs(strftime('%s', close_timestamp) - ?) <= 60
+                          AND abs(strftime('%s', close_timestamp) - ?) <= 180
                         ORDER BY id DESC LIMIT 1
                     """, (sym, trade_epoch))
                     ex_row = cur_chk.fetchone()
@@ -725,6 +768,11 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                 synced_count += 1
         except Exception as e_sym:
             logger.warning(f"Error sincronizando trades de Binance para {sym}: {e_sym}")
+
+    try:
+        purge_duplicate_trades()
+    except Exception:
+        pass
 
     if synced_count > 0:
         logger.info(f"Sincronización en vivo con Binance: {synced_count} nuevos trades guardados en DB.")
