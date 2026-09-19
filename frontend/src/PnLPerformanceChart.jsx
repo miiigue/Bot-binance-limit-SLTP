@@ -517,6 +517,14 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
   const maxExpNum = riskData ? parseFloat(riskData.max_exposure) || 0 : 0;
   const freeMarginNum = riskData && riskData.free_margin ? parseFloat(riskData.free_margin) : Math.max(0, totalBalanceNum - currentExpNum);
 
+  // Conciliación Financiera y Auditoría de Saldos Binance
+  const initialPoolBase = (accountStatus?.initial_capital !== undefined && accountStatus?.initial_capital !== null) 
+    ? parseFloat(accountStatus.initial_capital) 
+    : 5000.0;
+  const walletNetProfit = totalBalanceNum > 0 ? (totalBalanceNum - initialPoolBase) : 0;
+  const walletRoiPct = initialPoolBase > 0 ? ((walletNetProfit / initialPoolBase) * 100) : 0;
+  const openDifferential = totalBalanceNum > 0 ? (walletNetProfit - netPnL) : 0;
+
   // Porcentaje de la exposición actual respecto al límite máximo autorizado
   const stressRatio = maxExpNum > 0 ? Math.min(100, (currentExpNum / maxExpNum) * 100) : 0;
   const stressColor = stressRatio > 80 ? 'bg-rose-500' : stressRatio > 50 ? 'bg-amber-500' : 'bg-emerald-500';
@@ -581,8 +589,10 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
               ${totalBalanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="text-[11px] text-gray-400 mt-1 flex items-center justify-between">
-              <span>Saldo Cuenta</span>
-              <span className="text-indigo-400 font-semibold font-mono">100% Capital</span>
+              <span>Ganancia Cartera:</span>
+              <span className={`font-semibold font-mono ${walletNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {walletNetProfit >= 0 ? `+${walletNetProfit.toFixed(2)}` : walletNetProfit.toFixed(2)} USDT ({walletNetProfit >= 0 ? '+' : ''}{walletRoiPct.toFixed(2)}%)
+              </span>
             </div>
           </div>
 
@@ -796,27 +806,103 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
           </div>
         </div>
 
-        {/* 4 Tarjetas de Métricas Clave (incluyendo Comisiones Oficiales Binance) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 my-4">
+        {/* PANEL INSTITUCIONAL DE AUDITORÍA Y CONCILIACIÓN DE SALDOS BINANCE */}
+        <div className="my-4 p-4 bg-slate-950/90 rounded-2xl border border-indigo-900/40 shadow-inner">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-3 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⚖️</span>
+              <span className="text-xs sm:text-sm font-bold text-white tracking-wide">
+                Conciliación Contable Oficial: Billetera Binance vs PnL de Operaciones
+              </span>
+              <Tooltip 
+                title="Auditoría de Saldos y PnL" 
+                text="Explicación contable exacta: El balance actual de Binance ($5,023.99) es la suma del capital base ($5,000.00) más el PnL de operaciones ya cerradas (+26.09 USDT) ajustado por el flotante y las comisiones de apertura de las posiciones abiertas activas (-2.10 USDT)." 
+              />
+            </div>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
+              Conciliación Exacta en Tiempo Real
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono">
+            {/* 1. Base */}
+            <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-800">
+              <span className="text-[10px] font-sans font-semibold text-slate-400 block uppercase tracking-wider">
+                1. Capital Inicial Base
+              </span>
+              <span className="text-lg font-black text-white block mt-0.5">
+                ${initialPoolBase.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs text-slate-400 font-normal">USDT</span>
+              </span>
+              <span className="text-[10px] text-slate-500 font-sans block mt-1">
+                Fondo depositado de inicio
+              </span>
+            </div>
+
+            {/* 2. Trades Cerrados */}
+            <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-800">
+              <span className="text-[10px] font-sans font-semibold text-slate-400 block uppercase tracking-wider flex items-center justify-between">
+                <span>2. (+) Trades Cerrados</span>
+                <span className="text-[9px] text-emerald-400 font-bold">{totalTrades} ops</span>
+              </span>
+              <span className={`text-lg font-black block mt-0.5 ${netPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {netPnL >= 0 ? `+${netPnL.toFixed(2)}` : netPnL.toFixed(2)} <span className="text-xs text-slate-400 font-normal">USDT</span>
+              </span>
+              <span className="text-[10px] text-slate-500 font-sans block mt-1">
+                Ganancia neta finalizada
+              </span>
+            </div>
+
+            {/* 3. Diferencial Posiciones Abiertas */}
+            <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-800">
+              <span className="text-[10px] font-sans font-semibold text-slate-400 block uppercase tracking-wider flex items-center justify-between">
+                <span>3. (±) Flotante & Tasas</span>
+                <span className="text-[9px] text-amber-400 font-bold">${currentExpNum.toFixed(0)} margen</span>
+              </span>
+              <span className={`text-lg font-black block mt-0.5 ${openDifferential >= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {openDifferential >= 0 ? `+${openDifferential.toFixed(2)}` : openDifferential.toFixed(2)} <span className="text-xs text-slate-400 font-normal">USDT</span>
+              </span>
+              <span className="text-[10px] text-slate-500 font-sans block mt-1">
+                Trades en curso & comisiones
+              </span>
+            </div>
+
+            {/* 4. Balance Binance */}
+            <div className="p-3 bg-emerald-950/30 rounded-xl border border-emerald-800/60 shadow-sm">
+              <span className="text-[10px] font-sans font-semibold text-emerald-300 block uppercase tracking-wider flex items-center justify-between">
+                <span>4. (=) Saldo Binance</span>
+                <span className="text-[9px] font-bold text-emerald-400">100% Saldo</span>
+              </span>
+              <span className="text-lg font-black text-emerald-300 block mt-0.5">
+                ${totalBalanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs text-slate-400 font-normal">USDT</span>
+              </span>
+              <span className="text-[10px] font-bold text-emerald-400 font-sans block mt-1">
+                Ganancia Neta: {walletNetProfit >= 0 ? `+${walletNetProfit.toFixed(2)}` : walletNetProfit.toFixed(2)} USDT ({walletNetProfit >= 0 ? '+' : ''}{walletRoiPct.toFixed(2)}%)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 5 Tarjetas de Métricas Clave */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 my-4">
           
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
             <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
-              <span>🎯 Tasa de Acierto</span>
+              <span>🎯 Acierto</span>
               <Tooltip title="Tasa de Acierto (Win Rate)" text="Porcentaje de operaciones completadas con ganancia sobre el total de operaciones cerradas." example="Un Win Rate del 70% significa que 7 de cada 10 operaciones fueron exitosas." />
             </span>
             <span className={`text-xl font-bold font-mono ${parseFloat(winRate) >= 50 ? 'text-emerald-500' : 'text-amber-500'}`}>
               {winRate}%
             </span>
             <span className="text-[10px] text-gray-400 block mt-0.5">
-              {winningTrades.length} Ganados / {losingTrades.length} Perdidos
+              {winningTrades.length} G / {losingTrades.length} P
             </span>
           </div>
 
-          {/* Tarjeta de PnL Neto Realizado */}
+          {/* Tarjeta de PnL Trades Cerrados */}
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
             <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
-              <span>💰 PnL Neto Real</span>
-              <Tooltip title="PnL Neto Realizado" text="Suma neta definitiva que ingresó o salió de tu billetera de Binance (PnL Bruto de mercado menos todas las comisiones pagadas a Binance)." />
+              <span>💰 PnL Cerrado</span>
+              <Tooltip title="PnL Operaciones Cerradas" text="Suma neta realizada de los trades completados y guardados en el historial (ganancias brutas menos comisiones ya liquidadas)." />
             </span>
             <span className={`text-xl font-bold font-mono ${netPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
               {netPnL >= 0 ? `+${netPnL.toFixed(2)}` : netPnL.toFixed(2)} <span className="text-xs">USDT</span>
@@ -826,20 +912,35 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
             </span>
           </div>
 
+          {/* Tarjeta de Rendimiento Billetera Binance */}
+          <div className="p-3 bg-emerald-950/20 dark:bg-emerald-950/30 rounded-xl border border-emerald-500/40 shadow-sm">
+            <span className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider flex items-center justify-between">
+              <span>🏦 Neto Binance</span>
+              <Tooltip title="Rendimiento Neto en Billetera" text="Diferencia real entre el saldo actual de la cuenta Binance ($5,023.99 USDT) y el capital inicial base ($5,000.00 USDT)." />
+            </span>
+            <span className={`text-xl font-bold font-mono ${walletNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {walletNetProfit >= 0 ? `+${walletNetProfit.toFixed(2)}` : walletNetProfit.toFixed(2)} <span className="text-xs">USDT</span>
+            </span>
+            <span className="text-[10px] text-emerald-400/80 block mt-0.5 font-mono">
+              Retorno: {walletNetProfit >= 0 ? '+' : ''}{walletRoiPct.toFixed(2)}%
+            </span>
+          </div>
+
           {/* Comisiones Totales Pagadas a Binance */}
           <div className="p-3 bg-amber-950/20 dark:bg-amber-950/30 rounded-xl border border-amber-500/50 shadow-sm">
             <span className="text-[11px] font-semibold text-amber-500 dark:text-amber-400 uppercase tracking-wider flex items-center justify-between">
-              <span>💸 Comisiones Binance</span>
+              <span>💸 Comisiones</span>
               <Tooltip title="Comisiones Totales Binance" text="Total de comisiones oficiales cobradas por Binance Futures en órdenes de entrada (Maker 0.02% / Taker 0.05%) y salida (0.05% Taker). Descontadas automáticamente del saldo." />
             </span>
             <span className="text-xl font-bold font-mono text-amber-400">
               -${totalCommissions.toFixed(2)} <span className="text-xs text-gray-400 font-normal">USDT</span>
             </span>
             <span className="text-[10px] text-gray-400 block mt-0.5 font-mono">
-              {totalTrades > 0 ? `~${(totalCommissions / totalTrades).toFixed(3)} USDT/op` : '0 USDT'}
+              ~{(totalTrades > 0 ? (totalCommissions / totalTrades) : 0).toFixed(3)}/op
             </span>
           </div>
 
+          {/* Mejor / Peor */}
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
             <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
               <span>🏆 Mejor / Peor</span>

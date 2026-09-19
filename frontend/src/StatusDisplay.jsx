@@ -567,12 +567,19 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     ? parseFloat(data.total_unrealized_pnl)
                     : totalCurrentUnrealizedPnl;
 
+                const bal = (data?.account_balance !== undefined && data?.account_balance !== null) ? parseFloat(data.account_balance) : 5000;
+                const initCap = (data?.initial_capital !== undefined && data?.initial_capital !== null) ? parseFloat(data.initial_capital) : 5000;
+                const wPnl = (data?.wallet_pnl !== undefined && data?.wallet_pnl !== null) ? parseFloat(data.wallet_pnl) : (bal - initCap);
+
                 onStatusUpdate({ 
                     totalPnl: authoritativeTotalPnl, 
                     historicalPnl: authoritativeTotalPnl,
                     unrealizedPnl: authoritativeUnrealizedPnl,
                     coinCount: sortedStatuses.length,
                     coinsInPosition: coinsInPos,
+                    poolBalance: bal,
+                    initialCapital: initCap,
+                    walletPnl: wPnl,
                     sessionStats: data.session_stats,
                     globalDbMetrics: data.global_db_metrics,
                     bots_running: data.bots_running

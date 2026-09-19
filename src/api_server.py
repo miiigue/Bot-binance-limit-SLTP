@@ -1205,12 +1205,50 @@ def get_worker_status():
         from src.database import get_total_database_metrics
         db_metrics = get_total_database_metrics()
 
+        # Balance total en vivo de Binance y base de capital inicial del pool
+        live_balance = None
+        try:
+            live_bal_dec = get_account_balance_usdt()
+            if live_bal_dec is not None:
+                live_balance = float(live_bal_dec)
+        except Exception as e_bal:
+            logger.debug(f"Error consultando balance de futuros en /api/status: {e_bal}")
+
+        total_pool_deposited = 5000.0  # Base estándar por defecto
+        try:
+            from src.database import get_db_connection
+            conn_pool = get_db_connection()
+            if conn_pool:
+                cur_p = conn_pool.cursor()
+                cur_p.execute("""
+                    SELECT 
+                        SUM(CASE WHEN it.transaction_type IN ('INITIAL', 'DEPOSIT') THEN it.amount_usdt ELSE 0 END) as total_dep,
+                        SUM(CASE WHEN it.transaction_type = 'WITHDRAWAL' THEN it.amount_usdt ELSE 0 END) as total_wd
+                    FROM investor_transactions it
+                    JOIN users u ON u.id = it.user_id
+                    WHERE u.status = 'active'
+                """)
+                row_p = cur_p.fetchone()
+                if row_p and row_p['total_dep'] is not None and float(row_p['total_dep']) > 0:
+                    net_dep = float(row_p['total_dep']) - float(row_p['total_wd'] or 0.0)
+                    if net_dep > 0:
+                        total_pool_deposited = net_dep
+                conn_pool.close()
+        except Exception:
+            pass
+
+        account_balance = live_balance if live_balance is not None else total_pool_deposited
+        wallet_pnl = round(account_balance - total_pool_deposited, 4)
+
         response_data = {
             "bots_running": workers_started,
             "statuses": all_symbols_status,
             "total_unrealized_pnl": float(total_unrealized_pnl),
             "session_stats": session_stats,
-            "global_db_metrics": db_metrics
+            "global_db_metrics": db_metrics,
+            "account_balance": account_balance,
+            "initial_capital": total_pool_deposited,
+            "wallet_pnl": wallet_pnl
         }
         
         logger.debug(f"Returning combined statuses. Bots running: {workers_started}")

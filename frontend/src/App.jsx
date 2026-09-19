@@ -31,8 +31,13 @@ function MainDashboard() {
 
   const [headerPnlData, setHeaderPnlData] = useState({ 
     totalPnl: 0, 
+    historicalPnl: 0,
+    unrealizedPnl: 0,
     coinCount: 0, 
     coinsInPosition: 0,
+    poolBalance: 5000,
+    initialCapital: 5000,
+    walletPnl: 0,
     sessionStats: {
       session_pnl: 0,
       session_high: 0,
@@ -135,6 +140,54 @@ function MainDashboard() {
       lastInPosCoinsRef.current = currentCoins;
     }
   }, [addToast]);
+
+  // --- SONDEO GLOBAL DEL ESTADO (Garantiza datos de flotante y pool en cualquier pestaña y rol) ---
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let isMounted = true;
+
+    const fetchGlobalStatus = async () => {
+      try {
+        const resp = await authFetch('/api/status');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!isMounted) return;
+
+        const sorted = data.statuses || [];
+        const coinsInPos = sorted.filter(s => s.in_position).length;
+        const authoritativeTotalPnl = (data?.global_db_metrics && data.global_db_metrics.total_pnl !== undefined)
+          ? parseFloat(data.global_db_metrics.total_pnl)
+          : sorted.reduce((acc, s) => acc + (parseFloat(s.historical_pnl) || 0), 0);
+        const authoritativeUnrealizedPnl = parseFloat(data.total_unrealized_pnl || 0);
+        const bal = (data.account_balance !== undefined && data.account_balance !== null) ? parseFloat(data.account_balance) : 5000;
+        const initCap = (data.initial_capital !== undefined && data.initial_capital !== null) ? parseFloat(data.initial_capital) : 5000;
+        const wPnl = (data.wallet_pnl !== undefined && data.wallet_pnl !== null) ? parseFloat(data.wallet_pnl) : (bal - initCap);
+
+        handleStatusUpdate({
+          totalPnl: authoritativeTotalPnl,
+          historicalPnl: authoritativeTotalPnl,
+          unrealizedPnl: authoritativeUnrealizedPnl,
+          coinCount: sorted.length,
+          coinsInPosition: coinsInPos,
+          poolBalance: bal,
+          initialCapital: initCap,
+          walletPnl: wPnl,
+          sessionStats: data.session_stats,
+          globalDbMetrics: data.global_db_metrics,
+          bots_running: data.bots_running
+        });
+      } catch (err) {
+        console.debug("Error polling global status:", err);
+      }
+    };
+
+    fetchGlobalStatus();
+    const intervalId = setInterval(fetchGlobalStatus, 3500);
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [isAuthenticated, authFetch, handleStatusUpdate]);
 
   const fetchAvailableStrategies = useCallback(async () => {
     setIsLoadingStrategies(true);
@@ -331,10 +384,10 @@ function MainDashboard() {
               </div>
             </div>
 
-            {/* Fila 2 Móvil: PnL */}
+            {/* Fila 2 Móvil: PnL y Flotante */}
             <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-amber-500/30 text-xs">
               <div className="flex items-center gap-1 font-bold text-slate-950 truncate">
-                <span className="text-[10px]">Flotante:</span>
+                <span className="text-[10px]">Flotante ({headerPnlData?.coinsInPosition || 0}p):</span>
                 <span className={`text-xs font-mono font-black ${(Number(headerPnlData?.unrealizedPnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData?.unrealizedPnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
                   {(Number(headerPnlData?.unrealizedPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.unrealizedPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.unrealizedPnl) || 0).toFixed(2)} USDT
                 </span>
@@ -342,8 +395,11 @@ function MainDashboard() {
 
               <div className="flex items-center gap-1 bg-amber-600/30 border border-amber-700/30 px-1.5 py-0.5 rounded font-mono text-[10px] text-slate-950 font-bold">
                 <span>Total Pool:</span>
-                <span className={`font-black ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
-                  {(Number(headerPnlData?.totalPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.totalPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.totalPnl) || 0).toFixed(2)} USDT
+                <span className="font-mono font-black">
+                  ${(Number(headerPnlData?.poolBalance) || 5000).toFixed(2)}
+                </span>
+                <span className={`font-black ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
+                  ({(Number(headerPnlData?.walletPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.walletPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.walletPnl) || 0).toFixed(2)})
                 </span>
               </div>
             </div>
@@ -377,20 +433,35 @@ function MainDashboard() {
             {/* PNL Info Central */}
             <div className="flex-initial px-2">
               <div className="flex items-center gap-2 text-slate-950 font-bold">
+                {/* Flotante en vivo */}
                 <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border border-slate-800 px-3 py-1 rounded-xl shadow-sm">
                   <span className="text-xs text-slate-400">Flotante ({headerPnlData?.coinsInPosition || 0} pos):</span>
                   <span className={`text-base font-mono font-black ${(Number(headerPnlData?.unrealizedPnl) || 0) < 0 ? 'text-rose-400' : (Number(headerPnlData?.unrealizedPnl) || 0) > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
-                    {(Number(headerPnlData?.unrealizedPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.unrealizedPnl) || 0).toFixed(4)}` : (Number(headerPnlData?.unrealizedPnl) || 0).toFixed(4)}
+                    {(Number(headerPnlData?.unrealizedPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.unrealizedPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.unrealizedPnl) || 0).toFixed(2)}
                   </span>
                   <span className="text-[10px] text-slate-400">USDT</span>
                 </div>
 
+                {/* Total Pool */}
                 <div className="flex items-center gap-1.5 bg-slate-950/10 border border-slate-900/20 px-2.5 py-1 rounded-xl shadow-sm text-slate-950">
                   <span className="text-xs font-bold text-slate-900">Total Pool:</span>
-                  <span className={`text-sm font-mono font-black ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-rose-900' : (Number(headerPnlData?.totalPnl) || 0) > 0 ? 'text-emerald-950' : 'text-slate-950'}`}>
-                    {(Number(headerPnlData?.totalPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.totalPnl) || 0).toFixed(4)}` : (Number(headerPnlData?.totalPnl) || 0).toFixed(4)} USDT
+                  <span className="text-sm font-mono font-black text-slate-950">
+                    ${(Number(headerPnlData?.poolBalance) || 5000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
+                  </span>
+                  <span className={`text-xs font-mono font-black px-1.5 py-0.2 rounded border ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'bg-rose-500/20 border-rose-600/40 text-rose-950' : 'bg-emerald-500/20 border-emerald-600/40 text-emerald-950'}`} title="Rendimiento neto de cartera (Balance Binance - Capital Inicial)">
+                    {(Number(headerPnlData?.walletPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.walletPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.walletPnl) || 0).toFixed(2)} USDT
                   </span>
                 </div>
+
+                {/* PnL Cerrado */}
+                {isAdmin && (
+                  <div className="hidden xl:flex items-center gap-1 bg-slate-950/90 text-white border border-slate-800 px-2.5 py-1 rounded-xl shadow-sm text-xs" title="PnL neto de operaciones cerradas">
+                    <span className="text-slate-400 text-[11px]">Cerrado:</span>
+                    <span className={`font-mono font-black ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {(Number(headerPnlData?.totalPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.totalPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.totalPnl) || 0).toFixed(2)}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
             
