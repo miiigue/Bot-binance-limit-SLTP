@@ -118,9 +118,44 @@ def get_token_from_request():
     return request.args.get('token')
 
 
+# --- Control de Intentos Fallidos de Login (Protección Anti-Fuerza Bruta) ---
+_login_attempts = {}  # { identifier: [timestamp1, timestamp2, ...] }
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_SECONDS = 600  # 10 minutos de bloqueo temporal
+
+def is_login_rate_limited(identifier: str) -> tuple:
+    """Verifica si un usuario o IP ha excedido el límite de intentos fallidos."""
+    now = time.time()
+    key = str(identifier).strip().lower()
+    attempts = _login_attempts.get(key, [])
+    # Filtrar solo intentos dentro de la ventana de tiempo
+    attempts = [t for t in attempts if now - t < LOCKOUT_SECONDS]
+    _login_attempts[key] = attempts
+
+    if len(attempts) >= MAX_FAILED_ATTEMPTS:
+        remaining_wait = int(LOCKOUT_SECONDS - (now - attempts[0]))
+        return True, max(1, remaining_wait)
+    return False, 0
+
+def record_failed_login(identifier: str):
+    """Registra un intento fallido de inicio de sesión."""
+    now = time.time()
+    key = str(identifier).strip().lower()
+    if key not in _login_attempts:
+        _login_attempts[key] = []
+    _login_attempts[key].append(now)
+
+def clear_failed_logins(identifier: str):
+    """Limpia los intentos fallidos tras un login exitoso."""
+    key = str(identifier).strip().lower()
+    if key in _login_attempts:
+        del _login_attempts[key]
+
+
 def token_required(f):
     """
-    Decorador que exige un token JWT válido. Inyecta `current_user` en la función.
+    Decorador que exige un token JWT válido y verifica EN TIEMPO REAL
+    que la cuenta no haya sido bloqueada o suspendida en la base de datos.
     """
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -132,14 +167,34 @@ def token_required(f):
         if not payload:
             return jsonify({"status": "error", "message": "Sesión inválida o expirada. Inicie sesión nuevamente."}), 401
 
-        request.current_user = payload
+        # Verificación de Seguridad en Base de Datos en Tiempo Real
+        from src.database import get_user_by_id
+        user = get_user_by_id(payload.get('user_id'))
+        if not user:
+            return jsonify({"status": "error", "message": "Usuario no encontrado en el sistema."}), 401
+
+        if user.get('status') == 'blocked':
+            return jsonify({
+                "status": "error",
+                "message": "Tu cuenta ha sido suspendida. Comunícate con la administración de WTN Solutions LLC.",
+                "code": "ACCOUNT_BLOCKED"
+            }), 403
+
+        if user.get('status') != 'active':
+            return jsonify({
+                "status": "error",
+                "message": "Tu cuenta está inactiva o en revisión.",
+                "code": "ACCOUNT_INACTIVE"
+            }), 403
+
+        request.current_user = {**payload, **user}
         return f(*args, **kwargs)
     return decorated
 
 
 def admin_required(f):
     """
-    Decorador que exige que el usuario sea Super Administrador ('admin').
+    Decorador que exige que el usuario sea Super Administrador activo de WTN Solutions LLC.
     """
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -151,12 +206,14 @@ def admin_required(f):
         if not payload:
             return jsonify({"status": "error", "message": "Sesión inválida o expirada."}), 401
 
-        if payload.get('role') != 'admin':
+        from src.database import get_user_by_id
+        user = get_user_by_id(payload.get('user_id'))
+        if not user or user.get('role') != 'admin' or user.get('status') != 'active':
             return jsonify({
                 "status": "error",
-                "message": "Acceso denegado. Se requieren permisos de Administrador."
+                "message": "Acceso denegado. Se requieren permisos de Super Administrador de WTN Solutions LLC."
             }), 403
 
-        request.current_user = payload
+        request.current_user = {**payload, **user}
         return f(*args, **kwargs)
     return decorated

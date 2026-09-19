@@ -934,6 +934,31 @@ def create_user(username: str, email: str, password_hash: str, role: str = 'inve
     finally:
         conn.close()
 
+def format_account_number(user_id: int) -> str:
+    """Genera el número de cuenta institucional único para WTN Solutions LLC."""
+    if not user_id:
+        return "WTN-2026-0000"
+    return f"WTN-2026-{int(user_id):04d}"
+
+def toggle_user_status(user_id: int, new_status: str) -> bool:
+    """Modifica el estado de acceso de un usuario ('active' o 'blocked')."""
+    if new_status not in ('active', 'blocked', 'rejected', 'pending'):
+        return False
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET status = ? WHERE id = ?", (new_status, user_id))
+        conn.commit()
+        get_logger().info(f"Estado de usuario {user_id} actualizado a '{new_status}' en WTN Solutions LLC.")
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al cambiar estado de usuario {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
 def get_user_by_id(user_id: int) -> dict:
     """Obtiene un usuario por su ID (sin devolver el password_hash)."""
     conn = get_db_connection()
@@ -943,7 +968,11 @@ def get_user_by_id(user_id: int) -> dict:
         cursor = conn.cursor()
         cursor.execute("SELECT id, username, email, role, status, created_at, last_login FROM users WHERE id = ?", (user_id,))
         row = cursor.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        res = dict(row)
+        res['account_number'] = format_account_number(res['id'])
+        return res
     except Exception as e:
         get_logger().error(f"Error al obtener usuario por ID {user_id}: {e}")
         return None
@@ -963,7 +992,11 @@ def get_user_by_identifier(identifier: str) -> dict:
             WHERE LOWER(username) = LOWER(?) OR (email IS NOT NULL AND LOWER(email) = LOWER(?))
         """, (identifier.strip(), identifier.strip()))
         row = cursor.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        res = dict(row)
+        res['account_number'] = format_account_number(res['id'])
+        return res
     except Exception as e:
         get_logger().error(f"Error al buscar usuario por identificador '{identifier}': {e}")
         return None
@@ -1065,10 +1098,11 @@ def get_investor_transactions(user_id: int) -> list:
 
 def get_all_investors_summary(live_pool_balance: float = None) -> dict:
     """
-    Retorna el resumen maestro para el Super Administrador:
-    - Lista de usuarios con capital aportado, participación %, valor actual, PnL y ROI.
+    Retorna el resumen maestro para el Super Administrador de WTN Solutions LLC:
+    - Lista de usuarios con capital aportado, participación %, valor actual, PnL, ROI y N° Cuenta.
     - Totales de capital acumulado (AUM).
     - Solicitudes pendientes de aprobación.
+    - Desglose del capital perteneciente a la casa matriz (WTN Solutions LLC).
     """
     conn = get_db_connection()
     if not conn:
@@ -1098,11 +1132,14 @@ def get_all_investors_summary(live_pool_balance: float = None) -> dict:
             u_id = u['id']
             net_cap = capital_by_user.get(u_id, 0.0)
             u['net_capital'] = round(net_cap, 2)
+            u['account_number'] = format_account_number(u_id)
             
             if u['status'] == 'pending':
                 pending_users.append(u)
-            elif u['status'] == 'active':
-                total_deposited_pool += net_cap
+            else:
+                # Tanto active como blocked aparecen en la lista de gestión
+                if u['status'] == 'active':
+                    total_deposited_pool += net_cap
                 active_investors.append(u)
 
         pool_balance = float(live_pool_balance) if live_pool_balance is not None and live_pool_balance > 0 else total_deposited_pool
@@ -1119,13 +1156,21 @@ def get_all_investors_summary(live_pool_balance: float = None) -> dict:
             inv['net_pnl'] = round(net_pnl, 2)
             inv['roi_percentage'] = round(roi_pct, 2)
 
+        # Cuota y Capital perteneciente a WTN Solutions LLC (Admin)
+        admin_inv = next((inv for inv in active_investors if inv['role'] == 'admin'), None)
+        wtn_capital = admin_inv['current_value'] if admin_inv else 0.0
+        wtn_share = admin_inv['share_percentage'] if admin_inv else 0.0
+
         pool_stats = {
             "total_deposited_pool": round(total_deposited_pool, 2),
             "live_pool_balance": round(pool_balance, 2),
             "total_pool_pnl": round(pool_balance - total_deposited_pool, 2),
             "total_pool_roi": round(((pool_balance - total_deposited_pool) / total_deposited_pool * 100.0) if total_deposited_pool > 0 else 0.0, 2),
-            "active_investors_count": len(active_investors),
-            "pending_users_count": len(pending_users)
+            "active_investors_count": len([i for i in active_investors if i['status'] == 'active']),
+            "blocked_investors_count": len([i for i in active_investors if i['status'] == 'blocked']),
+            "pending_users_count": len(pending_users),
+            "wtn_house_capital": round(wtn_capital, 2),
+            "wtn_house_share": round(wtn_share, 2)
         }
 
         return {
@@ -1138,6 +1183,26 @@ def get_all_investors_summary(live_pool_balance: float = None) -> dict:
         return {"investors": [], "pending_users": [], "pool_stats": {}}
     finally:
         conn.close()
+
+def get_admin_investor_dossier(user_id: int, live_pool_balance: float = None) -> dict:
+    """
+    Retorna el dossier 360° ampliado de un inversionista para el Super Administrador:
+    - Portafolio idéntico al que ve el cliente
+    - Número de cuenta WTN-2026-XXXX
+    - Muestra de operaciones recientes del bot
+    - Historial de depósitos y retiros
+    """
+    portfolio = get_investor_portfolio(user_id, live_pool_balance=live_pool_balance)
+    if not portfolio:
+        return None
+    recent_trades = get_all_recent_trades(limit=50)
+    return {
+        "portfolio": portfolio,
+        "recent_trades": recent_trades,
+        "company": "WTN Solutions LLC",
+        "platform": "WTN ALGO-TRADING (Binance)",
+        "generated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
 
 def get_investor_portfolio(user_id: int, live_pool_balance: float = None) -> dict:
     """
@@ -1158,6 +1223,7 @@ def get_investor_portfolio(user_id: int, live_pool_balance: float = None) -> dic
         if not user_row:
             return None
         user_info = dict(user_row)
+        user_info['account_number'] = format_account_number(user_info['id'])
 
         cursor.execute("""
             SELECT id, amount_usdt, transaction_type, notes, created_at 
@@ -1192,6 +1258,7 @@ def get_investor_portfolio(user_id: int, live_pool_balance: float = None) -> dic
 
         return {
             "user": user_info,
+            "account_number": format_account_number(user_info['id']),
             "capital_invested": round(user_net_capital, 2),
             "share_percentage": round(share_pct, 2),
             "current_value": round(current_value, 2),

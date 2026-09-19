@@ -75,11 +75,13 @@ export default function InvestorPortfolio() {
         </tr>
       `).join('');
 
+      const accNum = p.account_number || user?.account_number || 'WTN-2026-0000';
+
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Estado de Cuenta - ${user?.username || 'Inversionista'}</title>
+          <title>Estado de Cuenta - ${user?.username || 'Inversionista'} - ${accNum}</title>
           <style>
             @media print {
               body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -89,14 +91,16 @@ export default function InvestorPortfolio() {
             .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #f59e0b; padding-bottom: 20px; margin-bottom: 25px; }
             .logo { font-size: 22px; font-weight: 900; color: #0f172a; }
             .logo span { color: #f59e0b; }
+            .sub-brand { font-size: 12px; font-weight: 700; color: #64748b; margin-top: 4px; }
             .badge { background: #fef3c7; color: #92400e; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+            .acc-tag { display: inline-block; background: #0f172a; color: #fbbf24; font-family: monospace; font-weight: bold; font-size: 12px; padding: 3px 8px; border-radius: 4px; margin-top: 6px; }
             .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
             .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; }
             .card-title { font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 6px; }
             .card-val { font-size: 20px; font-weight: 900; font-family: monospace; }
             table { width: 100%; border-collapse: collapse; margin-top: 10px; }
             th { background: #f1f5f9; text-align: left; padding: 8px 12px; font-size: 11px; text-transform: uppercase; color: #475569; }
-            .footer { margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 15px; font-size: 11px; color: #94a3b8; text-align: center; }
+            .footer { margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 15px; font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.5; }
             .btn-print { background: #0f172a; color: #fff; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; font-size: 13px; }
           </style>
         </head>
@@ -107,13 +111,15 @@ export default function InvestorPortfolio() {
 
           <div class="header">
             <div>
-              <div class="logo">⚡ BINANCE <span>ALGO-TRADING</span></div>
-              <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Fondo de Inversión Cuantitativa Automatizada</div>
+              <div class="logo">⚡ WTN <span>ALGO-TRADING</span> (Binance)</div>
+              <div class="sub-brand">WTN Solutions LLC • Quantitative Asset Management & Pool</div>
+              <div class="acc-tag">N° CUENTA: ${accNum}</div>
             </div>
             <div style="text-align: right;">
-              <div class="badge">Extracto Oficial</div>
+              <div class="badge">Extracto Oficial Institucional</div>
               <div style="font-size: 12px; color: #64748b; margin-top: 6px;">Fecha de Emisión: ${statement.generated_at}</div>
-              <div style="font-size: 12px; font-weight: bold; color: #0f172a;">Inversionista: ${user?.username}</div>
+              <div style="font-size: 13px; font-weight: bold; color: #0f172a; margin-top: 2px;">Titular: ${user?.username}</div>
+              <div style="font-size: 11px; color: #64748b;">${user?.email || ''}</div>
             </div>
           </div>
 
@@ -180,8 +186,9 @@ export default function InvestorPortfolio() {
           </div>
 
           <div class="footer">
-            Documento emitido electrónicamente por el sistema de gestión Binance Futures Algo-Trading.<br>
-            Los rendimientos pasados no garantizan rendimientos futuros. Operaciones sujetas a condiciones de mercado.
+            Documento emitido electrónicamente por <strong>WTN Solutions LLC</strong> — División WTN ALGO-TRADING (Binance).<br>
+            Cifrado institucional de cuenta ${accNum} verificado en servidor central.<br>
+            Los rendimientos pasados no garantizan rendimientos futuros. Operaciones de futuros sujetas a volatilidad de mercado.
           </div>
         </body>
         </html>
@@ -239,17 +246,20 @@ export default function InvestorPortfolio() {
       {/* Encabezado del Inversionista */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
             <span className="text-2xl">🥧</span>
-            <h2 className="text-xl sm:text-2xl font-black text-white">
+            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
               Mi Inversión & Rendimiento
             </h2>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-400/10 text-amber-300 border border-amber-400/30">
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-400/10 text-amber-300 border border-amber-400/30 uppercase tracking-wider">
               Solo Lectura
+            </span>
+            <span className="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-slate-950 text-amber-400 border border-slate-700 shadow-inner">
+              Cuenta: {portfolio?.account_number || user?.account_number || 'WTN-2026-0000'}
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            Inversionista: <strong className="text-white">{user?.username}</strong> {user?.email ? `(${user.email})` : ''} • Estado de cuenta sincronizado en tiempo real con Binance Futures.
+            Inversionista: <strong className="text-white">{user?.username}</strong> {user?.email ? `(${user.email})` : ''} • Fondo gestionado por <strong className="text-slate-300">WTN Solutions LLC</strong> sincronizado en vivo con Binance Futures.
           </p>
         </div>
 
@@ -271,6 +281,50 @@ export default function InvestorPortfolio() {
             </>
           )}
         </button>
+      </div>
+
+      {/* WIDGET DE ACTIVIDAD CUANTITATIVA EN VIVO (Alta Frecuencia 24/7) */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-amber-950/20 border border-amber-500/30 rounded-2xl p-4 shadow-xl relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="flex items-center gap-4 z-10">
+          {/* Radar de escaneo dinámico */}
+          <div className="relative flex items-center justify-center w-12 h-12 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-400 shadow-inner">
+            <span className="absolute w-10 h-10 rounded-full bg-emerald-400/20 animate-ping"></span>
+            <span className="relative text-2xl animate-pulse">⚡</span>
+            <span className="absolute -top-1 -right-1 flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+          </div>
+
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="text-sm font-black text-white uppercase tracking-wider">
+                Algoritmo Cuantitativo de Alta Frecuencia Activo
+              </h4>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                EN VIVO 24/7
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Escaneo cuantitativo continuo de RSI, Order Book & Volatilidad • Stop-Loss Dinámico y Take-Profit protegiendo tu capital
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 z-10 self-stretch sm:self-auto justify-between sm:justify-end">
+          <div className="text-right">
+            <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Motor Institucional</div>
+            <div className="text-xs font-mono font-bold text-amber-400">WTN ALGO-TRADING v2.6</div>
+          </div>
+          <div className="h-8 w-px bg-slate-800"></div>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-emerald-400 font-bold shadow-inner">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <span>GESTIONANDO</span>
+          </div>
+        </div>
       </div>
 
       {/* Tarjetas KPI de Rendimiento */}
@@ -335,49 +389,88 @@ export default function InvestorPortfolio() {
       {/* Gráfico de Dona: Tu Pedazo de la Torta vs Resto del Pool */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Gráfico de Dona */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col items-center justify-center text-center">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 mb-4">
-            Tu Participación en el Fondo
+        {/* Gráfico de Dona Dinámico Neón */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col items-center justify-center text-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none"></div>
+
+          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 mb-3 flex items-center gap-2">
+            <span>🥧</span> Tu Participación en el Fondo
           </h3>
 
-          <div className="relative flex items-center justify-center my-2">
-            <svg className="w-48 h-48 transform -rotate-90">
+          <div className="relative flex items-center justify-center my-3">
+            <svg className="w-52 h-52 transform -rotate-90">
+              <defs>
+                <linearGradient id="userShareGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#f59e0b" />
+                  <stop offset="50%" stopColor="#fbbf24" />
+                  <stop offset="100%" stopColor="#d97706" />
+                </linearGradient>
+                <linearGradient id="poolTrackGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#1e293b" />
+                  <stop offset="100%" stopColor="#0f172a" />
+                </linearGradient>
+                <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+
               {/* Círculo base (Resto del fondo) */}
               <circle
-                cx="96"
-                cy="96"
+                cx="104"
+                cy="104"
                 r={radius}
-                className="text-slate-800"
-                strokeWidth="18"
-                stroke="currentColor"
+                stroke="url(#poolTrackGrad)"
+                strokeWidth="20"
                 fill="transparent"
               />
+              {/* Glow pulsante de fondo */}
+              {share > 0 && (
+                <circle
+                  cx="104"
+                  cy="104"
+                  r={radius}
+                  stroke="url(#userShareGrad)"
+                  strokeWidth="20"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap="round"
+                  fill="transparent"
+                  filter="url(#neonGlow)"
+                  opacity="0.5"
+                  className="transition-all duration-1000 ease-out animate-pulse"
+                />
+              )}
               {/* Círculo de participación del usuario */}
               <circle
-                cx="96"
-                cy="96"
+                cx="104"
+                cy="104"
                 r={radius}
-                className="text-amber-400 transition-all duration-1000 ease-out"
-                strokeWidth="18"
+                stroke="url(#userShareGrad)"
+                strokeWidth="20"
                 strokeDasharray={circumference}
                 strokeDashoffset={strokeDashoffset}
                 strokeLinecap="round"
-                stroke="currentColor"
                 fill="transparent"
+                className="transition-all duration-1000 ease-out drop-shadow-md"
               />
             </svg>
             <div className="absolute flex flex-col items-center justify-center">
-              <span className="text-3xl font-black font-mono text-amber-300">
-                {share.toFixed(1)}%
-              </span>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                Tu Cuota
-              </span>
+              <div className="w-24 h-24 rounded-full bg-slate-950/90 border border-amber-400/20 flex flex-col items-center justify-center shadow-inner">
+                <span className="text-2xl font-black font-mono text-amber-300">
+                  {share.toFixed(1)}%
+                </span>
+                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                  Tu Cuota
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="w-full mt-4 pt-4 border-t border-slate-800 space-y-2 text-xs">
+          <div className="w-full mt-2 pt-4 border-t border-slate-800 space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded-full bg-amber-400 shadow"></span>

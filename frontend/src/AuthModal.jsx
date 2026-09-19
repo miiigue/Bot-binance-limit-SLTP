@@ -74,10 +74,13 @@ export default function AuthModal() {
             <span>⚡</span>
           </div>
           <h2 className="text-2xl font-black tracking-tight text-white">
-            Binance Futures Algo-Bot
+            WTN ALGO-TRADING
           </h2>
-          <p className="text-xs text-slate-400 mt-1 font-medium">
-            Plataforma Institucional de Trading Automatizado & Pool de Inversión
+          <div className="text-xs font-bold text-amber-400 uppercase tracking-widest mt-0.5">
+            Binance Institutional Division
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1 font-medium">
+            WTN Solutions LLC • Quantitative Asset Management & Pool
           </p>
         </div>
 
@@ -344,7 +347,8 @@ export default function AuthModal() {
 
         {/* Pie del modal */}
         <div className="mt-6 pt-4 border-t border-slate-800 text-center text-[11px] text-slate-500">
-          Protegido con Cifrado Criptográfico HMAC-SHA256 & SQLite WAL
+          <div className="font-semibold text-slate-400">WTN Solutions LLC &copy; {new Date().getFullYear()} • WTN ALGO-TRADING (Binance)</div>
+          <div className="text-[10px] text-slate-600 mt-1">Cifrado Militar JWT & SHA-256 • Protección Anti-Fuerza Bruta Activa</div>
         </div>
       </div>
     </div>

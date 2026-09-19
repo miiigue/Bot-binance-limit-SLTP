@@ -27,11 +27,13 @@ from src.database import (
     get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, clear_trade_history, get_all_recent_trades,
     count_users, create_user, get_user_by_id, get_user_by_identifier, update_last_login,
     approve_user, reject_user, add_investor_transaction, get_all_investors_summary,
-    get_investor_portfolio, get_investor_transactions, DATABASE_FILE
+    get_investor_portfolio, get_investor_transactions, toggle_user_status,
+    get_admin_investor_dossier, DATABASE_FILE
 )
 from src.auth import (
     hash_password, verify_password, generate_jwt, decode_jwt,
-    token_required, admin_required
+    token_required, admin_required, is_login_rate_limited,
+    record_failed_login, clear_failed_logins
 )
 from src.bot import TradingBot, BotState 
 from src.binance_client import get_account_balance_usdt, reset_futures_client, get_futures_client
@@ -700,12 +702,32 @@ def auth_login_endpoint():
         if not identifier or not password:
             return jsonify({"status": "error", "message": "Por favor ingresa usuario/correo y contraseña."}), 400
 
+        # Verificación anti-fuerza bruta
+        is_limited, wait_secs = is_login_rate_limited(identifier)
+        if is_limited:
+            api_logger.warning(f"Intento de login bloqueado por exceso de intentos fallidos: {identifier}")
+            return jsonify({
+                "status": "error",
+                "message": f"Demasiados intentos fallidos. Por seguridad institucional, el acceso ha sido pausado temporalmente. Intenta nuevamente en {wait_secs} segundos.",
+                "code": "RATE_LIMITED"
+            }), 429
+
         user = get_user_by_identifier(identifier)
         if not user:
+            record_failed_login(identifier)
             return jsonify({"status": "error", "message": "Credenciales inválidas o usuario no existe."}), 401
 
         if not verify_password(password, user['password_hash']):
+            record_failed_login(identifier)
             return jsonify({"status": "error", "message": "Credenciales inválidas."}), 401
+
+        if user['status'] == 'blocked':
+            api_logger.warning(f"Intento de login denegado: usuario {user['username']} se encuentra bloqueado.")
+            return jsonify({
+                "status": "error",
+                "message": "Tu cuenta ha sido suspendida o bloqueada por la administración de WTN Solutions LLC. Contacta a soporte para más detalles.",
+                "code": "ACCOUNT_BLOCKED"
+            }), 403
 
         if user['status'] == 'pending':
             return jsonify({
@@ -721,6 +743,9 @@ def auth_login_endpoint():
                 "code": "ACCOUNT_REJECTED"
             }), 403
 
+        # Login exitoso: limpiar historial de intentos fallidos
+        clear_failed_logins(identifier)
+
         # Actualizar último acceso y emitir token
         update_last_login(user['id'])
         token = generate_jwt(user_id=user['id'], username=user['username'], role=user['role'])
@@ -729,9 +754,10 @@ def auth_login_endpoint():
             "username": user['username'],
             "email": user['email'],
             "role": user['role'],
-            "status": user['status']
+            "status": user['status'],
+            "account_number": user.get('account_number')
         }
-        api_logger.info(f"Sesión iniciada: {user['username']} (Rol: {user['role']})")
+        api_logger.info(f"Sesión iniciada exitosamente: {user['username']} (Rol: {user['role']}, Cuenta: {user.get('account_number')})")
         return jsonify({
             "status": "success",
             "message": "Inicio de sesión exitoso.",
@@ -919,6 +945,56 @@ def admin_backup_db_endpoint():
     except Exception as e:
         api_logger.error(f"Error al generar backup de DB: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/toggle_user_status', methods=['POST'])
+@admin_required
+def admin_toggle_user_status_endpoint():
+    """Bloquea o reactiva inmediatamente la cuenta de un usuario."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        user_id = data.get('user_id')
+        new_status = data.get('status')
+
+        if not user_id or new_status not in ('active', 'blocked'):
+            return jsonify({"status": "error", "message": "Parámetros inválidos. Se requiere user_id y status ('active' o 'blocked')."}), 400
+
+        success = toggle_user_status(int(user_id), new_status)
+        if success:
+            action_desc = "bloqueado" if new_status == 'blocked' else "reactivado"
+            api_logger.warning(f"Super Admin cambió estado de usuario {user_id} a '{new_status}' ({action_desc})")
+            return jsonify({
+                "status": "success",
+                "message": f"Usuario {action_desc} exitosamente.",
+                "new_status": new_status,
+                "user_id": int(user_id)
+            })
+        return jsonify({"status": "error", "message": "No se pudo actualizar el estado del usuario."}), 500
+    except Exception as e:
+        api_logger.error(f"Error en admin_toggle_user_status: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/investor_dossier/<int:user_id>', methods=['GET'])
+@admin_required
+def admin_investor_dossier_endpoint(user_id):
+    """Retorna la Ficha Técnica 360° de un inversionista para el Administrador."""
+    try:
+        live_balance = None
+        try:
+            live_balance = get_account_balance_usdt()
+        except Exception:
+            pass
+
+        dossier = get_admin_investor_dossier(int(user_id), live_pool_balance=live_balance)
+        if not dossier:
+            return jsonify({"status": "error", "message": "Inversionista no encontrado o no tiene perfil asignado."}), 404
+
+        return jsonify({"status": "success", "dossier": dossier})
+    except Exception as e:
+        api_logger.error(f"Error en admin_investor_dossier: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 @app.route('/api/config', methods=['GET'])

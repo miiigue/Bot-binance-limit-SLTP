@@ -302,8 +302,8 @@ function MainDashboard() {
           <div className="flex flex-col gap-1.5 md:hidden">
             <div className="flex items-center justify-between gap-1 min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-base font-black tracking-tight text-slate-950 truncate">BOT BINANCE</span>
-                <span className="bg-emerald-900 text-white text-[9px] px-1.5 py-0.2 rounded font-mono font-bold">
+                <span className="text-sm font-black tracking-tight text-slate-950 truncate">WTN ALGO-TRADING</span>
+                <span className="bg-slate-950 text-amber-300 text-[9px] px-1 py-0.2 rounded font-mono font-bold">
                   {isAdmin ? '👑 ADMIN' : '💼 INVERSOR'}
                 </span>
                 <button
@@ -351,11 +351,17 @@ function MainDashboard() {
 
           {/* Vista Desktop (md:) */}
           <div className="hidden md:flex items-center justify-between">
-            <div className="flex-1 min-w-0 flex items-center gap-2">
-              <span className="text-lg font-black tracking-tight text-slate-950 truncate">BOT BINANCE LIMIT-SLTP</span>
-              <span className="bg-emerald-900 text-white text-[10px] px-2 py-0.5 rounded font-mono font-bold shadow">
-                🛡️ FUTURES TESTNET
-              </span>
+            <div className="flex-1 min-w-0 flex items-center gap-3">
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base font-black tracking-tight text-slate-950 truncate">WTN ALGO-TRADING</span>
+                  <span className="bg-slate-950 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shadow">
+                    BINANCE
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-900 tracking-wider">WTN Solutions LLC</span>
+              </div>
+
               <button
                 type="button"
                 onClick={handleToggleSound}
@@ -402,7 +408,12 @@ function MainDashboard() {
               {/* Perfil & Logout */}
               <div className="flex items-center gap-2 bg-slate-950 px-3 py-1 rounded-xl border border-slate-800 shadow">
                 <span className="text-sm">{isAdmin ? '👑' : '💼'}</span>
-                <span className="text-xs font-bold text-white max-w-[110px] truncate">{user?.username}</span>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold text-white max-w-[110px] truncate">{user?.username}</span>
+                  {user?.account_number && (
+                    <span className="text-[9px] font-mono font-bold text-amber-400 -mt-0.5">{user.account_number}</span>
+                  )}
+                </div>
                 <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
                   isAdmin ? 'bg-amber-400 text-slate-950' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
                 }`}>
