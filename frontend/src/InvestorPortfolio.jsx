@@ -309,7 +309,7 @@ export default function InvestorPortfolio() {
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Escaneo cuantitativo continuo de RSI, Order Book & Volatilidad • Stop-Loss Dinámico y Take-Profit protegiendo tu capital
+              Supervisión y gestión algorítmica institucional en tiempo real
             </p>
           </div>
         </div>
