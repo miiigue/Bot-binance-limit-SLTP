@@ -198,7 +198,8 @@ function MainDashboard() {
         throw new Error(`Error HTTP: ${response.status}`);
       }
       const data = await response.json();
-      setAvailableStrategies(data.strategies || []);
+      const list = Array.isArray(data) ? data : (data?.strategies || []);
+      setAvailableStrategies(list);
     } catch (err) {
       console.error("Error al cargar estrategias:", err);
       setStrategyError(err.message);

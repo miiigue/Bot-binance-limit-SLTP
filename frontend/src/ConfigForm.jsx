@@ -579,6 +579,13 @@ function ConfigForm({
     return () => clearInterval(intervalId);
   }, []);
 
+  // --- Refrescar lista de estrategias al montar el formulario ---
+  useEffect(() => {
+    if (onRefreshStrategies) {
+      onRefreshStrategies();
+    }
+  }, [onRefreshStrategies]);
+
   // --- Sincronizar formData cuando cambia propInitialConfig ---
   useEffect(() => {
     if (propInitialConfig && Object.keys(propInitialConfig).length > 0) {
