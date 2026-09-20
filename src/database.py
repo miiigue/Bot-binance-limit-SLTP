@@ -1249,15 +1249,23 @@ def get_investor_portfolio(user_id: int, live_pool_balance: float = None) -> dic
         user_net_capital = max(0.0, user_deposits - user_withdrawals)
 
         cursor.execute("""
-            SELECT 
-                SUM(CASE WHEN it.transaction_type IN ('INITIAL', 'DEPOSIT') THEN it.amount_usdt ELSE 0 END) as total_dep,
-                SUM(CASE WHEN it.transaction_type = 'WITHDRAWAL' THEN it.amount_usdt ELSE 0 END) as total_wd
+            SELECT it.user_id,
+                   SUM(CASE WHEN it.transaction_type IN ('INITIAL', 'DEPOSIT') THEN it.amount_usdt ELSE 0 END) as total_dep,
+                   SUM(CASE WHEN it.transaction_type = 'WITHDRAWAL' THEN it.amount_usdt ELSE 0 END) as total_wd
             FROM investor_transactions it
             JOIN users u ON u.id = it.user_id
             WHERE u.status = 'active'
+            GROUP BY it.user_id
         """)
-        pool_row = cursor.fetchone()
-        total_pool_dep = float(pool_row['total_dep'] or 0.0) - float(pool_row['total_wd'] or 0.0)
+        active_cap_rows = cursor.fetchall()
+
+        active_caps = {}
+        for r in active_cap_rows:
+            net_c = float(r['total_dep'] or 0.0) - float(r['total_wd'] or 0.0)
+            if net_c > 0:
+                active_caps[r['user_id']] = net_c
+
+        total_pool_dep = sum(active_caps.values())
         total_pool_dep = max(0.0, total_pool_dep)
 
         pool_balance = float(live_pool_balance) if live_pool_balance is not None and live_pool_balance > 0 else total_pool_dep
@@ -1266,6 +1274,53 @@ def get_investor_portfolio(user_id: int, live_pool_balance: float = None) -> dic
         current_value = (pool_balance * (share_pct / 100.0)) if total_pool_dep > 0 else user_net_capital
         net_pnl = current_value - user_net_capital
         roi_pct = (net_pnl / user_net_capital * 100.0) if user_net_capital > 0 else 0.0
+
+        # Construcción de porciones anónimas de la torta para que el inversionista compare
+        pool_slices = []
+        anon_index = 1
+        sorted_caps = sorted(active_caps.items(), key=lambda x: x[1], reverse=True)
+
+        for uid, u_cap in sorted_caps:
+            is_self = (uid == user_id)
+            s_pct = (u_cap / total_pool_dep * 100.0) if total_pool_dep > 0 else 0.0
+            c_val = (pool_balance * (s_pct / 100.0)) if total_pool_dep > 0 else u_cap
+            u_pnl = c_val - u_cap
+            u_roi = (u_pnl / u_cap * 100.0) if u_cap > 0 else 0.0
+
+            if is_self:
+                label = "Tu Inversión"
+            else:
+                label = f"Inversión #{anon_index}"
+                anon_index += 1
+
+            pool_slices.append({
+                "label": label,
+                "capital": round(u_cap, 2),
+                "current_value": round(c_val, 2),
+                "share_percentage": round(s_pct, 2),
+                "net_pnl": round(u_pnl, 2),
+                "roi_percentage": round(u_roi, 2),
+                "is_self": is_self
+            })
+
+        # Si el balance del pool total supera a la suma de depósitos registrados (por ejemplo la reserva base o casa matriz):
+        if len(pool_slices) == 1 and pool_slices[0]["share_percentage"] < 99.9:
+            self_s = pool_slices[0]
+            rem_share = round(100.0 - self_s["share_percentage"], 2)
+            rem_val = round(pool_balance - self_s["current_value"], 2)
+            rem_cap = round(total_pool_dep * (rem_share / (self_s["share_percentage"] or 1)), 2)
+            rem_pnl = round(rem_val - rem_cap, 2)
+            rem_roi = round((rem_pnl / rem_cap * 100.0), 2) if rem_cap > 0 else round(self_s["roi_percentage"], 2)
+
+            pool_slices.insert(0, {
+                "label": "Inversión #1 (Pool Institucional)",
+                "capital": rem_cap,
+                "current_value": rem_val,
+                "share_percentage": rem_share,
+                "net_pnl": rem_pnl,
+                "roi_percentage": rem_roi,
+                "is_self": False
+            })
 
         return {
             "user": user_info,
@@ -1276,7 +1331,8 @@ def get_investor_portfolio(user_id: int, live_pool_balance: float = None) -> dic
             "net_pnl": round(net_pnl, 2),
             "roi_percentage": round(roi_pct, 2),
             "total_pool_balance": round(pool_balance, 2),
-            "transactions": user_txs
+            "transactions": user_txs,
+            "pool_slices": pool_slices
         }
     except Exception as e:
         get_logger().error(f"Error al obtener portafolio del inversionista {user_id}: {e}", exc_info=True)
