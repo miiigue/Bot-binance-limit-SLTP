@@ -7,6 +7,7 @@ export default function AuthModal() {
   const [mode, setMode] = useState(needsInitialAdmin ? 'setup' : 'login'); // 'setup', 'login', 'register', 'pending_notice'
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [investmentAmount, setInvestmentAmount] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,6 +41,14 @@ export default function AuthModal() {
       return;
     }
 
+    if (mode === 'register') {
+      const parsedAmount = parseFloat(investmentAmount);
+      if (!investmentAmount || isNaN(parsedAmount) || parsedAmount <= 0) {
+        setErrorMessage('Por favor ingresa un monto válido a invertir (mínimo 1 USDT).');
+        return;
+      }
+    }
+
     if (password.length < 6) {
       setErrorMessage('La contraseña debe tener un mínimo de 6 caracteres.');
       return;
@@ -52,7 +61,12 @@ export default function AuthModal() {
 
     setIsSubmitting(true);
     try {
-      const res = await register(username.trim(), email.trim(), password);
+      const res = await register(
+        username.trim(), 
+        email.trim(), 
+        password,
+        mode === 'register' ? (parseFloat(investmentAmount) || 0) : 0
+      );
       if (res.pending_approval) {
         setSuccessNotice('Tu solicitud de cuenta ha sido registrada con éxito. Está en espera de aprobación por el Super Administrador.');
         setMode('pending_notice');
@@ -279,6 +293,36 @@ export default function AuthModal() {
                 </div>
 
                 <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-300">
+                      Monto que vas a Invertir *
+                    </label>
+                    <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">USDT / Dólares</span>
+                  </div>
+                  <div className="relative flex items-center">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-emerald-400 font-black text-sm">
+                      $
+                    </div>
+                    <input
+                      type="number"
+                      step="any"
+                      min="1"
+                      required
+                      value={investmentAmount}
+                      onChange={(e) => setInvestmentAmount(e.target.value)}
+                      placeholder="ej: 1000"
+                      className="w-full pl-8 pr-16 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm font-mono font-bold text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-xs font-bold text-slate-400">
+                      USDT
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Capital con el que deseas ingresar al pool algorítmico institucional.
+                  </p>
+                </div>
+
+                <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">Contraseña *</label>
                   <input
                     type="password"
@@ -332,6 +376,11 @@ export default function AuthModal() {
             <h3 className="text-lg font-bold text-white mb-2">
               ¡Solicitud Enviada Exitosamente!
             </h3>
+            {investmentAmount && parseFloat(investmentAmount) > 0 && (
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-emerald-400 font-mono font-bold text-xs mb-3">
+                <span>💰</span> Monto a Invertir: ${parseFloat(investmentAmount).toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
+              </div>
+            )}
             <p className="text-xs text-slate-300 leading-relaxed mb-6">
               {successNotice || 'Tu cuenta ha sido registrada. Por motivos de seguridad y privacidad financiera, el Super Administrador debe autorizar tu acceso y asignar tu capital aportado.'}
             </p>

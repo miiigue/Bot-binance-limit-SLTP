@@ -94,12 +94,17 @@ export function AuthProvider({ children }) {
   };
 
   // Registro de Usuario (Primer usuario = Admin, siguientes = Inversionista pendiente)
-  const register = async (username, email, password) => {
+  const register = async (username, email, password, investmentAmount = 0) => {
     try {
       const resp = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password })
+        body: JSON.stringify({ 
+          username, 
+          email, 
+          password,
+          investment_amount: parseFloat(investmentAmount) || 0
+        })
       });
 
       const data = await resp.json();

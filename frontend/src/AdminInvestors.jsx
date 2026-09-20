@@ -37,7 +37,21 @@ export default function AdminInvestors({ addToast }) {
         throw new Error('Error al cargar información de inversionistas.');
       }
       const res = await resp.json();
-      setData(res.data || { investors: [], pending_users: [], pool_stats: {} });
+      const fetchedData = res.data || { investors: [], pending_users: [], pool_stats: {} };
+      setData(fetchedData);
+
+      // Pre-llenar montos solicitados en approvalInputs si están disponibles
+      if (fetchedData.pending_users && fetchedData.pending_users.length > 0) {
+        setApprovalInputs(prev => {
+          const nextInputs = { ...prev };
+          fetchedData.pending_users.forEach(p => {
+            if ((nextInputs[p.id] === undefined || nextInputs[p.id] === '') && p.requested_capital > 0) {
+              nextInputs[p.id] = p.requested_capital;
+            }
+          });
+          return nextInputs;
+        });
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -538,6 +552,18 @@ export default function AdminInvestors({ addToast }) {
                   <div className="text-[11px] text-slate-500 font-mono mt-0.5">
                     Registrado el: {pUser.created_at || '-'}
                   </div>
+                  {pUser.requested_capital > 0 ? (
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="text-[11px] font-semibold text-slate-400">Monto Solicitado a Invertir:</span>
+                      <span className="px-2.5 py-0.5 bg-emerald-500/15 border border-emerald-500/30 rounded-lg text-emerald-400 font-mono font-black text-xs shadow-sm flex items-center gap-1">
+                        <span>💰</span> ${Number(pUser.requested_capital).toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-[11px] text-slate-500 italic">
+                      Monto a invertir no especificado
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">

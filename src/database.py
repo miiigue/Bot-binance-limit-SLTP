@@ -173,10 +173,18 @@ def init_db_schema():
             role TEXT NOT NULL DEFAULT 'investor',
             status TEXT NOT NULL DEFAULT 'pending',
             created_at DATETIME NOT NULL,
-            last_login DATETIME
+            last_login DATETIME,
+            requested_capital REAL DEFAULT 0.0
         )
         """)
         conn.commit()
+
+        # Migración automática si la tabla users ya existía sin la columna requested_capital
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN requested_capital REAL DEFAULT 0.0")
+            conn.commit()
+        except Exception:
+            pass
 
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS investor_transactions (
@@ -911,7 +919,7 @@ def count_users() -> int:
     finally:
         conn.close()
 
-def create_user(username: str, email: str, password_hash: str, role: str = 'investor', status: str = 'pending') -> int:
+def create_user(username: str, email: str, password_hash: str, role: str = 'investor', status: str = 'pending', requested_capital: float = 0.0) -> int:
     """Crea un nuevo usuario en la base de datos y retorna su ID."""
     conn = get_db_connection()
     if not conn:
@@ -920,9 +928,9 @@ def create_user(username: str, email: str, password_hash: str, role: str = 'inve
         cursor = conn.cursor()
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute("""
-            INSERT INTO users (username, email, password_hash, role, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (username.strip(), email.strip().lower() if email else None, password_hash, role, status, now_str))
+            INSERT INTO users (username, email, password_hash, role, status, created_at, requested_capital)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (username.strip(), email.strip().lower() if email else None, password_hash, role, status, now_str, float(requested_capital or 0.0)))
         conn.commit()
         return cursor.lastrowid
     except sqlite3.IntegrityError as ie:
@@ -966,12 +974,13 @@ def get_user_by_id(user_id: int) -> dict:
         return None
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, email, role, status, created_at, last_login FROM users WHERE id = ?", (user_id,))
+        cursor.execute("SELECT id, username, email, role, status, created_at, last_login, requested_capital FROM users WHERE id = ?", (user_id,))
         row = cursor.fetchone()
         if not row:
             return None
         res = dict(row)
         res['account_number'] = format_account_number(res['id'])
+        res['requested_capital'] = float(res.get('requested_capital') or 0.0)
         return res
     except Exception as e:
         get_logger().error(f"Error al obtener usuario por ID {user_id}: {e}")
@@ -987,7 +996,7 @@ def get_user_by_identifier(identifier: str) -> dict:
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, username, email, password_hash, role, status, created_at, last_login 
+            SELECT id, username, email, password_hash, role, status, created_at, last_login, requested_capital 
             FROM users 
             WHERE LOWER(username) = LOWER(?) OR (email IS NOT NULL AND LOWER(email) = LOWER(?))
         """, (identifier.strip(), identifier.strip()))
@@ -996,6 +1005,7 @@ def get_user_by_identifier(identifier: str) -> dict:
             return None
         res = dict(row)
         res['account_number'] = format_account_number(res['id'])
+        res['requested_capital'] = float(res.get('requested_capital') or 0.0)
         return res
     except Exception as e:
         get_logger().error(f"Error al buscar usuario por identificador '{identifier}': {e}")
@@ -1109,7 +1119,7 @@ def get_all_investors_summary(live_pool_balance: float = None) -> dict:
         return {"investors": [], "pending_users": [], "pool_stats": {}}
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, email, role, status, created_at, last_login FROM users ORDER BY id ASC")
+        cursor.execute("SELECT id, username, email, role, status, created_at, last_login, requested_capital FROM users ORDER BY id ASC")
         all_users = [dict(r) for r in cursor.fetchall()]
 
         cursor.execute("""
@@ -1133,6 +1143,7 @@ def get_all_investors_summary(live_pool_balance: float = None) -> dict:
             net_cap = capital_by_user.get(u_id, 0.0)
             u['net_capital'] = round(net_cap, 2)
             u['account_number'] = format_account_number(u_id)
+            u['requested_capital'] = float(u.get('requested_capital') or 0.0)
             
             if u['status'] == 'pending':
                 pending_users.append(u)

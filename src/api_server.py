@@ -652,9 +652,15 @@ def auth_register_endpoint():
         total_users = count_users()
         pwd_hash = hash_password(password)
 
+        investment_amount = data.get('investment_amount', data.get('requested_capital', data.get('initial_capital', 0.0)))
+        try:
+            investment_amount = max(0.0, float(investment_amount or 0.0))
+        except (ValueError, TypeError):
+            investment_amount = 0.0
+
         if total_users == 0:
             # Esquema A: Primer usuario se convierte en Super Admin activo
-            user_id = create_user(username=username, email=email, password_hash=pwd_hash, role='admin', status='active')
+            user_id = create_user(username=username, email=email, password_hash=pwd_hash, role='admin', status='active', requested_capital=investment_amount)
             if not user_id:
                 return jsonify({"status": "error", "message": "Error al registrar el Super Administrador."}), 500
 
@@ -664,7 +670,8 @@ def auth_register_endpoint():
                 "username": username,
                 "email": email,
                 "role": "admin",
-                "status": "active"
+                "status": "active",
+                "requested_capital": investment_amount
             }
             api_logger.info(f"Super Administrador inicial registrado exitosamente: {username}")
             return jsonify({
@@ -675,16 +682,17 @@ def auth_register_endpoint():
                 "is_first_user": True
             })
         else:
-            # Esquema C: Siguientes usuarios quedan pendientes de aprobación
-            user_id = create_user(username=username, email=email, password_hash=pwd_hash, role='investor', status='pending')
+            # Esquema C: Siguientes usuarios quedan pendientes de aprobación con su monto solicitado
+            user_id = create_user(username=username, email=email, password_hash=pwd_hash, role='investor', status='pending', requested_capital=investment_amount)
             if not user_id:
                 return jsonify({"status": "error", "message": "Error al registrar la solicitud."}), 500
 
-            api_logger.info(f"Nueva solicitud de inversionista registrada (pendiente): {username}")
+            api_logger.info(f"Nueva solicitud de inversionista registrada (pendiente): {username} | Monto a invertir: ${investment_amount:,.2f} USDT")
             return jsonify({
                 "status": "success",
                 "message": "Registro completado con éxito. Tu cuenta está en revisión y debe ser aprobada por el Administrador antes de que puedas ingresar.",
-                "pending_approval": True
+                "pending_approval": True,
+                "requested_capital": investment_amount
             })
     except Exception as e:
         api_logger.error(f"Error en endpoint de registro: {e}", exc_info=True)
