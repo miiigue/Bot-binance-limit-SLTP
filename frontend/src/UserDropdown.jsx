@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from './AuthContext';
+import { downloadAccountStatementPdf } from './statementPdf';
 
 export default function UserDropdown({
   user,
@@ -10,11 +12,26 @@ export default function UserDropdown({
   deferredPrompt,
   onTriggerInstall
 }) {
+  const { authFetch } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [copiedAccount, setCopiedAccount] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [desktopDownloadToast, setDesktopDownloadToast] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const dropdownRef = useRef(null);
+
+  // Descargar Estado de Cuenta Oficial (PDF)
+  const handleDownloadPdf = async () => {
+    setIsDownloadingPdf(true);
+    try {
+      await downloadAccountStatementPdf(authFetch, user);
+    } catch (err) {
+      alert(err.message || 'Error al generar estado de cuenta.');
+    } finally {
+      setIsDownloadingPdf(false);
+      setIsOpen(false);
+    }
+  };
 
   // Detectar si la app ya corre en modo standalone instalado
   useEffect(() => {
@@ -275,7 +292,32 @@ export default function UserDropdown({
           {/* Opciones Principales de Acción */}
           <div className="p-2 space-y-1">
             
-            {/* 1. Instalar App */}
+            {/* 1. Descargar Estado de Cuenta Oficial (PDF) */}
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isDownloadingPdf}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 transition group disabled:opacity-50"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-105 transition-transform">
+                  📄
+                </div>
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-100 group-hover:text-amber-300 transition-colors">
+                    {isDownloadingPdf ? 'Generando PDF...' : 'Estado de Cuenta (PDF)'}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Descargar extracto oficial institucional
+                  </div>
+                </div>
+              </div>
+              <span className="text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
+                PDF
+              </span>
+            </button>
+
+            {/* 2. Instalar App */}
             <button
               type="button"
               onClick={handleInstallClick}
