@@ -60,7 +60,7 @@ export default function UserDropdown({
 
   // Descarga exclusiva para PC de escritorio si el navegador no tiene instalador nativo
   const triggerDesktopDownload = () => {
-    const currentOrigin = (window.location.origin || 'https://178.105.192.140.sslip.io').replace('http:', 'https:');
+    const currentOrigin = (window.location.origin || 'https://trading.wtnsolutions.com').replace('http:', 'https:');
 
     // 1. Script BAT para iniciar en ventana independiente de app nativa sin barras de navegador
     const batContent = `@echo off\r\n` +
@@ -106,13 +106,13 @@ export default function UserDropdown({
       return;
     }
 
-    // Si el usuario está navegando por la IP directa (178.105.192.140), redirigir al dominio oficial seguro con SSL
+    // Si el usuario está navegando por una IP o dominio no oficial, redirigir al dominio oficial seguro con SSL
     if (
-      window.location.hostname !== '178.105.192.140.sslip.io' &&
+      window.location.hostname !== 'trading.wtnsolutions.com' &&
       window.location.hostname !== 'localhost' &&
       window.location.hostname !== '127.0.0.1'
     ) {
-      window.location.href = 'https://178.105.192.140.sslip.io' + window.location.pathname;
+      window.location.href = 'https://trading.wtnsolutions.com' + window.location.pathname;
       return;
     }
 

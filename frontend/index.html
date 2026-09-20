@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <script>
-      // 1. Redireccion forzosa al dominio HTTPS oficial para garantizar certificado SSL valido y habilitar WebAPK en Android
+      // 1. Redireccion forzosa al dominio HTTPS oficial de WTN para garantizar certificado SSL valido y habilitar WebAPK en Android
       if (
-        (location.hostname === '178.105.192.140' || location.protocol === 'http:' || location.hostname.endsWith('.nip.io')) &&
+        (location.hostname === '178.105.192.140' || location.protocol === 'http:' || location.hostname.endsWith('.nip.io') || location.hostname.endsWith('.sslip.io')) &&
         location.hostname !== 'localhost' &&
         location.hostname !== '127.0.0.1'
       ) {
-        location.replace('https://178.105.192.140.sslip.io' + location.pathname + location.search + location.hash);
+        location.replace('https://trading.wtnsolutions.com' + location.pathname + location.search + location.hash);
       }
 
       // 2. Captura INMEDIATA del evento nativo de instalacion antes de que cargue React
