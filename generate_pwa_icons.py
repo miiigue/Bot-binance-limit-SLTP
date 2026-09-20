@@ -58,6 +58,9 @@ def create_pwa_icon(size, is_maskable=False):
 icon_192 = create_pwa_icon(192, is_maskable=False)
 icon_192.save(os.path.join(public_dir, 'icon-192.png'), 'PNG')
 
+icon_192_maskable = create_pwa_icon(192, is_maskable=True)
+icon_192_maskable.save(os.path.join(public_dir, 'icon-192-maskable.png'), 'PNG')
+
 icon_512 = create_pwa_icon(512, is_maskable=False)
 icon_512.save(os.path.join(public_dir, 'icon-512.png'), 'PNG')
 

@@ -3,8 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <script>
-      // 1. Redireccion forzosa a HTTPS institucional para habilitar instalacion nativa
-      if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      // 1. Redireccion forzosa al dominio HTTPS oficial para garantizar certificado SSL valido y habilitar WebAPK en Android
+      if (
+        (location.hostname === '178.105.192.140' || location.protocol === 'http:' || location.hostname.endsWith('.nip.io')) &&
+        location.hostname !== 'localhost' &&
+        location.hostname !== '127.0.0.1'
+      ) {
         location.replace('https://178.105.192.140.sslip.io' + location.pathname + location.search + location.hash);
       }
 

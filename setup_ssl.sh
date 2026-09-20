@@ -45,6 +45,10 @@ server {
     ssl_certificate /etc/letsencrypt/live/178.105.192.140.sslip.io/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/178.105.192.140.sslip.io/privkey.pem;
 
+    if ($host != "178.105.192.140.sslip.io") {
+        return 301 https://178.105.192.140.sslip.io$request_uri;
+    }
+
     root /opt/bot-binance/frontend/dist;
     index index.html;
 

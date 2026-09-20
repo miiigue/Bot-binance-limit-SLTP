@@ -106,6 +106,16 @@ export default function UserDropdown({
       return;
     }
 
+    // Si el usuario está navegando por la IP directa (178.105.192.140), redirigir al dominio oficial seguro con SSL
+    if (
+      window.location.hostname !== '178.105.192.140.sslip.io' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1'
+    ) {
+      window.location.href = 'https://178.105.192.140.sslip.io' + window.location.pathname;
+      return;
+    }
+
     const promptEvent = window.__wtn_install_prompt || deferredPrompt;
 
     // 1. Si el navegador tiene listo el prompt nativo de instalación (Android / Chrome / Edge)
