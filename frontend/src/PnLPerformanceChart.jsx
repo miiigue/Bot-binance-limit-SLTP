@@ -572,13 +572,34 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
     const barWidth = 24;
     const colSpacing = 36;
     const leftMargin = 50;
-    const rightMargin = 20;
-    const totalSvgWidth = Math.max(500, leftMargin + tradesList.length * colSpacing + rightMargin);
-    const svgHeight = 90;
-    const centerY = 45; // El centro exacto matemático donde se posa la línea base
+    const rightMargin = 24;
+    const totalSvgWidth = Math.max(480, leftMargin + tradesList.length * colSpacing + rightMargin);
+    const svgHeight = 150;
+    const centerY = 75; // El centro exacto matemático donde se posa la línea base
     const maxBarHeight = 32;
 
     const isThisCoinInspected = activeTradeInspector && activeTradeInspector.coin === symbolOrStrat;
+
+    // Helper para formatear fecha estilo exacto: "20 sept, 23:14"
+    const formatTradeTime = (timestamp) => {
+      if (!timestamp) return '';
+      try {
+        const raw = String(timestamp).trim();
+        const isoString = (raw.includes('T') || raw.includes('Z') || raw.includes('+')) 
+          ? (raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z')
+          : raw.replace(' ', 'T') + 'Z';
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return timestamp;
+        const day = d.getDate();
+        const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+        const month = months[d.getMonth()] || '';
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        return `${day} ${month}, ${hours}:${minutes}`;
+      } catch (e) {
+        return timestamp;
+      }
+    };
 
     return (
       <div className="mt-2.5 pt-2 border-t border-gray-200 dark:border-gray-800/80">
@@ -601,59 +622,45 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
           </span>
         </div>
 
-        {/* Panel Inspector Interactivo (Aparece al hacer click o pasar el cursor en cualquier trade) */}
-        {isThisCoinInspected && activeTradeInspector && (
-          <div className="mb-2 p-2.5 bg-slate-950 border-2 border-amber-400/80 rounded-xl flex flex-wrap items-center justify-between gap-2 shadow-2xl animate-fadeIn">
-            <div className="flex items-center gap-2">
-              <span className={`px-2 py-0.5 rounded text-[11px] font-black font-mono ${
-                activeTradeInspector.isWin
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50'
-                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
-              }`}>
-                Trade #{activeTradeInspector.index} {activeTradeInspector.isWin ? 'WIN 🎯' : 'LOSS 🛑'}
-              </span>
-              <span className={`text-sm font-black font-mono ${activeTradeInspector.isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {activeTradeInspector.isWin ? '+' : ''}${activeTradeInspector.pnl.toFixed(4)} USDT
-              </span>
-            </div>
+        {/* Contenedor del Gráfico SVG con Eje Cero Matemático y Tooltip Dinámico */}
+        <div className="relative w-full bg-gray-100 dark:bg-slate-950/90 rounded-xl p-2 border border-gray-200 dark:border-slate-800 shadow-inner min-h-[160px]">
+          <div className="relative w-full overflow-x-auto no-scrollbar">
+            
+            {/* Tooltip Flotante sobre la barra con la información exacta requerida */}
+            {isThisCoinInspected && activeTradeInspector && (
+              <div
+                className="absolute z-30 pointer-events-none transition-all duration-150 -translate-x-1/2 bg-slate-900/95 backdrop-blur-md border border-amber-400/80 shadow-2xl rounded-xl px-3 py-2 text-left font-mono whitespace-nowrap"
+                style={{
+                  left: `${Math.max(75, Math.min(totalSvgWidth - 75, activeTradeInspector.x + barWidth / 2))}px`,
+                  top: activeTradeInspector.isWin ? `${centerY + 8}px` : `${Math.max(4, centerY - 68)}px`
+                }}
+              >
+                <div className="flex items-center gap-1.5 text-xs font-black">
+                  <span className="text-white">Trade #{activeTradeInspector.index}</span>
+                  <span className={activeTradeInspector.isWin ? 'text-emerald-400' : 'text-rose-400'}>
+                    {activeTradeInspector.isWin ? 'WIN 🎯' : 'LOSS 🛑'}
+                  </span>
+                </div>
+                <div className={`text-xs font-black mt-0.5 ${activeTradeInspector.isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {activeTradeInspector.isWin ? '+' : ''}${activeTradeInspector.pnl.toFixed(4)} USDT
+                </div>
+                <div className="text-[11px] text-slate-300 mt-0.5">
+                  Tipo: <strong className={activeTradeInspector.trade.trade_type === 'LONG' ? 'text-emerald-400' : 'text-rose-400'}>{activeTradeInspector.trade.trade_type || 'LONG'}</strong>
+                </div>
+                {activeTradeInspector.timeStr && (
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    🕒 {activeTradeInspector.timeStr}
+                  </div>
+                )}
+              </div>
+            )}
 
-            <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-slate-300">
-              {activeTradeInspector.trade.trade_type && (
-                <span>
-                  Tipo: <strong className={activeTradeInspector.trade.trade_type === 'LONG' ? 'text-emerald-400' : 'text-rose-400'}>{activeTradeInspector.trade.trade_type}</strong>
-                </span>
-              )}
-              {activeTradeInspector.trade.close_reason && (
-                <span>
-                  Salida: <strong className="text-white">{activeTradeInspector.trade.close_reason}</strong>
-                </span>
-              )}
-              {activeTradeInspector.timeStr && (
-                <span className="text-slate-400">
-                  🕒 {activeTradeInspector.timeStr}
-                </span>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setActiveTradeInspector(null)}
-              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-bold font-mono transition"
-              title="Cerrar detalle"
-            >
-              ✕ Cerrar
-            </button>
-          </div>
-        )}
-
-        {/* Contenedor del Gráfico SVG con Eje Cero Matemático */}
-        <div className="relative w-full bg-gray-100 dark:bg-slate-950/90 rounded-xl p-2 border border-gray-200 dark:border-slate-800 shadow-inner overflow-hidden">
-          <div className="w-full overflow-x-auto no-scrollbar">
             <svg
               width={totalSvgWidth}
               height={svgHeight}
               viewBox={`0 0 ${totalSvgWidth} ${svgHeight}`}
               className="select-none block"
+              onMouseLeave={() => setActiveTradeInspector(null)}
             >
               <defs>
                 {/* Gradiente Verde para Ganancias */}
@@ -723,11 +730,7 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
                   activeTradeInspector.coin === symbolOrStrat && 
                   activeTradeInspector.index === (idx + 1);
 
-                const timeStr = t.close_timestamp ? (() => {
-                  const raw = String(t.close_timestamp).trim();
-                  const d = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z');
-                  return isNaN(d.getTime()) ? t.close_timestamp : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-                })() : `Trade #${idx + 1}`;
+                const timeStr = formatTradeTime(t.close_timestamp);
 
                 const handleSelect = () => {
                   setActiveTradeInspector({
@@ -737,7 +740,8 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
                     pnl,
                     isWin,
                     isLoss,
-                    timeStr
+                    timeStr,
+                    x
                   });
                 };
 
@@ -812,6 +816,7 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
                       fontWeight={isSelected ? "bold" : "normal"}
                       fontFamily="monospace"
                       onClick={handleSelect}
+                      onMouseEnter={handleSelect}
                     >
                       #{idx + 1}
                     </text>
@@ -824,8 +829,8 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
 
         {/* Indicador de ayuda al usuario */}
         {!isThisCoinInspected && (
-          <div className="text-[10px] text-slate-500 mt-1 px-1 flex items-center justify-between">
-            <span>💡 Toca o pasa el cursor sobre cualquier barra para ver el detalle de ese trade.</span>
+          <div className="text-[10px] text-slate-500 mt-1 px-1 flex items-center justify-between font-mono">
+            <span>💡 Pasa el cursor o toca cualquier barra para ver el detalle del trade.</span>
           </div>
         )}
       </div>
