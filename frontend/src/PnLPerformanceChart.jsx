@@ -21,6 +21,8 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
   const [coinSortOrder, setCoinSortOrder] = useState('PNL_DESC');
   // Modo de vista del ranking: 'COINS' (por criptomoneda) o 'STRATEGIES' (torneo por estrategia)
   const [rankingViewMode, setRankingViewMode] = useState('COINS');
+  // Estado para la inspección interactiva del trade seleccionado al pasar el cursor o tocar la barra
+  const [activeTradeInspector, setActiveTradeInspector] = useState(null);
 
   // Cargar datos financieros y de billetera
   const fetchAllData = async () => {
@@ -566,137 +568,266 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
     // Calcular el valor absoluto máximo entre los trades para escalar las barras de forma equilibrada
     const maxAbs = Math.max(0.05, ...tradesList.map(t => Math.abs(getTradePnL(t))));
 
+    // Geometría SVG
+    const barWidth = 24;
+    const colSpacing = 36;
+    const leftMargin = 50;
+    const rightMargin = 20;
+    const totalSvgWidth = Math.max(500, leftMargin + tradesList.length * colSpacing + rightMargin);
+    const svgHeight = 90;
+    const centerY = 45; // El centro exacto matemático donde se posa la línea base
+    const maxBarHeight = 32;
+
+    const isThisCoinInspected = activeTradeInspector && activeTradeInspector.coin === symbolOrStrat;
+
     return (
       <div className="mt-2.5 pt-2 border-t border-gray-200 dark:border-gray-800/80">
-        {/* Leyenda y contador de trades */}
-        <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 mb-1 px-1 font-mono">
+        
+        {/* Leyenda superior y contador */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400 mb-1.5 px-1 font-mono">
           <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 bg-emerald-500 rounded-sm inline-block shadow-sm"></span>
               <span className="text-emerald-500 dark:text-emerald-400 font-bold text-[10px]">▲ Ganancia (Win)</span>
             </span>
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 bg-rose-500 rounded-sm inline-block shadow-sm"></span>
               <span className="text-rose-500 dark:text-rose-400 font-bold text-[10px]">▼ Pérdida (Loss)</span>
             </span>
           </div>
+
           <span className="text-[10px] text-gray-400">
             {tradesList.length} {tradesList.length === 1 ? 'trade cerrado' : 'trades cerrados'} (cronológico ➔)
           </span>
         </div>
 
-        {/* Contenedor del Gráfico con Eje Cero */}
-        <div className="relative w-full bg-gray-100 dark:bg-slate-950/80 rounded-xl px-3 py-2 border border-gray-200 dark:border-slate-800 shadow-inner">
-          <div className="relative h-20 w-full overflow-x-auto no-scrollbar flex items-center">
-            
-            {/* Línea horizontal central del Eje 0 */}
-            <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 pointer-events-none z-0">
-              <div className="w-full border-t-2 border-dashed border-gray-300 dark:border-gray-700"></div>
-            </div>
-
-            {/* Etiqueta 0.00 sobre el eje a la izquierda */}
-            <div className="sticky left-0 top-1/2 -translate-y-1/2 z-20 pointer-events-none pr-2">
-              <span className="text-[9px] font-mono font-black text-gray-500 dark:text-gray-400 bg-white/90 dark:bg-slate-900/90 px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-700 shadow-sm">
-                0.00
+        {/* Panel Inspector Interactivo (Aparece al hacer click o pasar el cursor en cualquier trade) */}
+        {isThisCoinInspected && activeTradeInspector && (
+          <div className="mb-2 p-2.5 bg-slate-950 border-2 border-amber-400/80 rounded-xl flex flex-wrap items-center justify-between gap-2 shadow-2xl animate-fadeIn">
+            <div className="flex items-center gap-2">
+              <span className={`px-2 py-0.5 rounded text-[11px] font-black font-mono ${
+                activeTradeInspector.isWin
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50'
+                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
+              }`}>
+                Trade #{activeTradeInspector.index} {activeTradeInspector.isWin ? 'WIN 🎯' : 'LOSS 🛑'}
+              </span>
+              <span className={`text-sm font-black font-mono ${activeTradeInspector.isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {activeTradeInspector.isWin ? '+' : ''}${activeTradeInspector.pnl.toFixed(4)} USDT
               </span>
             </div>
 
-            {/* Secuencia cronológica de barras */}
-            <div className="flex items-center gap-2 pl-2 pr-6 min-w-max h-full relative z-10">
+            <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-slate-300">
+              {activeTradeInspector.trade.trade_type && (
+                <span>
+                  Tipo: <strong className={activeTradeInspector.trade.trade_type === 'LONG' ? 'text-emerald-400' : 'text-rose-400'}>{activeTradeInspector.trade.trade_type}</strong>
+                </span>
+              )}
+              {activeTradeInspector.trade.close_reason && (
+                <span>
+                  Salida: <strong className="text-white">{activeTradeInspector.trade.close_reason}</strong>
+                </span>
+              )}
+              {activeTradeInspector.timeStr && (
+                <span className="text-slate-400">
+                  🕒 {activeTradeInspector.timeStr}
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveTradeInspector(null)}
+              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-bold font-mono transition"
+              title="Cerrar detalle"
+            >
+              ✕ Cerrar
+            </button>
+          </div>
+        )}
+
+        {/* Contenedor del Gráfico SVG con Eje Cero Matemático */}
+        <div className="relative w-full bg-gray-100 dark:bg-slate-950/90 rounded-xl p-2 border border-gray-200 dark:border-slate-800 shadow-inner overflow-hidden">
+          <div className="w-full overflow-x-auto no-scrollbar">
+            <svg
+              width={totalSvgWidth}
+              height={svgHeight}
+              viewBox={`0 0 ${totalSvgWidth} ${svgHeight}`}
+              className="select-none block"
+            >
+              <defs>
+                {/* Gradiente Verde para Ganancias */}
+                <linearGradient id="winGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#34d399" />
+                  <stop offset="100%" stopColor="#10b981" />
+                </linearGradient>
+
+                {/* Gradiente Rojo para Pérdidas */}
+                <linearGradient id="lossGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#f43f5e" />
+                  <stop offset="100%" stopColor="#e11d48" />
+                </linearGradient>
+
+                {/* Filtro de Resaltado Dorado para Trade Activo */}
+                <filter id="activeGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#fbbf24" />
+                </filter>
+              </defs>
+
+              {/* 1. Línea Base Horizontal Eje Cero */}
+              <line
+                x1={leftMargin - 6}
+                y1={centerY}
+                x2={totalSvgWidth - rightMargin}
+                y2={centerY}
+                stroke="#64748b"
+                strokeWidth="1.5"
+                strokeDasharray="4 3"
+              />
+
+              {/* 2. Etiqueta 0.00 en el Eje a la Izquierda */}
+              <rect
+                x="6"
+                y={centerY - 9}
+                width="36"
+                height="18"
+                rx="4"
+                fill="#0f172a"
+                stroke="#475569"
+                strokeWidth="1"
+              />
+              <text
+                x="24"
+                y={centerY + 4}
+                textAnchor="middle"
+                fill="#94a3b8"
+                fontSize="10"
+                fontWeight="bold"
+                fontFamily="monospace"
+              >
+                0.00
+              </text>
+
+              {/* 3. Barras de cada Trade Cerrado */}
               {tradesList.map((t, idx) => {
                 const pnl = getTradePnL(t);
                 const isWin = pnl > 0.00001;
                 const isLoss = pnl < -0.00001;
                 const absPnl = Math.abs(pnl);
 
-                // Altura proporcional: mitad de altura disponible (aprox 32px máx), mín 8px para que sea claramente visible y clicable
-                const barHeight = Math.max(8, Math.min(32, Math.round((absPnl / maxAbs) * 32)));
+                // Altura proporcional: escala entre 8px y 32px
+                const barHeight = Math.max(8, Math.min(maxBarHeight, Math.round((absPnl / maxAbs) * maxBarHeight)));
+                const x = leftMargin + idx * colSpacing;
 
-                // Formato de hora/fecha
+                const isSelected = activeTradeInspector && 
+                  activeTradeInspector.coin === symbolOrStrat && 
+                  activeTradeInspector.index === (idx + 1);
+
                 const timeStr = t.close_timestamp ? (() => {
                   const raw = String(t.close_timestamp).trim();
                   const d = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z');
                   return isNaN(d.getTime()) ? t.close_timestamp : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                 })() : `Trade #${idx + 1}`;
 
+                const handleSelect = () => {
+                  setActiveTradeInspector({
+                    coin: symbolOrStrat,
+                    trade: t,
+                    index: idx + 1,
+                    pnl,
+                    isWin,
+                    isLoss,
+                    timeStr
+                  });
+                };
+
                 return (
-                  <div
-                    key={t.id || idx}
-                    className="group relative flex flex-col items-center justify-center h-full cursor-pointer py-1"
-                    style={{ width: '26px' }}
-                  >
-                    {/* Mitad Superior: Ganancia (Sube desde el eje hacia arriba) */}
-                    <div className="h-1/2 w-full flex items-end justify-center">
-                      {isWin && (
-                        <div
-                          className="w-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-400/90 rounded-t shadow-sm shadow-emerald-500/20 transition-all group-hover:scale-110 group-hover:brightness-125"
-                          style={{ height: `${barHeight}px` }}
-                        />
-                      )}
-                    </div>
+                  <g key={t.id || idx} className="cursor-pointer">
+                    {/* Zona de Clic / Hover invisible para facilitar selección en móviles y escritorio */}
+                    <rect
+                      x={x - 4}
+                      y="4"
+                      width={barWidth + 8}
+                      height={svgHeight - 8}
+                      fill="transparent"
+                      onClick={handleSelect}
+                      onMouseEnter={handleSelect}
+                    />
 
-                    {/* Mitad Inferior: Pérdida (Cae desde el eje hacia abajo) */}
-                    <div className="h-1/2 w-full flex items-start justify-center">
-                      {isLoss && (
-                        <div
-                          className="w-full bg-rose-500 hover:bg-rose-400 border border-rose-400/90 rounded-b shadow-sm shadow-rose-500/20 transition-all group-hover:scale-110 group-hover:brightness-125"
-                          style={{ height: `${barHeight}px` }}
-                        />
-                      )}
-                      {!isWin && !isLoss && (
-                        <div className="w-full h-1 bg-gray-400 rounded" />
-                      )}
-                    </div>
+                    {/* Si es Ganancia: Nace en centerY y sube hacia arriba (y = centerY - barHeight) */}
+                    {isWin && (
+                      <rect
+                        x={x}
+                        y={centerY - barHeight}
+                        width={barWidth}
+                        height={barHeight}
+                        rx="3"
+                        fill="url(#winGrad)"
+                        stroke={isSelected ? "#fbbf24" : "#34d399"}
+                        strokeWidth={isSelected ? 2.5 : 1}
+                        filter={isSelected ? "url(#activeGlow)" : undefined}
+                        onClick={handleSelect}
+                        onMouseEnter={handleSelect}
+                        className="transition-all hover:brightness-125"
+                      />
+                    )}
 
-                    {/* Número del Trade bajo la barra */}
-                    <span className="text-[9px] font-mono font-bold text-gray-400 group-hover:text-white transition-colors mt-0.5">
+                    {/* Si es Pérdida: Nace en centerY y baja hacia abajo (y = centerY) */}
+                    {isLoss && (
+                      <rect
+                        x={x}
+                        y={centerY}
+                        width={barWidth}
+                        height={barHeight}
+                        rx="3"
+                        fill="url(#lossGrad)"
+                        stroke={isSelected ? "#fbbf24" : "#fb7185"}
+                        strokeWidth={isSelected ? 2.5 : 1}
+                        filter={isSelected ? "url(#activeGlow)" : undefined}
+                        onClick={handleSelect}
+                        onMouseEnter={handleSelect}
+                        className="transition-all hover:brightness-125"
+                      />
+                    )}
+
+                    {/* Si es Breakeven 0 */}
+                    {!isWin && !isLoss && (
+                      <circle
+                        cx={x + barWidth / 2}
+                        cy={centerY}
+                        r="3"
+                        fill="#94a3b8"
+                        onClick={handleSelect}
+                        onMouseEnter={handleSelect}
+                      />
+                    )}
+
+                    {/* Número de Trade debajo de la barra */}
+                    <text
+                      x={x + barWidth / 2}
+                      y={centerY + 34}
+                      textAnchor="middle"
+                      fill={isSelected ? "#fbbf24" : "#94a3b8"}
+                      fontSize="10"
+                      fontWeight={isSelected ? "bold" : "normal"}
+                      fontFamily="monospace"
+                      onClick={handleSelect}
+                    >
                       #{idx + 1}
-                    </span>
-
-                    {/* Tooltip Detallado Flotante */}
-                    <div className="opacity-0 group-hover:opacity-100 pointer-events-none absolute bottom-full mb-1 z-30 transition-all bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl rounded-xl p-2.5 text-xs whitespace-nowrap text-left font-mono">
-                      <div className="flex items-center justify-between gap-3 border-b border-gray-800 pb-1 font-bold">
-                        <span className="text-white">Trade #{idx + 1} ({t.symbol || symbolOrStrat})</span>
-                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-black ${isWin ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'}`}>
-                          {isWin ? 'WIN 🎯' : 'LOSS 🛑'}
-                        </span>
-                      </div>
-
-                      <div className="mt-1.5 space-y-0.5 text-[11px]">
-                        <div className="flex justify-between gap-3">
-                          <span className="text-gray-400">PnL Neto:</span>
-                          <span className={`font-black ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {isWin ? '+' : ''}{pnl.toFixed(4)} USDT
-                          </span>
-                        </div>
-
-                        {t.trade_type && (
-                          <div className="flex justify-between gap-3">
-                            <span className="text-gray-400">Tipo:</span>
-                            <span className={t.trade_type === 'LONG' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                              {t.trade_type}
-                            </span>
-                          </div>
-                        )}
-
-                        {t.close_reason && (
-                          <div className="flex justify-between gap-3">
-                            <span className="text-gray-400">Salida:</span>
-                            <span className="text-slate-200">{t.close_reason}</span>
-                          </div>
-                        )}
-
-                        <div className="text-[10px] text-gray-500 pt-1 border-t border-gray-800 mt-1">
-                          🕒 {timeStr}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                    </text>
+                  </g>
                 );
               })}
-            </div>
+            </svg>
           </div>
         </div>
+
+        {/* Indicador de ayuda al usuario */}
+        {!isThisCoinInspected && (
+          <div className="text-[10px] text-slate-500 mt-1 px-1 flex items-center justify-between">
+            <span>💡 Toca o pasa el cursor sobre cualquier barra para ver el detalle de ese trade.</span>
+          </div>
+        )}
       </div>
     );
   };
