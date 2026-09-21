@@ -6,6 +6,7 @@ export default function InvestorPortfolio() {
   const [portfolio, setPortfolio] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedSliceIndex, setSelectedSliceIndex] = useState(null);
 
   const fetchPortfolio = useCallback(async () => {
     try {
@@ -53,8 +54,6 @@ export default function InvestorPortfolio() {
       </div>
     );
   }
-
-  const [selectedSliceIndex, setSelectedSliceIndex] = useState(null);
 
   const cap = Number(portfolio?.capital_invested || 0);
   const curVal = Number(portfolio?.current_value || 0);
