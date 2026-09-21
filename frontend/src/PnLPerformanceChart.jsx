@@ -148,15 +148,25 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
 
   // Helper para extraer el nombre de la estrategia de un trade
   const getTradeStrategy = (t) => {
-    if (t.strategy_name && String(t.strategy_name).trim()) return String(t.strategy_name).trim();
+    const rawStrat = t.strategy_name && String(t.strategy_name).trim();
+    if (rawStrat && rawStrat.toLowerCase() !== 'global') {
+      return rawStrat;
+    }
     if (t.parameters) {
       try {
         const p = typeof t.parameters === 'string' ? JSON.parse(t.parameters) : t.parameters;
-        if (p.strategy_name) return String(p.strategy_name).trim();
-        if (p.active_strategy_name) return String(p.active_strategy_name).trim();
+        const pStrat = p.strategy_name || p.active_strategy_name;
+        if (pStrat && String(pStrat).trim().toLowerCase() !== 'global') return String(pStrat).trim();
       } catch (_) {}
     }
-    return 'Global';
+    // Buscar si el símbolo tiene estrategia asociada en accountStatus
+    if (t.symbol && Array.isArray(accountStatus?.statuses)) {
+      const found = accountStatus.statuses.find(s => s.symbol?.toUpperCase() === t.symbol?.toUpperCase());
+      if (found?.strategy_name && found.strategy_name.toLowerCase() !== 'global') {
+        return found.strategy_name;
+      }
+    }
+    return 'v3_RSI-SNIPER-MOMENTUM_v3';
   };
 
   // Filtrar operaciones válidas descartando órdenes de entrada espurias con PnL 0 de sincronizaciones
@@ -632,7 +642,7 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
                 className="absolute z-30 pointer-events-none transition-all duration-150 -translate-x-1/2 bg-slate-900/95 backdrop-blur-md border border-amber-400/80 shadow-2xl rounded-xl px-3 py-2 text-left font-mono whitespace-nowrap"
                 style={{
                   left: `${Math.max(75, Math.min(totalSvgWidth - 75, activeTradeInspector.x + barWidth / 2))}px`,
-                  top: activeTradeInspector.isWin ? `${centerY + 8}px` : `${Math.max(4, centerY - 68)}px`
+                  top: `${Math.max(4, centerY - 68)}px`
                 }}
               >
                 <div className="flex items-center gap-1.5 text-xs font-black">

@@ -439,14 +439,20 @@ def start_bot_workers():
             cfg_temp = configparser.ConfigParser()
             if os.path.exists(CONFIG_FILE_PATH):
                 cfg_temp.read(CONFIG_FILE_PATH, encoding='utf-8')
-                global_strat_name = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='Global')
+                global_strat_name = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
         except Exception:
-            global_strat_name = 'Global'
+            global_strat_name = ''
 
-        logger.info(f"Iniciando workers de bot... (Modo Multi-Estrategia: {is_multi})")
+        from src.config_loader import get_strategy_for_symbol
+        if not global_strat_name or global_strat_name.lower() == 'global':
+            global_strat_name = get_strategy_for_symbol(loaded_symbols_to_trade[0] if loaded_symbols_to_trade else 'BTCUSDT')
+
+        logger.info(f"Iniciando workers de bot... (Modo Multi-Estrategia: {is_multi}, Estrategia base: {global_strat_name})")
         for symbol_idx, symbol in enumerate(loaded_symbols_to_trade):
             worker_params = loaded_trading_params.copy()
             strat_name = assignments.get(symbol.upper(), global_strat_name) if is_multi else global_strat_name
+            if not strat_name or strat_name.lower() == 'global':
+                strat_name = get_strategy_for_symbol(symbol)
             
             if is_multi and strat_name:
                 strat_file = os.path.join(STRATEGIES_PATH, f"{strat_name}.json")
@@ -461,7 +467,7 @@ def start_bot_workers():
                     except Exception as e_s:
                         logger.warning(f"Error cargando estrategia '{strat_name}' para {symbol}: {e_s}")
             
-            worker_params['strategy_name'] = strat_name or 'Global'
+            worker_params['strategy_name'] = strat_name or global_strat_name
             logger.info(f"-> Preparando worker para {symbol} (Estrategia: {worker_params['strategy_name']})...")
             thread = threading.Thread(target=run_bot_worker, args=(symbol, worker_params, stop_event), name=f"Worker-{symbol}")
             threads.append(thread)
@@ -1084,8 +1090,18 @@ def update_config_endpoint():
                 if opt.lower() != 'enabled':
                     config.remove_option('MULTI_STRATEGY', opt)
             for sym, s_name in frontend_data['strategyAssignments'].items():
-                if sym and s_name:
+                if sym and s_name and str(s_name).strip().lower() != 'global':
                     config.set('MULTI_STRATEGY', sym.strip().lower(), str(s_name).strip())
+
+            # Garantizar que todos los símbolos en symbols_list tengan su asignación explícita
+            from src.config_loader import get_strategy_for_symbol
+            fallback_strat = actual_name_to_save_in_ini or config.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
+            if not fallback_strat or fallback_strat.lower() == 'global':
+                fallback_strat = get_strategy_for_symbol(symbols_list[0] if symbols_list else 'BTCUSDT')
+            for sym in symbols_list:
+                sym_lower = sym.lower()
+                if not config.has_option('MULTI_STRATEGY', sym_lower) or config.get('MULTI_STRATEGY', sym_lower).strip().lower() == 'global':
+                    config.set('MULTI_STRATEGY', sym_lower, fallback_strat)
 
         # 6. Escribir cambios a config.ini
         with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as configfile:
@@ -1121,7 +1137,7 @@ def update_config_endpoint():
         # --- HOT-RELOAD EN VIVO: Si los workers están corriendo, actualizar parámetros inmediatamente ---
         if workers_started:
             logger.info("Workers activos detectados. Aplicando parámetros actualizados en caliente a cada bot...")
-            from src.config_loader import is_multi_strategy_enabled, get_symbol_strategy_assignments
+            from src.config_loader import is_multi_strategy_enabled, get_symbol_strategy_assignments, get_strategy_for_symbol
             is_multi = is_multi_strategy_enabled()
             assignments = get_symbol_strategy_assignments()
             with status_lock:
@@ -1140,7 +1156,7 @@ def update_config_endpoint():
                                     logger.info(f"-> Hot-reload multi-estrategia exitoso para {sym} con '{s_name}'")
                                     continue
                             params_to_use = loaded_trading_params.copy()
-                            params_to_use['strategy_name'] = actual_name_to_save_in_ini or 'Global'
+                            params_to_use['strategy_name'] = actual_name_to_save_in_ini or get_strategy_for_symbol(sym)
                             bot_inst.update_trading_params(params_to_use)
                             logger.info(f"-> Hot-reload exitoso para bot {sym}")
                         except Exception as e_hot:
@@ -1198,10 +1214,10 @@ def get_worker_status():
                 if worker_data.get('in_position', False):
                     total_unrealized_pnl += Decimal(str(worker_data.get('current_pnl', 0.0)))
             
-            # Asegurar que el nombre de la estrategia esté siempre disponible
-            if 'strategy_name' not in status_entry or not status_entry.get('strategy_name'):
+            # Asegurar que el nombre de la estrategia esté siempre disponible y nunca 'Global'
+            if 'strategy_name' not in status_entry or not status_entry.get('strategy_name') or str(status_entry.get('strategy_name')).lower() == 'global':
                 from src.config_loader import get_strategy_for_symbol
-                status_entry['strategy_name'] = get_strategy_for_symbol(symbol, fallback_strategy='') or 'Global'
+                status_entry['strategy_name'] = get_strategy_for_symbol(symbol)
 
             all_symbols_status.append(status_entry)
 
@@ -1248,6 +1264,14 @@ def get_worker_status():
         account_balance = live_balance if live_balance is not None else total_pool_deposited
         wallet_pnl = round(account_balance - total_pool_deposited, 4)
 
+        # Telemetría de uso y límites de API de Binance
+        api_usage = None
+        try:
+            from src.binance_client import get_api_usage_stats
+            api_usage = get_api_usage_stats(loaded_trading_params, len(loaded_symbols_to_trade))
+        except Exception as e_api:
+            logger.debug(f"Error obteniendo telemetría de API: {e_api}")
+
         response_data = {
             "bots_running": workers_started,
             "statuses": all_symbols_status,
@@ -1256,7 +1280,8 @@ def get_worker_status():
             "global_db_metrics": db_metrics,
             "account_balance": account_balance,
             "initial_capital": total_pool_deposited,
-            "wallet_pnl": wallet_pnl
+            "wallet_pnl": wallet_pnl,
+            "api_usage": api_usage
         }
         
         logger.debug(f"Returning combined statuses. Bots running: {workers_started}")
@@ -1265,6 +1290,17 @@ def get_worker_status():
     except Exception as e:
         logger.error(f"CRITICAL ERROR in /api/status endpoint: {e}", exc_info=True)
         return jsonify({"error": "Internal server error processing status.", "details": str(e)}), 500
+
+@app.route('/api/api_usage', methods=['GET'])
+def get_api_usage_endpoint():
+    """Retorna las métricas en tiempo real y el análisis predictivo del consumo de la API de Binance."""
+    try:
+        from src.binance_client import get_api_usage_stats
+        data = get_api_usage_stats(loaded_trading_params, len(loaded_symbols_to_trade))
+        return jsonify(data), 200
+    except Exception as e:
+        logger.error(f"Error en /api/api_usage: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/shutdown', methods=['POST'])
 def shutdown_bot():

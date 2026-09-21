@@ -117,9 +117,31 @@ def get_symbol_strategy_assignments() -> dict[str, str]:
     return assignments
 
 def get_strategy_for_symbol(symbol: str, fallback_strategy: str = '') -> str:
-    """Obtiene la estrategia asignada a un símbolo específico, o la estrategia por defecto."""
+    """Obtiene la estrategia asignada a un símbolo específico, o la estrategia activa real (nunca 'Global')."""
     assignments = get_symbol_strategy_assignments()
-    return assignments.get(symbol.strip().upper(), fallback_strategy)
+    strat = assignments.get(symbol.strip().upper(), '').strip()
+    if strat and strat.lower() != 'global':
+        return strat
+
+    if fallback_strategy and fallback_strategy.strip().lower() != 'global':
+        return fallback_strategy.strip()
+
+    # Buscar en [STRATEGY_INFO] active_strategy_name
+    config = load_config()
+    if config and config.has_section('STRATEGY_INFO'):
+        act = config.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
+        if act and act.lower() != 'global':
+            return act
+
+    # Buscar en la carpeta strategies/ el primer archivo .json disponible
+    strat_dir = os.path.join(PROJECT_ROOT, 'strategies')
+    if os.path.exists(strat_dir):
+        files = [f[:-5] for f in os.listdir(strat_dir) if f.endswith('.json') and f[:-5].lower() != 'global']
+        if files:
+            v3_match = [f for f in files if 'v3' in f.lower() or 'rsi' in f.lower()]
+            return v3_match[0] if v3_match else files[0]
+
+    return 'v3_RSI-SNIPER-MOMENTUM_v3'
 
 # Ejemplo de uso (no se ejecuta al importar)
 if __name__ == '__main__':

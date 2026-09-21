@@ -23,6 +23,143 @@ from .logger_setup import get_logger
 futures_client_instance = None
 _dual_side_position_cache = None
 
+# Telemetría en tiempo real de consumo y límites de la API de Binance Futures
+_api_rate_limit_stats = {
+    'used_weight_1m': 0,
+    'order_count_10s': 0,
+    'order_count_1m': 0,
+    'last_updated': 0,
+    'max_weight_1m': 2400,
+    'max_orders_10s': 300,
+    'max_orders_1m': 1200,
+    'total_requests': 0,
+    'requests_history': []  # Timestamps de peticiones en los últimos 60 segundos
+}
+
+def _binance_response_hook(response, *args, **kwargs):
+    """Intercepta las respuestas HTTP de Binance para capturar las cabeceras oficiales de rate limits."""
+    global _api_rate_limit_stats
+    try:
+        now = time.time()
+        _api_rate_limit_stats['total_requests'] += 1
+        _api_rate_limit_stats['requests_history'].append(now)
+        cutoff = now - 60
+        _api_rate_limit_stats['requests_history'] = [t for t in _api_rate_limit_stats['requests_history'] if t >= cutoff]
+
+        headers = getattr(response, 'headers', {})
+        for k, v in headers.items():
+            k_lower = k.lower()
+            if k_lower == 'x-mbx-used-weight-1m':
+                try:
+                    _api_rate_limit_stats['used_weight_1m'] = int(v)
+                    _api_rate_limit_stats['last_updated'] = now
+                except (ValueError, TypeError):
+                    pass
+            elif k_lower == 'x-mbx-order-count-10s':
+                try:
+                    _api_rate_limit_stats['order_count_10s'] = int(v)
+                except (ValueError, TypeError):
+                    pass
+            elif k_lower == 'x-mbx-order-count-1m':
+                try:
+                    _api_rate_limit_stats['order_count_1m'] = int(v)
+                except (ValueError, TypeError):
+                    pass
+    except Exception:
+        pass
+
+def get_api_usage_stats(trading_params: dict = None, active_symbols_count: int = None) -> dict:
+    """
+    Retorna métricas en tiempo real del uso de la API de Binance,
+    combinando las cabeceras reales de Binance con la proyección teórica
+    basada en la configuración de las estrategias y tiempos de ejecución.
+    """
+    now = time.time()
+    cutoff = now - 60
+    req_history = [t for t in _api_rate_limit_stats.get('requests_history', []) if t >= cutoff]
+    _api_rate_limit_stats['requests_history'] = req_history
+    requests_last_minute = len(req_history)
+
+    used_weight = _api_rate_limit_stats.get('used_weight_1m', 0)
+    if used_weight == 0 and requests_last_minute > 0:
+        used_weight = min(2400, requests_last_minute * 4)
+
+    max_weight = _api_rate_limit_stats.get('max_weight_1m', 2400)
+    used_percent = round((used_weight / max_weight) * 100, 1) if max_weight > 0 else 0.0
+
+    if trading_params is None:
+        try:
+            from .config_loader import load_config
+            cfg = load_config()
+            sleep_sec = cfg.getfloat('TRADING', 'cycle_sleep_seconds', fallback=3.0) if cfg else 3.0
+            symbols_str = cfg.get('SYMBOLS', 'symbols_to_trade', fallback='') if cfg else ''
+            sym_count = len([s for s in symbols_str.split(',') if s.strip()]) if active_symbols_count is None else active_symbols_count
+            rsi_interval = cfg.get('TRADING', 'rsi_interval', fallback='3m') if cfg else '3m'
+            btc_shield = cfg.getboolean('TRADING', 'enable_btc_crash_shield', fallback=True) if cfg else True
+            regime_filter = cfg.getboolean('TRADING', 'enable_market_regime_filter', fallback=False) if cfg else False
+            order_type = cfg.get('TRADING', 'entry_order_type', fallback='LIMIT') if cfg else 'LIMIT'
+        except Exception:
+            sleep_sec = 3.0
+            sym_count = active_symbols_count or 6
+            rsi_interval = '3m'
+            btc_shield = True
+            regime_filter = False
+            order_type = 'LIMIT'
+    else:
+        sleep_sec = float(trading_params.get('cycle_sleep_seconds') or trading_params.get('cycleSleepSeconds') or 3.0)
+        sym_count = active_symbols_count if active_symbols_count is not None else len(trading_params.get('symbolsToTrade', '').split(',')) if isinstance(trading_params.get('symbolsToTrade'), str) else 6
+        rsi_interval = str(trading_params.get('rsi_interval') or trading_params.get('rsiInterval') or '3m')
+        btc_shield = bool(trading_params.get('enable_btc_crash_shield') or trading_params.get('enableBtcCrashShield', True))
+        regime_filter = bool(trading_params.get('enable_market_regime_filter') or trading_params.get('enableMarketRegimeFilter', False))
+        order_type = str(trading_params.get('entry_order_type') or trading_params.get('entryOrderType') or 'LIMIT')
+
+    sleep_sec = max(0.5, sleep_sec)
+    sym_count = max(1, sym_count)
+
+    weight_per_cycle = 6.0
+    cycles_per_minute_per_sym = 60.0 / sleep_sec
+    total_cycles_per_minute = round(cycles_per_minute_per_sym * sym_count, 1)
+
+    projected_weight_1m = round(total_cycles_per_minute * weight_per_cycle, 0)
+    if btc_shield:
+        projected_weight_1m += 8
+    if regime_filter:
+        projected_weight_1m += 10
+
+    projected_percent = round((projected_weight_1m / max_weight) * 100, 1)
+
+    status_level = 'SAFE'
+    if used_percent >= 85 or projected_percent >= 85:
+        status_level = 'CRITICAL'
+    elif used_percent >= 60 or projected_percent >= 60:
+        status_level = 'WARNING'
+
+    return {
+        'used_weight_1m': used_weight,
+        'max_weight_1m': max_weight,
+        'used_percent': used_percent,
+        'projected_weight_1m': projected_weight_1m,
+        'projected_percent': projected_percent,
+        'requests_last_minute': requests_last_minute,
+        'total_requests': _api_rate_limit_stats.get('total_requests', 0),
+        'order_count_10s': _api_rate_limit_stats.get('order_count_10s', 0),
+        'max_orders_10s': _api_rate_limit_stats.get('max_orders_10s', 300),
+        'order_count_1m': _api_rate_limit_stats.get('order_count_1m', 0),
+        'max_orders_1m': _api_rate_limit_stats.get('max_orders_1m', 1200),
+        'status_level': status_level,
+        'factors': {
+            'cycle_sleep_seconds': sleep_sec,
+            'active_symbols_count': sym_count,
+            'cycles_per_minute_per_pair': round(cycles_per_minute_per_sym, 1),
+            'total_cycles_per_minute': total_cycles_per_minute,
+            'rsi_interval': rsi_interval,
+            'btc_crash_shield': btc_shield,
+            'market_regime_filter': regime_filter,
+            'entry_order_type': order_type
+        },
+        'last_updated': _api_rate_limit_stats.get('last_updated', 0)
+    }
+
 def is_hedge_mode() -> bool:
     """Verifica si la cuenta está en Modo Cobertura (Hedge Mode) o Modo Unidireccional (One-Way Mode)."""
     global _dual_side_position_cache
@@ -92,6 +229,8 @@ def get_futures_client(force_reload: bool = False):
 
         client = UMFutures(key=api_key, secret=api_secret, base_url=base_url_to_use)
         client.session.mount(base_url_to_use, HTTPAdapter(pool_connections=100, pool_maxsize=100))
+        if _binance_response_hook not in client.session.hooks.get('response', []):
+            client.session.hooks['response'].append(_binance_response_hook)
 
         # Verificar conexión con Testnet
         try:

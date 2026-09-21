@@ -94,7 +94,14 @@ class TradingBot:
         self.historical_pnl = Decimal('0') # Para PNL histórico total
         self.session_pnl = Decimal('0') # <-- NUEVO: Para PNL de la sesión actual
         self.margin_for_current_position = Decimal('0') # Para seguimiento de margen real
-        self.strategy_name = str(trading_params.get('strategy_name') or trading_params.get('active_strategy_name') or 'Global')
+        s_init = trading_params.get('strategy_name') or trading_params.get('active_strategy_name')
+        if not s_init or str(s_init).strip().lower() == 'global':
+            try:
+                from src.config_loader import get_strategy_for_symbol
+                s_init = get_strategy_for_symbol(self.symbol)
+            except Exception:
+                s_init = 'v3_RSI-SNIPER-MOMENTUM_v3'
+        self.strategy_name = str(s_init)
         
         # --- Variables de control de la estrategia (IDs de órdenes) ---
         self.active_order_id = None
@@ -1854,7 +1861,13 @@ class TradingBot:
         close_ts_for_db = actual_close_timestamp.to_pydatetime() if pd.notna(actual_close_timestamp) else None
 
         try:
-            strat_to_record = getattr(self, 'strategy_name', 'Global')
+            strat_to_record = getattr(self, 'strategy_name', '')
+            if not strat_to_record or str(strat_to_record).strip().lower() == 'global':
+                try:
+                    from src.config_loader import get_strategy_for_symbol
+                    strat_to_record = get_strategy_for_symbol(self.symbol)
+                except Exception:
+                    strat_to_record = 'v3_RSI-SNIPER-MOMENTUM_v3'
             db_trade_params = {
                 'strategy_name': strat_to_record,
                 'rsi_type': getattr(self, 'rsi_type', 'WILDER'),
@@ -3660,7 +3673,7 @@ class TradingBot:
 
         return {
             "symbol": self.symbol,
-            "strategy_name": getattr(self, 'strategy_name', 'Global'),
+            "strategy_name": getattr(self, 'strategy_name', '') or 'v3_RSI-SNIPER-MOMENTUM_v3',
             "state": self.state.value if self.state else "N/A",
             "is_running": self.is_running,
             "is_paused": getattr(self, 'is_paused', False),

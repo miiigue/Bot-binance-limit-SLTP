@@ -253,11 +253,59 @@ def init_db_schema():
         except Exception as e_clean:
             logger.debug(f"Aviso en limpieza automática de trades dummy: {e_clean}")
 
+        # 4. Reparación de estrategias para eliminar 'Global' y asignar nombres reales
+        repair_global_strategy_trades()
+
         logger.info("Esquema de la base de datos inicializado/verificado.")
         return True
     except sqlite3.Error as e:
         logger.error(f"Error al inicializar/verificar el esquema de la DB: {e}", exc_info=True)
         return False
+    finally:
+        if conn:
+            conn.close()
+
+def repair_global_strategy_trades():
+    """
+    Sanea y repara los registros de trades donde strategy_name quedó como 'Global',
+    vacío o NULL, asignando la estrategia real configurada para ese símbolo.
+    """
+    logger = get_logger()
+    conn = None
+    try:
+        from src.config_loader import get_strategy_for_symbol
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, symbol, parameters FROM trades 
+            WHERE strategy_name IS NULL 
+               OR strategy_name = '' 
+               OR lower(strategy_name) = 'global'
+        """)
+        rows = cursor.fetchall()
+        if rows:
+            logger.info(f"Detectadas {len(rows)} operaciones con estrategia 'Global' o vacía. Reparando...")
+            for r in rows:
+                t_id = r[0]
+                sym = str(r[1] or '').strip().upper()
+                params_str = r[2]
+                real_strat = ''
+                if params_str:
+                    try:
+                        p_obj = json.loads(params_str)
+                        st = p_obj.get('strategy_name') or p_obj.get('active_strategy_name')
+                        if st and str(st).strip().lower() != 'global':
+                            real_strat = str(st).strip()
+                    except Exception:
+                        pass
+                if not real_strat:
+                    real_strat = get_strategy_for_symbol(sym)
+                
+                cursor.execute("UPDATE trades SET strategy_name = ? WHERE id = ?", (real_strat, t_id))
+            conn.commit()
+            logger.info(f"Reparación completada: {len(rows)} operaciones actualizadas con su estrategia real.")
+    except Exception as e:
+        logger.warning(f"Aviso durante la reparación de estrategias en trades: {e}")
     finally:
         if conn:
             conn.close()
@@ -280,12 +328,12 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
     # Si no se pasó explícito, intentar inferir de parameters o de la configuración del símbolo
     if not strategy_name and parameters:
         strategy_name = parameters.get('strategy_name') or parameters.get('active_strategy_name') or parameters.get('activeStrategyName')
-    if not strategy_name:
+    if not strategy_name or str(strategy_name).strip().lower() == 'global':
         try:
             from src.config_loader import get_strategy_for_symbol
-            strategy_name = get_strategy_for_symbol(symbol, fallback_strategy='')
+            strategy_name = get_strategy_for_symbol(symbol)
         except Exception:
-            strategy_name = ''
+            strategy_name = 'v3_RSI-SNIPER-MOMENTUM_v3'
 
     # Deducción y cálculo automático de comisiones Binance
     open_price_f = float(open_price or 0.0)
@@ -428,6 +476,10 @@ def get_total_database_metrics() -> dict:
         purge_duplicate_trades()
     except Exception:
         pass
+    try:
+        repair_global_strategy_trades()
+    except Exception:
+        pass
     conn = None
     default_res = {
         "total_pnl": 0.0,
@@ -463,20 +515,19 @@ def get_total_database_metrics() -> dict:
             FROM trades
         """)
         row = cur.fetchone()
-        if row and row['total_trades'] > 0:
+        if row and row['total_trades'] and int(row['total_trades']) > 0:
             tot = int(row['total_trades'] or 0)
             wins = int(row['wins'] or 0)
             losses = int(row['losses'] or 0)
-            pnl = float(row['total_pnl'] or 0.0)
-            comm = float(row['total_commission_usdt'] or 0.0)
-            gross = float(row['total_gross_pnl'] or 0.0)
-            gp = float(row['gross_profit'] or 0.0)
-            gl = float(row['gross_loss'] or 0.0)
-            pf = f"{(gp / gl):.2f}" if gl > 0 else ("∞" if gp > 0 else "1.00")
+            tot_pnl = round(float(row['total_pnl'] or 0.0), 4)
+            comm = round(float(row['total_commission_usdt'] or 0.0), 4)
+            gross = round(float(row['total_gross_pnl'] or 0.0), 4)
+            gp = round(float(row['gross_profit'] or 0.0), 4)
+            gl = round(float(row['gross_loss'] or 0.0), 4)
+            pf = f"{gp / gl:.2f}" if gl > 0 else (f"{gp:.2f}" if gp > 0 else "1.00")
             wr = round((wins / tot) * 100, 1) if tot > 0 else 0.0
-            
             default_res.update({
-                "total_pnl": pnl,
+                "total_pnl": tot_pnl,
                 "total_commission_usdt": comm,
                 "total_gross_pnl": gross,
                 "total_trades": tot,
@@ -491,7 +542,7 @@ def get_total_database_metrics() -> dict:
         # 2. Desglose por estrategia para el resumen del torneo
         cur.execute("""
             SELECT 
-                IFNULL(strategy_name, 'Global') as strat,
+                strategy_name as strat,
                 COUNT(*) as count,
                 SUM(IFNULL(pnl_usdt, 0)) as strat_pnl,
                 SUM(CASE WHEN pnl_usdt > 0.00001 THEN 1 ELSE 0 END) as wins,
@@ -505,7 +556,9 @@ def get_total_database_metrics() -> dict:
         neg_strat_pnl = 0.0
         breakdown = []
         for sr in strat_rows:
-            s_name = sr['strat'] or 'Global'
+            s_name = (sr['strat'] or '').strip()
+            if not s_name or s_name.lower() == 'global':
+                s_name = 'v3_RSI-SNIPER-MOMENTUM_v3'
             s_pnl = float(sr['strat_pnl'] or 0.0)
             s_cnt = int(sr['count'] or 0)
             s_wins = int(sr['wins'] or 0)
@@ -560,6 +613,14 @@ def _enrich_trade_commission_fields(t: dict) -> dict:
     else:
         t['gross_pnl_usdt'] = round(float(cur_gross), 4)
         t['pnl_usdt'] = round(cur_pnl, 4)
+
+    s = str(t.get('strategy_name') or '').strip()
+    if not s or s.lower() == 'global':
+        try:
+            from src.config_loader import get_strategy_for_symbol
+            t['strategy_name'] = get_strategy_for_symbol(t.get('symbol', ''))
+        except Exception:
+            t['strategy_name'] = 'v3_RSI-SNIPER-MOMENTUM_v3'
     return t
 
 # --- NUEVA FUNCIÓN ---
@@ -766,12 +827,12 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                 if entry_price_est <= 0:
                     entry_price_est = price
 
-                strat_for_sym = 'Global'
+                strat_for_sym = 'v3_RSI-SNIPER-MOMENTUM_v3'
                 try:
                     from src.config_loader import get_strategy_for_symbol
-                    strat_for_sym = get_strategy_for_symbol(sym, fallback_strategy='Global') or 'Global'
+                    strat_for_sym = get_strategy_for_symbol(sym)
                 except Exception:
-                    strat_for_sym = 'Global'
+                    strat_for_sym = 'v3_RSI-SNIPER-MOMENTUM_v3'
 
                 # Calcular comisión Binance (ida maker 0.02% + vuelta taker 0.05% o comisión directa si está presente)
                 raw_comm = abs(float(t.get('commission', '0')))

@@ -862,8 +862,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
 
                     {/* --- ESTRATEGIA ASIGNADA --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-xs">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-indigo-950/80 text-indigo-300 border border-indigo-700/60 shadow-sm" title={`Estrategia: ${status.strategy_name || 'Global'}`}>
-                        {status.strategy_name || 'Global'}
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-indigo-950/80 text-indigo-300 border border-indigo-700/60 shadow-sm" title={`Estrategia: ${status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3'}`}>
+                        {status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3'}
                       </span>
                     </td>
 

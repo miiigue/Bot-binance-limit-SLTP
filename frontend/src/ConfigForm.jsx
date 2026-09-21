@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Tooltip from './Tooltip'; // Importar el nuevo componente
 import StrategyRadar from './StrategyRadar'; // Radar de Estrategia y Simulador en Vivo
+import ApiConsumptionCalculator from './ApiConsumptionCalculator'; // Telemetría y calculadora de API Binance
 
 // --- Definiciones de Componentes Auxiliares ---
 function ConfigSection({ title, className, children }) {
@@ -761,7 +762,7 @@ function ConfigForm({
     }
     const updated = [...symbolsList, clean];
     setFormData(prev => ({ ...prev, symbolsToTrade: updated.join(',') }));
-    const defaultStrat = newPairStrategy || (availableStrategies[0]?.name) || strategyNameInput || 'Global';
+    const defaultStrat = newPairStrategy || (availableStrategies[0]?.name) || strategyNameInput || 'v3_RSI-SNIPER-MOMENTUM_v3';
     setStrategyAssignments(prev => ({ ...prev, [clean]: defaultStrat }));
     setNewPairInput('');
   };
@@ -810,6 +811,17 @@ function ConfigForm({
     setIsLoading(true);
     try {
       const currentRisk = Number(formData.riskPercentage ?? riskPercentage ?? 50);
+
+      // Saneamiento de asignaciones: Garantizar que NINGÚN par quede sin estrategia ni tenga 'Global'
+      const sanitizedAssignments = { ...strategyAssignments };
+      const fallbackForPairs = nameToSave || (availableStrategies[0]?.name) || 'v3_RSI-SNIPER-MOMENTUM_v3';
+      symbolsList.forEach(sym => {
+        const cur = sanitizedAssignments[sym];
+        if (!cur || String(cur).trim().toLowerCase() === 'global') {
+          sanitizedAssignments[sym] = fallbackForPairs;
+        }
+      });
+
       const dataToSend = {
         ...formData,
         activeStrategyName: nameToSave,
@@ -817,7 +829,7 @@ function ConfigForm({
         riskPercentage: currentRisk,
         risk_percentage: currentRisk,
         multiStrategyEnabled: multiStrategyEnabled,
-        strategyAssignments: strategyAssignments,
+        strategyAssignments: sanitizedAssignments,
       };
 
       if (dataToSend.rsiCandlesWindow !== undefined) dataToSend.rsi_candles_window = dataToSend.rsiCandlesWindow;
@@ -1313,7 +1325,7 @@ function ConfigForm({
                 <tbody className="divide-y divide-slate-800/60">
                   {symbolsList.length > 0 ? (
                     symbolsList.map((sym) => {
-                      const assignedStrat = strategyAssignments[sym] || strategyNameInput || (availableStrategies[0]?.name) || 'Global';
+                      const assignedStrat = strategyAssignments[sym] || strategyNameInput || (availableStrategies[0]?.name) || 'v3_RSI-SNIPER-MOMENTUM_v3';
                       const stratObj = (availableStrategies || []).find(s => s.name === assignedStrat);
                       const orderType = (stratObj?.config?.entryOrderType || stratObj?.config?.entry_order_type || 'LIMIT').toUpperCase();
 
@@ -1407,11 +1419,20 @@ function ConfigForm({
           <div className="mt-3 p-3 bg-slate-950/50 rounded-xl border border-slate-800 text-xs text-slate-400 flex items-center gap-2">
             <span>ℹ️</span>
             <span>
-              Modo Global activo: Todos los pares (<strong>{formData.symbolsToTrade || 'Sin configurar'}</strong>) operarán con la misma configuración activa ({strategyNameInput || 'Global'}).
+              Modo Global activo: Todos los pares (<strong>{formData.symbolsToTrade || 'Sin configurar'}</strong>) operarán con la misma configuración activa ({strategyNameInput || (availableStrategies[0]?.name) || 'v3_RSI-SNIPER-MOMENTUM_v3'}).
             </span>
           </div>
         )}
       </div>
+
+      {/* Calculador y Predictor de Consumo de API Binance */}
+      <ApiConsumptionCalculator
+        cycleSleepSeconds={formData.cycleSleepSeconds}
+        symbolsCount={symbolsList.length}
+        enableBtcShield={formData.enableBtcCrashShield}
+        enableRegime={formData.enableMarketRegimeFilter}
+        orderType={formData.entryOrderType || 'LIMIT'}
+      />
 
       <fieldset className="border pt-4 px-4 pb-5 rounded-2xl border-slate-700/80 bg-slate-900/40 shadow-sm">
         <legend className="text-sm font-medium text-white px-3 bg-slate-900 rounded-lg border border-slate-700/80 flex items-center gap-1.5">

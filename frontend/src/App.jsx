@@ -12,6 +12,7 @@ import BotControls from './BotControls';
 import ToastContainer from './ToastContainer';
 import BacktestLab from './BacktestLab';
 import UserDropdown from './UserDropdown';
+import ApiUsageWidget from './ApiUsageWidget';
 import { isSoundEnabled, setSoundEnabled, playProfitSound, playEntrySound, playLossSound } from './soundEffects';
 import './index.css';
 
@@ -203,7 +204,8 @@ function MainDashboard() {
           walletPnl: wPnl,
           sessionStats: data.session_stats,
           globalDbMetrics: data.global_db_metrics,
-          bots_running: data.bots_running
+          bots_running: data.bots_running,
+          api_usage: data.api_usage
         });
       } catch (err) {
         console.debug("Error polling global status:", err);
@@ -486,7 +488,13 @@ function MainDashboard() {
             </div>
             
             {/* Usuario, Rol y Logout a la Derecha */}
-            <div className="flex-1 flex items-center justify-end space-x-3 min-w-0">
+            <div className="flex-1 flex items-center justify-end space-x-2 sm:space-x-3 min-w-0">
+              {headerPnlData?.api_usage && (
+                <div className="flex items-center">
+                  <ApiUsageWidget apiUsage={headerPnlData.api_usage} />
+                </div>
+              )}
+
               {botsRunning && (
                 <div className="text-xs flex items-center gap-1 whitespace-nowrap">
                   <span className="font-bold text-slate-900">Activo:</span>
