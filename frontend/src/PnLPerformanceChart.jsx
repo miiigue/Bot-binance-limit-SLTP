@@ -306,24 +306,35 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
           wins: 0,
           losses: 0,
           bestTrade: -Infinity,
-          worstTrade: Infinity
+          worstTrade: Infinity,
+          trades: []
         };
       }
 
       map[sym].totalPnL += pnl;
       map[sym].tradesCount += 1;
+      map[sym].trades.push(t);
       if (pnl > 0) map[sym].wins += 1;
       if (pnl < 0) map[sym].losses += 1;
       if (pnl > map[sym].bestTrade) map[sym].bestTrade = pnl;
       if (pnl < map[sym].worstTrade) map[sym].worstTrade = pnl;
     });
 
-    const list = Object.values(map).map(c => ({
-      ...c,
-      winRate: c.tradesCount > 0 ? ((c.wins / c.tradesCount) * 100).toFixed(1) : '0.0',
-      bestTrade: c.bestTrade === -Infinity ? 0 : c.bestTrade,
-      worstTrade: c.worstTrade === Infinity ? 0 : c.worstTrade
-    }));
+    const list = Object.values(map).map(c => {
+      const sortedTrades = [...c.trades].sort((a, b) => {
+        const timeA = new Date(a.close_timestamp || a.open_timestamp || 0).getTime() || (a.id || 0);
+        const timeB = new Date(b.close_timestamp || b.open_timestamp || 0).getTime() || (b.id || 0);
+        return timeA - timeB;
+      });
+
+      return {
+        ...c,
+        trades: sortedTrades,
+        winRate: c.tradesCount > 0 ? ((c.wins / c.tradesCount) * 100).toFixed(1) : '0.0',
+        bestTrade: c.bestTrade === -Infinity ? 0 : c.bestTrade,
+        worstTrade: c.worstTrade === Infinity ? 0 : c.worstTrade
+      };
+    });
 
     // Aplicar ordenamiento interactivo
     list.sort((a, b) => {
@@ -363,12 +374,14 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
           losses: 0,
           symbols: new Set(),
           bestTrade: -Infinity,
-          worstTrade: Infinity
+          worstTrade: Infinity,
+          trades: []
         };
       }
 
       map[strat].totalPnL += pnl;
       map[strat].tradesCount += 1;
+      map[strat].trades.push(t);
       if (sym) map[strat].symbols.add(sym);
       if (pnl > 0) map[strat].wins += 1;
       if (pnl < 0) map[strat].losses += 1;
@@ -376,13 +389,22 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
       if (pnl < map[strat].worstTrade) map[strat].worstTrade = pnl;
     });
 
-    const list = Object.values(map).map(s => ({
-      ...s,
-      symbolsList: Array.from(s.symbols),
-      winRate: s.tradesCount > 0 ? ((s.wins / s.tradesCount) * 100).toFixed(1) : '0.0',
-      bestTrade: s.bestTrade === -Infinity ? 0 : s.bestTrade,
-      worstTrade: s.worstTrade === Infinity ? 0 : s.worstTrade
-    }));
+    const list = Object.values(map).map(s => {
+      const sortedTrades = [...s.trades].sort((a, b) => {
+        const timeA = new Date(a.close_timestamp || a.open_timestamp || 0).getTime() || (a.id || 0);
+        const timeB = new Date(b.close_timestamp || b.open_timestamp || 0).getTime() || (b.id || 0);
+        return timeA - timeB;
+      });
+
+      return {
+        ...s,
+        trades: sortedTrades,
+        symbolsList: Array.from(s.symbols),
+        winRate: s.tradesCount > 0 ? ((s.wins / s.tradesCount) * 100).toFixed(1) : '0.0',
+        bestTrade: s.bestTrade === -Infinity ? 0 : s.bestTrade,
+        worstTrade: s.worstTrade === Infinity ? 0 : s.worstTrade
+      };
+    });
 
     // Aplicar ordenamiento interactivo
     list.sort((a, b) => {
@@ -530,6 +552,154 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
   const stressColor = stressRatio > 80 ? 'bg-rose-500' : stressRatio > 50 ? 'bg-amber-500' : 'bg-emerald-500';
   const stressBorder = stressRatio > 80 ? 'border-rose-500/50 text-rose-400' : stressRatio > 50 ? 'border-amber-500/50 text-amber-400' : 'border-emerald-500/50 text-emerald-400';
   const stressLabel = stressRatio > 80 ? 'ALTO RIESGO' : stressRatio > 50 ? 'MODERADO' : 'SEGURO';
+
+  // Renderizador del gráfico de barras por trade cerrado (Eje central 0 con ganancias arriba y pérdidas abajo)
+  const renderTradeSequenceChart = (tradesList, symbolOrStrat) => {
+    if (!tradesList || tradesList.length === 0) {
+      return (
+        <div className="py-2.5 text-center text-[11px] text-gray-500 font-mono italic">
+          Sin operaciones cerradas registradas
+        </div>
+      );
+    }
+
+    // Calcular el valor absoluto máximo entre los trades para escalar las barras de forma equilibrada
+    const maxAbs = Math.max(0.05, ...tradesList.map(t => Math.abs(getTradePnL(t))));
+
+    return (
+      <div className="mt-2.5 pt-2 border-t border-gray-200 dark:border-gray-800/80">
+        {/* Leyenda y contador de trades */}
+        <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 mb-1 px-1 font-mono">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-sm inline-block shadow-sm"></span>
+              <span className="text-emerald-500 dark:text-emerald-400 font-bold text-[10px]">▲ Ganancia (Win)</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 bg-rose-500 rounded-sm inline-block shadow-sm"></span>
+              <span className="text-rose-500 dark:text-rose-400 font-bold text-[10px]">▼ Pérdida (Loss)</span>
+            </span>
+          </div>
+          <span className="text-[10px] text-gray-400">
+            {tradesList.length} {tradesList.length === 1 ? 'trade cerrado' : 'trades cerrados'} (cronológico ➔)
+          </span>
+        </div>
+
+        {/* Contenedor del Gráfico con Eje Cero */}
+        <div className="relative w-full bg-gray-100 dark:bg-slate-950/80 rounded-xl px-3 py-2 border border-gray-200 dark:border-slate-800 shadow-inner">
+          <div className="relative h-20 w-full overflow-x-auto no-scrollbar flex items-center">
+            
+            {/* Línea horizontal central del Eje 0 */}
+            <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 pointer-events-none z-0">
+              <div className="w-full border-t-2 border-dashed border-gray-300 dark:border-gray-700"></div>
+            </div>
+
+            {/* Etiqueta 0.00 sobre el eje a la izquierda */}
+            <div className="sticky left-0 top-1/2 -translate-y-1/2 z-20 pointer-events-none pr-2">
+              <span className="text-[9px] font-mono font-black text-gray-500 dark:text-gray-400 bg-white/90 dark:bg-slate-900/90 px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-700 shadow-sm">
+                0.00
+              </span>
+            </div>
+
+            {/* Secuencia cronológica de barras */}
+            <div className="flex items-center gap-2 pl-2 pr-6 min-w-max h-full relative z-10">
+              {tradesList.map((t, idx) => {
+                const pnl = getTradePnL(t);
+                const isWin = pnl > 0.00001;
+                const isLoss = pnl < -0.00001;
+                const absPnl = Math.abs(pnl);
+
+                // Altura proporcional: mitad de altura disponible (aprox 32px máx), mín 8px para que sea claramente visible y clicable
+                const barHeight = Math.max(8, Math.min(32, Math.round((absPnl / maxAbs) * 32)));
+
+                // Formato de hora/fecha
+                const timeStr = t.close_timestamp ? (() => {
+                  const raw = String(t.close_timestamp).trim();
+                  const d = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z');
+                  return isNaN(d.getTime()) ? t.close_timestamp : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                })() : `Trade #${idx + 1}`;
+
+                return (
+                  <div
+                    key={t.id || idx}
+                    className="group relative flex flex-col items-center justify-center h-full cursor-pointer py-1"
+                    style={{ width: '26px' }}
+                  >
+                    {/* Mitad Superior: Ganancia (Sube desde el eje hacia arriba) */}
+                    <div className="h-1/2 w-full flex items-end justify-center">
+                      {isWin && (
+                        <div
+                          className="w-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-400/90 rounded-t shadow-sm shadow-emerald-500/20 transition-all group-hover:scale-110 group-hover:brightness-125"
+                          style={{ height: `${barHeight}px` }}
+                        />
+                      )}
+                    </div>
+
+                    {/* Mitad Inferior: Pérdida (Cae desde el eje hacia abajo) */}
+                    <div className="h-1/2 w-full flex items-start justify-center">
+                      {isLoss && (
+                        <div
+                          className="w-full bg-rose-500 hover:bg-rose-400 border border-rose-400/90 rounded-b shadow-sm shadow-rose-500/20 transition-all group-hover:scale-110 group-hover:brightness-125"
+                          style={{ height: `${barHeight}px` }}
+                        />
+                      )}
+                      {!isWin && !isLoss && (
+                        <div className="w-full h-1 bg-gray-400 rounded" />
+                      )}
+                    </div>
+
+                    {/* Número del Trade bajo la barra */}
+                    <span className="text-[9px] font-mono font-bold text-gray-400 group-hover:text-white transition-colors mt-0.5">
+                      #{idx + 1}
+                    </span>
+
+                    {/* Tooltip Detallado Flotante */}
+                    <div className="opacity-0 group-hover:opacity-100 pointer-events-none absolute bottom-full mb-1 z-30 transition-all bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl rounded-xl p-2.5 text-xs whitespace-nowrap text-left font-mono">
+                      <div className="flex items-center justify-between gap-3 border-b border-gray-800 pb-1 font-bold">
+                        <span className="text-white">Trade #{idx + 1} ({t.symbol || symbolOrStrat})</span>
+                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-black ${isWin ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'}`}>
+                          {isWin ? 'WIN 🎯' : 'LOSS 🛑'}
+                        </span>
+                      </div>
+
+                      <div className="mt-1.5 space-y-0.5 text-[11px]">
+                        <div className="flex justify-between gap-3">
+                          <span className="text-gray-400">PnL Neto:</span>
+                          <span className={`font-black ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {isWin ? '+' : ''}{pnl.toFixed(4)} USDT
+                          </span>
+                        </div>
+
+                        {t.trade_type && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-gray-400">Tipo:</span>
+                            <span className={t.trade_type === 'LONG' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                              {t.trade_type}
+                            </span>
+                          </div>
+                        )}
+
+                        {t.close_reason && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-gray-400">Salida:</span>
+                            <span className="text-slate-200">{t.close_reason}</span>
+                          </div>
+                        )}
+
+                        <div className="text-[10px] text-gray-500 pt-1 border-t border-gray-800 mt-1">
+                          🕒 {timeStr}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -1235,15 +1405,8 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
 
                     </div>
 
-                    {/* Barra Visual Proporcional de Ganancia/Pérdida */}
-                    <div className="w-full bg-gray-200 dark:bg-gray-900 rounded-full h-2.5 overflow-hidden p-0.5">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          isProfit ? 'bg-emerald-500' : 'bg-rose-500'
-                        }`}
-                        style={{ width: `${barWidthPercent}%` }}
-                      />
-                    </div>
+                    {/* Gráfico de Barras por Trade Cerrado (Eje Cero con Ganancias Arriba y Pérdidas Abajo) */}
+                    {renderTradeSequenceChart(coin.trades, coin.symbol)}
 
                   </div>
                 );
@@ -1378,15 +1541,8 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
 
                     </div>
 
-                    {/* Barra Visual Proporcional de Ganancia/Pérdida */}
-                    <div className="w-full bg-gray-200 dark:bg-gray-900 rounded-full h-2.5 overflow-hidden p-0.5">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          isProfit ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-rose-500 to-pink-500'
-                        }`}
-                        style={{ width: `${barWidthPercent}%` }}
-                      />
-                    </div>
+                    {/* Gráfico de Barras por Trade Cerrado (Eje Cero con Ganancias Arriba y Pérdidas Abajo) */}
+                    {renderTradeSequenceChart(strat.trades, strat.strategy)}
 
                   </div>
                 );
