@@ -85,6 +85,8 @@ function ConfigItem({ labelText, htmlFor, description, example, tooltipKey, tool
 // Valores iniciales o por defecto para el formulario
 const defaultConfigValues = {
   symbolsToTrade: '',
+  tradeDirection: 'BIDIRECTIONAL',
+  autoMirrorShort: true,
   leverage: 20,
   rsiType: 'WILDER',
   rsiInterval: '5m',
@@ -188,6 +190,14 @@ const defaultConfigValues = {
 // --- Diccionario profesional con Explicación y Ejemplo Práctico para cada Parámetro ---
 const tooltipTexts = {
   // General & Riesgo
+  tradeDirection: {
+    desc: "Dirección operativa de las estrategias en Binance Futures (Hedge Mode). En modo BIDIRECCIONAL, el bot puede abrir tanto posiciones LONG como SHORT al mismo tiempo en la misma moneda aprovechando tanto subidas como bajadas.",
+    example: "BIDIRECCIONAL para operar compras y ventas simultáneas; SOLO LONG para comprar rebotes; SOLO SHORT para vender techos."
+  },
+  autoMirrorShort: {
+    desc: "Derivación simétrica automática de parámetros de SHORT desde la configuración de LONG (Auto-Espejo). Calcula automáticamente los niveles de RSI, deltas y tendencias en espejo exacto sin requerir configuración manual doble.",
+    example: "Si LONG compra en RSI 30-45 y vende en 50, SHORT venderá en RSI 55-70 y cerrará en 50 automáticamente."
+  },
   mode: {
     desc: "Define el entorno de operación de Binance Futures.",
     example: "🛡️ Testnet / Simulación para operar seguro sin arriesgar capital real."
@@ -869,6 +879,8 @@ function ConfigForm({
       if (dataToSend.crashPriceDropPercent !== undefined) dataToSend.crash_price_drop_percent = dataToSend.crashPriceDropPercent;
       if (dataToSend.enableCrashPnlDrop !== undefined) dataToSend.enable_crash_pnl_drop = dataToSend.enableCrashPnlDrop;
       if (dataToSend.crashPnlDropThresholdUSDT !== undefined) dataToSend.crash_pnl_drop_threshold_usdt = dataToSend.crashPnlDropThresholdUSDT;
+      if (dataToSend.tradeDirection !== undefined) dataToSend.trade_direction = dataToSend.tradeDirection;
+      if (dataToSend.autoMirrorShort !== undefined) dataToSend.auto_mirror_short = dataToSend.autoMirrorShort;
 
       const result = await onSave(dataToSend);
       if (result?.success || !result?.error) {
@@ -1438,7 +1450,7 @@ function ConfigForm({
         <legend className="text-sm font-medium text-white px-3 bg-slate-900 rounded-lg border border-slate-700/80 flex items-center gap-1.5">
           <span>⚙️</span> Parámetros Generales
         </legend>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-3.5 mt-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 mt-3">
           {/* 1. Modo Operación */}
           <ConfigItem labelText="Modo Operación" htmlFor="mode" tooltipKey="mode" hideDescription>
             <div className="mt-1 flex items-center px-3 py-2 border border-emerald-500/30 bg-emerald-950/30 rounded-lg shadow-sm">
@@ -1446,6 +1458,60 @@ function ConfigForm({
               <span className="text-xs font-normal text-emerald-300 tracking-wide">
                 🛡️ Testnet / Simulación
               </span>
+            </div>
+          </ConfigItem>
+
+          {/* 2. Dirección Operativa (BIDIRECCIONAL / LONG / SHORT) */}
+          <ConfigItem labelText="Dirección Operativa" htmlFor="tradeDirection" tooltipKey="tradeDirection" hideDescription>
+            <select
+              name="tradeDirection"
+              id="tradeDirection"
+              value={formData.tradeDirection || 'BIDIRECTIONAL'}
+              onChange={handleChange}
+              className="mt-1 block w-full py-2 px-2.5 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-semibold cursor-pointer"
+            >
+              <option value="BIDIRECTIONAL">🔄 BIDIRECCIONAL (Long + Short)</option>
+              <option value="LONG">🟢 SOLO LONG (Subidas)</option>
+              <option value="SHORT">🔴 SOLO SHORT (Bajadas)</option>
+            </select>
+            <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
+              {formData.tradeDirection === 'BIDIRECTIONAL' ? (
+                <div>⚡ <strong className="text-cyan-300 font-medium">Hedge Mode Activo</strong></div>
+              ) : formData.tradeDirection === 'SHORT' ? (
+                <div>📉 <strong className="text-rose-400 font-medium">Solo Posiciones Short</strong></div>
+              ) : (
+                <div>📈 <strong className="text-emerald-300 font-medium">Solo Posiciones Long</strong></div>
+              )}
+              <div className="text-[10px] text-slate-500">
+                {formData.tradeDirection === 'BIDIRECTIONAL' ? 'Long y Short simultáneos en misma moneda' : 'Una sola dirección a la vez'}
+              </div>
+            </div>
+          </ConfigItem>
+
+          {/* 3. Auto-Espejo SHORT */}
+          <ConfigItem labelText="Auto-Espejo SHORT" htmlFor="autoMirrorShort" tooltipKey="autoMirrorShort" hideDescription>
+            <select
+              name="autoMirrorShort"
+              id="autoMirrorShort"
+              value={String(formData.autoMirrorShort ?? true)}
+              onChange={(e) => {
+                setFormData(prev => ({ ...prev, autoMirrorShort: e.target.value === 'true' }));
+              }}
+              disabled={formData.tradeDirection === 'LONG'}
+              className="mt-1 block w-full py-2 px-2.5 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-semibold cursor-pointer disabled:opacity-50"
+            >
+              <option value="true">⚡ Activo (Derivado de LONG)</option>
+              <option value="false">⚙️ Manual (Sin Espejo)</option>
+            </select>
+            <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
+              {(formData.autoMirrorShort ?? true) ? (
+                <div>🔄 <strong className="text-emerald-300 font-medium">Simetría Automática</strong></div>
+              ) : (
+                <div>🛠️ <strong className="text-amber-300 font-medium">Ajustes Manuales</strong></div>
+              )}
+              <div className="text-[10px] text-slate-500">
+                {(formData.autoMirrorShort ?? true) ? 'RSI 100-X, deltas y tendencias invertidas' : 'Usa valores explícitos'}
+              </div>
             </div>
           </ConfigItem>
 

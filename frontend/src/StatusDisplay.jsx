@@ -36,188 +36,206 @@ const getPnlColorClass = (pnl) => {
   return 'text-slate-300 font-bold';
 };
 // --- SUBCOMPONENTE DE DIAGNÓSTICO EN TIEMPO REAL (RADAR & PROTECCIÓN) ---
+function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
+  const pnlUsdt = pos?.pnl_usdt !== undefined ? Number(pos.pnl_usdt) : (parseFloat(pnlVal) || 0);
+  const isShort = tradeSide === 'SHORT';
+
+  // 1. Métricas de TP
+  const tp = pos?.tp || {
+    target_usdt: pos?.tp_target_usdt,
+    progress_pct: pos?.tp_progress_pct,
+    remaining_usdt: (pos?.tp_target_usdt && pnlUsdt !== undefined) ? Math.max(0, Number(pos.tp_target_usdt) - pnlUsdt) : null,
+    hit: pos?.tp_target_usdt ? pnlUsdt >= Number(pos.tp_target_usdt) : false
+  };
+  const hasTp = tp.target_usdt !== null && tp.target_usdt !== undefined && Number(tp.target_usdt) > 0;
+  const tpProgress = Math.min(100, Math.max(0, tp.progress_pct || 0));
+
+  // 2. Métricas de Trailing Stop
+  const ts = pos?.ts || {
+    enabled: Boolean(pos?.trailing_active),
+    armed: Boolean(pos?.trailing_armed),
+    label: pos?.trailing_armed ? 'ARMADO' : 'Inactivo',
+    tolerance_pct: 100,
+    arm_progress_pct: 0
+  };
+  const hasTs = Boolean(ts.enabled);
+  const tsArmThreshold = (ts.activation_threshold && Number(ts.activation_threshold) > 0)
+    ? Number(ts.activation_threshold)
+    : (hasTp ? Number(tp.target_usdt) * 0.7 : null);
+  const tsArmPosPct = (hasTp && tsArmThreshold && tsArmThreshold > 0)
+    ? Math.min(95, Math.max(5, (tsArmThreshold / Number(tp.target_usdt)) * 100))
+    : null;
+
+  // 3. Métricas de Stop Loss
+  const slTarget = pos?.sl?.target_usdt !== undefined ? pos.sl.target_usdt : pos?.sl_target_usdt;
+  const slDist = pos?.sl?.distance_usdt !== undefined ? pos.sl.distance_usdt : pos?.sl_distance_usdt;
+  const hasSl = slTarget !== null && slTarget !== undefined;
+  
+  let slFillPct = 0;
+  if (pnlUsdt < 0 && slTarget && Number(slTarget) < 0) {
+    slFillPct = Math.min(100, Math.max(0, (Math.abs(pnlUsdt) / Math.abs(Number(slTarget))) * 100));
+  }
+
+  return (
+    <div key={tradeSide || 'default'} className="flex flex-col gap-1 min-w-[230px] max-w-[380px] py-0.5">
+      {tradeSide && (
+        <div className="flex items-center justify-between text-[10px] font-mono mb-0.5">
+          <span className={`px-1.5 py-0.2 rounded font-bold ${
+            isShort ? 'bg-rose-950 text-rose-300 border border-rose-600/50' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'
+          }`}>
+            {isShort ? '🔴 SHORT' : '🟢 LONG'}
+          </span>
+          <span className={`font-bold ${pnlUsdt >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            PnL: {pnlUsdt >= 0 ? '+' : ''}{pnlUsdt.toFixed(2)} USDT
+          </span>
+        </div>
+      )}
+      {/* --- FILA 1: TAKE PROFIT --- */}
+      {hasTp ? (
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-extrabold text-emerald-300 flex items-center gap-1">
+                <span>🎯 TP:</span>
+                <span>+{Number(tp.target_usdt).toFixed(2)} USDT</span>
+              </span>
+              {hasTs && (
+                ts.armed ? (
+                  <span className="text-[10px] font-bold text-sky-300 flex items-center gap-1 animate-pulse">
+                    <span>🔵 TS Protegiendo</span>
+                  </span>
+                ) : tsArmThreshold ? (
+                  <span className="text-[10px] text-sky-400 font-mono hidden sm:inline" title={`Trailing Stop se armará al alcanzar +${tsArmThreshold.toFixed(2)} USDT`}>
+                    ⚡ TS: +{tsArmThreshold.toFixed(2)}
+                  </span>
+                ) : null
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px]">
+              {tp.remaining_usdt !== null && tp.remaining_usdt > 0 && (
+                <span className="text-slate-400 font-sans hidden sm:inline">
+                  (Faltan: +{Number(tp.remaining_usdt).toFixed(2)})
+                </span>
+              )}
+              <span className={`font-black font-mono ${pnlUsdt >= 0 ? (ts.armed ? 'text-sky-400' : 'text-emerald-400') : 'text-slate-400'}`}>
+                {Math.round(tpProgress)}%
+              </span>
+            </div>
+          </div>
+          <div className="relative w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
+            {hasTs && tsArmPosPct && !ts.armed && (
+              <div
+                className="absolute top-0 bottom-0 w-1 bg-sky-400 z-20 shadow-sm shadow-sky-400"
+                style={{ left: `${tsArmPosPct}%` }}
+                title={`Umbral de activación Trailing Stop: +${tsArmThreshold} USDT`}
+              />
+            )}
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                tpProgress >= 100 
+                  ? 'bg-emerald-400 animate-pulse' 
+                  : ts.armed
+                    ? 'bg-gradient-to-r from-teal-500 via-sky-500 to-blue-500 shadow-sm shadow-sky-500/50'
+                    : pnlUsdt >= 0 
+                      ? 'bg-gradient-to-r from-teal-500 to-emerald-400' 
+                      : 'bg-slate-700'
+              }`}
+              style={{ width: `${tpProgress}%` }}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 font-bold">
+          <span>🎯 TP:</span>
+          <span>Dinámico por Señal / Trailing</span>
+        </div>
+      )}
+
+      {/* --- FILA 2: TRAILING STOP O STOP LOSS --- */}
+      {ts.armed ? (
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-extrabold text-sky-300 flex items-center gap-1 animate-pulse">
+                <span>🔵 TS ACTIVO:</span>
+                <span>{ts.floor_value !== null && ts.floor_value !== undefined ? `Piso +${ts.floor_value} USDT` : (ts.label || 'Protegiendo')}</span>
+              </span>
+              {ts.peak_value !== null && ts.peak_value !== undefined && (
+                <span className="text-[10px] text-slate-400 font-sans hidden sm:inline">
+                  (Pico: +{ts.peak_value})
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px]">
+              <span className="text-slate-300 font-sans">
+                Tolerancia:
+              </span>
+              <span className="font-black font-mono text-sky-400">
+                {Math.round(ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100)}%
+              </span>
+            </div>
+          </div>
+          <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-sky-900/80">
+            <div
+              className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 shadow-sm shadow-sky-500/50"
+              style={{ width: `${Math.min(100, Math.max(5, ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100))}%` }}
+            />
+          </div>
+        </div>
+      ) : hasSl ? (
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
+            <span className="font-extrabold text-rose-300 flex items-center gap-1">
+              <span>🛑 SL:</span>
+              <span>{Number(slTarget).toFixed(2)} USDT</span>
+            </span>
+            <div className="flex items-center gap-1.5 text-[10px]">
+              <span className="text-slate-300 font-sans">
+                Colchón: <span className="font-bold font-mono text-slate-200">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
+              </span>
+              {pnlUsdt >= 0 ? (
+                <span className="font-black font-mono text-emerald-400">
+                  🛡️ Seguro
+                </span>
+              ) : (
+                <span className="font-black font-mono text-rose-400 animate-pulse">
+                  {Math.round(slFillPct)}% riesgo
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                slFillPct >= 80
+                  ? 'bg-gradient-to-r from-red-600 to-rose-500 animate-pulse'
+                  : 'bg-gradient-to-r from-rose-600 to-red-500'
+              }`}
+              style={{ width: `${slFillPct}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function LiveDiagnosticsCell({ status }) {
   if (!status) return null;
 
-  // CASO 1: EN POSICIÓN ABIERTA -> Telemetría Visual Unificada (TP con punto de TS, y SL o Trailing Stop)
+  // CASO 1: EN POSICIÓN ABIERTA -> Telemetría Visual (Soporta Dual Position Hedge Mode)
   if (status.in_position) {
-    const pos = status.position_diagnostics || {};
-    const pnlUsdt = pos.pnl_usdt !== undefined ? Number(pos.pnl_usdt) : (parseFloat(status.current_pnl) || 0);
-
-    // 1. Métricas de TP
-    const tp = pos.tp || {
-      target_usdt: pos.tp_target_usdt,
-      progress_pct: pos.tp_progress_pct,
-      remaining_usdt: (pos.tp_target_usdt && pnlUsdt !== undefined) ? Math.max(0, Number(pos.tp_target_usdt) - pnlUsdt) : null,
-      hit: pos.tp_target_usdt ? pnlUsdt >= Number(pos.tp_target_usdt) : false
-    };
-    const hasTp = tp.target_usdt !== null && tp.target_usdt !== undefined && Number(tp.target_usdt) > 0;
-    const tpProgress = Math.min(100, Math.max(0, tp.progress_pct || 0));
-
-    // 2. Métricas de Trailing Stop
-    const ts = pos.ts || {
-      enabled: Boolean(pos.trailing_active),
-      armed: Boolean(pos.trailing_armed),
-      label: pos.trailing_armed ? 'ARMADO' : 'Inactivo',
-      tolerance_pct: 100,
-      arm_progress_pct: 0
-    };
-    const hasTs = Boolean(ts.enabled);
-    const tsArmThreshold = (ts.activation_threshold && Number(ts.activation_threshold) > 0)
-      ? Number(ts.activation_threshold)
-      : (hasTp ? Number(tp.target_usdt) * 0.7 : null);
-    const tsArmPosPct = (hasTp && tsArmThreshold && tsArmThreshold > 0)
-      ? Math.min(95, Math.max(5, (tsArmThreshold / Number(tp.target_usdt)) * 100))
-      : null;
-
-    // 3. Métricas de Stop Loss (Se llena en ROJO únicamente desde saldo negativo, sin amarillo)
-    const slTarget = pos.sl?.target_usdt !== undefined ? pos.sl.target_usdt : pos.sl_target_usdt;
-    const slDist = pos.sl?.distance_usdt !== undefined ? pos.sl.distance_usdt : pos.sl_distance_usdt;
-    const hasSl = slTarget !== null && slTarget !== undefined;
-    
-    // Si pnlUsdt >= 0: la barra está vacía (0%). Solo se llena al haber pérdida proporcionalmente al target
-    let slFillPct = 0;
-    if (pnlUsdt < 0 && slTarget && Number(slTarget) < 0) {
-      slFillPct = Math.min(100, Math.max(0, (Math.abs(pnlUsdt) / Math.abs(Number(slTarget))) * 100));
+    const activeSubPositions = (status.positions || []).filter(p => p.in_position);
+    if (activeSubPositions.length > 0) {
+      return (
+        <div className="flex flex-col gap-2">
+          {activeSubPositions.map(sp => renderSinglePositionDiag(sp.position_diagnostics || {}, sp.trade_side, sp.current_pnl))}
+        </div>
+      );
     }
-
     return (
       <div className="flex flex-col gap-1.5 min-w-[240px] max-w-[380px] py-0.5">
-        {/* --- FILA 1: TAKE PROFIT (con punto de activación de Trailing Stop visible) --- */}
-        {hasTp ? (
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-extrabold text-emerald-300 flex items-center gap-1">
-                  <span>🎯 TP:</span>
-                  <span>+{Number(tp.target_usdt).toFixed(2)} USDT</span>
-                </span>
-                {hasTs && (
-                  ts.armed ? (
-                    <span className="text-[10px] font-bold text-sky-300 flex items-center gap-1 animate-pulse">
-                      <span>🔵 TS Protegiendo</span>
-                    </span>
-                  ) : tsArmThreshold ? (
-                    <span className="text-[10px] text-sky-400 font-mono hidden sm:inline" title={`Trailing Stop se armará al alcanzar +${tsArmThreshold.toFixed(2)} USDT`}>
-                      ⚡ TS: +{tsArmThreshold.toFixed(2)}
-                    </span>
-                  ) : null
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 text-[10px]">
-                {tp.remaining_usdt !== null && tp.remaining_usdt > 0 && (
-                  <span className="text-slate-400 font-sans hidden sm:inline">
-                    (Faltan: +{Number(tp.remaining_usdt).toFixed(2)})
-                  </span>
-                )}
-                <span className={`font-black font-mono ${pnlUsdt >= 0 ? (ts.armed ? 'text-sky-400' : 'text-emerald-400') : 'text-slate-400'}`}>
-                  {Math.round(tpProgress)}%
-                </span>
-              </div>
-            </div>
-
-            {/* Barra de progreso de TP con el punto/marcador de Trailing Stop visible */}
-            <div className="relative w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
-              {/* Punto de activación de Trailing Stop en la barra de TP */}
-              {hasTs && tsArmPosPct && !ts.armed && (
-                <div
-                  className="absolute top-0 bottom-0 w-1 bg-sky-400 z-20 shadow-sm shadow-sky-400"
-                  style={{ left: `${tsArmPosPct}%` }}
-                  title={`Umbral de activación Trailing Stop: +${tsArmThreshold} USDT`}
-                />
-              )}
-
-              {/* Relleno de avance hacia TP */}
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  tpProgress >= 100 
-                    ? 'bg-emerald-400 animate-pulse' 
-                    : ts.armed
-                      ? 'bg-gradient-to-r from-teal-500 via-sky-500 to-blue-500 shadow-sm shadow-sky-500/50'
-                      : pnlUsdt >= 0 
-                        ? 'bg-gradient-to-r from-teal-500 to-emerald-400' 
-                        : 'bg-slate-700'
-                }`}
-                style={{ width: `${tpProgress}%` }}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 font-bold">
-            <span>🎯 TP:</span>
-            <span>Dinámico por Señal / Trailing</span>
-          </div>
-        )}
-
-        {/* --- FILA 2: TRAILING STOP (Cuando está armado reemplaza al SL) O STOP LOSS (Si aún no se armó TS) --- */}
-        {ts.armed ? (
-          /* Al llegar al punto de TS, se QUITA el Stop Loss y APARECE el Trailing Stop en AZUL */
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-extrabold text-sky-300 flex items-center gap-1 animate-pulse">
-                  <span>🔵 TS ACTIVO:</span>
-                  <span>{ts.floor_value !== null && ts.floor_value !== undefined ? `Piso +${ts.floor_value} USDT` : (ts.label || 'Protegiendo')}</span>
-                </span>
-                {ts.peak_value !== null && ts.peak_value !== undefined && (
-                  <span className="text-[10px] text-slate-400 font-sans hidden sm:inline">
-                    (Pico: +{ts.peak_value})
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 text-[10px]">
-                <span className="text-slate-300 font-sans">
-                  Tolerancia:
-                </span>
-                <span className="font-black font-mono text-sky-400">
-                  {Math.round(ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100)}%
-                </span>
-              </div>
-            </div>
-            {/* Barra de Trailing Stop en AZUL que muestra la tolerancia de retroceso restante */}
-            <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-sky-900/80">
-              <div
-                className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 shadow-sm shadow-sky-500/50"
-                style={{ width: `${Math.min(100, Math.max(5, ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100))}%` }}
-              />
-            </div>
-          </div>
-        ) : hasSl ? (
-          /* Mientras no se alcance el punto de TS, se vigila el riesgo con el Stop Loss */
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
-              <span className="font-extrabold text-rose-300 flex items-center gap-1">
-                <span>🛑 SL:</span>
-                <span>{Number(slTarget).toFixed(2)} USDT</span>
-              </span>
-              <div className="flex items-center gap-1.5 text-[10px]">
-                <span className="text-slate-300 font-sans">
-                  Colchón: <span className="font-bold font-mono text-slate-200">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
-                </span>
-                {pnlUsdt >= 0 ? (
-                  <span className="font-black font-mono text-emerald-400">
-                    🛡️ Seguro
-                  </span>
-                ) : (
-                  <span className="font-black font-mono text-rose-400 animate-pulse">
-                    {Math.round(slFillPct)}% riesgo
-                  </span>
-                )}
-              </div>
-            </div>
-            {/* Barra de SL: 0% (vacía) con saldo positivo. Se llena en ROJO únicamente al haber saldo negativo */}
-            <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  slFillPct >= 80
-                    ? 'bg-gradient-to-r from-red-600 to-rose-500 animate-pulse'
-                    : 'bg-gradient-to-r from-rose-600 to-red-500'
-                }`}
-                style={{ width: `${slFillPct}%` }}
-              />
-            </div>
-          </div>
-        ) : null}
+        {renderSinglePositionDiag(status.position_diagnostics || {}, status.trade_side, status.current_pnl)}
       </div>
     );
   }
@@ -430,8 +448,10 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
       map[sym] = sortTableData(list, sortConfig, {
         close_timestamp: t => t.close_timestamp || '',
         close_reason: t => t.close_reason || '',
+        trade_type: t => t.trade_type || '',
         open_price: t => t.open_price || 0,
         close_price: t => t.close_price || 0,
+        quantity: t => t.quantity || 0,
         pnl_usdt: t => parseFloat(t.pnl_usdt) || 0,
         commission_usdt: t => getTradeCommission(t),
         gross_pnl_usdt: t => getTradeGrossPnL(t),
@@ -463,13 +483,19 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
     }
   };
 
-  const handleCloseSinglePosition = async (e, symbol) => {
+  const handleCloseSinglePosition = async (e, symbol, side = null) => {
     e.stopPropagation();
-    if (!window.confirm(`¿Cerrar posición de ${symbol} a precio de mercado en Binance?`)) return;
+    const sideLabel = side ? ` (${side})` : '';
+    if (!window.confirm(`¿Cerrar posición${sideLabel} de ${symbol} a precio de mercado en Binance?`)) return;
     
-    setClosingSymbols(prev => ({ ...prev, [symbol]: true }));
+    const key = side ? `${symbol}_${side}` : symbol;
+    setClosingSymbols(prev => ({ ...prev, [key]: true, [symbol]: true }));
     try {
-      const resp = await fetch(`/api/close_position/${symbol}`, { method: 'POST' });
+      const resp = await fetch(`/api/close_position/${symbol}${side ? `?side=${side}` : ''}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ side: side || undefined })
+      });
       const data = await resp.json();
       if (resp.ok) {
         // Refrescar inmediatamente
@@ -481,12 +507,12 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
           }
         }
       } else {
-        alert(`Error al cerrar ${symbol}: ${data.error || 'Error desconocido'}`);
+        alert(`Error al cerrar ${symbol}${sideLabel}: ${data.error || 'Error desconocido'}`);
       }
     } catch (err) {
-      alert(`Error de red al cerrar ${symbol}: ${err.message}`);
+      alert(`Error de red al cerrar ${symbol}${sideLabel}: ${err.message}`);
     } finally {
-      setClosingSymbols(prev => ({ ...prev, [symbol]: false }));
+      setClosingSymbols(prev => ({ ...prev, [key]: false, [symbol]: false }));
     }
   };
   // ------------------------------------------------------
@@ -832,31 +858,84 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                         {expandedRows[status.symbol] ? '▼' : '▶'}
                       </button>
                     </td>
-                    {/* --- Símbolo con botón de cierre X compacto --- */}
+                    {/* --- Símbolo con botones de cierre y badges de dirección --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-sm font-bold text-white">
                       <div className="flex items-center space-x-2">
-                        {status.in_position && (
-                          <button
-                            onClick={(e) => handleCloseSinglePosition(e, status.symbol)}
-                            disabled={closingSymbols[status.symbol]}
-                            className="w-5 h-5 flex-shrink-0 flex items-center justify-center text-xs font-extrabold text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-full shadow transition-transform transform active:scale-95 disabled:bg-gray-600"
-                            title={`Cerrar posición de ${status.symbol} a mercado en Binance`}
-                          >
-                            {closingSymbols[status.symbol] ? '..' : '✕'}
-                          </button>
-                        )}
-                        <span className="font-mono text-sm">{status.symbol}</span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onSelectSymbolForChart) onSelectSymbolForChart(status.symbol);
-                          }}
-                          className="px-1.5 py-0.5 text-[11px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded transition shadow-sm font-bold"
-                          title={`Ver gráfico en vivo de ${status.symbol}`}
-                        >
-                          📊
-                        </button>
+                        {status.in_position && (() => {
+                          const activeSubPositions = (status.positions || []).filter(p => p.in_position);
+                          if (activeSubPositions.length > 1) {
+                            return (
+                              <div className="flex items-center gap-1">
+                                {activeSubPositions.map(sp => {
+                                  const isShort = sp.trade_side === 'SHORT';
+                                  const key = `${status.symbol}_${sp.trade_side}`;
+                                  const isClosing = closingSymbols[key] || closingSymbols[status.symbol];
+                                  return (
+                                    <button
+                                      key={sp.trade_side}
+                                      onClick={(e) => handleCloseSinglePosition(e, status.symbol, sp.trade_side)}
+                                      disabled={isClosing}
+                                      className={`px-1.5 py-0.5 flex-shrink-0 flex items-center justify-center text-[10px] font-extrabold text-white rounded shadow transition-transform transform active:scale-95 disabled:bg-gray-600 ${
+                                        isShort ? 'bg-rose-700 hover:bg-rose-800' : 'bg-emerald-700 hover:bg-emerald-800'
+                                      }`}
+                                      title={`Cerrar posición ${sp.trade_side} de ${status.symbol} a mercado`}
+                                    >
+                                      {isClosing ? '..' : `✕ ${isShort ? 'S' : 'L'}`}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          }
+                          const singleSide = activeSubPositions[0]?.trade_side || status.trade_side || null;
+                          const isShort = singleSide === 'SHORT';
+                          const key = singleSide ? `${status.symbol}_${singleSide}` : status.symbol;
+                          const isClosing = closingSymbols[key] || closingSymbols[status.symbol];
+                          return (
+                            <button
+                              onClick={(e) => handleCloseSinglePosition(e, status.symbol, singleSide)}
+                              disabled={isClosing}
+                              className={`w-5 h-5 flex-shrink-0 flex items-center justify-center text-xs font-extrabold text-white rounded-full shadow transition-transform transform active:scale-95 disabled:bg-gray-600 ${
+                                isShort ? 'bg-rose-600 hover:bg-rose-700' : 'bg-red-600 hover:bg-red-700'
+                              }`}
+                              title={`Cerrar posición ${singleSide || ''} de ${status.symbol} a mercado en Binance`}
+                            >
+                              {isClosing ? '..' : '✕'}
+                            </button>
+                          );
+                        })()}
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-sm">{status.symbol}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onSelectSymbolForChart) onSelectSymbolForChart(status.symbol);
+                              }}
+                              className="px-1.5 py-0.5 text-[11px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded transition shadow-sm font-bold"
+                              title={`Ver gráfico en vivo de ${status.symbol}`}
+                            >
+                              📊
+                            </button>
+                          </div>
+                          {/* Badge de Modalidad Operativa */}
+                          <div className="mt-0.5">
+                            {(!status.trade_direction || status.trade_direction === 'BIDIRECTIONAL') ? (
+                              <span className="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-purple-950/80 text-purple-300 border border-purple-500/40" title="Modo Cobertura Bidireccional (LONG y SHORT simultáneos)">
+                                🔄 BIDI
+                              </span>
+                            ) : status.trade_direction === 'SHORT' ? (
+                              <span className="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-rose-950/80 text-rose-300 border border-rose-500/40" title="Operando exclusivamente en SHORT">
+                                🔴 SHORT
+                              </span>
+                            ) : (
+                              <span className="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40" title="Operando exclusivamente en LONG">
+                                🟢 LONG
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </td>
 
@@ -898,57 +977,90 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                             ) : (status.state || 'N/A')
                           )}
                         </button>
-                        {/* Chips de órdenes pendientes si existen */}
-                        {status.pending_entry_order_id && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-500/60 shadow-sm" title={`Orden de entrada pendiente ID: ${status.pending_entry_order_id}`}>
-                            ⏳ Compra #{String(status.pending_entry_order_id).slice(-4)}
-                          </span>
-                        )}
-                        {status.pending_exit_order_id && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-rose-950/90 text-rose-300 border border-rose-500/60 shadow-sm" title={`Orden de salida pendiente ID: ${status.pending_exit_order_id}`}>
-                            ⏳ Cierre #{String(status.pending_exit_order_id).slice(-4)}
-                          </span>
-                        )}
-                        {status.pending_tp_order_id && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-500/60 shadow-sm" title={`TP activo ID: ${status.pending_tp_order_id}`}>
-                            🎯 TP #{String(status.pending_tp_order_id).slice(-4)}
-                          </span>
-                        )}
-                        {status.pending_sl_order_id && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-red-950/90 text-red-300 border border-red-500/60 shadow-sm" title={`SL activo ID: ${status.pending_sl_order_id}`}>
-                            🛑 SL #{String(status.pending_sl_order_id).slice(-4)}
-                          </span>
-                        )}
+                        {/* Chips de órdenes pendientes (soporta sub-posiciones LONG/SHORT) */}
+                        {(() => {
+                          const orderChips = [];
+                          const botsToCheck = (status.positions && status.positions.length > 0) ? status.positions : [status];
+                          botsToCheck.forEach((sp, idx) => {
+                            const sideTag = sp.trade_side ? ` (${sp.trade_side[0]})` : '';
+                            if (sp.pending_entry_order_id) {
+                              orderChips.push(
+                                <span key={`entry-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-500/60 shadow-sm" title={`Orden de entrada pendiente${sideTag} ID: ${sp.pending_entry_order_id}`}>
+                                  ⏳ Entrada{sideTag} #{String(sp.pending_entry_order_id).slice(-4)}
+                                </span>
+                              );
+                            }
+                            if (sp.pending_exit_order_id) {
+                              orderChips.push(
+                                <span key={`exit-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-rose-950/90 text-rose-300 border border-rose-500/60 shadow-sm" title={`Orden de salida pendiente${sideTag} ID: ${sp.pending_exit_order_id}`}>
+                                  ⏳ Cierre{sideTag} #{String(sp.pending_exit_order_id).slice(-4)}
+                                </span>
+                              );
+                            }
+                            if (sp.pending_tp_order_id) {
+                              orderChips.push(
+                                <span key={`tp-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-500/60 shadow-sm" title={`TP activo${sideTag} ID: ${sp.pending_tp_order_id}`}>
+                                  🎯 TP{sideTag} #{String(sp.pending_tp_order_id).slice(-4)}
+                                </span>
+                              );
+                            }
+                            if (sp.pending_sl_order_id) {
+                              orderChips.push(
+                                <span key={`sl-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-red-950/90 text-red-300 border border-red-500/60 shadow-sm" title={`SL activo${sideTag} ID: ${sp.pending_sl_order_id}`}>
+                                  🛑 SL{sideTag} #{String(sp.pending_sl_order_id).slice(-4)}
+                                </span>
+                              );
+                            }
+                          });
+                          return orderChips;
+                        })()}
                       </div>
                     </td>
 
                     {/* --- POSICIÓN & MARGEN --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-xs">
-                      {status?.in_position ? (
-                        <div className="flex flex-col space-y-0.5">
-                          <div className="flex items-center gap-1">
-                            <span className="font-extrabold text-white font-mono text-xs">
-                              ${(Number(status?.position_value_usdt) || Math.abs((Number(status?.entry_price) || 0) * (Number(status?.position_size) || 0))).toFixed(2)} USDT
-                            </span>
-                            <span className="text-[11px] text-slate-300 font-mono">
-                              ({status?.position_size || 0} {String(status?.symbol || '').replace('USDT', '')})
-                            </span>
+                      {status?.in_position ? (() => {
+                        const activeSubPositions = (status.positions || []).filter(p => p.in_position);
+                        const positionsToRender = activeSubPositions.length > 0 ? activeSubPositions : [status];
+                        return (
+                          <div className="flex flex-col space-y-1.5">
+                            {positionsToRender.map((pos, pIdx) => {
+                              const side = pos.trade_side || (positionsToRender.length === 1 ? status.trade_side : null);
+                              const isShort = side === 'SHORT';
+                              const posVal = Number(pos.position_value_usdt) || Math.abs((Number(pos.entry_price) || 0) * (Number(pos.position_size) || 0));
+                              const marginVal = Number(pos.margin_usdt) || (posVal / (Number(pos.leverage) || 20));
+                              return (
+                                <div key={pIdx} className={`p-1.5 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`px-1 py-0.2 rounded text-[9px] font-bold font-mono ${isShort ? 'bg-rose-950 text-rose-300 border border-rose-600/50' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'}`}>
+                                      {isShort ? '🔴 SHORT' : '🟢 LONG'}
+                                    </span>
+                                    <span className="font-extrabold text-white font-mono text-xs">
+                                      ${posVal.toFixed(2)} USDT
+                                    </span>
+                                    <span className="text-[10px] text-slate-300 font-mono">
+                                      ({pos.position_size || 0} {String(status.symbol || '').replace('USDT', '')})
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-[11px] font-bold text-slate-300 font-mono">
+                                      Margen: ~${marginVal.toFixed(2)} USDT
+                                    </span>
+                                    <span className="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-amber-300 font-bold border border-slate-700 font-mono">
+                                      {pos.leverage || status.leverage || 20}x
+                                    </span>
+                                    {pos.entry_price && !isNaN(parseFloat(pos.entry_price)) && (
+                                      <span className="text-[10px] text-slate-400 font-mono ml-auto">
+                                        Entrada: ${parseFloat(pos.entry_price).toFixed(4)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[11px] font-bold text-emerald-400 font-mono">
-                              Margen: ~${(Number(status?.margin_usdt) || ((Number(status?.position_value_usdt) || 50) / (Number(status?.leverage) || 20))).toFixed(2)} USDT
-                            </span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-amber-300 font-bold border border-slate-700 font-mono">
-                              {status?.leverage || 20}x
-                            </span>
-                          </div>
-                          {status?.entry_price && !isNaN(parseFloat(status.entry_price)) && (
-                            <span className="text-[11px] text-slate-300 font-mono">
-                              Entrada: ${parseFloat(status.entry_price).toFixed(4)}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
+                        );
+                      })() : (
                         <span className="text-slate-400 text-xs italic">
                           Sin posición
                         </span>
@@ -956,9 +1068,33 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     </td>
 
                     <td className="px-3 py-3 whitespace-nowrap text-sm">
-                      <span className={`font-mono ${getPnlColorClass(status.current_pnl)}`}>
-                      {status.in_position ? formatPnl(status.current_pnl) : 'N/A'}
-                      </span>
+                      {status.in_position ? (
+                        <div className="flex flex-col">
+                          <span className={`font-mono ${getPnlColorClass(status.current_pnl)}`}>
+                            {formatPnl(status.current_pnl)}
+                          </span>
+                          {(() => {
+                            const activeSubPositions = (status.positions || []).filter(p => p.in_position);
+                            if (activeSubPositions.length > 1) {
+                              return (
+                                <div className="flex flex-col gap-0.5 mt-0.5 text-[10px] font-mono">
+                                  {activeSubPositions.map((sp, pIdx) => {
+                                    const isShort = sp.trade_side === 'SHORT';
+                                    return (
+                                      <span key={pIdx} className={getPnlColorClass(sp.current_pnl)}>
+                                        {isShort ? '🔴 S: ' : '🟢 L: '}{formatPnl(sp.current_pnl)}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-sm font-mono">N/A</span>
+                      )}
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap text-sm">
                       <span className={`font-mono ${getPnlColorClass(status.historical_pnl)}`}>
@@ -1021,6 +1157,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                 <thead className="bg-slate-900 border-b border-slate-700">
                                   <tr>
                                     <BinanceSortHeader label="Fecha Cierre" sortKey="close_timestamp" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
+                                    <BinanceSortHeader label="Lado" sortKey="trade_type" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
                                     <BinanceSortHeader label="Motivo" sortKey="close_reason" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
                                     <BinanceSortHeader label="Entrada" sortKey="open_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
                                     <BinanceSortHeader label="Salida" sortKey="close_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
@@ -1037,6 +1174,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                     return (
                                       <tr key={trade.id} className="hover:bg-slate-900/60">
                                         <td className="px-2 py-1 whitespace-nowrap text-slate-300">{formatDate(trade.close_timestamp)}</td>
+                                        <td className="px-2 py-1 whitespace-nowrap">
+                                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${trade.trade_type === 'SHORT' ? 'bg-rose-950 text-rose-300 border border-rose-600/50' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'}`}>
+                                            {trade.trade_type || 'LONG'}
+                                          </span>
+                                        </td>
                                         <td className="px-2 py-1 whitespace-nowrap text-slate-300">{trade.close_reason || 'N/A'}</td>
                                         <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
                                         <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>

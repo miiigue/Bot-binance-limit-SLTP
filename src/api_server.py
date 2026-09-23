@@ -208,7 +208,7 @@ def config_to_dict(config: configparser.ConfigParser) -> dict:
                 if section == 'SYMBOLS' and key == 'symbols_to_trade': # Mantener la lista como string
                     processed_val = val
                 # --- NUEVO: Manejo explícito de booleanos para la nueva estrategia ---
-                elif key in ['evaluate_support_strategy', 'evaluate_ma_filter', 'evaluate_open_interest_increase', 'enable_take_profit_pnl', 'enable_stop_loss_pnl', 'enable_trailing_rsi_stop', 'enable_price_trailing_stop', 'enable_pnl_trailing_stop', 'evaluate_rsi_delta', 'evaluate_volume_filter', 'evaluate_rsi_range', 'evaluate_downtrend_candles_block', 'evaluate_downtrend_levels_block', 'evaluate_required_uptrend']:
+                elif key in ['auto_mirror_short', 'evaluate_support_strategy', 'evaluate_ma_filter', 'evaluate_open_interest_increase', 'enable_take_profit_pnl', 'enable_stop_loss_pnl', 'enable_trailing_rsi_stop', 'enable_price_trailing_stop', 'enable_pnl_trailing_stop', 'evaluate_rsi_delta', 'evaluate_volume_filter', 'evaluate_rsi_range', 'evaluate_downtrend_candles_block', 'evaluate_downtrend_levels_block', 'evaluate_required_uptrend']:
                     processed_val = config.getboolean(section, key)
                 elif '.' in val:
                     processed_val = config.getfloat(section, key)
@@ -329,6 +329,13 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'crash_price_drop_percent': _val('crashPriceDropPercent', 1.5),
             'enable_crash_pnl_drop': str(frontend_data.get('enableCrashPnlDrop', True)).lower(),
             'crash_pnl_drop_threshold_usdt': _val('crashPnlDropThresholdUSDT', 5.0),
+
+            # --- OPERATIVA BIDIRECCIONAL Y ESPEJO SHORT ---
+            'trade_direction': str(_val('tradeDirection', 'BIDIRECTIONAL')).upper(),
+            'auto_mirror_short': str(frontend_data.get('autoMirrorShort', True)).lower(),
+            'rsi_short_entry_level_low': _val('rsiShortEntryLevelLow', 55.0),
+            'rsi_short_entry_level_high': _val('rsiShortEntryLevelHigh', 70.0),
+            'rsi_threshold_down': _val('rsiThresholdDown', 2.0),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -430,6 +437,13 @@ def start_bot_workers():
         if not client or "testnet" not in str(getattr(client, 'base_url', '')).lower():
             logger.critical("BLOQUEO DE SEGURIDAD: Conexión con Binance Testnet no verificada. Inicio abortado.")
             return False, "Bloqueo de seguridad: No se pudo verificar la conexión exclusiva con Binance Testnet."
+
+        # Asegurar Modo Cobertura (Hedge Mode) para permitir LONG y SHORT simultáneos
+        try:
+            from src.binance_client import ensure_hedge_mode
+            ensure_hedge_mode()
+        except Exception as e_hm:
+            logger.warning(f"Aviso al verificar/activar Modo Cobertura (Hedge Mode): {e_hm}")
 
         from src.config_loader import is_multi_strategy_enabled, get_symbol_strategy_assignments
         is_multi = is_multi_strategy_enabled()
@@ -589,6 +603,13 @@ def _build_frontend_config_dict():
             ('crash_price_drop_percent', 'crashPriceDropPercent'),
             ('enable_crash_pnl_drop', 'enableCrashPnlDrop'),
             ('crash_pnl_drop_threshold_usdt', 'crashPnlDropThresholdUSDT'),
+
+            # --- OPERATIVA BIDIRECCIONAL Y ESPEJO SHORT ---
+            ('trade_direction', 'tradeDirection'),
+            ('auto_mirror_short', 'autoMirrorShort'),
+            ('rsi_short_entry_level_low', 'rsiShortEntryLevelLow'),
+            ('rsi_short_entry_level_high', 'rsiShortEntryLevelHigh'),
+            ('rsi_threshold_down', 'rsiThresholdDown'),
         ]:
             if key_ini in config_dict['TRADING']:
                 frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
@@ -1371,7 +1392,16 @@ def start_bots_endpoint():
 def close_position_endpoint(symbol):
     symbol = symbol.upper().strip()
     logger = get_logger()
-    logger.warning(f"Solicitud para cerrar posición de {symbol} recibida en la API.")
+    
+    side = request.args.get('side')
+    if not side and request.is_json:
+        try:
+            side = request.json.get('side')
+        except Exception:
+            side = None
+    side = side.upper() if side else None
+
+    logger.warning(f"Solicitud para cerrar posición de {symbol} (lado: {side or 'TODAS'}) recibida en la API.")
     
     worker = None
     with status_lock:
@@ -1379,9 +1409,14 @@ def close_position_endpoint(symbol):
     
     if worker and hasattr(worker, 'close_position_now'):
         try:
-            success = worker.close_position_now(reason="Cierre Manual Panel Web")
+            import inspect
+            sig = inspect.signature(worker.close_position_now)
+            if 'side' in sig.parameters:
+                success = worker.close_position_now(reason="Cierre Manual Panel Web", side=side)
+            else:
+                success = worker.close_position_now(reason="Cierre Manual Panel Web")
             if success:
-                return jsonify({"message": f"Posición de {symbol} cerrada exitosamente."}), 200
+                return jsonify({"message": f"Posición {side or ''} de {symbol} cerrada exitosamente."}), 200
             else:
                 return jsonify({"error": f"No se pudo cerrar la posición de {symbol}."}), 500
         except Exception as e:
@@ -1390,21 +1425,20 @@ def close_position_endpoint(symbol):
     else:
         try:
             from src.binance_client import get_futures_position, create_futures_market_order
-            pos = get_futures_position(symbol)
-            if not pos:
-                return jsonify({"message": f"No hay posición abierta para {symbol}."}), 200
+            sides_to_close = [side] if side in ('LONG', 'SHORT') else ['LONG', 'SHORT', None]
+            closed_any = False
+            for target_side in sides_to_close:
+                pos = get_futures_position(symbol, position_side=target_side)
+                if pos:
+                    amt = float(pos.get('positionAmt', '0'))
+                    if abs(amt) > 1e-9:
+                        order_side = 'SELL' if (target_side == 'LONG' or amt > 0) else 'BUY'
+                        pos_side = pos.get('positionSide', target_side or 'BOTH')
+                        order = create_futures_market_order(symbol, side=order_side, quantity=abs(amt), position_side=pos_side, reduce_only=True)
+                        if order:
+                            closed_any = True
             
-            amt = float(pos.get('positionAmt', '0'))
-            if abs(amt) < 1e-9:
-                return jsonify({"message": f"No hay posición abierta para {symbol}."}), 200
-            
-            side = 'SELL' if amt > 0 else 'BUY'
-            pos_side = pos.get('positionSide', 'LONG')
-            order = create_futures_market_order(symbol, side=side, quantity=abs(amt), position_side=pos_side)
-            if order:
-                return jsonify({"message": f"Posición de {symbol} cerrada exitosamente a mercado en Binance."}), 200
-            else:
-                return jsonify({"error": f"Error al ejecutar orden de cierre para {symbol}."}), 500
+            return jsonify({"message": f"Proceso de cierre para {symbol} completado."}), 200
         except Exception as e:
             logger.error(f"Error al cerrar posición externa de {symbol}: {e}", exc_info=True)
             return jsonify({"error": str(e)}), 500

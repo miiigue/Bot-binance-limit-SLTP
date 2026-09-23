@@ -67,19 +67,17 @@ _btc_crash_cache = {
 # Formato: {cache_key: {'timestamp': float, 'is_bullish': bool, 'detail': str, 'value': float}}
 _market_regime_cache = {}
 
-class TradingBot:
+class SingleSideTradingBot:
     """
-    Clase que encapsula la lógica de trading RSI para UN símbolo específico.
-    Interactúa con Binance Futures (Testnet/Live según cliente global).
-    Diseñada para ser instanciada por cada símbolo a operar.
-    Ahora usa órdenes LIMIT.
+    Clase que encapsula la lógica de trading para UN símbolo y UN lado específico ('LONG' o 'SHORT').
+    Interactúa con Binance Futures (Testnet/Live) respetando Hedge Mode.
     """
-    def __init__(self, symbol: str, trading_params: dict, risk_manager):
+    def __init__(self, symbol: str, trading_params: dict, risk_manager, trade_side: str = 'LONG'):
         """
-        Inicializa el bot para un símbolo específico.
-        Lee parámetros, inicializa el cliente, obtiene información del símbolo y estado inicial.
+        Inicializa el bot para un símbolo y lado específico.
         """
         self.symbol = symbol.upper()
+        self.trade_side = str(trade_side).upper() # 'LONG' o 'SHORT'
         self.risk_manager = risk_manager # <-- Guardar referencia al gestor de riesgo
         self.state = BotState.INITIALIZING
         self.in_position = False
@@ -94,6 +92,7 @@ class TradingBot:
         self.historical_pnl = Decimal('0') # Para PNL histórico total
         self.session_pnl = Decimal('0') # <-- NUEVO: Para PNL de la sesión actual
         self.margin_for_current_position = Decimal('0') # Para seguimiento de margen real
+        self.price_trough_since_entry = None # Para Trailing Stop de SHORT
         s_init = trading_params.get('strategy_name') or trading_params.get('active_strategy_name')
         if not s_init or str(s_init).strip().lower() == 'global':
             try:
@@ -540,65 +539,74 @@ class TradingBot:
 
     def _check_initial_position(self):
         """
-        Verifica si ya existe una posición para el símbolo en Binance al iniciar el bot.
-        Esta función ha sido reescrita desde cero para garantizar una sintaxis perfecta.
+        Verifica si ya existe una posición para el símbolo y lado en Binance al iniciar el bot.
+        Soporta Hedge Mode ('LONG' o 'SHORT') y modo One-Way.
         """
-        self.logger.info(f"[{self.symbol}] Comprobando posición inicial en Binance...")
+        self.logger.info(f"[{self.symbol}][{self.trade_side}] Comprobando posición inicial en Binance...")
         position_info = get_futures_position_information()
 
         if position_info is None:
-            self.logger.error(f"[{self.symbol}] No se pudo obtener la información de posiciones de Binance.")
+            self.logger.error(f"[{self.symbol}][{self.trade_side}] No se pudo obtener la información de posiciones de Binance.")
             self._set_error_state("Failed to get position info on startup")
             return
 
-        # Buscar si entre las posiciones del símbolo hay alguna abierta (positionAmt != 0)
         matching_positions = [p for p in position_info if p.get('symbol') == self.symbol]
         position_data = None
+
+        # 1. Buscar coincidencia exacta por positionSide en Hedge Mode
         for p in matching_positions:
             try:
                 amt = Decimal(str(p.get('positionAmt', '0')))
-                if abs(amt) > Decimal('1e-9'):
+                if p.get('positionSide') == self.trade_side and abs(amt) > Decimal('1e-9'):
                     position_data = p
                     break
             except Exception:
                 continue
 
-        if not position_data and matching_positions:
-            position_data = matching_positions[0]
+        # 2. Si no hubo coincidencia en Hedge Mode, buscar en modo One-Way (positionSide == 'BOTH' o no especificado)
+        if not position_data:
+            for p in matching_positions:
+                try:
+                    amt = Decimal(str(p.get('positionAmt', '0')))
+                    if abs(amt) > Decimal('1e-9'):
+                        if self.trade_side == 'SHORT' and amt < Decimal('0'):
+                            position_data = p
+                            break
+                        elif self.trade_side == 'LONG' and amt > Decimal('0'):
+                            position_data = p
+                            break
+                except Exception:
+                    continue
 
         pos_amt_binance = Decimal(str(position_data.get('positionAmt', '0'))) if position_data else Decimal('0')
 
         if abs(pos_amt_binance) > Decimal('1e-9'):
             entry_price_binance = Decimal(str(position_data.get('entryPrice', '0')))
             unrealized_pnl_binance = Decimal(str(position_data.get('unRealizedProfit', '0')))
+            pos_side = position_data.get('positionSide', self.trade_side)
+            actual_qty = abs(pos_amt_binance)
 
-            if pos_amt_binance > Decimal('0'):
-                pos_side = position_data.get('positionSide', 'LONG')
-                self.logger.info(f"[{self.symbol}] Se encontró posición {pos_side} existente: Cantidad={pos_amt_binance}, Entrada={entry_price_binance}, PnL={unrealized_pnl_binance}. Sincronizando estado.")
-                self.in_position = True
-                self.current_state = BotState.IN_POSITION
-                self.state = BotState.IN_POSITION
-                self.last_known_entry_price = entry_price_binance
-                self.last_known_position_size = pos_amt_binance
-                self.last_known_pnl = unrealized_pnl_binance
-                self.current_position = {
-                    'entry_price': entry_price_binance,
-                    'quantity': pos_amt_binance,
-                    'entry_time': pd.Timestamp.now(tz='UTC'),
-                    'position_size_usdt': abs(entry_price_binance * pos_amt_binance),
-                    'positionAmt': pos_amt_binance
-                }
-                initial_margin = Decimal(str(position_data.get('initialMargin', '0')))
-                self.margin_for_current_position = initial_margin
-                if initial_margin > 0:
-                    self.risk_manager.add_exposure(initial_margin)
-            else:
-                self.logger.warning(f"[{self.symbol}] Se encontró posición CORTA existente. El bot no la gestionará.")
-                self.in_position = False
-                self.current_state = BotState.IDLE
-                self.state = BotState.IDLE
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] Se encontró posición {pos_side} existente: Cantidad={actual_qty}, Entrada={entry_price_binance}, PnL={unrealized_pnl_binance}. Sincronizando estado.")
+            self.in_position = True
+            self.current_state = BotState.IN_POSITION
+            self.state = BotState.IN_POSITION
+            self.last_known_entry_price = entry_price_binance
+            self.last_known_position_size = actual_qty
+            self.last_known_pnl = unrealized_pnl_binance
+            self.current_position = {
+                'entry_price': entry_price_binance,
+                'quantity': actual_qty,
+                'entry_time': pd.Timestamp.now(tz='UTC'),
+                'position_size_usdt': abs(entry_price_binance * actual_qty),
+                'positionAmt': pos_amt_binance,
+                'side': self.trade_side
+            }
+            initial_margin = Decimal(str(position_data.get('initialMargin', '0')))
+            self.margin_for_current_position = initial_margin
+            if initial_margin > 0 and self.risk_manager:
+                self.risk_manager.add_exposure(initial_margin)
         else:
-            self.logger.info(f"[{self.symbol}] No se encontró posición existente.")
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] No se encontró posición existente.")
             self.in_position = False
             self.current_state = BotState.IDLE
             self.state = BotState.IDLE
@@ -612,8 +620,8 @@ class TradingBot:
             self.logger.debug(f"[{self.symbol}] _update_open_position_pnl llamado pero no se está en posición o current_position es None. Saltando.")
             return True
 
-        self.logger.info(f"[{self.symbol}] _update_open_position_pnl: Verificando posición abierta en Binance...")
-        position_data = get_futures_position(self.symbol)
+        self.logger.info(f"[{self.symbol}][{self.trade_side}] _update_open_position_pnl: Verificando posición abierta en Binance...")
+        position_data = get_futures_position(self.symbol, position_side=self.trade_side)
 
         # CRITICAL FIX: Si la API retorna None (timeout/error de red), NO asumir cierre.
         # Mantener la posición y reintentar en el próximo ciclo.
@@ -703,8 +711,10 @@ class TradingBot:
             if final_close_price is None or final_close_price <= Decimal('0'):
                 try:
                     ticker = get_order_book_ticker(self.symbol)
-                    if ticker and 'bidPrice' in ticker:
-                        final_close_price = Decimal(str(ticker['bidPrice']))
+                    if ticker:
+                        price_key = 'askPrice' if self.trade_side == 'SHORT' else 'bidPrice'
+                        if price_key in ticker:
+                            final_close_price = Decimal(str(ticker[price_key]))
                 except Exception:
                     pass
                 if not final_close_price or final_close_price <= Decimal('0'):
@@ -712,15 +722,18 @@ class TradingBot:
 
             if final_pnl is None:
                 if old_entry_price and old_quantity and final_close_price and final_close_price > Decimal('0'):
-                    final_pnl = (final_close_price - old_entry_price) * old_quantity
+                    if self.trade_side == 'SHORT':
+                        final_pnl = (old_entry_price - final_close_price) * abs(old_quantity)
+                    else:
+                        final_pnl = (final_close_price - old_entry_price) * abs(old_quantity)
                 else:
                     final_pnl = Decimal('0')
             
             # 3. Guardar en la base de datos con comisiones oficiales deducidas
             open_ts_for_db = old_entry_time.to_pydatetime() if isinstance(old_entry_time, (pd.Timestamp, datetime)) and hasattr(old_entry_time, 'to_pydatetime') else (old_entry_time if isinstance(old_entry_time, datetime) else datetime.utcnow())
             close_ts_for_db = final_close_timestamp.to_pydatetime() if isinstance(final_close_timestamp, (pd.Timestamp, datetime)) and hasattr(final_close_timestamp, 'to_pydatetime') else (final_close_timestamp if isinstance(final_close_timestamp, datetime) else datetime.utcnow())
-            pos_size_calc = float(old_entry_price * old_quantity) if (old_entry_price and old_quantity) else 0.0
-            close_size_calc = float(final_close_price * old_quantity) if (final_close_price and old_quantity) else pos_size_calc
+            pos_size_calc = float(old_entry_price * abs(old_quantity)) if (old_entry_price and old_quantity) else 0.0
+            close_size_calc = float(final_close_price * abs(old_quantity)) if (final_close_price and old_quantity) else pos_size_calc
 
             entry_rate = 0.0002 if str(self.entry_order_type).upper() == 'LIMIT' else 0.0005
             exit_rate = 0.0005
@@ -730,19 +743,19 @@ class TradingBot:
 
             record_trade(
                 symbol=self.symbol,
-                trade_type='LONG',
+                trade_type=self.trade_side,
                 open_timestamp=open_ts_for_db,
                 close_timestamp=close_ts_for_db,
                 open_price=float(old_entry_price) if old_entry_price else 0.0,
                 close_price=float(final_close_price) if final_close_price else 0.0,
-                quantity=float(old_quantity) if old_quantity else 0.0,
+                quantity=float(abs(old_quantity)) if old_quantity else 0.0,
                 position_size_usdt=pos_size_calc,
                 pnl_usdt=net_pnl_val,
                 gross_pnl_usdt=gross_pnl_val,
                 commission_usdt=comm_calc,
                 close_reason=close_reason
             )
-            self.logger.info(f"[{self.symbol}] Trade CERRADO y guardado en DB. Razón: {close_reason}, PNL Neto: {net_pnl_val:.4f}, PNL Bruto: {gross_pnl_val:.4f}, Comisión: {comm_calc:.4f}")
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] Trade CERRADO y guardado en DB. Razón: {close_reason}, PNL Neto: {net_pnl_val:.4f}, PNL Bruto: {gross_pnl_val:.4f}, Comisión: {comm_calc:.4f}")
             
             # 4. Limpiar y actualizar estado (usando PnL Neto)
             net_pnl_dec = Decimal(str(net_pnl_val))
@@ -753,37 +766,45 @@ class TradingBot:
             if (now_epoch_ms - trade_epoch_ms) < 7200000:
                 self.session_pnl += net_pnl_dec
             self._on_trade_closed(net_pnl_dec, close_reason)
-            if self.margin_for_current_position > 0:
+            if self.margin_for_current_position > 0 and self.risk_manager:
                 self.risk_manager.remove_exposure(self.margin_for_current_position)
-                self.logger.info(f"[{self.symbol}] Exposición de MARGEN {self.margin_for_current_position} USDT eliminada.")
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] Exposición de MARGEN {self.margin_for_current_position} USDT eliminada.")
             
             self._reset_state() # Esto resetea in_position, current_position, current_exit_reason, etc.
             self._update_state(BotState.IDLE)
             return False # Indicar que la posición se cerró
 
-        elif pos_amt_binance > Decimal('1e-9'): # Posición LONG abierta
-            # Actualizar el PNL y otros datos en memoria (lógica existente)
-            self.current_position = {
-                'entry_price': entry_price_binance,
-                'quantity': pos_amt_binance,
-                'entry_time': self.current_position.get('entry_time') if self.current_position and self.current_position.get('entry_price') == entry_price_binance else pd.Timestamp.now(tz='UTC'),
-                'position_size_usdt': abs(entry_price_binance * pos_amt_binance),
-                'positionAmt': pos_amt_binance
-            }
-            self.last_known_pnl = unrealized_pnl_binance
-            self.last_known_entry_price = entry_price_binance
-            self.last_known_position_size = pos_amt_binance
-            self._update_state(BotState.IN_POSITION)
+        else:
+            # Comprobar si la posición activa corresponde al lado del bot
+            is_expected_pos = False
+            if self.trade_side == 'SHORT':
+                is_expected_pos = (pos_amt_binance < Decimal('-1e-9')) or (abs(pos_amt_binance) > Decimal('1e-9') and position_data.get('positionSide') == 'SHORT')
+            else:
+                is_expected_pos = (pos_amt_binance > Decimal('1e-9')) or (abs(pos_amt_binance) > Decimal('1e-9') and position_data.get('positionSide') == 'LONG')
 
-            # --- ACTUALIZAR DIAGNÓSTICO DE SALIDA & PROTECCIÓN EN TIEMPO REAL ---
-            self.position_diagnostics = self._calculate_position_diagnostics()
-            return True
+            if is_expected_pos:
+                actual_qty = abs(pos_amt_binance)
+                self.current_position = {
+                    'entry_price': entry_price_binance,
+                    'quantity': actual_qty,
+                    'entry_time': self.current_position.get('entry_time') if self.current_position and self.current_position.get('entry_price') == entry_price_binance else pd.Timestamp.now(tz='UTC'),
+                    'position_size_usdt': abs(entry_price_binance * actual_qty),
+                    'positionAmt': pos_amt_binance,
+                    'side': self.trade_side
+                }
+                self.last_known_pnl = unrealized_pnl_binance
+                self.last_known_entry_price = entry_price_binance
+                self.last_known_position_size = actual_qty
+                self._update_state(BotState.IN_POSITION)
 
-        elif pos_amt_binance < Decimal('-1e-9'): # Posición CORTA abierta
-            self.logger.warning(f"[{self.symbol}] _update_open_position_pnl: Posición CORTA abierta en Binance: {pos_amt_binance}")
-            # Si el bot pensaba que estaba en LONG, esto es una discrepancia
-            self._handle_external_closure_or_discrepancy("pnl_update_unexpected_short")
-            return False
+                # --- ACTUALIZAR DIAGNÓSTICO DE SALIDA & PROTECCIÓN EN TIEMPO REAL ---
+                self.position_diagnostics = self._calculate_position_diagnostics()
+                return True
+            else:
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] _update_open_position_pnl: Posición inesperada en Binance: {pos_amt_binance}")
+                discrepancy_reason = "pnl_update_unexpected_long" if self.trade_side == 'SHORT' else "pnl_update_unexpected_short"
+                self._handle_external_closure_or_discrepancy(discrepancy_reason)
+                return False
 
         return True # Por defecto, si no se cerró, la posición sigue "abierta" para el bot.
 
@@ -909,19 +930,34 @@ class TradingBot:
                     ts_diag["armed"] = price_ts_armed
 
                     if price_ts_armed:
-                        peak_pr = float(self.price_peak_since_entry) if getattr(self, 'price_peak_since_entry', None) is not None else entry_p_val
+                        is_short = (self.trade_side == 'SHORT')
                         curr_pr = float(current_market_price) if current_market_price else entry_p_val
-                        if curr_pr > peak_pr:
-                            peak_pr = curr_pr
-                        floor_pr = peak_pr - dist_pr
-                        tolerance_val = max(0.0, curr_pr - floor_pr)
-                        tolerance_pct = max(0.0, min(100.0, (tolerance_val / dist_pr * 100.0))) if dist_pr > 0 else 100.0
+                        if is_short:
+                            trough_pr = float(self.price_trough_since_entry) if getattr(self, 'price_trough_since_entry', None) is not None else entry_p_val
+                            if curr_pr < trough_pr:
+                                trough_pr = curr_pr
+                            ceiling_pr = trough_pr + dist_pr
+                            tolerance_val = max(0.0, ceiling_pr - curr_pr)
+                            tolerance_pct = max(0.0, min(100.0, (tolerance_val / dist_pr * 100.0))) if dist_pr > 0 else 100.0
 
-                        ts_diag["peak_value"] = round(peak_pr, 4)
-                        ts_diag["floor_value"] = round(floor_pr, 4)
-                        ts_diag["tolerance_value"] = round(tolerance_val, 4)
-                        ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
-                        ts_diag["label"] = f"Piso: ${floor_pr:.4f}"
+                            ts_diag["peak_value"] = round(trough_pr, 4)
+                            ts_diag["floor_value"] = round(ceiling_pr, 4)
+                            ts_diag["tolerance_value"] = round(tolerance_val, 4)
+                            ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
+                            ts_diag["label"] = f"Techo: ${ceiling_pr:.4f}"
+                        else:
+                            peak_pr = float(self.price_peak_since_entry) if getattr(self, 'price_peak_since_entry', None) is not None else entry_p_val
+                            if curr_pr > peak_pr:
+                                peak_pr = curr_pr
+                            floor_pr = peak_pr - dist_pr
+                            tolerance_val = max(0.0, curr_pr - floor_pr)
+                            tolerance_pct = max(0.0, min(100.0, (tolerance_val / dist_pr * 100.0))) if dist_pr > 0 else 100.0
+
+                            ts_diag["peak_value"] = round(peak_pr, 4)
+                            ts_diag["floor_value"] = round(floor_pr, 4)
+                            ts_diag["tolerance_value"] = round(tolerance_val, 4)
+                            ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
+                            ts_diag["label"] = f"Piso: ${floor_pr:.4f}"
                     else:
                         arm_prog = max(0.0, min(100.0, (pnl_usdt_val / act_pnl * 100.0))) if (act_pnl > 0 and pnl_usdt_val > 0) else 0.0
                         ts_diag["arm_progress_pct"] = round(arm_prog, 1)
@@ -932,21 +968,36 @@ class TradingBot:
                     ts_diag["armed"] = rsi_ts_armed
                     act_rsi = float(getattr(self, 'rsi_target', 70))
                     ts_diag["activation_threshold"] = act_rsi
+                    is_short = (self.trade_side == 'SHORT')
                     if rsi_ts_armed:
-                        peak_rsi = float(self.rsi_peak_since_target) if getattr(self, 'rsi_peak_since_target', None) is not None else act_rsi
+                        curr_rsi = float(self.last_rsi_value) if getattr(self, 'last_rsi_value', None) is not None else act_rsi
                         drop_rsi = abs(float(getattr(self, 'rsi_threshold_down', -5)))
-                        floor_rsi = peak_rsi - drop_rsi
-                        curr_rsi = float(self.last_rsi_value) if getattr(self, 'last_rsi_value', None) is not None else peak_rsi
-                        tolerance_val = max(0.0, curr_rsi - floor_rsi)
-                        tolerance_pct = max(0.0, min(100.0, (tolerance_val / drop_rsi * 100.0))) if drop_rsi > 0 else 100.0
-                        ts_diag["peak_value"] = round(peak_rsi, 1)
-                        ts_diag["floor_value"] = round(floor_rsi, 1)
-                        ts_diag["tolerance_value"] = round(tolerance_val, 1)
-                        ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
-                        ts_diag["label"] = f"Corte RSI: {floor_rsi:.1f}"
+                        if is_short:
+                            trough_rsi = float(self.rsi_trough_since_target) if getattr(self, 'rsi_trough_since_target', None) is not None else act_rsi
+                            ceiling_rsi = trough_rsi + drop_rsi
+                            tolerance_val = max(0.0, ceiling_rsi - curr_rsi)
+                            tolerance_pct = max(0.0, min(100.0, (tolerance_val / drop_rsi * 100.0))) if drop_rsi > 0 else 100.0
+                            ts_diag["peak_value"] = round(trough_rsi, 1)
+                            ts_diag["floor_value"] = round(ceiling_rsi, 1)
+                            ts_diag["tolerance_value"] = round(tolerance_val, 1)
+                            ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
+                            ts_diag["label"] = f"Corte RSI: {ceiling_rsi:.1f}"
+                        else:
+                            peak_rsi = float(self.rsi_peak_since_target) if getattr(self, 'rsi_peak_since_target', None) is not None else act_rsi
+                            floor_rsi = peak_rsi - drop_rsi
+                            tolerance_val = max(0.0, curr_rsi - floor_rsi)
+                            tolerance_pct = max(0.0, min(100.0, (tolerance_val / drop_rsi * 100.0))) if drop_rsi > 0 else 100.0
+                            ts_diag["peak_value"] = round(peak_rsi, 1)
+                            ts_diag["floor_value"] = round(floor_rsi, 1)
+                            ts_diag["tolerance_value"] = round(tolerance_val, 1)
+                            ts_diag["tolerance_pct"] = round(tolerance_pct, 1)
+                            ts_diag["label"] = f"Corte RSI: {floor_rsi:.1f}"
                     else:
                         curr_rsi = float(self.last_rsi_value) if getattr(self, 'last_rsi_value', None) is not None else 0.0
-                        arm_prog = max(0.0, min(100.0, (curr_rsi / act_rsi) * 100.0)) if act_rsi > 0 else 0.0
+                        if is_short:
+                            arm_prog = max(0.0, min(100.0, ((100.0 - curr_rsi) / (100.0 - act_rsi) * 100.0))) if act_rsi < 100 else 0.0
+                        else:
+                            arm_prog = max(0.0, min(100.0, (curr_rsi / act_rsi * 100.0))) if act_rsi > 0 else 0.0
                         ts_diag["arm_progress_pct"] = round(arm_prog, 1)
                         ts_diag["label"] = f"Arma RSI: {act_rsi:.0f}"
 
@@ -1088,23 +1139,30 @@ class TradingBot:
         # Analizar las últimas 'window_size' velas cerradas (excluyendo la vela actual en curso iloc[-1])
         recent_closed = klines_df.iloc[-(window_size + 1):-1]
         
-        red_count = 0
+        adverse_count = 0
+        is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
         for _, row in recent_closed.iterrows():
             try:
                 c_open = float(row['open'])
                 c_close = float(row['close'])
-                if c_close < c_open:
-                    red_count += 1
+                if is_short:
+                    if c_close > c_open: # Vela verde (alcista, adversa para entrar en SHORT)
+                        adverse_count += 1
+                else:
+                    if c_close < c_open: # Vela roja (bajista, adversa para entrar en LONG)
+                        adverse_count += 1
             except Exception:
                 pass
 
-        is_blocked = (red_count >= threshold_red)
+        is_blocked = (adverse_count >= threshold_red)
+        candle_type_str = "verdes" if is_short else "rojas"
+        filter_name = "ANTI-PUMP" if is_short else "ANTI-CASCADA"
         if is_blocked:
-            self.logger.info(f"[{self.symbol}] BLOQUEO ANTI-CASCADA: {red_count}/{window_size} velas rojas en la ventana (umbral para bloquear: {threshold_red}). Entrada bloqueada.")
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] BLOQUEO {filter_name}: {adverse_count}/{window_size} velas {candle_type_str} en la ventana (umbral para bloquear: {threshold_red}). Entrada bloqueada.")
         else:
-            self.logger.debug(f"[{self.symbol}] Filtro velas rojas OK: {red_count}/{window_size} velas rojas (límite bloqueo: {threshold_red}).")
+            self.logger.debug(f"[{self.symbol}][{self.trade_side}] Filtro velas {candle_type_str} OK: {adverse_count}/{window_size} velas {candle_type_str} (límite bloqueo: {threshold_red}).")
 
-        return is_blocked, red_count, window_size
+        return is_blocked, adverse_count, window_size
 
     def _is_recent_downtrend(self, klines_df: pd.DataFrame) -> bool:
         """Compatibilidad hacia atrás: True si está bloqueado por velas rojas."""
@@ -1114,6 +1172,7 @@ class TradingBot:
     def _calculate_tp_sl_prices(self) -> tuple[Decimal | None, Decimal | None]:
         """
         Calcula los precios de Take Profit y Stop Loss basados en la configuración y el precio de entrada.
+        Maneja tanto posiciones LONG como SHORT de manera simétrica.
         Devuelve (tp_price, sl_price) como Decimales, o None si no aplican.
         """
         if not self.current_position or not self.in_position:
@@ -1127,45 +1186,64 @@ class TradingBot:
             self.logger.error(f"[{self.symbol}] Precio de entrada o cantidad inválidos en current_position para calcular TP/SL.")
             return None, None
 
+        is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+
         tp_price = None
         # 1. Take Profit por PnL en USDT
         if self.take_profit_usdt > Decimal('0'):
             profit_per_unit = self.take_profit_usdt / quantity
-            tp_price_calculated = entry_price + profit_per_unit
+            if is_short:
+                tp_price_calculated = entry_price - profit_per_unit
+            else:
+                tp_price_calculated = entry_price + profit_per_unit
             tp_price = self._adjust_price(tp_price_calculated)
-            self.logger.info(f"[{self.symbol}] Precio TP calculado (USDT): {tp_price_calculated:.8f} -> Ajustado: {tp_price:.8f} (Base: Entrada={entry_price}, TP_USDT={self.take_profit_usdt})")
+            self.logger.info(f"[{self.symbol}] Precio TP calculado ({'SHORT' if is_short else 'LONG'}, USDT): {tp_price_calculated:.8f} -> Ajustado: {tp_price:.8f} (Base: Entrada={entry_price}, TP_USDT={self.take_profit_usdt})")
         # 2. Take Profit por Porcentaje (ej: Estrategia de Soportes)
         elif self.support_order_take_profit_percent > 0:
             tp_pct = Decimal(str(self.support_order_take_profit_percent)) / Decimal('100')
-            tp_price_calculated = entry_price * (Decimal('1') + tp_pct)
+            if is_short:
+                tp_price_calculated = entry_price * (Decimal('1') - tp_pct)
+            else:
+                tp_price_calculated = entry_price * (Decimal('1') + tp_pct)
             tp_price = self._adjust_price(tp_price_calculated)
-            self.logger.info(f"[{self.symbol}] Precio TP calculado (+{self.support_order_take_profit_percent}%): {tp_price_calculated:.8f} -> Ajustado: {tp_price:.8f}")
+            self.logger.info(f"[{self.symbol}] Precio TP calculado ({'SHORT' if is_short else 'LONG'}, {self.support_order_take_profit_percent}%): {tp_price_calculated:.8f} -> Ajustado: {tp_price:.8f}")
 
         sl_price = None
         # 1. Stop Loss por PnL en USDT
         if self.stop_loss_usdt != Decimal('0'):
             sl_amount_usdt = abs(self.stop_loss_usdt)
             loss_per_unit = sl_amount_usdt / quantity
-            sl_price_calculated = entry_price - loss_per_unit
+            if is_short:
+                sl_price_calculated = entry_price + loss_per_unit
+            else:
+                sl_price_calculated = entry_price - loss_per_unit
             sl_price = self._adjust_price(sl_price_calculated)
-            self.logger.info(f"[{self.symbol}] Precio SL calculado (USDT): {sl_price_calculated:.8f} -> Ajustado: {sl_price:.8f} (Base: Entrada={entry_price}, SL_USDT={sl_amount_usdt})")
+            self.logger.info(f"[{self.symbol}] Precio SL calculado ({'SHORT' if is_short else 'LONG'}, USDT): {sl_price_calculated:.8f} -> Ajustado: {sl_price:.8f} (Base: Entrada={entry_price}, SL_USDT={sl_amount_usdt})")
         # 2. Stop Loss por Porcentaje (ej: Estrategia de Soportes)
         elif self.support_order_stop_loss_percent > 0:
             sl_pct = Decimal(str(self.support_order_stop_loss_percent)) / Decimal('100')
-            sl_price_calculated = entry_price * (Decimal('1') - sl_pct)
+            if is_short:
+                sl_price_calculated = entry_price * (Decimal('1') + sl_pct)
+            else:
+                sl_price_calculated = entry_price * (Decimal('1') - sl_pct)
             sl_price = self._adjust_price(sl_price_calculated)
-            self.logger.info(f"[{self.symbol}] Precio SL calculado (-{self.support_order_stop_loss_percent}%): {sl_price_calculated:.8f} -> Ajustado: {sl_price:.8f}")
+            self.logger.info(f"[{self.symbol}] Precio SL calculado ({'SHORT' if is_short else 'LONG'}, {self.support_order_stop_loss_percent}%): {sl_price_calculated:.8f} -> Ajustado: {sl_price:.8f}")
 
-        if sl_price and sl_price >= entry_price:
-            self.logger.warning(f"[{self.symbol}] Precio SL calculado ({sl_price}) es >= precio de entrada ({entry_price}). SL no se colocará.")
-            sl_price = None
+        if is_short:
+            if sl_price and sl_price <= entry_price:
+                self.logger.warning(f"[{self.symbol}] Precio SL calculado ({sl_price}) es <= precio de entrada SHORT ({entry_price}). SL no se colocará.")
+                sl_price = None
+        else:
+            if sl_price and sl_price >= entry_price:
+                self.logger.warning(f"[{self.symbol}] Precio SL calculado ({sl_price}) es >= precio de entrada LONG ({entry_price}). SL no se colocará.")
+                sl_price = None
 
         return tp_price, sl_price
 
     def _place_tp_sl_orders(self):
         """
         Coloca órdenes Take Profit y Stop Loss después de que una entrada se haya llenado.
-        Usa TAKE_PROFIT_MARKET y STOP_MARKET.
+        Usa TAKE_PROFIT_MARKET y STOP_MARKET respetando el trade_side ('LONG' o 'SHORT').
         """
         if not self.in_position or not self.current_position:
             self.logger.warning(f"[{self.symbol}] Se intentó colocar TP/SL pero no se está en posición.")
@@ -1180,18 +1258,22 @@ class TradingBot:
         quantity_float = float(quantity_to_close)
 
         tp_price_dec, sl_price_dec = self._calculate_tp_sl_prices()
+        is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+        close_side = 'BUY' if is_short else 'SELL'
+        pos_side = 'SHORT' if is_short else 'LONG'
 
         # Colocar orden Take Profit
         tp_enabled = self.enable_take_profit_pnl or (self.support_order_take_profit_percent > 0)
         if tp_enabled and tp_price_dec and (self.take_profit_usdt > Decimal('0') or self.support_order_take_profit_percent > 0):
             tp_price_str = f"{tp_price_dec:.{self.price_tick_size.as_tuple().exponent * -1}f}"
-            self.logger.info(f"[{self.symbol}] Intentando colocar orden TAKE_PROFIT_MARKET @ {tp_price_str} para cantidad {quantity_float} (Habilitado)")
+            self.logger.info(f"[{self.symbol}] Intentando colocar orden TAKE_PROFIT_MARKET @ {tp_price_str} para cantidad {quantity_float} (Side={close_side}, PosSide={pos_side})")
             tp_order_result = create_futures_take_profit_order(
                 symbol=self.symbol,
-                side='SELL',
+                side=close_side,
                 quantity=quantity_float,
                 take_profit_price=tp_price_str,
-                close_position=True
+                close_position=True,
+                position_side=pos_side
             )
             if tp_order_result and tp_order_result.get('orderId'):
                 self.pending_tp_order_id = tp_order_result['orderId']
@@ -1207,15 +1289,16 @@ class TradingBot:
             sl_price_str = f"{sl_price_dec:.{self.price_tick_size.as_tuple().exponent * -1}f}"
             order_type = getattr(self, 'stop_loss_order_type', 'STOP_MARKET')
             trigger_type = getattr(self, 'stop_loss_trigger_type', 'MARK_PRICE')
-            self.logger.info(f"[{self.symbol}] Intentando colocar orden {order_type} ({trigger_type}) @ {sl_price_str} para cantidad {quantity_float} (Habilitado)")
+            self.logger.info(f"[{self.symbol}] Intentando colocar orden {order_type} ({trigger_type}) @ {sl_price_str} para cantidad {quantity_float} (Side={close_side}, PosSide={pos_side})")
             sl_order_result = create_futures_stop_loss_order(
                 symbol=self.symbol,
-                side='SELL',
+                side=close_side,
                 quantity=quantity_float,
                 stop_loss_price=sl_price_str,
                 close_position=True,
                 order_type=order_type,
-                trigger_type=trigger_type
+                trigger_type=trigger_type,
+                position_side=pos_side
             )
             if sl_order_result and sl_order_result.get('orderId'):
                 self.pending_sl_order_id = sl_order_result['orderId']
@@ -1443,14 +1526,23 @@ class TradingBot:
         if eval_btc:
             btc_bull, btc_detail, btc_val = self._evaluate_htf_trend_for_symbol('BTCUSDT')
 
-        is_passed = (sym_bull and btc_bull)
-
-        if mode == 'both':
-            summary = f"BTC: {'🟢' if btc_bull else '🔴'} | {self.symbol}: {'🟢' if sym_bull else '🔴'}"
-        elif mode == 'btc':
-            summary = f"BTC: {'🟢 Alcista' if btc_bull else '🔴 Bajista'}"
+        is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+        if is_short:
+            is_passed = ((not sym_bull if eval_symbol else True) and (not btc_bull if eval_btc else True))
+            if mode == 'both':
+                summary = f"BTC: {'🔴 Bajista' if not btc_bull else '🟢 Alcista'} | {self.symbol}: {'🔴 Bajista' if not sym_bull else '🟢 Alcista'}"
+            elif mode == 'btc':
+                summary = f"BTC: {'🔴 Bajista' if not btc_bull else '🟢 Alcista'}"
+            else:
+                summary = f"{self.symbol}: {'🔴 Bajista' if not sym_bull else '🟢 Alcista'}"
         else:
-            summary = f"{self.symbol}: {'🟢 Alcista' if sym_bull else '🔴 Bajista'}"
+            is_passed = ((sym_bull if eval_symbol else True) and (btc_bull if eval_btc else True))
+            if mode == 'both':
+                summary = f"BTC: {'🟢 Alcista' if btc_bull else '🔴 Bajista'} | {self.symbol}: {'🟢 Alcista' if sym_bull else '🔴 Bajista'}"
+            elif mode == 'btc':
+                summary = f"BTC: {'🟢 Alcista' if btc_bull else '🔴 Bajista'}"
+            else:
+                summary = f"{self.symbol}: {'🟢 Alcista' if sym_bull else '🔴 Bajista'}"
 
         details = {
             'mode': mode,
@@ -1463,9 +1555,9 @@ class TradingBot:
         }
 
         if not is_passed:
-            self.logger.info(f"[{self.symbol}] BLOQUEO RÉGIMEN DE MERCADO: {summary}. Nueva entrada LONG bloqueada.")
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] BLOQUEO RÉGIMEN DE MERCADO: {summary}. Nueva entrada {self.trade_side} bloqueada.")
         else:
-            self.logger.debug(f"[{self.symbol}] Régimen de mercado OK: {summary}.")
+            self.logger.debug(f"[{self.symbol}][{self.trade_side}] Régimen de mercado OK: {summary}.")
 
         return is_passed, summary, details
 
@@ -1652,7 +1744,7 @@ class TradingBot:
             self._set_error_state(f"Unhandled exception in run_once: {e}")
 
     def _get_market_data(self):
-        """Función auxiliar para obtener y validar los datos de klines."""
+        """Función auxiliar para obtener y validar los datos de klines con caché compartido."""
         if self.current_state == BotState.ERROR:
             self.logger.debug(f"[{self.symbol}] Saltando obtención de datos en estado ERROR")
             return None
@@ -1666,11 +1758,21 @@ class TradingBot:
         final_limit = limit_needed
         self.logger.debug(f"[{self.symbol}] Límite de velas calculado: {final_limit}")
         
+        now_ts = time.time()
+        cache_key = (self.symbol, self.rsi_interval, final_limit)
+        cached_entry = getattr(SingleSideTradingBot, '_klines_cache', {}).get(cache_key)
+        if cached_entry and (now_ts - cached_entry['timestamp'] < 2.5):
+            return cached_entry['data'].copy()
+
         klines_df = get_historical_klines(self.symbol, self.rsi_interval, limit=final_limit)
 
         if klines_df is None or klines_df.empty:
             self.logger.warning(f"[{self.symbol}] No se pudieron obtener klines. Saltando ciclo.")
             return None
+        
+        if not hasattr(SingleSideTradingBot, '_klines_cache'):
+            SingleSideTradingBot._klines_cache = {}
+        SingleSideTradingBot._klines_cache[cache_key] = {'timestamp': now_ts, 'data': klines_df}
         
         return klines_df
 
@@ -1814,14 +1916,15 @@ class TradingBot:
                         trade_qty_api = Decimal(trade_detail.get('qty', '0'))
                         trade_side_api = trade_detail.get('side', '').upper()
 
+                        closing_side_api = 'BUY' if self.trade_side == 'SHORT' else 'SELL'
                         # Comparar orderId y lado (soporta ejecuciones divididas en múltiples fills)
-                        if trade_order_id == str(binance_order_id_of_closure) and trade_side_api == 'SELL':
+                        if trade_order_id == str(binance_order_id_of_closure) and trade_side_api == closing_side_api:
 
                             pnl_from_api_str = trade_detail.get('realizedPnl')
                             if pnl_from_api_str is not None:
                                 final_pnl = Decimal(pnl_from_api_str)
                                 actual_binance_trade_id_for_db = int(trade_id_from_api)
-                                self.logger.info(f"[{self.symbol}] PNL de Binance OBTENIDO para orderId {binance_order_id_of_closure} (TradeID: {actual_binance_trade_id_for_db}): {final_pnl:.4f} USDT")
+                                self.logger.info(f"[{self.symbol}][{self.trade_side}] PNL de Binance OBTENIDO para orderId {binance_order_id_of_closure} (TradeID: {actual_binance_trade_id_for_db}): {final_pnl:.4f} USDT")
                                 
                                 # Actualizar close_price y close_timestamp con los datos del trade de Binance si son más precisos
                                 api_close_price_str = trade_detail.get('price')
@@ -1830,25 +1933,27 @@ class TradingBot:
                                     close_price_dec = Decimal(api_close_price_str)
                                 if api_time_ms and close_timestamp is None: # Solo actualizar si no teníamos uno más específico
                                     close_timestamp = pd.Timestamp.fromtimestamp(int(api_time_ms) / 1000, tz='UTC')
-                                    self.logger.info(f"[{self.symbol}] Precio/tiempo de cierre actualizados desde trade de Binance: Precio={close_price_dec}, Tiempo={close_timestamp}")
+                                    self.logger.info(f"[{self.symbol}][{self.trade_side}] Precio/tiempo de cierre actualizados desde trade de Binance: Precio={close_price_dec}, Tiempo={close_timestamp}")
                                 found_closing_trade_in_history = True
                                 break # Encontramos el trade
                     if not found_closing_trade_in_history:
-                         self.logger.warning(f"[{self.symbol}] No se encontró un trade SELL coincidente en el historial reciente de Binance para orderId {binance_order_id_of_closure}. Se usará PNL calculado.")
+                         self.logger.warning(f"[{self.symbol}][{self.trade_side}] No se encontró un trade {closing_side_api} coincidente en el historial reciente de Binance para orderId {binance_order_id_of_closure}. Se usará PNL calculado.")
                 else:
-                    self.logger.warning(f"[{self.symbol}] No se pudo obtener el historial de trades de Binance para buscar PNL para orderId {binance_order_id_of_closure}. Se usará PNL calculado.")
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] No se pudo obtener el historial de trades de Binance para buscar PNL para orderId {binance_order_id_of_closure}. Se usará PNL calculado.")
             except Exception as e_api_pnl:
-                self.logger.error(f"[{self.symbol}] Error intentando obtener PNL de Binance para orderId {binance_order_id_of_closure}: {e_api_pnl}. Se usará PNL calculado.", exc_info=True)
+                self.logger.error(f"[{self.symbol}][{self.trade_side}] Error intentando obtener PNL de Binance para orderId {binance_order_id_of_closure}: {e_api_pnl}. Se usará PNL calculado.", exc_info=True)
         else:
-            self.logger.info(f"[{self.symbol}] No se proporcionó binance_order_id_of_closure. Se intentará cálculo manual de PNL o búsqueda genérica si es un cierre externo.")
-            # En un futuro, aquí podría ir la lógica de búsqueda genérica si no hay orderId (más complejo)
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] No se proporcionó binance_order_id_of_closure. Se intentará cálculo manual de PNL o búsqueda genérica si es un cierre externo.")
 
         # Fallback a cálculo manual si no se obtuvo PNL de Binance
         if final_pnl is None:
-            final_pnl = (close_price_dec - entry_price) * quantity_dec
-            self.logger.info(f"[{self.symbol}] PNL CALCULADO MANUALMENTE: {final_pnl:.4f} (Close: {close_price_dec}, Entry: {entry_price}, Qty: {quantity_dec})")
+            if self.trade_side == 'SHORT':
+                final_pnl = (entry_price - close_price_dec) * abs(quantity_dec)
+            else:
+                final_pnl = (close_price_dec - entry_price) * abs(quantity_dec)
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] PNL CALCULADO MANUALMENTE: {final_pnl:.4f} (Close: {close_price_dec}, Entry: {entry_price}, Qty: {quantity_dec})")
         else:
-            self.logger.info(f"[{self.symbol}] PNL FINAL (usando valor de Binance si se obtuvo): {final_pnl:.4f}")
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] PNL FINAL (usando valor de Binance si se obtuvo): {final_pnl:.4f}")
 
         simplified_reason = reason
         if pd.isna(entry_time):
@@ -1904,8 +2009,8 @@ class TradingBot:
             gross_pnl_dec = final_pnl if final_pnl is not None else Decimal('0')
             net_pnl_dec = gross_pnl_dec - comm_dec
 
-            self.logger.info(f"[{self.symbol}] _handle_successful_closure: Intentando registrar con los siguientes datos -> "
-                             f"Symbol: {self.symbol}, Strategy: {strat_to_record}, Type: LONG, OpenTS: {open_ts_for_db}, CloseTS: {close_ts_for_db}, "
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] _handle_successful_closure: Intentando registrar con los siguientes datos -> "
+                             f"Symbol: {self.symbol}, Strategy: {strat_to_record}, Type: {self.trade_side}, OpenTS: {open_ts_for_db}, CloseTS: {close_ts_for_db}, "
                              f"OpenPrice: {float(entry_price)}, ClosePrice: {float(close_price_dec)}, Qty: {float(quantity_dec)}, "
                              f"PosSizeUSDT: {float(position_size_usdt_est)}, PNL_Neto: {float(net_pnl_dec)}, PNL_Bruto: {float(gross_pnl_dec)}, "
                              f"Comision: {float(comm_dec)}, Reason: '{simplified_reason}', "
@@ -1913,12 +2018,12 @@ class TradingBot:
 
             record_trade(
                 symbol=self.symbol,
-                trade_type='LONG',
+                trade_type=self.trade_side,
                 open_timestamp=open_ts_for_db,
                 close_timestamp=close_ts_for_db,
                 open_price=float(entry_price),
                 close_price=float(close_price_dec),
-                quantity=float(quantity_dec),
+                quantity=float(abs(quantity_dec)),
                 position_size_usdt=float(position_size_usdt_est),
                 pnl_usdt=float(net_pnl_dec),
                 gross_pnl_usdt=float(gross_pnl_dec),
@@ -1928,15 +2033,15 @@ class TradingBot:
                 binance_trade_id=actual_binance_trade_id_for_db,
                 strategy_name=strat_to_record
             )
-            self.logger.info(f"[{self.symbol}] _handle_successful_closure: Trade registrado exitosamente en DB (Neto: {net_pnl_dec:.4f}, Comisión: {comm_dec:.4f}).")
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] _handle_successful_closure: Trade registrado exitosamente en DB (Neto: {net_pnl_dec:.4f}, Comisión: {comm_dec:.4f}).")
             if net_pnl_dec is not None:
                 self.historical_pnl += net_pnl_dec
                 self.session_pnl += net_pnl_dec
                 self._on_trade_closed(net_pnl_dec, simplified_reason)
-                self.logger.info(f"[{self.symbol}] PnL neto acumulado tras cierre: Histórico={self.historical_pnl:.4f}, Sesión={self.session_pnl:.4f}")
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] PnL neto acumulado tras cierre: Histórico={self.historical_pnl:.4f}, Sesión={self.session_pnl:.4f}")
         except Exception as e:
-            self.logger.error(f"[{self.symbol}] ERROR CRÍTICO en _handle_successful_closure al registrar el trade en la DB: {e}", exc_info=True)
-            self.logger.error(f"[{self.symbol}] Datos que se intentaron registrar: Symbol: {self.symbol}, Type: LONG, OpenTS: {open_ts_for_db}, CloseTS: {close_ts_for_db}, "
+            self.logger.error(f"[{self.symbol}][{self.trade_side}] ERROR CRÍTICO en _handle_successful_closure al registrar el trade en la DB: {e}", exc_info=True)
+            self.logger.error(f"[{self.symbol}][{self.trade_side}] Datos que se intentaron registrar: Symbol: {self.symbol}, Type: {self.trade_side}, OpenTS: {open_ts_for_db}, CloseTS: {close_ts_for_db}, "
                              f"OpenPrice: {float(entry_price)}, ClosePrice: {float(close_price_dec)}, Qty: {float(quantity_dec)}, "
                              f"PosSizeUSDT: {float(position_size_usdt_est)}, PNL: {float(final_pnl)}, Reason: '{simplified_reason}', "
                              f"Params: {db_trade_params}, BinanceTradeID: {actual_binance_trade_id_for_db}")
@@ -2014,6 +2119,7 @@ class TradingBot:
         st = self.current_state.value if hasattr(self, 'current_state') and self.current_state else (self.state.value if hasattr(self, 'state') and self.state else "UNKNOWN")
         return {
             'symbol': self.symbol,
+            'trade_side': getattr(self, 'trade_side', 'LONG'),
             'state': st,
             'is_running': self.is_running if hasattr(self, 'is_running') else True,
             'in_position': self.in_position,
@@ -2058,30 +2164,31 @@ class TradingBot:
                 self.logger.warning(f"[{self.symbol}] Error al cancelar orden de salida pendiente {self.pending_exit_order_id}: {e}")
 
         # 2. Consultar posición real en Binance
-        pos_data = get_futures_position(self.symbol)
+        pos_data = get_futures_position(self.symbol, position_side=self.trade_side)
         pos_amt = Decimal('0')
-        pos_side = 'LONG'
+        pos_side = self.trade_side
         if pos_data:
             pos_amt = Decimal(str(pos_data.get('positionAmt', '0')))
-            pos_side = pos_data.get('positionSide', 'LONG')
+            pos_side = pos_data.get('positionSide', self.trade_side)
         elif self.in_position and self.current_position:
             pos_amt = Decimal(str(self.current_position.get('quantity', '0')))
         
         if abs(pos_amt) < Decimal('1e-9'):
-            self.logger.info(f"[{self.symbol}] No hay posición activa para cerrar en Binance.")
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] No hay posición activa para cerrar en Binance.")
             self._reset_state()
             self._update_state(BotState.IDLE)
             return True
 
         # 3. Determinar lado de la orden de mercado de cierre
-        close_side = 'SELL' if pos_amt > Decimal('0') else 'BUY'
+        is_short = (self.trade_side == 'SHORT')
+        close_side = 'BUY' if is_short or (pos_amt < Decimal('0')) else 'SELL'
         adjusted_qty = self._adjust_quantity(abs(pos_amt))
         if adjusted_qty is None or adjusted_qty <= 0:
-            self.logger.error(f"[{self.symbol}] Cantidad no válida para cerrar posición: {pos_amt}")
+            self.logger.error(f"[{self.symbol}][{self.trade_side}] Cantidad no válida para cerrar posición: {pos_amt}")
             return False
 
         # 4. Enviar orden a mercado a Binance
-        self.logger.info(f"[{self.symbol}] Enviando orden MARKET {close_side} {adjusted_qty} (PositionSide={pos_side}) para cerrar posición...")
+        self.logger.info(f"[{self.symbol}][{self.trade_side}] Enviando orden MARKET {close_side} {adjusted_qty} (PositionSide={pos_side}) para cerrar posición...")
         order_resp = create_futures_market_order(
             symbol=self.symbol,
             side=close_side,
@@ -2143,9 +2250,9 @@ class TradingBot:
         if side == 'BUY': # Abriendo un LONG
             price_str = ticker.get('askPrice')
             price_type = "Ask"
-        elif side == 'SELL': # Abriendo un SHORT (no implementado actualmente para entrada)
-            self.logger.error(f"[{self.symbol}] Lado de orden de entrada 'SELL' (SHORT) no implementado en _get_best_entry_price.")
-            return None 
+        elif side == 'SELL': # Abriendo un SHORT
+            price_str = ticker.get('bidPrice')
+            price_type = "Bid"
         else:
             self.logger.error(f"[{self.symbol}] Lado de orden desconocido '{side}' en _get_best_entry_price.")
             return None
@@ -2219,10 +2326,14 @@ class TradingBot:
         price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
         self.logger.info(f"[{self.symbol}] Calculado para salida: Precio LIMIT SELL={limit_sell_price_adjusted:.{price_precision_log}f}, Cantidad={quantity_to_sell}")
 
+        is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+        close_side = 'BUY' if is_short else 'SELL'
+        pos_side = self.trade_side
+
         if self.entry_order_type == 'MARKET':
-            self.logger.warning(f"[{self.symbol}] Intentando cerrar posición con orden MARKET SELL (Razón: {reason})...")
+            self.logger.warning(f"[{self.symbol}][{self.trade_side}] Intentando cerrar posición con orden MARKET {close_side} (Razón: {reason})...")
             self.current_exit_reason = reason
-            order_result = create_futures_market_order(self.symbol, 'SELL', quantity_to_sell, reduce_only=True)
+            order_result = create_futures_market_order(self.symbol, close_side, quantity_to_sell, reduce_only=True, position_side=pos_side)
             if order_result and order_result.get('orderId'):
                 status_val = order_result.get('status')
                 avg_price_str = order_result.get('avgPrice', '0')
@@ -2234,21 +2345,21 @@ class TradingBot:
                     has_price, has_qty = False, False
 
                 if status_val == 'FILLED' and has_price and has_qty:
-                    self.logger.info(f"[{self.symbol}] Orden MARKET SELL {order_result.get('orderId')} ejecutada y FILLED de inmediato.")
+                    self.logger.info(f"[{self.symbol}][{self.trade_side}] Orden MARKET {close_side} {order_result.get('orderId')} ejecutada y FILLED de inmediato.")
                     self._handle_filled_exit_order(order_result)
                 else:
                     self.pending_exit_order_id = order_result['orderId']
                     self.pending_order_timestamp = time.time()
-                    self.logger.warning(f"[{self.symbol}] Orden MARKET SELL {self.pending_exit_order_id} colocada (Status={status_val}). Esperando confirmación...")
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] Orden MARKET {close_side} {self.pending_exit_order_id} colocada (Status={status_val}). Esperando confirmación...")
                     self._update_state(BotState.WAITING_EXIT_FILL)
             else:
-                self.logger.error(f"[{self.symbol}] Fallo al colocar la orden MARKET SELL para cerrar posición (Razón: {reason}).")
+                self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden MARKET {close_side} para cerrar posición (Razón: {reason}).")
                 self._set_error_state(f"Failed to place market exit order (reason: {reason}).")
         elif reason and any(kw in reason.lower() for kw in ['stop_loss', 'emergency', 'trailing', 'crash']):
             # Para salidas de emergencia (SL, trailing stops), usar MARKET para garantizar ejecución
-            self.logger.warning(f"[{self.symbol}] Salida de emergencia ({reason}): usando orden MARKET SELL con reduceOnly para garantizar cierre.")
+            self.logger.warning(f"[{self.symbol}][{self.trade_side}] Salida de emergencia ({reason}): usando orden MARKET {close_side} para garantizar cierre.")
             self.current_exit_reason = reason
-            order_result = create_futures_market_order(self.symbol, 'SELL', quantity_to_sell, reduce_only=True)
+            order_result = create_futures_market_order(self.symbol, close_side, quantity_to_sell, reduce_only=True, position_side=pos_side)
             if order_result and order_result.get('orderId'):
                 status_val = order_result.get('status')
                 avg_price_str = order_result.get('avgPrice', '0')
@@ -2260,28 +2371,28 @@ class TradingBot:
                     has_price, has_qty = False, False
 
                 if status_val == 'FILLED' and has_price and has_qty:
-                    self.logger.info(f"[{self.symbol}] Orden MARKET SELL de emergencia {order_result.get('orderId')} FILLED de inmediato.")
+                    self.logger.info(f"[{self.symbol}][{self.trade_side}] Orden MARKET {close_side} de emergencia {order_result.get('orderId')} FILLED de inmediato.")
                     self._handle_filled_exit_order(order_result)
                 else:
                     self.pending_exit_order_id = order_result['orderId']
                     self.pending_order_timestamp = time.time()
-                    self.logger.warning(f"[{self.symbol}] Orden MARKET SELL de emergencia {self.pending_exit_order_id} colocada (Status={status_val}). Esperando confirmación...")
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] Orden MARKET {close_side} de emergencia {self.pending_exit_order_id} colocada (Status={status_val}). Esperando confirmación...")
                     self._update_state(BotState.WAITING_EXIT_FILL)
             else:
-                self.logger.error(f"[{self.symbol}] Fallo al colocar la orden MARKET SELL de emergencia (Razón: {reason}).")
+                self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden MARKET {close_side} de emergencia (Razón: {reason}).")
                 self._set_error_state(f"Failed to place emergency market exit order (reason: {reason}).")
         else:
-            order_result = create_futures_limit_order(self.symbol, 'SELL', quantity_to_sell, limit_sell_price_adjusted)
+            order_result = create_futures_limit_order(self.symbol, close_side, quantity_to_sell, limit_sell_price_adjusted, position_side=pos_side)
 
             if order_result and order_result.get('orderId'):
                 self.pending_exit_order_id = order_result['orderId']
                 self.pending_order_timestamp = time.time()
                 # Guardar la razón de la salida para usarla al registrar en DB si se llena
                 self.current_exit_reason = reason 
-                self.logger.warning(f"[{self.symbol}] Orden LIMIT SELL {self.pending_exit_order_id} colocada @ {limit_sell_price_adjusted:.{price_precision_log}f}. Esperando ejecución...")
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] Orden LIMIT {close_side} {self.pending_exit_order_id} colocada @ {limit_sell_price_adjusted:.{price_precision_log}f}. Esperando ejecución...")
                 self._update_state(BotState.WAITING_EXIT_FILL)
             else:
-                self.logger.error(f"[{self.symbol}] Fallo al colocar la orden LIMIT SELL para cerrar posición (Razón: {reason}).")
+                self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden LIMIT {close_side} para cerrar posición (Razón: {reason}).")
                 self._set_error_state(f"Failed to place exit order (reason: {reason}).")
     # --- Fin del nuevo método ---
 
@@ -2374,16 +2485,17 @@ class TradingBot:
                 rsi_value_str = f"{self.last_rsi_value:.2f}" if self.last_rsi_value is not None else "N/A"
                 self.logger.info(f"[{self.symbol}] Chequeo RSI en Rango (Activado) [{self.rsi_entry_level_low}, {self.rsi_entry_level_high}]? No (RSI={rsi_value_str})")
 
-            # --- EVALUACIÓN DE VENTANA DE VELAS RSI POSITIVAS Y MAGNITUD ---
+            # --- EVALUACIÓN DE VENTANA DE VELAS RSI Y MAGNITUD ---
+            is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
             rsi_window = getattr(self, 'rsi_candles_window', 3)
-            rsi_req_pos = getattr(self, 'rsi_positive_candles_required', 2)
+            rsi_req_cnt = getattr(self, 'rsi_positive_candles_required', 2)
             rsi_min_delta = float(getattr(self, 'rsi_positive_delta_min', 0.0))
             
             rsi_window_passed = True
-            positive_rsi_candles_count = 0
+            matching_rsi_candles_count = 0
             evaluated_window_size = 0
 
-            if self.evaluate_rsi_delta and rsi_req_pos > 0 and rsi_values is not None and len(rsi_values) > 1:
+            if self.evaluate_rsi_delta and rsi_req_cnt > 0 and rsi_values is not None and len(rsi_values) > 1:
                 rsi_diffs = rsi_values.diff().dropna()
                 if not rsi_diffs.empty:
                     actual_window = min(rsi_window, len(rsi_diffs))
@@ -2392,18 +2504,28 @@ class TradingBot:
                     
                     for diff_val in recent_diffs:
                         val = float(diff_val)
-                        if rsi_min_delta > 0.0:
-                            if val >= rsi_min_delta:
-                                positive_rsi_candles_count += 1
+                        if is_short:
+                            # Para SHORT: buscamos caídas de RSI (momentum bajista)
+                            if rsi_min_delta > 0.0:
+                                if val <= -rsi_min_delta:
+                                    matching_rsi_candles_count += 1
+                            else:
+                                if val < 0.0:
+                                    matching_rsi_candles_count += 1
                         else:
-                            if val > 0.0:
-                                positive_rsi_candles_count += 1
+                            # Para LONG: buscamos subidas de RSI (momentum alcista)
+                            if rsi_min_delta > 0.0:
+                                if val >= rsi_min_delta:
+                                    matching_rsi_candles_count += 1
+                            else:
+                                if val > 0.0:
+                                    matching_rsi_candles_count += 1
                     
-                    if positive_rsi_candles_count < rsi_req_pos:
+                    if matching_rsi_candles_count < rsi_req_cnt:
                         rsi_window_passed = False
-                        self.logger.info(f"[{self.symbol}] Chequeo Ventana RSI NO CUMPLIDO: {positive_rsi_candles_count}/{rsi_req_pos} velas positivas en ventana de {actual_window} (mín delta: {rsi_min_delta:.2f})")
+                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Ventana RSI NO CUMPLIDO: {matching_rsi_candles_count}/{rsi_req_cnt} velas {'bajistas' if is_short else 'positivas'} en ventana de {actual_window} (mín delta: {rsi_min_delta:.2f})")
                     else:
-                        self.logger.info(f"[{self.symbol}] Chequeo Ventana RSI CUMPLIDO: {positive_rsi_candles_count}/{rsi_req_pos} velas positivas en ventana de {actual_window} (mín delta: {rsi_min_delta:.2f})")
+                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Ventana RSI CUMPLIDO: {matching_rsi_candles_count}/{rsi_req_cnt} velas {'bajistas' if is_short else 'positivas'} en ventana de {actual_window} (mín delta: {rsi_min_delta:.2f})")
 
             # --- Definir condition_rsi_change_meets_thresh_up y rsi_delta_str ---
             condition_rsi_change_meets_thresh_up = False
@@ -2411,35 +2533,48 @@ class TradingBot:
 
             if not self.evaluate_rsi_delta: # Si la evaluación de delta RSI está DESACTIVADA
                 condition_rsi_change_meets_thresh_up = True
-                self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: Evaluación DESACTIVADA (evaluate_rsi_delta=False). Condición de delta cumplida por defecto.")
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Delta RSI: Evaluación DESACTIVADA (evaluate_rsi_delta=False). Condición de delta cumplida por defecto.")
             else:
                 single_delta_ok = False
                 if rsi_delta is not None:
                     rsi_delta_str = f"{rsi_delta:.2f}"
-                    if rsi_delta >= self.rsi_threshold_up:
-                        single_delta_ok = True
+                    if is_short:
+                        effective_thresh = -abs(float(self.rsi_threshold_up)) if self.rsi_threshold_up != 0 else 0.0
+                        if rsi_delta <= effective_thresh:
+                            single_delta_ok = True
+                    else:
+                        effective_thresh = float(self.rsi_threshold_up)
+                        if rsi_delta >= effective_thresh:
+                            single_delta_ok = True
                 condition_rsi_change_meets_thresh_up = single_delta_ok and rsi_window_passed
-                self.logger.info(f"[{self.symbol}] Chequeo Delta RSI (Activado): Inmediato={single_delta_ok} (Delta={rsi_delta_str} >= {self.rsi_threshold_up}), "
-                                 f"Ventana={rsi_window_passed} ({positive_rsi_candles_count}/{rsi_req_pos} en {evaluated_window_size} velas). "
+                op_str = "<=" if is_short else ">="
+                eff_thresh_val = -abs(float(self.rsi_threshold_up)) if is_short else float(self.rsi_threshold_up)
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Delta RSI (Activado): Inmediato={single_delta_ok} (Delta={rsi_delta_str} {op_str} {eff_thresh_val:+.2f}), "
+                                 f"Ventana={rsi_window_passed} ({matching_rsi_candles_count}/{rsi_req_cnt} en {evaluated_window_size} velas). "
                                  f"Resultado={'Sí' if condition_rsi_change_meets_thresh_up else 'No'}")
             # --------------------------------------------------------------------
 
-            # Condición 1: Cambio (Delta) en RSI cumple el umbral positivo (Lógica ya modificada previamente)
+            # Condición 1: Cambio (Delta) en RSI cumple el umbral correspondiente
             # condition_rsi_change_meets_thresh_up se calcula antes y usa self.evaluate_rsi_delta
 
             # Condición 2: Filtro de Volumen (Lógica ya modificada previamente)
             # volume_check_passed se calcula antes y usa self.evaluate_volume_filter
             
-            # Condición 3: Requisito de tendencia alcista reciente (MODIFICADO)
+            # Condición 3: Requisito de tendencia reciente (Alcista para LONG, Bajista para SHORT)
             condition_required_uptrend_met = False
             if not self.evaluate_required_uptrend: # Si la evaluación está DESACTIVADA
                 condition_required_uptrend_met = True
-                self.logger.info(f"[{self.symbol}] Chequeo Requisito Velas Alcistas: Evaluación DESACTIVADA (evaluate_required_uptrend=False). Condición cumplida por defecto.")
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Requisito Velas Tendencia: Evaluación DESACTIVADA. Condición cumplida por defecto.")
             else: # Si está ACTIVADA, evaluar normalmente
-                condition_required_uptrend_met = self._check_required_uptrend(klines_df)
+                if is_short:
+                    condition_required_uptrend_met = self._check_required_downtrend(klines_df)
+                else:
+                    condition_required_uptrend_met = self._check_required_uptrend(klines_df)
 
             if self.evaluate_required_uptrend: # Log solo si la evaluación está activa
-                self.logger.info(f"[{self.symbol}] Chequeo Entrada (Activado): Requisito Velas Alcistas ({self.required_uptrend_candles} velas)? {'Sí' if condition_required_uptrend_met else 'No'}")
+                n_trend_candles = getattr(self, 'required_downtrend_candles', 0) if is_short else self.required_uptrend_candles
+                trend_type_str = "Bajistas" if is_short else "Alcistas"
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Entrada (Activado): Requisito Velas {trend_type_str} ({n_trend_candles} velas)? {'Sí' if condition_required_uptrend_met else 'No'}")
 
             # --- NUEVO: Lógica de Open Interest ---
             condition_oi_increase_met = False # Por defecto, no pasa
@@ -2495,26 +2630,30 @@ class TradingBot:
                 ma_value = self._calculate_moving_average(klines_df)
                 if ma_value is not None:
                     ma_value_for_log = f"{ma_value:.{price_precision_log}f}"
-                    if current_price > ma_value:
-                        condition_ma_filter_passed = True
+                    if is_short:
+                        if current_price < ma_value:
+                            condition_ma_filter_passed = True
+                    else:
+                        if current_price > ma_value:
+                            condition_ma_filter_passed = True
                 else:
-                    self.logger.warning(f"[{self.symbol}] No se pudo calcular el valor de la MA para el chequeo de entrada.")
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] No se pudo calcular el valor de la MA para el chequeo de entrada.")
 
-            self.logger.info(f"[{self.symbol}] Resumen Chequeo Entrada: RSI en rango? {'Sí' if condition_rsi_in_range else 'No'}, "
-                             f"Incremento RSI OK? {'Sí' if condition_rsi_change_meets_thresh_up else 'No'}, "
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] Resumen Chequeo Entrada: RSI en rango? {'Sí' if condition_rsi_in_range else 'No'}, "
+                             f"Delta RSI OK? {'Sí' if condition_rsi_change_meets_thresh_up else 'No'}, "
                              f"Volumen OK? {'Sí' if volume_check_passed else 'No'}, "
-                             f"Req Velas Alcistas OK? {'Sí' if condition_required_uptrend_met else 'No'}, "
+                             f"Req Velas Tendencia OK? {'Sí' if condition_required_uptrend_met else 'No'}, "
                              f"Incremento OI OK? {'Sí' if condition_oi_increase_met else 'No'}, "
                              f"Filtro MA OK? {'Sí' if condition_ma_filter_passed else 'No'}")
 
-            # --- AÑADIDO: Lógica de Filtro Anti-Cascada (Velas Rojas en Ventana) ---
-            dt_is_blocked, dt_red_cnt, dt_win = self._check_downtrend_candles(klines_df)
+            # --- AÑADIDO: Lógica de Filtro Anti-Cascada / Anti-Pump ---
+            dt_is_blocked, dt_adverse_cnt, dt_win = self._check_downtrend_candles(klines_df)
             condition_downtrend_candles_passed = not dt_is_blocked
 
-            # --- AÑADIDO: Lógica de Filtro Niveles de Caída ---
+            # --- AÑADIDO: Lógica de Filtro Niveles de Caída (solo relevante para LONG) ---
             condition_downtrend_levels_passed = True
             dt_levels_detected = False
-            if getattr(self, 'evaluate_downtrend_levels_block', True) and getattr(self, 'downtrend_level_check', 0) > 0:
+            if not is_short and getattr(self, 'evaluate_downtrend_levels_block', True) and getattr(self, 'downtrend_level_check', 0) > 0:
                 dt_levels_detected = self._check_downtrend_levels(klines_df)
                 condition_downtrend_levels_passed = not dt_levels_detected
 
@@ -2539,14 +2678,14 @@ class TradingBot:
                     "detail": f"{rsi_val_float:.1f} en [{self.rsi_entry_level_low}, {self.rsi_entry_level_high}]" if rsi_val_float is not None else "Sin lectura RSI"
                 })
 
-                # 2. Delta RSI y Ventana Positiva
+                # 2. Delta RSI y Ventana
                 delta_val_float = round(float(rsi_delta), 2) if (rsi_delta is not None and isinstance(rsi_delta, (int, float, Decimal))) else None
                 detail_parts = []
                 if delta_val_float is not None:
-                    detail_parts.append(f"Δ {delta_val_float:+.2f} (mín {float(self.rsi_threshold_up):+.2f})")
-                if rsi_req_pos > 0:
-                    delta_desc = f"≥{rsi_min_delta:.1f}" if rsi_min_delta > 0 else ">0"
-                    detail_parts.append(f"{positive_rsi_candles_count}/{evaluated_window_size} vel+ ({delta_desc}, req {rsi_req_pos})")
+                    detail_parts.append(f"Δ {delta_val_float:+.2f} ({'máx' if is_short else 'mín'} {eff_thresh_val:+.2f})")
+                if rsi_req_cnt > 0:
+                    delta_desc = f"≤-{rsi_min_delta:.1f}" if is_short else (f"≥{rsi_min_delta:.1f}" if rsi_min_delta > 0 else ">0")
+                    detail_parts.append(f"{matching_rsi_candles_count}/{evaluated_window_size} vel{'↓' if is_short else '↑'} ({delta_desc}, req {rsi_req_cnt})")
 
                 cond_list.append({
                     "id": "rsi_delta",
@@ -2554,8 +2693,8 @@ class TradingBot:
                     "short_name": "ΔRSI",
                     "active": bool(self.evaluate_rsi_delta),
                     "passed": bool(condition_rsi_change_meets_thresh_up),
-                    "value": f"{delta_val_float:+.2f} ({positive_rsi_candles_count}/{evaluated_window_size}v+)" if delta_val_float is not None else "N/A",
-                    "target": f"≥ {float(self.rsi_threshold_up):+.2f} ({rsi_req_pos}v+)",
+                    "value": f"{delta_val_float:+.2f} ({matching_rsi_candles_count}/{evaluated_window_size}v)" if delta_val_float is not None else "N/A",
+                    "target": f"{op_str} {eff_thresh_val:+.2f} ({rsi_req_cnt}v)",
                     "detail": " | ".join(detail_parts) if detail_parts else "Sin RSI anterior"
                 })
 
@@ -2583,16 +2722,16 @@ class TradingBot:
                     "detail": vol_detail
                 })
 
-                # 4. Requisito Velas Alcistas
+                # 4. Requisito Velas Tendencia
                 cond_list.append({
                     "id": "uptrend",
-                    "name": "Velas Alcistas",
+                    "name": f"Velas {'Bajistas' if is_short else 'Alcistas'}",
                     "short_name": "Velas",
                     "active": bool(self.evaluate_required_uptrend),
                     "passed": bool(condition_required_uptrend_met),
-                    "value": f"{self.required_uptrend_candles}v",
-                    "target": f"{self.required_uptrend_candles} velas",
-                    "detail": f"Requiere {self.required_uptrend_candles} velas alcistas consecutivas"
+                    "value": f"{n_trend_candles}v",
+                    "target": f"{n_trend_candles} velas",
+                    "detail": f"Requiere {n_trend_candles} velas {'bajistas' if is_short else 'alcistas'} consecutivas"
                 })
 
                 # 5. Open Interest
@@ -2615,20 +2754,20 @@ class TradingBot:
                     "active": bool(self.evaluate_ma_filter),
                     "passed": bool(condition_ma_filter_passed),
                     "value": f"{price_for_log}",
-                    "target": f"> {ma_value_for_log}",
-                    "detail": f"Precio: {price_for_log} > MA: {ma_value_for_log}"
+                    "target": f"{'<' if is_short else '>'} {ma_value_for_log}",
+                    "detail": f"Precio: {price_for_log} {'<' if is_short else '>'} MA: {ma_value_for_log}"
                 })
 
-                # 7. Filtro Anti-Cascada (Velas Rojas en Ventana)
+                # 7. Filtro Anti-Cascada / Anti-Pump
                 cond_list.append({
                     "id": "downtrend_candles",
-                    "name": "Anti-Cascada Velas",
-                    "short_name": "Rojas",
+                    "name": "Anti-Pump Velas" if is_short else "Anti-Cascada Velas",
+                    "short_name": "Verdes" if is_short else "Rojas",
                     "active": bool(getattr(self, 'evaluate_downtrend_candles_block', True)),
                     "passed": bool(condition_downtrend_candles_passed),
-                    "value": f"{dt_red_cnt}/{dt_win}v",
-                    "target": f"< {getattr(self, 'downtrend_check_candles', 3)} rojas",
-                    "detail": f"{dt_red_cnt} rojas de {dt_win} velas (bloquea si ≥ {getattr(self, 'downtrend_check_candles', 3)})"
+                    "value": f"{dt_adverse_cnt}/{dt_win}v",
+                    "target": f"< {getattr(self, 'downtrend_check_candles', 3)} {'verdes' if is_short else 'rojas'}",
+                    "detail": f"{dt_adverse_cnt} {'verdes' if is_short else 'rojas'} de {dt_win} velas (bloquea si ≥ {getattr(self, 'downtrend_check_candles', 3)})"
                 })
 
                 # 8. Filtro Niveles Caída
@@ -2636,7 +2775,7 @@ class TradingBot:
                     "id": "downtrend_levels",
                     "name": "Nivel Caída",
                     "short_name": "Caída",
-                    "active": bool(getattr(self, 'evaluate_downtrend_levels_block', True)),
+                    "active": bool(not is_short and getattr(self, 'evaluate_downtrend_levels_block', True)),
                     "passed": bool(condition_downtrend_levels_passed),
                     "value": "Cascada" if dt_levels_detected else "Normal",
                     "target": f"Sin cascada ({getattr(self, 'downtrend_level_check', 0)}v)",
@@ -2650,8 +2789,8 @@ class TradingBot:
                     "short_name": "Macro",
                     "active": bool(getattr(self, 'enable_market_regime_filter', False)),
                     "passed": bool(condition_market_regime_passed),
-                    "value": "Alcista" if condition_market_regime_passed else "Bajista",
-                    "target": f"Alcista ({getattr(self, 'market_regime_timeframe', '1h')})",
+                    "value": "Bajista" if (is_short and condition_market_regime_passed) else ("Alcista" if condition_market_regime_passed else "No apto"),
+                    "target": f"{'Bajista' if is_short else 'Alcista'} ({getattr(self, 'market_regime_timeframe', '1h')})",
                     "detail": regime_summary
                 })
 
@@ -2707,21 +2846,21 @@ class TradingBot:
                     self._update_state(BotState.IDLE)
                     return
 
-                 # Calcular precio y cantidad para la orden LIMIT BUY
-                # Para precio LIMIT, podemos usar el precio actual o el mejor ASK del order book
-                best_ask_price = self._get_best_entry_price('BUY') 
-                if not best_ask_price:
-                    self.logger.error(f"[{self.symbol}] No se pudo obtener el mejor precio Ask para la entrada. No se colocará orden.")
+                is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+                entry_order_side = 'SELL' if is_short else 'BUY'
+                best_entry_price = self._get_best_entry_price(entry_order_side)
+                if not best_entry_price:
+                    self.logger.error(f"[{self.symbol}][{self.trade_side}] No se pudo obtener el mejor precio para la entrada ({entry_order_side}). No se colocará orden.")
                     self._update_state(BotState.IDLE)
                     return
                 
-                limit_buy_price = self._adjust_price(best_ask_price)
+                limit_entry_price = self._adjust_price(best_entry_price)
                 notional_order_usdt = Decimal(str(self.position_size_usdt)) * Decimal(str(self.leverage))
-                quantity = self._adjust_quantity(notional_order_usdt / limit_buy_price)
+                quantity = self._adjust_quantity(notional_order_usdt / limit_entry_price)
                 
                 # CORRECCIÓN: La comprobación debe ser si es None
                 if quantity is None or quantity <= 0:
-                    self.logger.warning(f"[{self.symbol}] Cantidad calculada para la orden es inválida ({quantity}) después del ajuste. No se puede entrar.")
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] Cantidad calculada para la orden es inválida ({quantity}) después del ajuste. No se puede entrar.")
                     self._update_state(BotState.IDLE)
                     return
 
@@ -2729,9 +2868,9 @@ class TradingBot:
                 price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
 
                 if self.entry_order_type == 'MARKET':
-                    self.logger.warning(f"[{self.symbol}] SEÑAL DE ENTRADA ({self.entry_reason}). Intentando colocar orden MARKET BUY, Cantidad={quantity} (Ref Price: {limit_buy_price:.{price_precision_log}f})")
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] SEÑAL DE ENTRADA ({self.entry_reason}). Intentando colocar orden MARKET {entry_order_side}, Cantidad={quantity} (Ref Price: {limit_entry_price:.{price_precision_log}f})")
                     self._update_state(BotState.PLACING_ENTRY)
-                    order_result = create_futures_market_order(self.symbol, 'BUY', quantity)
+                    order_result = create_futures_market_order(self.symbol, entry_order_side, quantity, position_side=self.trade_side)
 
                     if order_result and order_result.get('orderId'):
                         status_val = order_result.get('status')
@@ -2744,30 +2883,30 @@ class TradingBot:
                             has_price, has_qty = False, False
 
                         if status_val == 'FILLED' and has_price and has_qty:
-                            self.logger.info(f"[{self.symbol}] Orden MARKET BUY {order_result.get('orderId')} ejecutada y FILLED de inmediato.")
+                            self.logger.info(f"[{self.symbol}][{self.trade_side}] Orden MARKET {entry_order_side} {order_result.get('orderId')} ejecutada y FILLED de inmediato.")
                             self._handle_filled_entry_order(order_result)
                         else:
                             self.pending_entry_order_id = order_result['orderId']
                             self.pending_order_timestamp = time.time()
-                            self.logger.warning(f"[{self.symbol}] Orden MARKET BUY {self.pending_entry_order_id} colocada (Status={status_val}). Esperando confirmación...")
+                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] Orden MARKET {entry_order_side} {self.pending_entry_order_id} colocada (Status={status_val}). Esperando confirmación...")
                             self._update_state(BotState.WAITING_ENTRY_FILL)
                     else:
-                        self.logger.error(f"[{self.symbol}] Fallo al colocar la orden MARKET BUY.")
-                        self._set_error_state("Failed to place market entry order.")
+                        self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden MARKET {entry_order_side}.")
+                        self._set_error_state(f"Failed to place market entry order ({entry_order_side}).")
                 else:
-                    self.logger.warning(f"[{self.symbol}] SEÑAL DE ENTRADA ({self.entry_reason}). Intentando colocar orden LIMIT BUY @ {limit_buy_price:.{price_precision_log}f}, Cantidad={quantity}")
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] SEÑAL DE ENTRADA ({self.entry_reason}). Intentando colocar orden LIMIT {entry_order_side} @ {limit_entry_price:.{price_precision_log}f}, Cantidad={quantity}")
                     self._update_state(BotState.PLACING_ENTRY)
-                    order_result = create_futures_limit_order(self.symbol, 'BUY', quantity, limit_buy_price)
+                    order_result = create_futures_limit_order(self.symbol, entry_order_side, quantity, limit_entry_price, position_side=self.trade_side)
 
                     if order_result and order_result.get('orderId'):
                         self.pending_entry_order_id = order_result['orderId']
                         self.pending_order_timestamp = time.time()
                         # NO guardamos rsi_at_entry aquí, sino cuando la orden se LLENA.
-                        self.logger.warning(f"[{self.symbol}] Orden LIMIT BUY {self.pending_entry_order_id} colocada @ {limit_buy_price:.{price_precision_log}f}. Esperando ejecución...")
+                        self.logger.warning(f"[{self.symbol}][{self.trade_side}] Orden LIMIT {entry_order_side} {self.pending_entry_order_id} colocada @ {limit_entry_price:.{price_precision_log}f}. Esperando ejecución...")
                         self._update_state(BotState.WAITING_ENTRY_FILL)
                     else:
-                        self.logger.error(f"[{self.symbol}] Fallo al colocar la orden LIMIT BUY.")
-                        self._set_error_state("Failed to place entry order.") 
+                        self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden LIMIT {entry_order_side}.")
+                        self._set_error_state(f"Failed to place entry order ({entry_order_side}).") 
             else:
                 # self.logger.debug(f"[{self.symbol}] No hay señal de entrada en este ciclo.") # Ya logueado arriba
                 self._update_state(BotState.IDLE) 
@@ -2946,11 +3085,19 @@ class TradingBot:
                 elif self.support_order_take_profit_percent > 0 and self.current_position:
                     entry_p = self.current_position.get('entry_price', Decimal('0'))
                     current_p = Decimal(str(klines_df['close'].iloc[-1]))
-                    target_tp = entry_p * (Decimal('1') + Decimal(str(self.support_order_take_profit_percent)) / Decimal('100'))
-                    if current_p >= target_tp:
-                        self.logger.warning(f"[{self.symbol}] CONDICIÓN DE TAKE PROFIT (+{self.support_order_take_profit_percent}%) ALCANZADA. Precio Actual={current_p} >= Objetivo={target_tp}")
-                        exit_signal = True
-                        self.exit_reason = f"take_profit_percent_reached (+{self.support_order_take_profit_percent}%)"
+                    is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+                    if is_short:
+                        target_tp = entry_p * (Decimal('1') - Decimal(str(self.support_order_take_profit_percent)) / Decimal('100'))
+                        if current_p <= target_tp:
+                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] CONDICIÓN DE TAKE PROFIT (-{self.support_order_take_profit_percent}%) ALCANZADA. Precio Actual={current_p} <= Objetivo={target_tp}")
+                            exit_signal = True
+                            self.exit_reason = f"take_profit_percent_reached (-{self.support_order_take_profit_percent}%)"
+                    else:
+                        target_tp = entry_p * (Decimal('1') + Decimal(str(self.support_order_take_profit_percent)) / Decimal('100'))
+                        if current_p >= target_tp:
+                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] CONDICIÓN DE TAKE PROFIT (+{self.support_order_take_profit_percent}%) ALCANZADA. Precio Actual={current_p} >= Objetivo={target_tp}")
+                            exit_signal = True
+                            self.exit_reason = f"take_profit_percent_reached (+{self.support_order_take_profit_percent}%)"
             else:
                 self.logger.info(f"[{self.symbol}] Salida por Take Profit DESHABILITADA.")
 
@@ -2961,54 +3108,74 @@ class TradingBot:
                 if self.stop_loss_usdt != 0 and self.last_known_pnl is not None:
                     max_allowed_loss = -abs(Decimal(str(self.stop_loss_usdt)))
                     if self.last_known_pnl <= max_allowed_loss:
-                        self.logger.warning(f"[{self.symbol}] 🛡️ GUARDIÁN DE SOFTWARE ACTIVADO: Stop Loss de Emergencia alcanzado. PnL={self.last_known_pnl:.4f} <= SL={max_allowed_loss}")
+                        self.logger.warning(f"[{self.symbol}][{self.trade_side}] 🛡️ GUARDIÁN DE SOFTWARE ACTIVADO: Stop Loss de Emergencia alcanzado. PnL={self.last_known_pnl:.4f} <= SL={max_allowed_loss}")
                         exit_signal = True
                         self.exit_reason = f"emergency_software_sl_reached ({self.last_known_pnl:.4f})"
                 elif self.support_order_stop_loss_percent > 0 and self.current_position:
                     entry_p = self.current_position.get('entry_price', Decimal('0'))
                     current_p = Decimal(str(klines_df['close'].iloc[-1]))
-                    target_sl = entry_p * (Decimal('1') - Decimal(str(self.support_order_stop_loss_percent)) / Decimal('100'))
-                    if current_p <= target_sl:
-                        self.logger.warning(f"[{self.symbol}] CONDICIÓN DE STOP LOSS (-{self.support_order_stop_loss_percent}%) ALCANZADA. Precio Actual={current_p} <= Objetivo={target_sl}")
-                        exit_signal = True
-                        self.exit_reason = f"stop_loss_percent_reached (-{self.support_order_stop_loss_percent}%)"
+                    is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+                    if is_short:
+                        target_sl = entry_p * (Decimal('1') + Decimal(str(self.support_order_stop_loss_percent)) / Decimal('100'))
+                        if current_p >= target_sl:
+                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] CONDICIÓN DE STOP LOSS (+{self.support_order_stop_loss_percent}%) ALCANZADA. Precio Actual={current_p} >= Objetivo={target_sl}")
+                            exit_signal = True
+                            self.exit_reason = f"stop_loss_percent_reached (+{self.support_order_stop_loss_percent}%)"
+                    else:
+                        target_sl = entry_p * (Decimal('1') - Decimal(str(self.support_order_stop_loss_percent)) / Decimal('100'))
+                        if current_p <= target_sl:
+                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] CONDICIÓN DE STOP LOSS (-{self.support_order_stop_loss_percent}%) ALCANZADA. Precio Actual={current_p} <= Objetivo={target_sl}")
+                            exit_signal = True
+                            self.exit_reason = f"stop_loss_percent_reached (-{self.support_order_stop_loss_percent}%)"
             elif not exit_signal: 
                 self.logger.info(f"[{self.symbol}] Salida por Stop Loss DESHABILITADA.")
 
-            # --- SALIDA DE EMERGENCIA POR CRASH (ANTI-DESPLOME: 3 TRIGGERS) ---
+            # --- SALIDA DE EMERGENCIA POR CRASH (ANTI-DESPLOME / ANTI-PUMP: 3 TRIGGERS) ---
             if not exit_signal and getattr(self, 'enable_emergency_crash_exit', False):
+                is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
                 # Trigger 1: Colapso Súbito de RSI en la vela actual respecto a la previa (Delta RSI)
                 if getattr(self, 'enable_crash_rsi_drop', True) and self.last_rsi_value is not None and self.previous_rsi_value is not None:
                     rsi_delta_now = float(self.last_rsi_value) - float(self.previous_rsi_value)
                     crash_threshold = float(getattr(self, 'crash_rsi_drop_threshold', 8.0))
-                    if rsi_delta_now <= -crash_threshold:
-                        self.logger.warning(f"[{self.symbol}] 🚨 CRASH TRIGGER 1 DISPARADO (Colapso RSI): "
+                    if is_short and rsi_delta_now >= crash_threshold:
+                        self.logger.warning(f"[{self.symbol}][{self.trade_side}] 🚨 CRASH TRIGGER 1 DISPARADO (Pump RSI en SHORT): "
+                                            f"ΔRSI=+{rsi_delta_now:.2f} >= +{crash_threshold:.2f} "
+                                            f"(RSI: {self.previous_rsi_value:.2f} -> {self.last_rsi_value:.2f}). "
+                                            f"Eyectando posición a mercado de inmediato.")
+                        exit_signal = True
+                        self.exit_reason = f"emergency_crash_exit_rsi (ΔRSI=+{rsi_delta_now:.2f} >= +{crash_threshold:.2f})"
+                    elif not is_short and rsi_delta_now <= -crash_threshold:
+                        self.logger.warning(f"[{self.symbol}][{self.trade_side}] 🚨 CRASH TRIGGER 1 DISPARADO (Colapso RSI en LONG): "
                                             f"ΔRSI={rsi_delta_now:.2f} <= -{crash_threshold:.2f} "
                                             f"(RSI: {self.previous_rsi_value:.2f} -> {self.last_rsi_value:.2f}). "
                                             f"Eyectando posición a mercado de inmediato.")
                         exit_signal = True
                         self.exit_reason = f"emergency_crash_exit_rsi (ΔRSI={rsi_delta_now:.2f} <= -{crash_threshold:.2f})"
 
-                # Trigger 2: Caída Porcentual Rápida del Precio desde Entrada (% Drop)
+                # Trigger 2: Movimiento Porcentual Adverso Rápido del Precio desde Entrada (% Move)
                 if not exit_signal and getattr(self, 'enable_crash_price_drop', True) and self.current_position:
                     entry_p = self.current_position.get('entry_price', Decimal('0'))
                     if entry_p > Decimal('0'):
                         curr_p = Decimal(str(klines_df['close'].iloc[-1]))
-                        price_drop_pct = float((entry_p - curr_p) / entry_p * Decimal('100'))
+                        if is_short:
+                            price_adverse_pct = float((curr_p - entry_p) / entry_p * Decimal('100'))
+                        else:
+                            price_adverse_pct = float((entry_p - curr_p) / entry_p * Decimal('100'))
                         max_drop_pct = float(getattr(self, 'crash_price_drop_percent', 1.5))
-                        if price_drop_pct >= max_drop_pct:
-                            self.logger.warning(f"[{self.symbol}] 🚨 CRASH TRIGGER 2 DISPARADO (Caída Porcentual): "
-                                                f"Caída={price_drop_pct:.2f}% >= Umbral={max_drop_pct:.2f}% "
+                        if price_adverse_pct >= max_drop_pct:
+                            label_dir = "Subida Inversa" if is_short else "Caída Porcentual"
+                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] 🚨 CRASH TRIGGER 2 DISPARADO ({label_dir}): "
+                                                f"Movimiento Adverso={price_adverse_pct:.2f}% >= Umbral={max_drop_pct:.2f}% "
                                                 f"(Entrada: {entry_p}, Actual: {curr_p}). "
                                                 f"Eyectando posición a mercado de inmediato.")
                             exit_signal = True
-                            self.exit_reason = f"emergency_crash_exit_price_drop (-{price_drop_pct:.2f}% >= -{max_drop_pct:.2f}%)"
+                            self.exit_reason = f"emergency_crash_exit_price_move ({price_adverse_pct:.2f}% >= {max_drop_pct:.2f}%)"
 
                 # Trigger 3: Desplome Rápido de PnL Flotante (Flash PnL Drop)
                 if not exit_signal and getattr(self, 'enable_crash_pnl_drop', True) and self.last_known_pnl is not None:
                     pnl_loss_threshold = float(getattr(self, 'crash_pnl_drop_threshold_usdt', 5.0))
                     if float(self.last_known_pnl) <= -pnl_loss_threshold:
-                        self.logger.warning(f"[{self.symbol}] 🚨 CRASH TRIGGER 3 DISPARADO (Pérdida PnL Anticipada): "
+                        self.logger.warning(f"[{self.symbol}][{self.trade_side}] 🚨 CRASH TRIGGER 3 DISPARADO (Pérdida PnL Anticipada): "
                                             f"PnL actual={self.last_known_pnl:.4f} <= -{pnl_loss_threshold:.2f} USDT. "
                                             f"Eyectando posición a mercado antes de Stop Loss total.")
                         exit_signal = True
@@ -3018,40 +3185,65 @@ class TradingBot:
             # --- INICIO NUEVA LÓGICA: TRAILING STOP POR PRECIO ---
             if not exit_signal and self.enable_price_trailing_stop:
                 if self.price_trailing_stop_distance_usdt > Decimal('0') and self.current_position:
-                    # Usar el precio de cierre de la última vela como precio actual del mercado
-                    # klines_df debería estar disponible y ser reciente
                     current_market_price = Decimal(str(klines_df.iloc[-1]['close']))
+                    is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
 
-                    # Actualizar el precio pico si el precio actual es mayor
-                    if self.price_peak_since_entry is None or current_market_price > self.price_peak_since_entry:
-                        self.price_peak_since_entry = current_market_price
-                        self.logger.info(f"[{self.symbol}] Nuevo precio pico para Trailing Stop de Precio: {self.price_peak_since_entry:.{price_precision_log}f}")
+                    if is_short:
+                        # Para SHORT: registrar el mínimo (suelo)
+                        if self.price_trough_since_entry is None or current_market_price < self.price_trough_since_entry:
+                            self.price_trough_since_entry = current_market_price
+                            self.logger.info(f"[{self.symbol}][{self.trade_side}] Nuevo precio suelo para Trailing Stop de Precio: {self.price_trough_since_entry:.{price_precision_log}f}")
 
-                    # Armar el trailing stop si el PNL alcanza el umbral de activación
-                    if not self.price_trailing_stop_armed and self.last_known_pnl is not None and \
-                       self.last_known_pnl >= self.price_trailing_stop_activation_pnl_usdt:
-                        self.price_trailing_stop_armed = True
-                        self.logger.info(f"[{self.symbol}] Trailing Stop de Precio ARMADO. PnL actual ({self.last_known_pnl:.4f}) >= Activación ({self.price_trailing_stop_activation_pnl_usdt:.4f})")
+                        # Armar si PnL alcanza activación
+                        if not self.price_trailing_stop_armed and self.last_known_pnl is not None and \
+                           self.last_known_pnl >= self.price_trailing_stop_activation_pnl_usdt:
+                            self.price_trailing_stop_armed = True
+                            self.logger.info(f"[{self.symbol}][{self.trade_side}] Trailing Stop de Precio SHORT ARMADO. PnL actual ({self.last_known_pnl:.4f}) >= Activación ({self.price_trailing_stop_activation_pnl_usdt:.4f})")
 
-                    # Si está armado, verificar condición de salida
-                    if self.price_trailing_stop_armed and self.price_peak_since_entry is not None:
-                        trailing_stop_price_level = self.price_peak_since_entry - self.price_trailing_stop_distance_usdt
-                        self.logger.info(f"[{self.symbol}] Chequeo Salida Trailing Precio (Habilitado, Armado): "
-                                         f"Actual Precio ({current_market_price:.{price_precision_log}f}) vs "
-                                         f"Umbral Salida ({trailing_stop_price_level:.{price_precision_log}f} = "
-                                         f"Pico {self.price_peak_since_entry:.{price_precision_log}f} - Dist {self.price_trailing_stop_distance_usdt})")
-                        if current_market_price <= trailing_stop_price_level:
-                            self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING STOP DE PRECIO) DETECTADA (Habilitado): "
-                                                f"Precio Actual ({current_market_price:.{price_precision_log}f}) <= Umbral ({trailing_stop_price_level:.{price_precision_log}f})")
-                            exit_signal = True
-                            self.exit_reason = (f"Price_Trailing_Stop (Precio={current_market_price:.{price_precision_log}f}, "
-                                                f"Pico={self.price_peak_since_entry:.{price_precision_log}f}, "
-                                                f"Dist={self.price_trailing_stop_distance_usdt})")
+                        # Salida: si el precio sube desde el suelo por más de la distancia (techo stop)
+                        if self.price_trailing_stop_armed and self.price_trough_since_entry is not None:
+                            trailing_stop_price_level = self.price_trough_since_entry + self.price_trailing_stop_distance_usdt
+                            self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Salida Trailing Precio SHORT (Habilitado, Armado): "
+                                             f"Actual Precio ({current_market_price:.{price_precision_log}f}) vs "
+                                             f"Umbral Salida Techo ({trailing_stop_price_level:.{price_precision_log}f} = "
+                                             f"Suelo {self.price_trough_since_entry:.{price_precision_log}f} + Dist {self.price_trailing_stop_distance_usdt})")
+                            if current_market_price >= trailing_stop_price_level:
+                                self.logger.warning(f"[{self.symbol}][{self.trade_side}] CONDICIÓN DE SALIDA (TRAILING STOP DE PRECIO SHORT) DETECTADA: "
+                                                    f"Precio Actual ({current_market_price:.{price_precision_log}f}) >= Umbral ({trailing_stop_price_level:.{price_precision_log}f})")
+                                exit_signal = True
+                                self.exit_reason = (f"Price_Trailing_Stop_SHORT (Precio={current_market_price:.{price_precision_log}f}, "
+                                                    f"Suelo={self.price_trough_since_entry:.{price_precision_log}f}, "
+                                                    f"Dist={self.price_trailing_stop_distance_usdt})")
+                    else:
+                        # Para LONG: registrar el pico máximo
+                        if self.price_peak_since_entry is None or current_market_price > self.price_peak_since_entry:
+                            self.price_peak_since_entry = current_market_price
+                            self.logger.info(f"[{self.symbol}] Nuevo precio pico para Trailing Stop de Precio: {self.price_peak_since_entry:.{price_precision_log}f}")
+
+                        # Armar el trailing stop si el PNL alcanza el umbral de activación
+                        if not self.price_trailing_stop_armed and self.last_known_pnl is not None and \
+                           self.last_known_pnl >= self.price_trailing_stop_activation_pnl_usdt:
+                            self.price_trailing_stop_armed = True
+                            self.logger.info(f"[{self.symbol}] Trailing Stop de Precio ARMADO. PnL actual ({self.last_known_pnl:.4f}) >= Activación ({self.price_trailing_stop_activation_pnl_usdt:.4f})")
+
+                        # Si está armado, verificar condición de salida
+                        if self.price_trailing_stop_armed and self.price_peak_since_entry is not None:
+                            trailing_stop_price_level = self.price_peak_since_entry - self.price_trailing_stop_distance_usdt
+                            self.logger.info(f"[{self.symbol}] Chequeo Salida Trailing Precio (Habilitado, Armado): "
+                                             f"Actual Precio ({current_market_price:.{price_precision_log}f}) vs "
+                                             f"Umbral Salida ({trailing_stop_price_level:.{price_precision_log}f} = "
+                                             f"Pico {self.price_peak_since_entry:.{price_precision_log}f} - Dist {self.price_trailing_stop_distance_usdt})")
+                            if current_market_price <= trailing_stop_price_level:
+                                self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING STOP DE PRECIO) DETECTADA (Habilitado): "
+                                                    f"Precio Actual ({current_market_price:.{price_precision_log}f}) <= Umbral ({trailing_stop_price_level:.{price_precision_log}f})")
+                                exit_signal = True
+                                self.exit_reason = (f"Price_Trailing_Stop (Precio={current_market_price:.{price_precision_log}f}, "
+                                                    f"Pico={self.price_peak_since_entry:.{price_precision_log}f}, "
+                                                    f"Dist={self.price_trailing_stop_distance_usdt})")
                 else:
                     if self.price_trailing_stop_distance_usdt <= Decimal('0'):
                         self.logger.info(f"[{self.symbol}] Trailing Stop de Precio (Habilitado) pero distancia no es positiva ({self.price_trailing_stop_distance_usdt}). No se evaluará.")
-                    # No loguear si !self.current_position porque ya se loguea al inicio de la función
-            elif not exit_signal: # Si no hay señal de salida aún y el Price Trailing está deshabilitado
+            elif not exit_signal:
                  self.logger.info(f"[{self.symbol}] Salida por Trailing Stop de Precio DESHABILITADA.")
             # --- FIN NUEVA LÓGICA: TRAILING STOP POR PRECIO ---
 
@@ -3062,7 +3254,7 @@ class TradingBot:
                     if not self.pnl_trailing_stop_armed and self.last_known_pnl >= self.pnl_trailing_stop_activation_usdt:
                         self.pnl_trailing_stop_armed = True
                         self.pnl_peak_since_activation = self.last_known_pnl # El PNL actual es el primer pico
-                        self.logger.info(f"[{self.symbol}] Trailing Stop por PNL ARMADO. "
+                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Trailing Stop por PNL ARMADO. "
                                          f"PNL actual ({self.last_known_pnl:.4f}) >= Activación PNL TS ({self.pnl_trailing_stop_activation_usdt:.4f}). "
                                          f"Pico PNL inicial: {self.pnl_peak_since_activation:.4f}")
 
@@ -3070,17 +3262,17 @@ class TradingBot:
                     if self.pnl_trailing_stop_armed:
                         if self.last_known_pnl > self.pnl_peak_since_activation:
                             self.pnl_peak_since_activation = self.last_known_pnl
-                            self.logger.info(f"[{self.symbol}] Nuevo pico de PNL para Trailing Stop por PNL: {self.pnl_peak_since_activation:.4f}")
+                            self.logger.info(f"[{self.symbol}][{self.trade_side}] Nuevo pico de PNL para Trailing Stop por PNL: {self.pnl_peak_since_activation:.4f}")
 
                         # Calcular el nivel de PNL de salida
                         pnl_trailing_exit_level = self.pnl_peak_since_activation - self.pnl_trailing_stop_drop_usdt
-                        self.logger.info(f"[{self.symbol}] Chequeo Salida Trailing PNL (Habilitado, Armado): "
+                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Salida Trailing PNL (Habilitado, Armado): "
                                          f"Actual PNL ({self.last_known_pnl:.4f}) vs "
                                          f"Umbral Salida PNL ({pnl_trailing_exit_level:.4f} = "
                                          f"Pico PNL {self.pnl_peak_since_activation:.4f} - Caída {self.pnl_trailing_stop_drop_usdt})")
 
                         if self.last_known_pnl <= pnl_trailing_exit_level:
-                            self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING STOP POR PNL) DETECTADA (Habilitado): "
+                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] CONDICIÓN DE SALIDA (TRAILING STOP POR PNL) DETECTADA (Habilitado): "
                                                 f"PNL Actual ({self.last_known_pnl:.4f}) <= Umbral PNL ({pnl_trailing_exit_level:.4f})")
                             exit_signal = True
                             self.exit_reason = (f"PNL_Trailing_Stop (PNL={self.last_known_pnl:.4f}, "
@@ -3089,35 +3281,62 @@ class TradingBot:
                 else:
                     if self.pnl_trailing_stop_drop_usdt <= Decimal('0'):
                         self.logger.info(f"[{self.symbol}] Trailing Stop por PNL (Habilitado) pero la distancia de caída no es positiva ({self.pnl_trailing_stop_drop_usdt}). No se evaluará.")
-            elif not exit_signal: # Si no hay señal de salida aún y el PNL Trailing está deshabilitado
+            elif not exit_signal:
                  self.logger.info(f"[{self.symbol}] Salida por Trailing Stop por PNL DESHABILITADA.")
             # --- FIN NUEVA LÓGICA: TRAILING STOP POR PNL ---
 
-            # 3. Activación de RSI objetivo y seguimiento del pico para Trailing Stop RSI (MODIFICADO)
-            # La activación del rsi_objetivo y el seguimiento del pico se hacen independientemente de si el Trailing Stop está habilitado,
+            # 3. Activación de RSI objetivo y seguimiento del pico/suelo para Trailing Stop RSI
             if self.last_rsi_value is not None and self.enable_trailing_rsi_stop:
+                is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
                 pnl_is_pos = (self.last_known_pnl is not None and self.last_known_pnl > Decimal('0'))
-                if not self.rsi_objetivo_activado and pnl_is_pos:
-                    if self.last_rsi_value >= self.rsi_target:
-                        self.rsi_objetivo_activado = True
-                        self.rsi_peak_since_target = self.last_rsi_value # Inicializar el pico RSI
-                        self.rsi_objetivo_alcanzado_en = pd.Timestamp.now(tz='UTC') # Opcional: registrar cuándo se armó
-                        self.logger.info(f"[{self.symbol}] RSI objetivo ({self.rsi_target}) alcanzado con PnL positivo ({self.last_known_pnl:.4f}). Se activa TRAILING RSI STOP. Pico inicial: {self.rsi_peak_since_target:.2f}")
-                elif self.rsi_objetivo_activado: # Si ya está activado, actualizar el pico
-                    if self.last_rsi_value > self.rsi_peak_since_target:
-                        self.logger.info(f"[{self.symbol}] Nuevo pico RSI para TRAILING STOP: {self.last_rsi_value:.2f} (anterior: {self.rsi_peak_since_target:.2f})")
-                        self.rsi_peak_since_target = self.last_rsi_value
+                
+                if is_short:
+                    # En SHORT: el objetivo es que el RSI caiga por debajo de rsi_target (e.g. <= 35)
+                    if not self.rsi_objetivo_activado and pnl_is_pos:
+                        if self.last_rsi_value <= self.rsi_target:
+                            self.rsi_objetivo_activado = True
+                            self.rsi_trough_since_target = self.last_rsi_value
+                            self.rsi_objetivo_alcanzado_en = pd.Timestamp.now(tz='UTC')
+                            self.logger.info(f"[{self.symbol}][{self.trade_side}] RSI objetivo SHORT ({self.rsi_target}) alcanzado con PnL positivo ({self.last_known_pnl:.4f}). Se activa TRAILING RSI STOP. Suelo inicial: {self.rsi_trough_since_target:.2f}")
+                    elif self.rsi_objetivo_activado:
+                        if getattr(self, 'rsi_trough_since_target', None) is None or self.last_rsi_value < self.rsi_trough_since_target:
+                            self.logger.info(f"[{self.symbol}][{self.trade_side}] Nuevo suelo RSI para TRAILING STOP SHORT: {self.last_rsi_value:.2f} (anterior: {getattr(self, 'rsi_trough_since_target', None)})")
+                            self.rsi_trough_since_target = self.last_rsi_value
+                else:
+                    # En LONG: el objetivo es que el RSI suba por encima de rsi_target (e.g. >= 65)
+                    if not self.rsi_objetivo_activado and pnl_is_pos:
+                        if self.last_rsi_value >= self.rsi_target:
+                            self.rsi_objetivo_activado = True
+                            self.rsi_peak_since_target = self.last_rsi_value # Inicializar el pico RSI
+                            self.rsi_objetivo_alcanzado_en = pd.Timestamp.now(tz='UTC')
+                            self.logger.info(f"[{self.symbol}] RSI objetivo ({self.rsi_target}) alcanzado con PnL positivo ({self.last_known_pnl:.4f}). Se activa TRAILING RSI STOP. Pico inicial: {self.rsi_peak_since_target:.2f}")
+                    elif self.rsi_objetivo_activado:
+                        if self.last_rsi_value > self.rsi_peak_since_target:
+                            self.logger.info(f"[{self.symbol}] Nuevo pico RSI para TRAILING STOP: {self.last_rsi_value:.2f} (anterior: {self.rsi_peak_since_target:.2f})")
+                            self.rsi_peak_since_target = self.last_rsi_value
 
-            # 4. Salida por TRAILING RSI STOP (MODIFICADO)
-            if not exit_signal and self.enable_trailing_rsi_stop: # Solo si está habilitado y no hay otra señal
-                if self.rsi_objetivo_activado and self.rsi_peak_since_target is not None and self.last_rsi_value is not None:
-                    trailing_rsi_exit_level = self.rsi_peak_since_target + self.rsi_threshold_down
-                    self.logger.info(f"[{self.symbol}] Chequeo Salida TRAILING RSI (Habilitado): Actual RSI ({self.last_rsi_value:.2f}) vs Umbral Salida Dinámico ({trailing_rsi_exit_level:.2f} = Pico {self.rsi_peak_since_target:.2f} + Drop {self.rsi_threshold_down})")
-                    if self.last_rsi_value <= trailing_rsi_exit_level:
-                        self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING RSI STOP) DETECTADA (Habilitado): RSI Actual ({self.last_rsi_value:.2f}) <= Umbral ({trailing_rsi_exit_level:.2f})")
-                        exit_signal = True
-                        self.exit_reason = f"Trailing_RSI_Stop (Actual={self.last_rsi_value:.2f}, Pico={self.rsi_peak_since_target:.2f}, Drop={self.rsi_threshold_down})"
-            elif not exit_signal: # Si no hay señal de salida aún y el Trailing RSI está deshabilitado
+            # 4. Salida por TRAILING RSI STOP
+            if not exit_signal and self.enable_trailing_rsi_stop:
+                is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+                if is_short:
+                    if self.rsi_objetivo_activado and getattr(self, 'rsi_trough_since_target', None) is not None and self.last_rsi_value is not None:
+                        # Salida cuando el RSI rebota hacia arriba desde el suelo
+                        rsi_rebound_threshold = abs(self.rsi_threshold_down)
+                        trailing_rsi_exit_level = self.rsi_trough_since_target + rsi_rebound_threshold
+                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Salida TRAILING RSI SHORT: Actual RSI ({self.last_rsi_value:.2f}) vs Umbral Rebote ({trailing_rsi_exit_level:.2f} = Suelo {self.rsi_trough_since_target:.2f} + Rebote {rsi_rebound_threshold})")
+                        if self.last_rsi_value >= trailing_rsi_exit_level:
+                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] CONDICIÓN DE SALIDA (TRAILING RSI STOP SHORT) DETECTADA: RSI Actual ({self.last_rsi_value:.2f}) >= Umbral ({trailing_rsi_exit_level:.2f})")
+                            exit_signal = True
+                            self.exit_reason = f"Trailing_RSI_Stop_SHORT (Actual={self.last_rsi_value:.2f}, Suelo={self.rsi_trough_since_target:.2f}, Rebote={rsi_rebound_threshold})"
+                else:
+                    if self.rsi_objetivo_activado and self.rsi_peak_since_target is not None and self.last_rsi_value is not None:
+                        trailing_rsi_exit_level = self.rsi_peak_since_target + self.rsi_threshold_down
+                        self.logger.info(f"[{self.symbol}] Chequeo Salida TRAILING RSI (Habilitado): Actual RSI ({self.last_rsi_value:.2f}) vs Umbral Salida Dinámico ({trailing_rsi_exit_level:.2f} = Pico {self.rsi_peak_since_target:.2f} + Drop {self.rsi_threshold_down})")
+                        if self.last_rsi_value <= trailing_rsi_exit_level:
+                            self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING RSI STOP) DETECTADA (Habilitado): RSI Actual ({self.last_rsi_value:.2f}) <= Umbral ({trailing_rsi_exit_level:.2f})")
+                            exit_signal = True
+                            self.exit_reason = f"Trailing_RSI_Stop (Actual={self.last_rsi_value:.2f}, Pico={self.rsi_peak_since_target:.2f}, Drop={self.rsi_threshold_down})"
+            elif not exit_signal:
                  self.logger.info(f"[{self.symbol}] Salida por Trailing RSI Stop DESHABILITADA.")
 
             # Actualizar telemetría de posición con los últimos picos evaluados
@@ -3126,19 +3345,21 @@ class TradingBot:
             )
 
             if exit_signal:
-                best_bid_price = self._get_best_exit_price('SELL')
-                if not best_bid_price:
-                    self.logger.error(f"[{self.symbol}] No se pudo obtener el mejor precio Bid para la salida. No se colocará orden de salida.")
-                    self._update_state(BotState.IN_POSITION) # Mantener en posición, podría no tener TP/SL si fueron cancelados
+                is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+                close_order_side = 'BUY' if is_short else 'SELL'
+                best_exit_price = self._get_best_exit_price(close_order_side)
+                if not best_exit_price:
+                    self.logger.error(f"[{self.symbol}][{self.trade_side}] No se pudo obtener el mejor precio ({close_order_side}) para la salida. No se colocará orden de salida.")
+                    self._update_state(BotState.IN_POSITION) # Mantener en posición
                     return
                 
-                self.logger.warning(f"[{self.symbol}] SEÑAL DE SALIDA ({self.exit_reason}). Cancelando TP/SL existentes y colocando nueva orden LIMIT SELL @ {best_bid_price}")
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] SEÑAL DE SALIDA ({self.exit_reason}). Cancelando TP/SL existentes y colocando nueva orden LIMIT {close_order_side} @ {best_exit_price}")
                 
                 # --- CANCELAR ÓRDENES TP/SL EXISTENTES ANTES DE COLOCAR LA NUEVA ---
                 self._cancel_active_tp_sl_orders()
                 # --------------------------------------------------------------------
                 
-                self._place_exit_order(price=best_bid_price, reason=self.exit_reason)
+                self._place_exit_order(price=best_exit_price, reason=self.exit_reason)
             else:
                 self.logger.debug(f"[{self.symbol}] No hay señal de salida. Manteniendo posición.")
                 self._update_state(BotState.IN_POSITION)
@@ -3560,6 +3781,38 @@ class TradingBot:
         return True
     # --- FIN NUEVA FUNCIÓN ---
 
+    def _check_required_downtrend(self, klines_df: pd.DataFrame) -> bool:
+        """
+        Verifica si las 'N' velas cerradas más recientes muestran una tendencia BAJISTA consecutiva REQUERIDA (para SHORT).
+        El valor de 'N' se toma de self.required_downtrend_candles (o required_uptrend_candles si está en modo auto-mirror).
+        Devuelve True si se detecta tendencia bajista requerida (o si el chequeo está desactivado N < 2),
+        False si no se detecta tendencia bajista y el chequeo está activo (N >= 2).
+        """
+        n_req = getattr(self, 'required_downtrend_candles', 0)
+        if n_req < 2:
+            n_req = getattr(self, 'required_uptrend_candles', 0)
+
+        if n_req < 2:
+            self.logger.debug(f"[{self.symbol}][{self.trade_side}] Requisito de tendencia bajista reciente (N_req={n_req}) desactivado o no aplicable. Condición cumplida por defecto.")
+            return True
+
+        if len(klines_df) < n_req + 1:
+            self.logger.warning(f"[{self.symbol}][{self.trade_side}] No hay suficientes klines ({len(klines_df)}) para REQUERIR tendencia bajista de {n_req} velas. Condición NO cumplida.")
+            return False
+
+        closes = klines_df['close']
+        for i in range(n_req - 1):
+            current_candle_in_sequence_close = closes.iloc[-(2 + i)]
+            previous_to_current_close = closes.iloc[-(3 + i)]
+
+            if current_candle_in_sequence_close >= previous_to_current_close:
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] REQUISITO de tendencia bajista ({n_req} velas) NO CUMPLIDO. "
+                                 f"Vela {-(2+i)} ({current_candle_in_sequence_close:.8f}) no fue < vela {-(3+i)} ({previous_to_current_close:.8f}).")
+                return False
+
+        self.logger.info(f"[{self.symbol}][{self.trade_side}] REQUISITO de tendencia bajista ({n_req} velas) CUMPLIDO.")
+        return True
+
     def _calculate_moving_average(self, klines_df: pd.DataFrame) -> Decimal | None:
         """Calcula la media móvil (SMA o EMA) para los precios de cierre."""
         if klines_df is None or klines_df.empty or 'close' not in klines_df.columns:
@@ -3673,6 +3926,7 @@ class TradingBot:
 
         return {
             "symbol": self.symbol,
+            "trade_side": getattr(self, 'trade_side', 'LONG'),
             "strategy_name": getattr(self, 'strategy_name', '') or 'v3_RSI-SNIPER-MOMENTUM_v3',
             "state": self.state.value if self.state else "N/A",
             "is_running": self.is_running,
@@ -3814,21 +4068,21 @@ class TradingBot:
                 self.pending_reentry_qty = None
 
                 # Actualizar datos de la posición promediada desde Binance
-                pos_data = get_futures_position(self.symbol)
+                pos_data = get_futures_position(self.symbol, position_side=self.trade_side)
                 if pos_data and self.current_position:
                     pos_amt = Decimal(str(pos_data.get('positionAmt', '0')))
                     entry_p = Decimal(str(pos_data.get('entryPrice', '0')))
                     if abs(pos_amt) > Decimal('1e-9'):
                         self.current_position['entry_price'] = entry_p
-                        self.current_position['quantity'] = pos_amt
+                        self.current_position['quantity'] = abs(pos_amt)
                         self.current_position['position_size_usdt'] = abs(entry_p * pos_amt)
                         self.last_known_entry_price = entry_p
-                        self.last_known_position_size = pos_amt
-                        self.logger.info(f"[{self.symbol}] Posición promediada actualizada: Nuevo Precio Promedio={entry_p}, Cantidad Total={pos_amt}")
+                        self.last_known_position_size = abs(pos_amt)
+                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Posición promediada actualizada: Nuevo Precio Promedio={entry_p}, Cantidad Total={abs(pos_amt)}")
 
                         # Cancelar órdenes anteriores de TP y SL en Binance para actualizar al nuevo promedio
                         if self.pending_tp_order_id:
-                            self.logger.info(f"[{self.symbol}] Cancelando orden TP anterior {self.pending_tp_order_id} tras DCA.")
+                            self.logger.info(f"[{self.symbol}][{self.trade_side}] Cancelando orden TP anterior {self.pending_tp_order_id} tras DCA.")
                             try:
                                 cancel_futures_order(self.symbol, self.pending_tp_order_id)
                             except Exception as cancel_err:
@@ -3836,7 +4090,7 @@ class TradingBot:
                             self.pending_tp_order_id = None
 
                         if self.pending_sl_order_id:
-                            self.logger.info(f"[{self.symbol}] Cancelando orden SL anterior {self.pending_sl_order_id} tras DCA.")
+                            self.logger.info(f"[{self.symbol}][{self.trade_side}] Cancelando orden SL anterior {self.pending_sl_order_id} tras DCA.")
                             try:
                                 cancel_futures_order(self.symbol, self.pending_sl_order_id)
                             except Exception as cancel_err:
@@ -3844,19 +4098,21 @@ class TradingBot:
                             self.pending_sl_order_id = None
 
                         # Colocar nuevas órdenes TP/SL ajustadas al nuevo precio promedio y cantidad
-                        self.logger.info(f"[{self.symbol}] Re-colocando órdenes TP/SL para la posición promediada.")
+                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Re-colocando órdenes TP/SL para la posición promediada.")
                         self._place_tp_sl_orders()
             elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
-                self.logger.info(f"[{self.symbol}] Orden de Re-entrada DCA cancelada o expirada ({status}). Limpiando ID pendiente.")
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] Orden de Re-entrada DCA cancelada o expirada ({status}). Limpiando ID pendiente.")
                 self.pending_reentry_order_id = None
                 self.pending_reentry_price = None
                 self.pending_reentry_qty = None
         except Exception as e:
-            self.logger.error(f"[{self.symbol}] Error verificando orden de re-entrada DCA {self.pending_reentry_order_id}: {e}", exc_info=True)
+            self.logger.error(f"[{self.symbol}][{self.trade_side}] Error verificando orden de re-entrada DCA {self.pending_reentry_order_id}: {e}", exc_info=True)
 
     def _evaluate_dca_reentry(self, klines_df: pd.DataFrame):
         """
-        Evalúa si el precio ha caído lo suficiente para colocar una orden de re-entrada (DCA).
+        Evalúa si el precio se ha movido desfavorablemente lo suficiente para colocar una orden de re-entrada (DCA).
+        Para LONG: si el precio cae.
+        Para SHORT: si el precio sube.
         """
         if not self.enable_dca_reentry:
             return
@@ -3865,7 +4121,7 @@ class TradingBot:
             return
 
         if self.reentries_done >= self.dca_max_reentries:
-            self.logger.debug(f"[{self.symbol}] Re-entradas DCA máximas alcanzadas ({self.reentries_done}/{self.dca_max_reentries}).")
+            self.logger.debug(f"[{self.symbol}][{self.trade_side}] Re-entradas DCA máximas alcanzadas ({self.reentries_done}/{self.dca_max_reentries}).")
             return
 
         # Si ya hay una orden colocada esperando ejecución, verificar su estado
@@ -3879,23 +4135,34 @@ class TradingBot:
 
         current_market_price = Decimal(str(klines_df['close'].iloc[-1]))
         target_reentry_price = None
+        is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+        reentry_side = 'SELL' if is_short else 'BUY'
 
-        if self.dca_reentry_mode == 'next_support':
-            # Modo: Siguiente Soporte Confirmado
+        if self.dca_reentry_mode == 'next_support' and not is_short:
+            # Modo: Siguiente Soporte Confirmado (solo LONG)
             confirmed_supports = self._find_support_levels(klines_df)
             lower_supports = [s for s in confirmed_supports if s < (entry_price * Decimal('0.998'))]
             if lower_supports:
                 target_reentry_price = max(lower_supports)
-                self.logger.info(f"[{self.symbol}] Re-entrada DCA por Soporte: detectado soporte en {target_reentry_price}")
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] Re-entrada DCA por Soporte: detectado soporte en {target_reentry_price}")
         else:
-            # Modo: Porcentaje Fijo de Caída
-            drop_factor = Decimal('1') - (Decimal(str(self.dca_price_drop_percent)) / Decimal('100'))
-            target_reentry_price = entry_price * drop_factor
+            # Modo: Porcentaje Fijo (Caída para LONG, Subida para SHORT)
+            if is_short:
+                rise_factor = Decimal('1') + (Decimal(str(self.dca_price_drop_percent)) / Decimal('100'))
+                target_reentry_price = entry_price * rise_factor
+            else:
+                drop_factor = Decimal('1') - (Decimal(str(self.dca_price_drop_percent)) / Decimal('100'))
+                target_reentry_price = entry_price * drop_factor
 
         if target_reentry_price and target_reentry_price > Decimal('0'):
-            # Solo colocar orden si el precio objetivo está por debajo del precio de mercado actual
-            if target_reentry_price >= current_market_price:
-                target_reentry_price = current_market_price * Decimal('0.999')
+            if is_short:
+                # En SHORT, la orden LIMIT SELL de re-entrada debe estar por encima del precio de mercado actual
+                if target_reentry_price <= current_market_price:
+                    target_reentry_price = current_market_price * Decimal('1.001')
+            else:
+                # En LONG, la orden LIMIT BUY de re-entrada debe estar por debajo del precio de mercado actual
+                if target_reentry_price >= current_market_price:
+                    target_reentry_price = current_market_price * Decimal('0.999')
 
             # Calcular tamaño de la orden con el multiplicador de volumen
             base_size = Decimal(str(self.position_size_usdt))
@@ -3904,7 +4171,7 @@ class TradingBot:
 
             # Validar con el RiskManager global
             if self.risk_manager and not self.risk_manager.can_open_position(order_margin_usdt):
-                self.logger.warning(f"[{self.symbol}] Re-entrada DCA denegada por RiskManager (Margen requerido: {order_margin_usdt:.2f} USDT).")
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] Re-entrada DCA denegada por RiskManager (Margen requerido: {order_margin_usdt:.2f} USDT).")
                 return
 
             notional_order_usdt = order_margin_usdt * Decimal(str(self.leverage))
@@ -3916,16 +4183,266 @@ class TradingBot:
             adj_qty = self._adjust_quantity(quantity)
 
             if adj_qty and adj_qty > Decimal('0'):
-                self.logger.info(f"[{self.symbol}] Colocando Orden de Re-entrada DCA #{self.reentries_done + 1} en {adj_price} (Margen: {order_margin_usdt:.2f} USDT, Cantidad: {adj_qty}).")
-                result = create_futures_limit_order(self.symbol, 'BUY', adj_qty, adj_price)
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] Colocando Orden de Re-entrada DCA #{self.reentries_done + 1} ({reentry_side}) en {adj_price} (Margen: {order_margin_usdt:.2f} USDT, Cantidad: {adj_qty}).")
+                result = create_futures_limit_order(self.symbol, reentry_side, adj_qty, adj_price, position_side=self.trade_side)
                 if result and 'orderId' in result:
                     self.pending_reentry_order_id = result['orderId']
                     self.pending_reentry_price = adj_price
                     self.pending_reentry_qty = adj_qty
-                    self.logger.info(f"[{self.symbol}] 🛡️ Orden de Re-entrada DCA #{self.reentries_done + 1} colocada con ID {result['orderId']}.")
+                    self.logger.info(f"[{self.symbol}][{self.trade_side}] 🛡️ Orden de Re-entrada DCA #{self.reentries_done + 1} colocada con ID {result['orderId']}.")
                 else:
-                    self.logger.error(f"[{self.symbol}] Fallo al colocar orden de re-entrada DCA en {adj_price}.")
+                    self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar orden de re-entrada DCA en {adj_price}.")
     # ---------------------------------------------------------------------
+
+class TradingBot:
+    """
+    Coordinador de trading que soporta ejecución Bidireccional (LONG y SHORT simultáneos en Hedge Mode).
+    Instancia y gestiona SingleSideTradingBot para LONG y/o SHORT según la configuración.
+    """
+    def __init__(self, symbol: str = None, trading_params: dict = None, risk_manager = None):
+        self.logger = get_logger()
+        if trading_params is None:
+            from src.config_loader import load_trading_params
+            trading_params = load_trading_params()
+        if symbol is None:
+            symbol = trading_params.get('symbol', 'ADAUSDT')
+            
+        self.symbol = symbol
+        self.params = trading_params
+        self.risk_manager = risk_manager
+        self.trade_direction = str(self.params.get('trade_direction', 'BIDIRECTIONAL')).upper().strip()
+        self.auto_mirror_short = str(self.params.get('auto_mirror_short', 'true')).lower() == 'true'
+        self._is_paused = False
+        self._state = BotState.INITIALIZING
+        
+        self.long_bot: SingleSideTradingBot | None = None
+        self.short_bot: SingleSideTradingBot | None = None
+        
+        # Inicializar bot LONG
+        if self.trade_direction in ('LONG', 'BIDIRECTIONAL'):
+            self.long_bot = SingleSideTradingBot(
+                symbol=self.symbol,
+                trading_params=self.params,
+                risk_manager=self.risk_manager,
+                trade_side='LONG'
+            )
+            
+        # Inicializar bot SHORT
+        if self.trade_direction in ('SHORT', 'BIDIRECTIONAL'):
+            if self.auto_mirror_short:
+                from src.config_loader import derive_short_params
+                short_params = derive_short_params(self.params)
+            else:
+                short_params = self.params.copy()
+                short_params['trade_side'] = 'SHORT'
+            self.short_bot = SingleSideTradingBot(
+                symbol=self.symbol,
+                trading_params=short_params,
+                risk_manager=self.risk_manager,
+                trade_side='SHORT'
+            )
+
+        self.logger.info(f"[{self.symbol}] TradingBot coordinador inicializado (Dirección: {self.trade_direction}, Auto-Mirror: {self.auto_mirror_short}). LONG activo: {self.long_bot is not None}, SHORT activo: {self.short_bot is not None}")
+
+    def run_once(self):
+        if self.long_bot:
+            try:
+                self.long_bot.run_once()
+            except Exception as e:
+                self.logger.error(f"[{self.symbol}][LONG] Error en run_once: {e}", exc_info=True)
+        if self.short_bot:
+            try:
+                self.short_bot.run_once()
+            except Exception as e:
+                self.logger.error(f"[{self.symbol}][SHORT] Error en run_once: {e}", exc_info=True)
+
+    def _check_initial_position(self):
+        if self.long_bot:
+            self.long_bot._check_initial_position()
+        if self.short_bot:
+            self.short_bot._check_initial_position()
+
+    def reset_session_pnl(self):
+        if self.long_bot:
+            self.long_bot.reset_session_pnl()
+        if self.short_bot:
+            self.short_bot.reset_session_pnl()
+
+    def _set_error_state(self, error_message: str):
+        self._state = BotState.ERROR
+        if self.long_bot:
+            self.long_bot._set_error_state(error_message)
+        if self.short_bot:
+            self.short_bot._set_error_state(error_message)
+
+    def close_position_now(self, reason: str = "Cierre Manual", side: str | None = None) -> bool:
+        target_side = (side or '').upper().strip()
+        if target_side == 'LONG':
+            return self.long_bot.close_position_now(reason) if self.long_bot else False
+        elif target_side == 'SHORT':
+            return self.short_bot.close_position_now(reason) if self.short_bot else False
+        else:
+            res = True
+            if self.long_bot and self.long_bot.in_position:
+                res = self.long_bot.close_position_now(reason) and res
+            if self.short_bot and self.short_bot.in_position:
+                res = self.short_bot.close_position_now(reason) and res
+            return res
+
+    def update_trading_params(self, new_params: dict):
+        if not new_params:
+            return
+        self.params = {**self.params, **new_params}
+        if 'trade_direction' in new_params:
+            self.trade_direction = str(new_params['trade_direction']).upper().strip()
+        if 'auto_mirror_short' in new_params:
+            self.auto_mirror_short = str(new_params['auto_mirror_short']).lower() == 'true'
+
+        if self.trade_direction in ('LONG', 'BIDIRECTIONAL'):
+            if self.long_bot is None:
+                self.long_bot = SingleSideTradingBot(self.symbol, self.params, self.risk_manager, trade_side='LONG')
+            else:
+                self.long_bot.update_trading_params(self.params)
+
+        if self.trade_direction in ('SHORT', 'BIDIRECTIONAL'):
+            if self.auto_mirror_short:
+                from src.config_loader import derive_short_params
+                short_p = derive_short_params(self.params)
+            else:
+                short_p = self.params.copy()
+                short_p['trade_side'] = 'SHORT'
+            if self.short_bot is None:
+                self.short_bot = SingleSideTradingBot(self.symbol, short_p, self.risk_manager, trade_side='SHORT')
+            else:
+                self.short_bot.update_trading_params(short_p)
+
+    @property
+    def is_paused(self) -> bool:
+        return self._is_paused
+
+    @is_paused.setter
+    def is_paused(self, val: bool):
+        self._is_paused = bool(val)
+        if self.long_bot:
+            self.long_bot.is_paused = self._is_paused
+        if self.short_bot:
+            self.short_bot.is_paused = self._is_paused
+
+    @property
+    def state(self) -> BotState:
+        if (self.long_bot and self.long_bot.state == BotState.ERROR) or (self.short_bot and self.short_bot.state == BotState.ERROR):
+            return BotState.ERROR
+        if (self.long_bot and self.long_bot.in_position) or (self.short_bot and self.short_bot.in_position):
+            return BotState.IN_POSITION
+        if self.long_bot:
+            return self.long_bot.state
+        if self.short_bot:
+            return self.short_bot.state
+        return self._state
+
+    @state.setter
+    def state(self, val: BotState):
+        self._state = val
+        if self.long_bot:
+            self.long_bot.state = val
+        if self.short_bot:
+            self.short_bot.state = val
+
+    @property
+    def in_position(self) -> bool:
+        return bool((self.long_bot and self.long_bot.in_position) or (self.short_bot and self.short_bot.in_position))
+
+    @property
+    def margin_for_current_position(self) -> Decimal:
+        m = Decimal('0')
+        if self.long_bot and hasattr(self.long_bot, 'margin_for_current_position'):
+            m += self.long_bot.margin_for_current_position
+        if self.short_bot and hasattr(self.short_bot, 'margin_for_current_position'):
+            m += self.short_bot.margin_for_current_position
+        return m
+
+    @property
+    def current_position(self) -> dict | None:
+        if self.long_bot and self.long_bot.current_position:
+            return self.long_bot.current_position
+        if self.short_bot and self.short_bot.current_position:
+            return self.short_bot.current_position
+        return None
+
+    @property
+    def position_size_usdt(self) -> Decimal:
+        s = Decimal('0')
+        if self.long_bot and hasattr(self.long_bot, 'position_size_usdt'):
+            s += Decimal(str(self.long_bot.position_size_usdt))
+        if self.short_bot and hasattr(self.short_bot, 'position_size_usdt'):
+            s += Decimal(str(self.short_bot.position_size_usdt))
+        return s
+
+    @property
+    def is_running(self) -> bool:
+        return bool((self.long_bot and self.long_bot.is_running) or (self.short_bot and self.short_bot.is_running))
+
+    def get_status(self) -> dict:
+        positions = []
+        tot_current_pnl = 0.0
+        tot_hist_pnl = 0.0
+        tot_session_pnl = 0.0
+        tot_margin = 0.0
+        tot_pos_val = 0.0
+
+        long_st = self.long_bot.get_status() if self.long_bot else None
+        short_st = self.short_bot.get_status() if self.short_bot else None
+
+        if long_st:
+            long_st['trade_side'] = 'LONG'
+            positions.append(long_st)
+            if long_st.get('in_position'):
+                tot_current_pnl += float(long_st.get('current_pnl') or 0.0)
+                tot_margin += float(long_st.get('margin_usdt') or 0.0)
+                tot_pos_val += float(long_st.get('position_value_usdt') or 0.0)
+            tot_hist_pnl += float(long_st.get('historical_pnl') or 0.0)
+            tot_session_pnl += float(long_st.get('session_pnl') or 0.0)
+
+        if short_st:
+            short_st['trade_side'] = 'SHORT'
+            positions.append(short_st)
+            if short_st.get('in_position'):
+                tot_current_pnl += float(short_st.get('current_pnl') or 0.0)
+                tot_margin += float(short_st.get('margin_usdt') or 0.0)
+                tot_pos_val += float(short_st.get('position_value_usdt') or 0.0)
+            tot_hist_pnl += float(short_st.get('historical_pnl') or 0.0)
+            tot_session_pnl += float(short_st.get('session_pnl') or 0.0)
+
+        primary = long_st or short_st or {}
+        st_copy = primary.copy()
+        # Agregar IDs de órdenes pendientes de cualquiera de los bots activos
+        pending_entry = (long_st and long_st.get('pending_entry_order_id')) or (short_st and short_st.get('pending_entry_order_id'))
+        pending_exit = (long_st and long_st.get('pending_exit_order_id')) or (short_st and short_st.get('pending_exit_order_id'))
+        pending_tp = (long_st and long_st.get('pending_tp_order_id')) or (short_st and short_st.get('pending_tp_order_id'))
+        pending_sl = (long_st and long_st.get('pending_sl_order_id')) or (short_st and short_st.get('pending_sl_order_id'))
+
+        st_copy.update({
+            "symbol": self.symbol,
+            "trade_direction": self.trade_direction,
+            "auto_mirror_short": self.auto_mirror_short,
+            "state": unified_state,
+            "in_position": self.in_position,
+            "current_pnl": round(tot_current_pnl, 4),
+            "historical_pnl": round(tot_hist_pnl, 4),
+            "session_pnl": round(tot_session_pnl, 4),
+            "margin_usdt": round(tot_margin, 2),
+            "position_value_usdt": round(tot_pos_val, 2),
+            "positions": positions,
+            "is_paused": self.is_paused,
+            "pending_entry_order_id": pending_entry,
+            "pending_exit_order_id": pending_exit,
+            "pending_tp_order_id": pending_tp,
+            "pending_sl_order_id": pending_sl,
+        })
+        return st_copy
+
+    def get_current_status(self) -> dict:
+        return self.get_status()
 
 # --- Bloque de ejemplo (ya no se usa directamente así) ---
 # if __name__ == '__main__':

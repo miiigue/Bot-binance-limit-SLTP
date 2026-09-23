@@ -179,6 +179,46 @@ def is_hedge_mode() -> bool:
         logger.warning(f"No se pudo consultar el modo de posición: {e}. Asumiendo One-Way Mode (Unidireccional).")
         return False
 
+def ensure_hedge_mode() -> bool:
+    """
+    Verifica y asegura que la cuenta de Binance Futures esté en Modo Cobertura (Hedge Mode).
+    Si está en One-Way Mode, intenta cambiar a Hedge Mode (dualSidePosition="true") vía API.
+    Retorna True si la cuenta está o quedó en Hedge Mode, False en caso contrario.
+    """
+    global _dual_side_position_cache
+    logger = get_logger()
+    client = get_futures_client()
+    if not client:
+        logger.error("No se pudo obtener el cliente UMFutures para verificar/cambiar Modo Cobertura.")
+        return False
+
+    try:
+        current_hedge = is_hedge_mode()
+        if current_hedge:
+            logger.info("Modo Cobertura (Hedge Mode) ya está activo en Binance Futures.")
+            return True
+
+        logger.info("Intentando activar Modo Cobertura (Hedge Mode) en Binance Futures vía API...")
+        res = client.change_position_mode(dualSidePosition="true")
+        logger.info(f"Respuesta de activación de Modo Cobertura: {res}")
+        _dual_side_position_cache = True
+        return True
+    except ClientError as e:
+        if e.error_code == -4059: # No need to change position side
+            _dual_side_position_cache = True
+            logger.info("Modo Cobertura ya configurado (-4059 No need to change position side).")
+            return True
+        elif e.error_code == -4061: # Position side cannot be changed if open orders or positions exist
+            logger.warning("No se pudo cambiar automáticamente a Modo Cobertura (-4061): Existen órdenes o posiciones abiertas en Binance. Ciérralas o cámbialo en la web de Binance si deseas operar Long y Short simultáneamente.")
+            _dual_side_position_cache = False
+            return False
+        else:
+            logger.warning(f"Error de Binance API al intentar activar Modo Cobertura: {e}")
+            return False
+    except Exception as e:
+        logger.warning(f"Error inesperado al intentar activar Modo Cobertura: {e}")
+        return False
+
 def reset_futures_client():
     """Resetea la instancia global del cliente de Binance para forzar una reconexión con nueva configuración."""
     global futures_client_instance, _dual_side_position_cache
@@ -421,10 +461,11 @@ def create_futures_market_order(symbol: str, side: str, quantity: float, positio
         logger.error(f"[{symbol}] Error inesperado al crear orden MARKET {side} {adj_qty}: {e}", exc_info=True)
         return None
 
-def get_futures_position(symbol: str):
+def get_futures_position(symbol: str, position_side: str | None = None):
     """
     Obtiene la información de la posición actual para un símbolo de futuros específico.
-    (Adaptado para binance-futures-connector usando position_risk)
+    (Adaptado para binance-futures-connector usando position_risk).
+    Soporta filtro específico por lado ('LONG' o 'SHORT') en Hedge Mode.
     """
     logger = get_logger()
     client = get_futures_client()
@@ -434,21 +475,36 @@ def get_futures_position(symbol: str):
 
     try:
         # Usamos 'get_position_risk' que devuelve info por símbolo
-        logger.debug(f"Consultando información de riesgo/posición para {symbol}...")
-        positions = client.get_position_risk(symbol=symbol)
+        logger.debug(f"Consultando información de riesgo/posición para {symbol} (lado: {position_side or 'Cualquiera'})...")
+        positions = client.get_position_risk(symbol=symbol.upper())
 
         if not positions:
             logger.info(f"No se encontró información de posición/riesgo para {symbol} (respuesta vacía).")
             return None
+
+        target_side = position_side.upper() if position_side else None
 
         # Buscar la posición activa con cantidad distinta de cero (soporte completo para Hedge Mode y One-Way)
         active_position = None
         for p in positions:
             try:
                 amt = float(p.get('positionAmt', '0'))
-                if abs(amt) > 1e-9:
-                    active_position = p
-                    break
+                p_side = p.get('positionSide', 'BOTH').upper()
+
+                if target_side:
+                    # En Hedge Mode el positionSide coincide directamente ('LONG' o 'SHORT')
+                    if p_side == target_side and abs(amt) > 1e-9:
+                        active_position = p
+                        break
+                    # En One-Way mode positionSide es 'BOTH', determinamos por signo de amt
+                    elif p_side == 'BOTH':
+                        if (target_side == 'LONG' and amt > 1e-9) or (target_side == 'SHORT' and amt < -1e-9):
+                            active_position = p
+                            break
+                else:
+                    if abs(amt) > 1e-9:
+                        active_position = p
+                        break
             except (ValueError, TypeError):
                 continue
 
@@ -463,17 +519,24 @@ def get_futures_position(symbol: str):
             logger.info(f"Posición encontrada para {symbol} ({pos_side}): Cantidad={position_amt:.8f}, Precio Entrada={entry_price:.4f}, PnL no realizado={pnl:.4f}, Leverage={leverage}x")
             return position_info
         else:
-            logger.debug(f"No hay posición abierta para {symbol} en Binance (Cantidad = 0).")
-            # Retornar dict con positionAmt='0' para confirmar que Binance respondió y la posición está cerrada
-            default_pos = positions[0] if (positions and len(positions) > 0) else {
-                'symbol': symbol.upper(),
-                'positionAmt': '0.000',
-                'entryPrice': '0.0',
-                'unRealizedProfit': '0.00000000',
-                'positionSide': 'BOTH',
-                'leverage': '0'
-            }
-            return default_pos
+            logger.debug(f"No hay posición abierta para {symbol} (Lado: {target_side or 'Cualquiera'}) en Binance (Cantidad = 0).")
+            # Buscar el dict default para ese side específico si fue solicitado
+            matched_default = None
+            if target_side:
+                for p in positions:
+                    if p.get('positionSide', '').upper() == target_side:
+                        matched_default = p
+                        break
+            if not matched_default:
+                matched_default = positions[0] if (positions and len(positions) > 0) else {
+                    'symbol': symbol.upper(),
+                    'positionAmt': '0.000',
+                    'entryPrice': '0.0',
+                    'unRealizedProfit': '0.00000000',
+                    'positionSide': target_side or 'BOTH',
+                    'leverage': '0'
+                }
+            return matched_default
 
     except ClientError as e:
         logger.error(f"Error de API al obtener información de posición/riesgo para {symbol}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
@@ -530,7 +593,7 @@ def get_order_book_ticker(symbol: str) -> dict | None:
         logger.error(f"Error al obtener el book ticker para {symbol} con 'book_ticker': {e}")
         return None
 
-def create_futures_limit_order(symbol: str, side: str, quantity: float, price: float) -> dict | None:
+def create_futures_limit_order(symbol: str, side: str, quantity: float, price: float, position_side: str | None = None) -> dict | None:
     """
     Crea una orden LIMIT en Binance Futures.
     Utiliza timeInForce='GTC' (Good 'Til Canceled).
@@ -540,6 +603,7 @@ def create_futures_limit_order(symbol: str, side: str, quantity: float, price: f
         side: 'BUY' o 'SELL'.
         quantity: La cantidad a comprar/vender.
         price: El precio límite para la orden.
+        position_side: 'LONG', 'SHORT' o 'BOTH'. Si es None, autodetecta según Hedge Mode y side.
 
     Returns:
         El diccionario de respuesta de la API si la orden se creó exitosamente, None si falló.
@@ -555,7 +619,14 @@ def create_futures_limit_order(symbol: str, side: str, quantity: float, price: f
         logger.error(f"Lado inválido '{side}' para crear orden LIMIT.")
         return None
 
-    pos_side = 'LONG' if is_hedge_mode() else 'BOTH'
+    if position_side:
+        pos_side = position_side.upper()
+    else:
+        if is_hedge_mode():
+            pos_side = 'LONG' if side == 'BUY' else 'SHORT'
+        else:
+            pos_side = 'BOTH'
+
     price_str = str(price)
 
     try:
@@ -571,7 +642,6 @@ def create_futures_limit_order(symbol: str, side: str, quantity: float, price: f
         }
         order = client.new_order(**params)
         logger.info(f"Orden LIMIT {side} creada para {symbol}. Respuesta API: {order}")
-        # La respuesta contendrá el orderId, status ('NEW'), etc.
         return order
     except Exception as e:
         logger.error(f"Error al crear orden LIMIT {side} para {symbol} @ {price_str}: {e}", exc_info=True)
@@ -683,10 +753,11 @@ def cancel_futures_order(symbol: str, order_id: int) -> dict | None:
         return None
 
 # --- Funciones para colocar órdenes TP/SL ---
-def create_futures_take_profit_order(symbol: str, side: str, quantity: float, take_profit_price: str, close_position: bool = True) -> dict | None:
+def create_futures_take_profit_order(symbol: str, side: str, quantity: float, take_profit_price: str, close_position: bool = True, position_side: str | None = None) -> dict | None:
     """
     Coloca una orden TAKE_PROFIT_MARKET en Binance Futures.
-    Para una posición LONG, side='SELL'.
+    Para una posición LONG, side='SELL', position_side='LONG'.
+    Para una posición SHORT, side='BUY', position_side='SHORT'.
     take_profit_price es el precio al que se activa la orden de mercado.
     """
     logger = get_logger()
@@ -695,7 +766,14 @@ def create_futures_take_profit_order(symbol: str, side: str, quantity: float, ta
         logger.error("Cliente de Binance no inicializado al intentar crear orden Take Profit.")
         return None
 
-    pos_side = 'LONG' if is_hedge_mode() else 'BOTH'
+    if position_side:
+        pos_side = position_side.upper()
+    else:
+        if is_hedge_mode():
+            pos_side = 'SHORT' if side == 'BUY' else 'LONG'
+        else:
+            pos_side = 'BOTH'
+
     params = {
         'symbol': symbol,
         'side': side,                    # 'BUY' o 'SELL'
@@ -709,7 +787,7 @@ def create_futures_take_profit_order(symbol: str, side: str, quantity: float, ta
         params['closePosition'] = 'false'
         params['quantity'] = quantity
 
-    logger.info(f"Intentando colocar orden TAKE_PROFIT_MARKET para {symbol}: Side={side}, TP Price={take_profit_price}, ClosePos={close_position}, Params={params}")
+    logger.info(f"Intentando colocar orden TAKE_PROFIT_MARKET para {symbol}: Side={side}, TP Price={take_profit_price}, ClosePos={close_position}, PositionSide={pos_side}, Params={params}")
     try:
         order = client.new_order(**params)
         logger.info(f"Orden TAKE_PROFIT_MARKET creada: ID={order.get('orderId')}, Status={order.get('status')}")
@@ -725,10 +803,11 @@ def create_futures_take_profit_order(symbol: str, side: str, quantity: float, ta
         logger.error(f"Error al colocar la orden TAKE_PROFIT_MARKET para {symbol} @ {take_profit_price}: {e}", exc_info=True)
         return None
 
-def create_futures_stop_loss_order(symbol: str, side: str, quantity: float, stop_loss_price: str, close_position: bool = True, order_type: str = 'STOP_MARKET', trigger_type: str = 'MARK_PRICE') -> dict | None:
+def create_futures_stop_loss_order(symbol: str, side: str, quantity: float, stop_loss_price: str, close_position: bool = True, order_type: str = 'STOP_MARKET', trigger_type: str = 'MARK_PRICE', position_side: str | None = None) -> dict | None:
     """
     Coloca una orden Stop Loss en Binance Futures (STOP_MARKET o STOP con workingType configurable).
-    Para una posición LONG, side='SELL'.
+    Para una posición LONG, side='SELL', position_side='LONG'.
+    Para una posición SHORT, side='BUY', position_side='SHORT'.
     stop_loss_price es el precio al que se activa la orden.
     """
     logger = get_logger()
@@ -737,7 +816,14 @@ def create_futures_stop_loss_order(symbol: str, side: str, quantity: float, stop
         logger.error("Cliente de Binance no inicializado al intentar crear orden Stop Loss.")
         return None
 
-    pos_side = 'LONG' if is_hedge_mode() else 'BOTH'
+    if position_side:
+        pos_side = position_side.upper()
+    else:
+        if is_hedge_mode():
+            pos_side = 'SHORT' if side == 'BUY' else 'LONG'
+        else:
+            pos_side = 'BOTH'
+
     o_type = order_type if order_type in ('STOP_MARKET', 'STOP') else 'STOP_MARKET'
     w_type = trigger_type if trigger_type in ('MARK_PRICE', 'CONTRACT_PRICE') else 'MARK_PRICE'
 
@@ -755,7 +841,7 @@ def create_futures_stop_loss_order(symbol: str, side: str, quantity: float, stop
         params['closePosition'] = 'false'
         params['quantity'] = quantity
 
-    logger.info(f"Intentando colocar orden {o_type} para {symbol}: Side={side}, SL Price={stop_loss_price}, WorkingType={w_type}, ClosePos={close_position}, Params={params}")
+    logger.info(f"Intentando colocar orden {o_type} para {symbol}: Side={side}, SL Price={stop_loss_price}, WorkingType={w_type}, ClosePos={close_position}, PositionSide={pos_side}, Params={params}")
     try:
         order = client.new_order(**params)
         logger.info(f"Orden STOP_MARKET creada: ID={order.get('orderId')}, Status={order.get('status')}")

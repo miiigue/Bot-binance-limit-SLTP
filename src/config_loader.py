@@ -143,6 +143,43 @@ def get_strategy_for_symbol(symbol: str, fallback_strategy: str = '') -> str:
 
     return 'v3_RSI-SNIPER-MOMENTUM_v3'
 
+def derive_short_params(long_params: dict) -> dict:
+    """
+    Deriva de forma matemática exacta los parámetros de SHORT a partir de los de LONG (Auto-Mirror).
+    Garantiza simetría perfecta en osciladores (RSI respecto a 50), deltas y velas requeridas.
+    """
+    short_params = dict(long_params)
+    short_params['trade_side'] = 'SHORT'
+
+    def _to_float(v, default):
+        try:
+            return float(v) if v is not None and str(v).strip() != '' else default
+        except Exception:
+            return default
+
+    # 1. Rango RSI simétrico respecto al centro 50: [100 - high, 100 - low]
+    long_rsi_low = _to_float(long_params.get('rsi_entry_level_low'), 30.0)
+    long_rsi_high = _to_float(long_params.get('rsi_entry_level_high'), 45.0)
+    short_params['rsi_entry_level_low'] = round(100.0 - long_rsi_high, 2)
+    short_params['rsi_entry_level_high'] = round(100.0 - long_rsi_low, 2)
+
+    # 2. Delta RSI simétrico (giro a la baja)
+    thresh_up = _to_float(long_params.get('rsi_threshold_up'), 1.5)
+    short_params['rsi_threshold_down'] = -abs(thresh_up)
+    short_params['rsi_threshold_up'] = short_params['rsi_threshold_down']
+
+    # 3. Objetivo RSI simétrico
+    target = _to_float(long_params.get('rsi_target'), 50.0)
+    short_params['rsi_target'] = round(100.0 - target, 2)
+
+    # 4. Velas requeridas (en short son velas rojas)
+    short_params['required_downtrend_candles'] = int(long_params.get('required_uptrend_candles', 0) or 0)
+
+    # 5. DCA en short: el precio sube en contra
+    short_params['dca_price_rise_percent'] = _to_float(long_params.get('dca_price_drop_percent'), 1.5)
+
+    return short_params
+
 # Ejemplo de uso (no se ejecuta al importar)
 if __name__ == '__main__':
     print(f"Buscando config en: {CONFIG_FILE_PATH}")
