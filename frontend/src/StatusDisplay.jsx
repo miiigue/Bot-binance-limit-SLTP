@@ -828,13 +828,13 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
             <tr>
               <th scope="col" className="px-2 py-3 text-left text-xs font-extrabold text-slate-100 uppercase tracking-wider w-10"></th>
               <BinanceSortHeader label="Symbol" sortKey="symbol" currentSort={statusSort} onSort={handleStatusSort} />
-              <BinanceSortHeader label="Estrategia" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Estrategia" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} className="max-w-[170px]" />
               <BinanceSortHeader label="Estado" sortKey="state" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Precios & Recorrido" sortKey="price_tracking" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Precios & Recorrido", desc: "Precio de entrada vs actual, % rendimiento acumulado y retroceso desde el pico más alto (o suelo)." }} />
               <BinanceSortHeader label="Current PnL" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Hist. PnL" sortKey="historical_pnl" currentSort={statusSort} onSort={handleStatusSort} />
-              <BinanceSortHeader label="Radar & Diagnóstico en Vivo" sortKey="diagnostics" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Radar & Diagnóstico en Vivo" sortKey="diagnostics" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[280px]" />
               <BinanceSortHeader label="Last Error" sortKey="last_error" currentSort={statusSort} onSort={handleStatusSort} />
             </tr>
           </thead>
@@ -942,10 +942,19 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     </td>
 
                     {/* --- ESTRATEGIA ASIGNADA --- */}
-                    <td className="px-3 py-3 whitespace-nowrap text-xs">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-indigo-950/80 text-indigo-300 border border-indigo-700/60 shadow-sm" title={`Estrategia: ${status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3'}`}>
-                        {status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3'}
-                      </span>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs max-w-[170px]">
+                      {(() => {
+                        const rawStrat = status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3';
+                        const shortStrat = rawStrat.length > 20 ? `${rawStrat.slice(0, 20)}…` : rawStrat;
+                        return (
+                          <span 
+                            className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-indigo-950/80 text-indigo-300 border border-indigo-700/60 shadow-sm truncate max-w-full cursor-help" 
+                            title={`Estrategia completa: ${rawStrat}`}
+                          >
+                            {shortStrat}
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     {/* --- ESTADO --- */}
@@ -1075,11 +1084,25 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                               const side = pos.trade_side || (positionsToRender.length === 1 ? status.trade_side : 'LONG');
                               const isShort = side === 'SHORT';
                               const entryPrice = parseFloat(pos.entry_price) || 0;
-                              const currentPrice = parseFloat(pos.current_price || status.current_price) || entryPrice;
+                              let currentPrice = parseFloat(pos.current_price || status.current_price) || 0;
+                              
+                              // Fallback dinámico inteligente: si currentPrice no viene o es igual a entryPrice con PnL no nulo
+                              if (entryPrice > 0 && (currentPrice === 0 || (currentPrice === entryPrice && Math.abs(parseFloat(pos.current_pnl ?? status.current_pnl ?? 0)) > 0.0001))) {
+                                const pnlVal = parseFloat(pos.current_pnl !== undefined ? pos.current_pnl : (status.current_pnl || 0)) || 0;
+                                const qty = Math.abs(parseFloat(pos.position_size || status.position_size || 0));
+                                if (qty > 0) {
+                                  currentPrice = isShort ? (entryPrice - (pnlVal / qty)) : (entryPrice + (pnlVal / qty));
+                                } else {
+                                  currentPrice = entryPrice;
+                                }
+                              } else if (currentPrice === 0) {
+                                currentPrice = entryPrice;
+                              }
+
                               const precision = currentPrice < 1 ? 4 : (currentPrice < 10 ? 3 : 2);
                               
                               let changePct = pos.price_change_pct;
-                              if (changePct === undefined || changePct === null) {
+                              if (changePct === undefined || changePct === null || (Number(changePct) === 0 && Math.abs(parseFloat(pos.current_pnl ?? status.current_pnl ?? 0)) > 0.001)) {
                                 if (entryPrice > 0 && currentPrice > 0) {
                                   changePct = isShort
                                     ? ((entryPrice - currentPrice) / entryPrice) * 100
@@ -1090,10 +1113,24 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                               }
                               const isFavorable = Number(changePct) >= 0;
 
-                              const peakVal = parseFloat(pos.price_peak) || (isShort ? 0 : Math.max(entryPrice, currentPrice));
-                              const troughVal = parseFloat(pos.price_trough) || (isShort ? Math.min(entryPrice, currentPrice) : 0);
-                              const dropFromPeak = pos.drop_from_peak_pct;
-                              const riseFromTrough = pos.rise_from_trough_pct;
+                              let peakVal = parseFloat(pos.price_peak);
+                              if (!peakVal || (peakVal === entryPrice && currentPrice > entryPrice)) {
+                                peakVal = Math.max(entryPrice, currentPrice);
+                              }
+                              let troughVal = parseFloat(pos.price_trough);
+                              if (!troughVal || (troughVal === entryPrice && currentPrice < entryPrice)) {
+                                troughVal = Math.min(entryPrice, currentPrice);
+                              }
+
+                              let dropFromPeak = pos.drop_from_peak_pct;
+                              if (dropFromPeak === undefined || dropFromPeak === null || (Number(dropFromPeak) === 0 && peakVal > currentPrice)) {
+                                dropFromPeak = peakVal > 0 ? ((peakVal - currentPrice) / peakVal) * 100 : 0;
+                              }
+
+                              let riseFromTrough = pos.rise_from_trough_pct;
+                              if (riseFromTrough === undefined || riseFromTrough === null || (Number(riseFromTrough) === 0 && currentPrice > troughVal)) {
+                                riseFromTrough = troughVal > 0 ? ((currentPrice - troughVal) / troughVal) * 100 : 0;
+                              }
 
                               return (
                                 <div key={pIdx} className={`p-1.5 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
@@ -1199,7 +1236,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       </span>
                     </td>
                     {/* --- RADAR & DIAGNÓSTICO EN VIVO --- */}
-                    <td className="px-3 py-3 text-xs">
+                    <td className="px-3 py-3 text-xs min-w-[280px]">
                       <LiveDiagnosticsCell status={status} />
                     </td>
                     <td className="px-3 py-3 text-xs">
@@ -1243,7 +1280,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                     className="w-16 px-2 py-0.5 text-center font-mono font-bold text-xs bg-slate-900 border border-slate-600 rounded text-amber-400 focus:outline-none focus:border-amber-400"
                                     title="Ingresa la cantidad de trades que deseas ver para esta moneda"
                                   />
-                                  <span>trades cerrados para {status.symbol}:</span>
+                                  <span>trades cerrados para <span className="text-white font-extrabold">{status.symbol}</span>:</span>
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-indigo-950/90 text-indigo-200 border border-indigo-700/70 shadow-sm ml-1" title="Estrategia completa asignada a esta moneda">
+                                    <span className="text-indigo-400 font-medium">Estrategia:</span>
+                                    <span>{status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3'}</span>
+                                  </span>
                                 </div>
                                 <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5">
                                   <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Auto-actualización en vivo activa"></span>
@@ -1338,7 +1379,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                   className="w-16 px-2 py-0.5 text-center font-mono font-bold text-xs bg-slate-900 border border-slate-600 rounded text-amber-400 focus:outline-none focus:border-amber-400"
                                   title="Ingresa la cantidad de trades que deseas ver para esta moneda"
                                 />
-                                <span>trades cerrados para {status.symbol}:</span>
+                                <span>trades cerrados para <span className="text-white font-extrabold">{status.symbol}</span>:</span>
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-indigo-950/90 text-indigo-200 border border-indigo-700/70 shadow-sm ml-1" title="Estrategia completa asignada a esta moneda">
+                                  <span className="text-indigo-400 font-medium">Estrategia:</span>
+                                  <span>{status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3'}</span>
+                                </span>
                               </div>
                               <p className="text-xs text-slate-400">No hay trades cerrados para {status.symbol}.</p>
                             </div>

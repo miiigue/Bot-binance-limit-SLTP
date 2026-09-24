@@ -606,6 +606,8 @@ class SingleSideTradingBot:
             initial_margin = Decimal(str(position_data.get('initialMargin', '0')))
             self.margin_for_current_position = initial_margin
             mark_p = float(position_data.get('markPrice', '0') or 0.0)
+            if mark_p <= 0 and abs(pos_amt_binance) > Decimal('1e-9'):
+                mark_p = float(entry_price_binance + (unrealized_pnl_binance / pos_amt_binance))
             self.current_market_price = mark_p if mark_p > 0 else float(entry_price_binance)
             self.price_peak_since_entry = max(float(entry_price_binance), self.current_market_price)
             self.price_trough_since_entry = min(float(entry_price_binance), self.current_market_price)
@@ -645,14 +647,23 @@ class SingleSideTradingBot:
             entry_price_binance = Decimal(str(position_data.get('entryPrice', '0')))
             unrealized_pnl_binance = Decimal(str(position_data.get('unRealizedProfit', '0')))
             mark_p_raw = position_data.get('markPrice')
-            if mark_p_raw:
-                mark_p = float(mark_p_raw)
-                if mark_p > 0:
-                    self.current_market_price = mark_p
+            mark_p = float(mark_p_raw) if (mark_p_raw and float(mark_p_raw) > 0) else 0.0
+            if mark_p <= 0 and abs(pos_amt_binance) > Decimal('1e-9'):
+                mark_p = float(entry_price_binance + (unrealized_pnl_binance / pos_amt_binance))
+
+            if mark_p > 0:
+                self.current_market_price = mark_p
+                is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+                if not is_short:
                     if self.price_peak_since_entry is None or mark_p > float(self.price_peak_since_entry):
                         self.price_peak_since_entry = mark_p
                     if self.price_trough_since_entry is None or mark_p < float(self.price_trough_since_entry):
                         self.price_trough_since_entry = mark_p
+                else:
+                    if self.price_trough_since_entry is None or mark_p < float(self.price_trough_since_entry):
+                        self.price_trough_since_entry = mark_p
+                    if self.price_peak_since_entry is None or mark_p > float(self.price_peak_since_entry):
+                        self.price_peak_since_entry = mark_p
         except Exception as e:
             self.logger.error(f"[{self.symbol}] _update_open_position_pnl: Error al convertir datos de posición de Binance a Decimal: {e}. Datos: {position_data}")
             return True
@@ -3216,9 +3227,9 @@ class SingleSideTradingBot:
 
                     if is_short:
                         # Para SHORT: registrar el mínimo (suelo)
-                        if self.price_trough_since_entry is None or current_market_price < self.price_trough_since_entry:
-                            self.price_trough_since_entry = current_market_price
-                            self.logger.info(f"[{self.symbol}][{self.trade_side}] Nuevo precio suelo para Trailing Stop de Precio: {self.price_trough_since_entry:.{price_precision_log}f}")
+                        if self.price_trough_since_entry is None or current_market_price < Decimal(str(self.price_trough_since_entry)):
+                            self.price_trough_since_entry = float(current_market_price)
+                            self.logger.info(f"[{self.symbol}][{self.trade_side}] Nuevo precio suelo para Trailing Stop de Precio: {float(self.price_trough_since_entry):.{price_precision_log}f}")
 
                         # Armar si PnL alcanza activación
                         if not self.price_trailing_stop_armed and self.last_known_pnl is not None and \
@@ -3228,23 +3239,23 @@ class SingleSideTradingBot:
 
                         # Salida: si el precio sube desde el suelo por más de la distancia (techo stop)
                         if self.price_trailing_stop_armed and self.price_trough_since_entry is not None:
-                            trailing_stop_price_level = self.price_trough_since_entry + self.price_trailing_stop_distance_usdt
+                            trailing_stop_price_level = Decimal(str(self.price_trough_since_entry)) + self.price_trailing_stop_distance_usdt
                             self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Salida Trailing Precio SHORT (Habilitado, Armado): "
                                              f"Actual Precio ({current_market_price:.{price_precision_log}f}) vs "
                                              f"Umbral Salida Techo ({trailing_stop_price_level:.{price_precision_log}f} = "
-                                             f"Suelo {self.price_trough_since_entry:.{price_precision_log}f} + Dist {self.price_trailing_stop_distance_usdt})")
+                                             f"Suelo {float(self.price_trough_since_entry):.{price_precision_log}f} + Dist {self.price_trailing_stop_distance_usdt})")
                             if current_market_price >= trailing_stop_price_level:
                                 self.logger.warning(f"[{self.symbol}][{self.trade_side}] CONDICIÓN DE SALIDA (TRAILING STOP DE PRECIO SHORT) DETECTADA: "
                                                     f"Precio Actual ({current_market_price:.{price_precision_log}f}) >= Umbral ({trailing_stop_price_level:.{price_precision_log}f})")
                                 exit_signal = True
                                 self.exit_reason = (f"Price_Trailing_Stop_SHORT (Precio={current_market_price:.{price_precision_log}f}, "
-                                                    f"Suelo={self.price_trough_since_entry:.{price_precision_log}f}, "
+                                                    f"Suelo={float(self.price_trough_since_entry):.{price_precision_log}f}, "
                                                     f"Dist={self.price_trailing_stop_distance_usdt})")
                     else:
                         # Para LONG: registrar el pico máximo
-                        if self.price_peak_since_entry is None or current_market_price > self.price_peak_since_entry:
-                            self.price_peak_since_entry = current_market_price
-                            self.logger.info(f"[{self.symbol}] Nuevo precio pico para Trailing Stop de Precio: {self.price_peak_since_entry:.{price_precision_log}f}")
+                        if self.price_peak_since_entry is None or current_market_price > Decimal(str(self.price_peak_since_entry)):
+                            self.price_peak_since_entry = float(current_market_price)
+                            self.logger.info(f"[{self.symbol}] Nuevo precio pico para Trailing Stop de Precio: {float(self.price_peak_since_entry):.{price_precision_log}f}")
 
                         # Armar el trailing stop si el PNL alcanza el umbral de activación
                         if not self.price_trailing_stop_armed and self.last_known_pnl is not None and \
@@ -3254,11 +3265,11 @@ class SingleSideTradingBot:
 
                         # Si está armado, verificar condición de salida
                         if self.price_trailing_stop_armed and self.price_peak_since_entry is not None:
-                            trailing_stop_price_level = self.price_peak_since_entry - self.price_trailing_stop_distance_usdt
+                            trailing_stop_price_level = Decimal(str(self.price_peak_since_entry)) - self.price_trailing_stop_distance_usdt
                             self.logger.info(f"[{self.symbol}] Chequeo Salida Trailing Precio (Habilitado, Armado): "
                                              f"Actual Precio ({current_market_price:.{price_precision_log}f}) vs "
                                              f"Umbral Salida ({trailing_stop_price_level:.{price_precision_log}f} = "
-                                             f"Pico {self.price_peak_since_entry:.{price_precision_log}f} - Dist {self.price_trailing_stop_distance_usdt})")
+                                             f"Pico {float(self.price_peak_since_entry):.{price_precision_log}f} - Dist {self.price_trailing_stop_distance_usdt})")
                             if current_market_price <= trailing_stop_price_level:
                                 self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING STOP DE PRECIO) DETECTADA (Habilitado): "
                                                     f"Precio Actual ({current_market_price:.{price_precision_log}f}) <= Umbral ({trailing_stop_price_level:.{price_precision_log}f})")
@@ -3546,6 +3557,15 @@ class SingleSideTradingBot:
                     self.last_known_pnl = unrealized_pnl
                     self.last_known_entry_price = entry_price
                     self.last_known_position_size = pos_amt
+                    mark_p = float(position_data.get('markPrice', '0') or 0.0)
+                    if mark_p <= 0 and abs(pos_amt) > Decimal('1e-9'):
+                        mark_p = float(entry_price + (unrealized_pnl / pos_amt))
+                    if mark_p > 0:
+                        self.current_market_price = mark_p
+                        if self.price_peak_since_entry is None or mark_p > float(self.price_peak_since_entry):
+                            self.price_peak_since_entry = mark_p
+                        if self.price_trough_since_entry is None or mark_p < float(self.price_trough_since_entry):
+                            self.price_trough_since_entry = mark_p
                     self._update_state(BotState.IN_POSITION)
                     if self.pending_entry_order_id or self.pending_exit_order_id:
                         self.logger.warning(f"[{self.symbol}] Posición activa encontrada durante _verify_position_status, pero había órdenes pendientes. Limpiando IDs de órdenes pendientes.")
@@ -3954,7 +3974,31 @@ class SingleSideTradingBot:
         peak_p = float(getattr(self, 'price_peak_since_entry', 0) or 0)
         trough_p = float(getattr(self, 'price_trough_since_entry', 0) or 0)
 
-        if self.in_position and curr_p <= 0 and entry_p > 0:
+        # Si estamos en posición, asegurar que curr_p refleje el precio en tiempo real
+        if self.in_position and entry_p > 0 and abs(pos_s) > 1e-9:
+            last_pnl = float(self.last_known_pnl or 0)
+            derived_curr = entry_p + (last_pnl / pos_s)
+            if derived_curr > 0:
+                if curr_p <= 0 or (abs(curr_p - entry_p) < 1e-6 and abs(last_pnl) > 0.0001):
+                    curr_p = derived_curr
+                    self.current_market_price = curr_p
+
+            is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+            if not is_short:
+                if peak_p <= 0 or curr_p > peak_p:
+                    peak_p = max(entry_p, curr_p)
+                    self.price_peak_since_entry = peak_p
+                if trough_p <= 0 or (curr_p > 0 and curr_p < trough_p):
+                    trough_p = min(entry_p, curr_p)
+                    self.price_trough_since_entry = trough_p
+            else:
+                if trough_p <= 0 or (curr_p > 0 and curr_p < trough_p):
+                    trough_p = min(entry_p, curr_p)
+                    self.price_trough_since_entry = trough_p
+                if peak_p <= 0 or curr_p > peak_p:
+                    peak_p = max(entry_p, curr_p)
+                    self.price_peak_since_entry = peak_p
+        elif self.in_position and curr_p <= 0 and entry_p > 0:
             curr_p = entry_p
 
         price_change_pct = 0.0
@@ -4504,6 +4548,7 @@ class TradingBot:
         if len(active_positions) == 1:
             sp = active_positions[0]
             st_copy['entry_price'] = sp.get('entry_price')
+            st_copy['current_price'] = sp.get('current_price')
             st_copy['price_change_pct'] = sp.get('price_change_pct')
             st_copy['price_peak'] = sp.get('price_peak')
             st_copy['price_trough'] = sp.get('price_trough')
