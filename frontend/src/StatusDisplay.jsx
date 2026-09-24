@@ -395,6 +395,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
     strategy_name: s => s.strategy_name || '',
     state: s => s.is_paused ? 'Paused' : (s.state || ''),
     margin: s => s.in_position ? (Number(s.margin_usdt) || ((Number(s.position_value_usdt) || 50) / (Number(s.leverage) || 20))) : 0,
+    price_tracking: s => s.in_position ? (s.price_change_pct || 0) : (parseFloat(s.current_price) || 0),
     current_pnl: s => s.in_position ? (parseFloat(s.current_pnl) || 0) : -9999999,
     historical_pnl: s => parseFloat(s.historical_pnl) || 0,
     diagnostics: s => s.in_position ? (s.position_diagnostics?.tp_progress_pct || 0) : (s.entry_diagnostics?.passed_count || 0),
@@ -830,6 +831,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               <BinanceSortHeader label="Estrategia" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Estado" sortKey="state" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Precios & Recorrido" sortKey="price_tracking" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Precios & Recorrido", desc: "Precio de entrada vs actual, % rendimiento acumulado y retroceso desde el pico más alto (o suelo)." }} />
               <BinanceSortHeader label="Current PnL" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Hist. PnL" sortKey="historical_pnl" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Radar & Diagnóstico en Vivo" sortKey="diagnostics" currentSort={statusSort} onSort={handleStatusSort} />
@@ -1049,11 +1051,6 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                     <span className="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-amber-300 font-bold border border-slate-700 font-mono">
                                       {pos.leverage || status.leverage || 20}x
                                     </span>
-                                    {pos.entry_price && !isNaN(parseFloat(pos.entry_price)) && (
-                                      <span className="text-[10px] text-slate-400 font-mono ml-auto">
-                                        Entrada: ${parseFloat(pos.entry_price).toFixed(4)}
-                                      </span>
-                                    )}
                                   </div>
                                 </div>
                               );
@@ -1064,6 +1061,106 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                         <span className="text-slate-400 text-xs italic">
                           Sin posición
                         </span>
+                      )}
+                    </td>
+
+                    {/* --- PRECIOS & RECORRIDO (PICO & DRAWDOWN) --- */}
+                    <td className="px-3 py-3 whitespace-nowrap text-xs">
+                      {status?.in_position ? (() => {
+                        const activeSubPositions = (status.positions || []).filter(p => p.in_position);
+                        const positionsToRender = activeSubPositions.length > 0 ? activeSubPositions : [status];
+                        return (
+                          <div className="flex flex-col space-y-1.5 min-w-[220px]">
+                            {positionsToRender.map((pos, pIdx) => {
+                              const side = pos.trade_side || (positionsToRender.length === 1 ? status.trade_side : 'LONG');
+                              const isShort = side === 'SHORT';
+                              const entryPrice = parseFloat(pos.entry_price) || 0;
+                              const currentPrice = parseFloat(pos.current_price || status.current_price) || entryPrice;
+                              const precision = currentPrice < 1 ? 4 : (currentPrice < 10 ? 3 : 2);
+                              
+                              let changePct = pos.price_change_pct;
+                              if (changePct === undefined || changePct === null) {
+                                if (entryPrice > 0 && currentPrice > 0) {
+                                  changePct = isShort
+                                    ? ((entryPrice - currentPrice) / entryPrice) * 100
+                                    : ((currentPrice - entryPrice) / entryPrice) * 100;
+                                } else {
+                                  changePct = 0;
+                                }
+                              }
+                              const isFavorable = Number(changePct) >= 0;
+
+                              const peakVal = parseFloat(pos.price_peak) || (isShort ? 0 : Math.max(entryPrice, currentPrice));
+                              const troughVal = parseFloat(pos.price_trough) || (isShort ? Math.min(entryPrice, currentPrice) : 0);
+                              const dropFromPeak = pos.drop_from_peak_pct;
+                              const riseFromTrough = pos.rise_from_trough_pct;
+
+                              return (
+                                <div key={pIdx} className={`p-1.5 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
+                                  {positionsToRender.length > 1 && (
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className={`px-1 py-0.2 rounded text-[9px] font-bold font-mono ${isShort ? 'bg-rose-950 text-rose-300 border border-rose-600/50' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'}`}>
+                                        {isShort ? '🔴 SHORT' : '🟢 LONG'}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* Fila 1: Entrada ➔ Actual */}
+                                  <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                                    <span className="text-slate-400">Entrada:</span>
+                                    <span className="text-slate-200 font-bold">${entryPrice.toFixed(precision)}</span>
+                                    <span className="text-slate-500">➔</span>
+                                    <span className="text-white font-extrabold">${currentPrice.toFixed(precision)}</span>
+                                  </div>
+
+                                  {/* Fila 2: Rendimiento / Variación acumulada desde entrada */}
+                                  <div className="flex items-center gap-1 mt-0.5 font-mono text-[11px]">
+                                    <span className="text-slate-400 text-[10px]">Recorrido:</span>
+                                    <span className={`font-black ${isFavorable ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                      {isFavorable ? '▲ +' : '▼ '}{Math.abs(Number(changePct)).toFixed(2)}%
+                                    </span>
+                                  </div>
+
+                                  {/* Fila 3: Pico Máximo y Caída desde el pico (LONG) o Suelo y Rebote (SHORT) */}
+                                  <div className="mt-1 pt-0.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono">
+                                    {!isShort ? (
+                                      <>
+                                        <span className="text-amber-300/90 font-medium" title="Precio pico más alto alcanzado desde la entrada">
+                                          🏔️ Pico: ${peakVal.toFixed(precision)}
+                                        </span>
+                                        <span className={`font-bold ${(dropFromPeak || 0) > 1.5 ? 'text-amber-400' : 'text-slate-300'}`} title="Porcentaje de caída/retroceso desde el pico más alto">
+                                          Caída: <span className="text-rose-300 font-black">▼ -{Math.abs(Number(dropFromPeak || 0)).toFixed(2)}%</span>
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="text-cyan-300/90 font-medium" title="Precio suelo más bajo alcanzado desde la entrada">
+                                          🌊 Suelo: ${troughVal.toFixed(precision)}
+                                        </span>
+                                        <span className={`font-bold ${(riseFromTrough || 0) > 1.5 ? 'text-amber-400' : 'text-slate-300'}`} title="Porcentaje de rebote en contra desde el suelo más bajo">
+                                          Rebote: <span className="text-rose-300 font-black">▲ +{Math.abs(Number(riseFromTrough || 0)).toFixed(2)}%</span>
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })() : (
+                        <div className="flex flex-col font-mono text-xs">
+                          {status.current_price ? (
+                            <>
+                              <span className="text-slate-300 font-bold">
+                                ${parseFloat(status.current_price).toFixed(parseFloat(status.current_price) < 1 ? 4 : 2)}
+                              </span>
+                              <span className="text-[10px] text-slate-500 italic">📡 En radar</span>
+                            </>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-[11px]">—</span>
+                          )}
+                        </div>
                       )}
                     </td>
 
@@ -1122,7 +1219,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                   {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
                   {expandedRows[status.symbol] && (
                     <tr id={`history-${status.symbol}`}>
-                      <td colSpan="9" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
+                      <td colSpan="10" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
                         {loadingHistories[status.symbol] && (
                           <p className="text-xs text-center text-slate-300 font-mono">Cargando historial...</p>
                         )}

@@ -92,7 +92,9 @@ class SingleSideTradingBot:
         self.historical_pnl = Decimal('0') # Para PNL histórico total
         self.session_pnl = Decimal('0') # <-- NUEVO: Para PNL de la sesión actual
         self.margin_for_current_position = Decimal('0') # Para seguimiento de margen real
-        self.price_trough_since_entry = None # Para Trailing Stop de SHORT
+        self.price_trough_since_entry = None # Para Trailing Stop / seguimiento de SHORT
+        self.price_peak_since_entry = None # Para Trailing Stop / seguimiento de LONG
+        self.current_market_price = None # Precio actual de mercado en vivo
         s_init = trading_params.get('strategy_name') or trading_params.get('active_strategy_name')
         if not s_init or str(s_init).strip().lower() == 'global':
             try:
@@ -603,6 +605,10 @@ class SingleSideTradingBot:
             }
             initial_margin = Decimal(str(position_data.get('initialMargin', '0')))
             self.margin_for_current_position = initial_margin
+            mark_p = float(position_data.get('markPrice', '0') or 0.0)
+            self.current_market_price = mark_p if mark_p > 0 else float(entry_price_binance)
+            self.price_peak_since_entry = max(float(entry_price_binance), self.current_market_price)
+            self.price_trough_since_entry = min(float(entry_price_binance), self.current_market_price)
             if initial_margin > 0 and self.risk_manager:
                 self.risk_manager.add_exposure(initial_margin)
         else:
@@ -638,6 +644,15 @@ class SingleSideTradingBot:
             pos_amt_binance = Decimal(str(position_data.get('positionAmt', '0')))
             entry_price_binance = Decimal(str(position_data.get('entryPrice', '0')))
             unrealized_pnl_binance = Decimal(str(position_data.get('unRealizedProfit', '0')))
+            mark_p_raw = position_data.get('markPrice')
+            if mark_p_raw:
+                mark_p = float(mark_p_raw)
+                if mark_p > 0:
+                    self.current_market_price = mark_p
+                    if self.price_peak_since_entry is None or mark_p > float(self.price_peak_since_entry):
+                        self.price_peak_since_entry = mark_p
+                    if self.price_trough_since_entry is None or mark_p < float(self.price_trough_since_entry):
+                        self.price_trough_since_entry = mark_p
         except Exception as e:
             self.logger.error(f"[{self.symbol}] _update_open_position_pnl: Error al convertir datos de posición de Binance a Decimal: {e}. Datos: {position_data}")
             return True
@@ -795,6 +810,10 @@ class SingleSideTradingBot:
                 self.last_known_pnl = unrealized_pnl_binance
                 self.last_known_entry_price = entry_price_binance
                 self.last_known_position_size = actual_qty
+                if self.price_peak_since_entry is None:
+                    self.price_peak_since_entry = float(entry_price_binance)
+                if self.price_trough_since_entry is None:
+                    self.price_trough_since_entry = float(entry_price_binance)
                 self._update_state(BotState.IN_POSITION)
 
                 # --- ACTUALIZAR DIAGNÓSTICO DE SALIDA & PROTECCIÓN EN TIEMPO REAL ---
@@ -1702,6 +1721,12 @@ class SingleSideTradingBot:
                 # 3d. Obtener velas para evaluar Trailing Stop o condiciones de salida técnicas
                 klines_df = self._get_market_data()
                 if klines_df is not None and not klines_df.empty:
+                    c_price = float(klines_df.iloc[-1]['close'])
+                    self.current_market_price = c_price
+                    if self.price_peak_since_entry is None or c_price > float(self.price_peak_since_entry):
+                        self.price_peak_since_entry = c_price
+                    if self.price_trough_since_entry is None or c_price < float(self.price_trough_since_entry):
+                        self.price_trough_since_entry = c_price
                     # Evaluar re-entradas DCA si el precio cae
                     self._evaluate_dca_reentry(klines_df)
                     # Evaluar condiciones de salida
@@ -1731,6 +1756,7 @@ class SingleSideTradingBot:
                 klines_df = self._get_market_data()
                 if klines_df is None or klines_df.empty:
                     return
+                self.current_market_price = float(klines_df.iloc[-1]['close'])
 
                 if self.evaluate_support_strategy:
                     # Usar estrategia de soportes si está activada
@@ -3924,6 +3950,32 @@ class SingleSideTradingBot:
         pos_val = abs(entry_p * pos_s) if self.in_position else 0.0
         marg_usdt = (pos_val / lev) if (self.in_position and lev > 0) else 0.0
 
+        curr_p = float(getattr(self, 'current_market_price', 0) or 0)
+        peak_p = float(getattr(self, 'price_peak_since_entry', 0) or 0)
+        trough_p = float(getattr(self, 'price_trough_since_entry', 0) or 0)
+
+        if self.in_position and curr_p <= 0 and entry_p > 0:
+            curr_p = entry_p
+
+        price_change_pct = 0.0
+        if self.in_position and entry_p > 0 and curr_p > 0:
+            if getattr(self, 'trade_side', 'LONG') == 'SHORT':
+                price_change_pct = round(((entry_p - curr_p) / entry_p) * 100.0, 2)
+            else:
+                price_change_pct = round(((curr_p - entry_p) / entry_p) * 100.0, 2)
+
+        drop_from_peak_pct = 0.0
+        rise_from_trough_pct = 0.0
+        if self.in_position and curr_p > 0:
+            if getattr(self, 'trade_side', 'LONG') == 'SHORT':
+                eff_trough = min(trough_p, curr_p, entry_p) if (trough_p > 0 and entry_p > 0) else curr_p
+                if eff_trough > 0:
+                    rise_from_trough_pct = round(((curr_p - eff_trough) / eff_trough) * 100.0, 2)
+            else:
+                eff_peak = max(peak_p, curr_p, entry_p) if (peak_p > 0 and entry_p > 0) else curr_p
+                if eff_peak > 0:
+                    drop_from_peak_pct = round(((eff_peak - curr_p) / eff_peak) * 100.0, 2)
+
         return {
             "symbol": self.symbol,
             "trade_side": getattr(self, 'trade_side', 'LONG'),
@@ -3936,6 +3988,12 @@ class SingleSideTradingBot:
             "historical_pnl": float(self.historical_pnl),
             "session_pnl": float(self.session_pnl), # <-- NUEVO: Reportar PNL de sesión
             "entry_price": self.last_known_entry_price,
+            "current_price": curr_p if curr_p > 0 else None,
+            "price_peak": peak_p if peak_p > 0 else (curr_p if curr_p > 0 else None),
+            "price_trough": trough_p if trough_p > 0 else (curr_p if curr_p > 0 else None),
+            "price_change_pct": price_change_pct if self.in_position else None,
+            "drop_from_peak_pct": drop_from_peak_pct if (self.in_position and getattr(self, 'trade_side', 'LONG') == 'LONG') else None,
+            "rise_from_trough_pct": rise_from_trough_pct if (self.in_position and getattr(self, 'trade_side', 'LONG') == 'SHORT') else None,
             "position_size": self.last_known_position_size,
             "leverage": lev,
             "position_value_usdt": round(pos_val, 2),
@@ -4421,6 +4479,9 @@ class TradingBot:
         pending_tp = (long_st and long_st.get('pending_tp_order_id')) or (short_st and short_st.get('pending_tp_order_id'))
         pending_sl = (long_st and long_st.get('pending_sl_order_id')) or (short_st and short_st.get('pending_sl_order_id'))
 
+        curr_p = (long_st and long_st.get('current_price')) or (short_st and short_st.get('current_price'))
+        active_positions = [p for p in positions if p.get('in_position')]
+
         st_copy.update({
             "symbol": self.symbol,
             "trade_direction": self.trade_direction,
@@ -4434,11 +4495,21 @@ class TradingBot:
             "position_value_usdt": round(tot_pos_val, 2),
             "positions": positions,
             "is_paused": self.is_paused,
+            "current_price": curr_p,
             "pending_entry_order_id": pending_entry,
             "pending_exit_order_id": pending_exit,
             "pending_tp_order_id": pending_tp,
             "pending_sl_order_id": pending_sl,
         })
+        if len(active_positions) == 1:
+            sp = active_positions[0]
+            st_copy['entry_price'] = sp.get('entry_price')
+            st_copy['price_change_pct'] = sp.get('price_change_pct')
+            st_copy['price_peak'] = sp.get('price_peak')
+            st_copy['price_trough'] = sp.get('price_trough')
+            st_copy['drop_from_peak_pct'] = sp.get('drop_from_peak_pct')
+            st_copy['rise_from_trough_pct'] = sp.get('rise_from_trough_pct')
+
         return st_copy
 
     def get_current_status(self) -> dict:
