@@ -1207,8 +1207,20 @@ def get_worker_status():
         total_unrealized_pnl = Decimal('0')
 
         with status_lock:
-            # Hacemos una copia para evitar problemas de concurrencia
-            active_worker_instances = {symbol: worker.get_status() for symbol, worker in worker_statuses.items() if hasattr(worker, 'get_status')}
+            # Hacemos una copia para evitar problemas de concurrencia y protegemos cada worker
+            active_worker_instances = {}
+            for symbol, worker in worker_statuses.items():
+                if hasattr(worker, 'get_status'):
+                    try:
+                        active_worker_instances[symbol] = worker.get_status()
+                    except Exception as e_w:
+                        logger.error(f"[{symbol}] Error al obtener estado del worker: {e_w}", exc_info=True)
+                        active_worker_instances[symbol] = {
+                            "symbol": symbol,
+                            "state": "Error",
+                            "last_error": str(e_w),
+                            "in_position": False
+                        }
 
         for symbol in configured_symbols:
             # Estado base si el worker no se ha reportado o no está corriendo

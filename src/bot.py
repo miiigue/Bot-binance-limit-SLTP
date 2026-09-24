@@ -4525,6 +4525,7 @@ class TradingBot:
 
         curr_p = (long_st and long_st.get('current_price')) or (short_st and short_st.get('current_price'))
         active_positions = [p for p in positions if p.get('in_position')]
+        unified_state = self.state.value if hasattr(self.state, 'value') else str(self.state)
 
         st_copy.update({
             "symbol": self.symbol,
