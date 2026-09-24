@@ -1396,7 +1396,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               ))
             ) : (
               <tr>
-                <td colSpan="9" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
+                <td colSpan="10" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
                   {isLoading ? 'Cargando estados...' : (error ? `Error: ${error}` : 'No hay datos de bots disponibles.')}
                 </td>
               </tr>
@@ -1405,21 +1405,31 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
           {sortedStatuses.length > 0 && (
             <tfoot className="bg-slate-950 border-t-2 border-slate-700 font-mono text-xs">
               <tr className="divide-x divide-slate-800">
+                {/* 1 al 4: Expandir, Símbolo, Estrategia, Estado */}
                 <td colSpan="4" className="px-3 py-3 text-left font-sans font-extrabold text-slate-200">
                   <div className="flex items-center gap-2">
                     <span className="text-base">📊</span>
                     <span>TOTALES CONSOLIDADOS ({sortedStatuses.length} pares)</span>
                   </div>
                 </td>
-                {/* Posición & Margen */}
+                {/* 5: Posición & Margen */}
                 <td className="px-3 py-3 font-bold text-slate-200">
                   <div className="flex flex-col">
                     <span className="text-[10px] text-slate-400 font-sans">Margen total:</span>
                     <span className="text-white">${totalMarginCommitted.toFixed(2)} USDT</span>
                   </div>
                 </td>
-                {/* Current PnL (Flotante) */}
-                <td className="px-3 py-3 font-black text-xs">
+                {/* 6: Precios & Recorrido */}
+                <td className="px-3 py-3 font-mono text-xs">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 font-sans">En posición:</span>
+                    <span className="font-bold text-amber-300">
+                      {sortedStatuses.filter(s => s.in_position).length} pares activos
+                    </span>
+                  </div>
+                </td>
+                {/* 7: Current PnL (Flotante) */}
+                <td className="px-3 py-3 font-black text-xs font-mono">
                   <div className="flex flex-col">
                     <span className="text-[10px] text-slate-400 font-sans">Flotante neto:</span>
                     <span className={totalCurrentUnrealizedPnl < 0 ? 'text-rose-400' : totalCurrentUnrealizedPnl > 0 ? 'text-emerald-400' : 'text-slate-300'}>
@@ -1427,8 +1437,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     </span>
                   </div>
                 </td>
-                {/* Hist. PnL (Realizado de pares) */}
-                <td className="px-3 py-3 font-black text-xs">
+                {/* 8: Hist. PnL (Realizado de pares) */}
+                <td className="px-3 py-3 font-black text-xs font-mono">
                   <div className="flex flex-col">
                     <span className="text-[10px] text-slate-400 font-sans">Histórico pares:</span>
                     <span className={totalCumulativePnl < 0 ? 'text-rose-400' : totalCumulativePnl > 0 ? 'text-emerald-400' : 'text-slate-300'}>
@@ -1436,9 +1446,12 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     </span>
                   </div>
                 </td>
-                {/* Diagnóstico & error columns */}
+                {/* 9 y 10: Radar & Diagnóstico + Last Error */}
                 <td colSpan="2" className="px-3 py-3 text-right text-[11px] text-slate-400 font-sans">
-                  <span>Métricas consolidadas en vivo</span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700/60 text-slate-300">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Métricas en vivo
+                  </span>
                 </td>
               </tr>
             </tfoot>

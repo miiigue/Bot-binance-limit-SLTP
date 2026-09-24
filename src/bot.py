@@ -643,7 +643,13 @@ class SingleSideTradingBot:
         unrealized_pnl_binance = Decimal('0')
 
         try:
-            pos_amt_binance = Decimal(str(position_data.get('positionAmt', '0')))
+            raw_amt = Decimal(str(position_data.get('positionAmt', '0')))
+            is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+            # Validar signo: SHORT solo acepta montos negativos, LONG solo montos positivos
+            if is_short:
+                pos_amt_binance = raw_amt if raw_amt < Decimal('-1e-9') else Decimal('0')
+            else:
+                pos_amt_binance = raw_amt if raw_amt > Decimal('1e-9') else Decimal('0')
             entry_price_binance = Decimal(str(position_data.get('entryPrice', '0')))
             unrealized_pnl_binance = Decimal(str(position_data.get('unRealizedProfit', '0')))
             mark_p_raw = position_data.get('markPrice')
@@ -3530,72 +3536,77 @@ class SingleSideTradingBot:
     def _verify_position_status(self):
         """
         Verifica si aún estamos en posición y actualiza self.in_position y self.current_state.
+        Respeta estrictamente el trade_side del bot (LONG o SHORT).
         """
-        self.logger.info(f"[{self.symbol}] Verificando estado de posición...")
-        position_data = get_futures_position(self.symbol)
+        self.logger.info(f"[{self.symbol}][{self.trade_side}] Verificando estado de posición...")
+        position_data = get_futures_position(self.symbol, position_side=self.trade_side)
 
         if position_data:
-            pos_amt = Decimal(position_data.get('positionAmt', '0'))
-            entry_price = Decimal(position_data.get('entryPrice', '0'))
-            unrealized_pnl = Decimal(position_data.get('unRealizedProfit', '0'))
+            pos_amt = Decimal(str(position_data.get('positionAmt', '0')))
+            entry_price = Decimal(str(position_data.get('entryPrice', '0')))
+            unrealized_pnl = Decimal(str(position_data.get('unRealizedProfit', '0')))
 
-            if abs(pos_amt) > Decimal('1e-9'): # Hay una posición
-                if pos_amt > 0: # Es LONG
-                    self.logger.info(f"[{self.symbol}] Verificación: Posición LONG activa encontrada. Cant: {pos_amt}, Entrada: {entry_price}, PnL: {unrealized_pnl}")
-                    self.in_position = True
-                    # Actualizar current_position solo si es diferente o no existe
-                    if not self.current_position or \
-                       self.current_position.get('entry_price') != entry_price or \
-                       self.current_position.get('quantity') != pos_amt:
-                        self.current_position = {
-                            'entry_price': entry_price,
-                            'quantity': pos_amt,
-                            'entry_time': self.current_position.get('entry_time') if self.current_position and self.current_position.get('entry_price') == entry_price else pd.Timestamp.now(tz='UTC'), # Conservar tiempo de entrada original si el precio no cambió
-                            'position_size_usdt': abs(entry_price * pos_amt),
-                            'positionAmt': pos_amt
-                        }
-                    self.last_known_pnl = unrealized_pnl
-                    self.last_known_entry_price = entry_price
-                    self.last_known_position_size = pos_amt
-                    mark_p = float(position_data.get('markPrice', '0') or 0.0)
-                    if mark_p <= 0 and abs(pos_amt) > Decimal('1e-9'):
-                        mark_p = float(entry_price + (unrealized_pnl / pos_amt))
-                    if mark_p > 0:
-                        self.current_market_price = mark_p
+            is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+            is_matching_position = (is_short and pos_amt < Decimal('-1e-9')) or (not is_short and pos_amt > Decimal('1e-9'))
+
+            if is_matching_position:
+                actual_qty = abs(pos_amt)
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] Verificación: Posición activa confirmada. Cant: {actual_qty}, Entrada: {entry_price}, PnL: {unrealized_pnl}")
+                self.in_position = True
+                # Actualizar current_position solo si es diferente o no existe
+                if not self.current_position or \
+                   self.current_position.get('entry_price') != entry_price or \
+                   self.current_position.get('quantity') != actual_qty:
+                    self.current_position = {
+                        'entry_price': entry_price,
+                        'quantity': actual_qty,
+                        'entry_time': self.current_position.get('entry_time') if self.current_position and self.current_position.get('entry_price') == entry_price else pd.Timestamp.now(tz='UTC'),
+                        'position_size_usdt': abs(entry_price * actual_qty),
+                        'positionAmt': pos_amt,
+                        'side': self.trade_side
+                    }
+                self.last_known_pnl = unrealized_pnl
+                self.last_known_entry_price = entry_price
+                self.last_known_position_size = actual_qty
+                mark_p = float(position_data.get('markPrice', '0') or 0.0)
+                if mark_p <= 0 and abs(pos_amt) > Decimal('1e-9'):
+                    mark_p = float(entry_price + (unrealized_pnl / pos_amt))
+                if mark_p > 0:
+                    self.current_market_price = mark_p
+                    if not is_short:
                         if self.price_peak_since_entry is None or mark_p > float(self.price_peak_since_entry):
                             self.price_peak_since_entry = mark_p
                         if self.price_trough_since_entry is None or mark_p < float(self.price_trough_since_entry):
                             self.price_trough_since_entry = mark_p
-                    self._update_state(BotState.IN_POSITION)
-                    if self.pending_entry_order_id or self.pending_exit_order_id:
-                        self.logger.warning(f"[{self.symbol}] Posición activa encontrada durante _verify_position_status, pero había órdenes pendientes. Limpiando IDs de órdenes pendientes.")
-                        self.pending_entry_order_id = None
-                        self.pending_exit_order_id = None
-                        self.pending_order_timestamp = None
-                        self.current_exit_reason = None
+                    else:
+                        if self.price_trough_since_entry is None or mark_p < float(self.price_trough_since_entry):
+                            self.price_trough_since_entry = mark_p
+                        if self.price_peak_since_entry is None or mark_p > float(self.price_peak_since_entry):
+                            self.price_peak_since_entry = mark_p
+                self._update_state(BotState.IN_POSITION)
+                if self.pending_entry_order_id or self.pending_exit_order_id:
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] Posición activa encontrada durante _verify_position_status, pero había órdenes pendientes. Limpiando IDs de órdenes pendientes.")
+                    self.pending_entry_order_id = None
+                    self.pending_exit_order_id = None
+                    self.pending_order_timestamp = None
+                    self.current_exit_reason = None
 
-                    # Asegurar que la posición abierta tenga órdenes protectoras de TP/SL en Binance
-                    if not self.pending_tp_order_id and not self.pending_sl_order_id:
-                        self.logger.info(f"[{self.symbol}] Posición activa verificada sin órdenes TP/SL pendientes. Colocando órdenes de protección...")
-                        self._place_tp_sl_orders()
+                # Asegurar que la posición abierta tenga órdenes protectoras de TP/SL en Binance
+                if not self.pending_tp_order_id and not self.pending_sl_order_id:
+                    self.logger.info(f"[{self.symbol}][{self.trade_side}] Posición activa verificada sin órdenes TP/SL pendientes. Colocando órdenes de protección...")
+                    self._place_tp_sl_orders()
 
-                else: # Es SHORT
-                    self.logger.warning(f"[{self.symbol}] Verificación: Posición SHORT inesperada encontrada ({pos_amt}).")
-                    if self.in_position: # Si el bot pensaba que estaba en un LONG
-                        self._handle_external_closure_or_discrepancy(reason="verify_pos_found_short", short_position_data=position_data)
-                    else: # Si el bot no pensaba estar en posición y encuentra SHORT
-                        self._reset_state()
-                        self._update_state(BotState.IDLE)
-            else: # No hay posición (pos_amt ~ 0)
-                self.logger.info(f"[{self.symbol}] Verificación: No hay posición abierta (Cantidad ~ 0).")
+            else: # No hay posición correspondiente a este bot (pos_amt ~ 0 o lado opuesto)
+                self.logger.debug(f"[{self.symbol}][{self.trade_side}] Verificación: No hay posición {self.trade_side} abierta en Binance (Cantidad={pos_amt}).")
                 if self.in_position: # Si el bot pensaba que estaba en posición
+                    self.logger.info(f"[{self.symbol}][{self.trade_side}] El bot pensaba estar en posición pero no existe en Binance. Cerrando...")
                     self._handle_external_closure_or_discrepancy(reason="verify_pos_now_closed")
                 else: # Bot no pensaba estar en posición y no hay
-                    if self.current_state != BotState.IDLE and self.current_state != BotState.STOPPED : # Solo resetear si no está ya en un estado de reposo
+                    if self.current_state != BotState.IDLE and self.current_state != BotState.STOPPED:
                         self._reset_state()
                         self._update_state(BotState.IDLE)
         else: # No se pudo obtener info de la posición (API error/timeout)
-            self.logger.warning(f"[{self.symbol}] Verificación: No se pudo obtener información de posición de Binance. "
+            self.logger.warning(f"[{self.symbol}][{self.trade_side}] Verificación: No se pudo obtener información de posición de Binance. "
                                 f"NO se asumirá cierre. Manteniendo estado actual hasta obtener datos reales.")
             # CRITICAL FIX: NO llamar a _handle_external_closure_or_discrepancy.
             # Mantener el estado actual del bot y reintentar en el próximo ciclo.

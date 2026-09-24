@@ -520,23 +520,18 @@ def get_futures_position(symbol: str, position_side: str | None = None):
             return position_info
         else:
             logger.debug(f"No hay posición abierta para {symbol} (Lado: {target_side or 'Cualquiera'}) en Binance (Cantidad = 0).")
-            # Buscar el dict default para ese side específico si fue solicitado
-            matched_default = None
-            if target_side:
-                for p in positions:
-                    if p.get('positionSide', '').upper() == target_side:
-                        matched_default = p
-                        break
-            if not matched_default:
-                matched_default = positions[0] if (positions and len(positions) > 0) else {
-                    'symbol': symbol.upper(),
-                    'positionAmt': '0.000',
-                    'entryPrice': '0.0',
-                    'unRealizedProfit': '0.00000000',
-                    'positionSide': target_side or 'BOTH',
-                    'leverage': '0'
-                }
-            return matched_default
+            # Devolver un objeto seguro con cantidad 0 para evitar retornar posiciones del lado opuesto
+            base_p = positions[0] if (positions and len(positions) > 0) else {}
+            empty_position = {
+                'symbol': symbol.upper(),
+                'positionAmt': '0.000',
+                'entryPrice': '0.0',
+                'unRealizedProfit': '0.00000000',
+                'positionSide': target_side or base_p.get('positionSide', 'BOTH'),
+                'leverage': base_p.get('leverage', '0'),
+                'markPrice': base_p.get('markPrice', '0.0'),
+            }
+            return empty_position
 
     except ClientError as e:
         logger.error(f"Error de API al obtener información de posición/riesgo para {symbol}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
