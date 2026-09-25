@@ -272,7 +272,10 @@ function LiveDiagnosticsCell({ status }) {
   }
 
   // CASO 3: SIN POSICIÓN -> Radar de Condiciones de Entrada (Sin badge redundante de Filtros 0/2)
-  const diag = status.entry_diagnostics;
+  const diag = (status.entry_diagnostics && Array.isArray(status.entry_diagnostics.conditions) && status.entry_diagnostics.conditions.length > 0)
+    ? status.entry_diagnostics
+    : ((status.positions || []).find(p => p.entry_diagnostics && Array.isArray(p.entry_diagnostics.conditions) && p.entry_diagnostics.conditions.length > 0)?.entry_diagnostics || status.entry_diagnostics);
+
   if (!diag || !Array.isArray(diag.conditions) || diag.conditions.length === 0) {
     return (
       <div className="flex items-center gap-1.5 text-xs text-slate-400 font-mono">
@@ -282,10 +285,17 @@ function LiveDiagnosticsCell({ status }) {
     );
   }
 
-  const { conditions, all_met, ratio_text } = diag;
+  const { conditions, all_met, ratio_text, trade_side } = diag;
 
   return (
     <div className="flex items-center gap-1 flex-wrap py-0.5 max-w-[420px]">
+      {status.trade_direction === 'BIDIRECTIONAL' && (
+        <span className={`inline-flex items-center px-1 py-0.5 rounded text-[9px] font-black font-mono border ${
+          (trade_side || 'LONG') === 'SHORT' ? 'bg-rose-950/80 text-rose-300 border-rose-700/60' : 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
+        }`} title={`Monitoreando radar ${trade_side || 'LONG'}`}>
+          {trade_side || 'LONG'}
+        </span>
+      )}
       {all_met && (
         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide bg-emerald-500 text-slate-950 border border-emerald-400 animate-pulse shadow-sm shadow-emerald-500/50">
           <span>⚡ SEÑAL ({ratio_text})</span>

@@ -377,6 +377,10 @@ class SingleSideTradingBot:
                  self.logger.info(f"[{self.symbol}] Inicialización completa. No hay posición. Transicionando a estado IDLE.")
 
         self.is_paused = False
+        try:
+            self.entry_diagnostics = self._build_default_entry_diagnostics()
+        except Exception as e_diag_init:
+            self.logger.debug(f"[{self.symbol}] Aviso construyendo entry_diagnostics iniciales: {e_diag_init}")
         self.logger.info(f"[{self.symbol}] Worker inicializado exitosamente (Tipo Orden: {self.entry_order_type}, Timeout Órdenes: {self.order_timeout_seconds}s).")
 
     def update_trading_params(self, new_params: dict):
@@ -2452,6 +2456,121 @@ class SingleSideTradingBot:
                 self._update_state(BotState.IN_POSITION)
     # --- Fin del nuevo método ---
 
+    def _build_default_entry_diagnostics(self) -> dict:
+        """Construye un diagnóstico de entrada inicial con los filtros activos según la configuración."""
+        is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+        n_trend = getattr(self, 'required_downtrend_candles', 0) if is_short else getattr(self, 'required_uptrend_candles', 0)
+        eff_thresh = -abs(float(getattr(self, 'rsi_threshold_up', 2.0))) if is_short else float(getattr(self, 'rsi_threshold_up', 2.0))
+        op = "<=" if is_short else ">="
+        rsi_req_cnt = getattr(self, 'rsi_positive_candles_required', 2)
+
+        cond_list = [
+            {
+                "id": "rsi_range",
+                "name": "RSI Rango",
+                "short_name": "RSI",
+                "active": bool(getattr(self, 'evaluate_rsi_range', True)),
+                "passed": False,
+                "value": "...",
+                "target": f"[{getattr(self, 'rsi_entry_level_low', 30)}, {getattr(self, 'rsi_entry_level_high', 70)}]",
+                "detail": "Esperando lectura RSI inicial"
+            },
+            {
+                "id": "rsi_delta",
+                "name": "Delta RSI",
+                "short_name": "ΔRSI",
+                "active": bool(getattr(self, 'evaluate_rsi_delta', True)),
+                "passed": False,
+                "value": "...",
+                "target": f"{op} {eff_thresh:+.2f} ({rsi_req_cnt}v)",
+                "detail": "Esperando cálculo delta"
+            },
+            {
+                "id": "volume",
+                "name": "Filtro Volumen",
+                "short_name": "Vol",
+                "active": bool(getattr(self, 'evaluate_volume_filter', True)),
+                "passed": not bool(getattr(self, 'evaluate_volume_filter', True)),
+                "value": "...",
+                "target": f"≥ {float(getattr(self, 'volume_factor', 1.0)):.1f}x SMA",
+                "detail": "Filtro volumen"
+            },
+            {
+                "id": "uptrend",
+                "name": f"Velas {'Bajistas' if is_short else 'Alcistas'}",
+                "short_name": "Velas",
+                "active": bool(getattr(self, 'evaluate_required_uptrend', True)),
+                "passed": not bool(getattr(self, 'evaluate_required_uptrend', True)),
+                "value": f"{n_trend}v" if getattr(self, 'evaluate_required_uptrend', True) else "OFF",
+                "target": f"{n_trend} velas" if getattr(self, 'evaluate_required_uptrend', True) else "Desactivado",
+                "detail": f"Requiere {n_trend} velas {'bajistas' if is_short else 'alcistas'} consecutivas" if getattr(self, 'evaluate_required_uptrend', True) else "Filtro desactivado"
+            },
+            {
+                "id": "open_interest",
+                "name": "Open Interest",
+                "short_name": "OI",
+                "active": bool(getattr(self, 'evaluate_open_interest_increase', False)),
+                "passed": not bool(getattr(self, 'evaluate_open_interest_increase', False)),
+                "value": "N/A",
+                "target": "Aumento (+)",
+                "detail": "Filtro Open Interest"
+            },
+            {
+                "id": "ma_filter",
+                "name": "Filtro MA",
+                "short_name": "MA",
+                "active": bool(getattr(self, 'evaluate_ma_filter', True)),
+                "passed": not bool(getattr(self, 'evaluate_ma_filter', True)),
+                "value": "...",
+                "target": f"{'<' if is_short else '>'} MA({getattr(self, 'ma_period', 50)})",
+                "detail": "Filtro Media Móvil"
+            },
+            {
+                "id": "downtrend_candles",
+                "name": "Anti-Pump Velas" if is_short else "Anti-Cascada Velas",
+                "short_name": "Verdes" if is_short else "Rojas",
+                "active": bool(getattr(self, 'evaluate_downtrend_candles_block', True)),
+                "passed": True,
+                "value": "...",
+                "target": f"< {getattr(self, 'downtrend_check_candles', 3)} {'verdes' if is_short else 'rojas'}",
+                "detail": "Filtro velas adversas"
+            },
+            {
+                "id": "downtrend_levels",
+                "name": "Nivel Caída",
+                "short_name": "Caída",
+                "active": bool(not is_short and getattr(self, 'evaluate_downtrend_levels_block', True)),
+                "passed": True,
+                "value": "Normal",
+                "target": f"Sin cascada ({getattr(self, 'downtrend_level_check', 0)}v)",
+                "detail": "Filtro niveles de caída"
+            },
+            {
+                "id": "market_regime",
+                "name": "Régimen Macro",
+                "short_name": "Macro",
+                "active": bool(getattr(self, 'enable_market_regime_filter', False)),
+                "passed": not bool(getattr(self, 'enable_market_regime_filter', False)),
+                "value": "...",
+                "target": f"{'Bajista' if is_short else 'Alcista'} ({getattr(self, 'market_regime_timeframe', '1h')})",
+                "detail": "Filtro macro"
+            }
+        ]
+        active_conds = [c for c in cond_list if c["active"]]
+        total_active = len(active_conds)
+        passed_cnt = sum(1 for c in active_conds if c["passed"])
+        return {
+            "strategy": "RSI Momentum",
+            "trade_side": getattr(self, 'trade_side', 'LONG'),
+            "passed_count": passed_cnt,
+            "total_active": total_active,
+            "ratio_text": f"{passed_cnt}/{total_active}",
+            "all_met": False,
+            "summary": f"🔍 Evaluando ({passed_cnt}/{total_active})",
+            "conditions": cond_list,
+            "timestamp": int(time.time() * 1000)
+        }
+
     def _check_entry_conditions(self, klines_df: pd.DataFrame):
         """
         Verifica si se cumplen las condiciones para entrar en una posición LONG.
@@ -2586,6 +2705,8 @@ class SingleSideTradingBot:
             # --- Definir condition_rsi_change_meets_thresh_up y rsi_delta_str ---
             condition_rsi_change_meets_thresh_up = False
             rsi_delta_str = "N/A" # Valor por defecto para el log
+            op_str = "<=" if is_short else ">="
+            eff_thresh_val = -abs(float(self.rsi_threshold_up)) if is_short else float(self.rsi_threshold_up)
 
             if not self.evaluate_rsi_delta: # Si la evaluación de delta RSI está DESACTIVADA
                 condition_rsi_change_meets_thresh_up = True
@@ -2618,6 +2739,9 @@ class SingleSideTradingBot:
             
             # Condición 3: Requisito de tendencia reciente (Alcista para LONG, Bajista para SHORT)
             condition_required_uptrend_met = False
+            n_trend_candles = getattr(self, 'required_downtrend_candles', 0) if is_short else getattr(self, 'required_uptrend_candles', 0)
+            trend_type_str = "Bajistas" if is_short else "Alcistas"
+
             if not self.evaluate_required_uptrend: # Si la evaluación está DESACTIVADA
                 condition_required_uptrend_met = True
                 self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Requisito Velas Tendencia: Evaluación DESACTIVADA. Condición cumplida por defecto.")
@@ -2626,10 +2750,6 @@ class SingleSideTradingBot:
                     condition_required_uptrend_met = self._check_required_downtrend(klines_df)
                 else:
                     condition_required_uptrend_met = self._check_required_uptrend(klines_df)
-
-            if self.evaluate_required_uptrend: # Log solo si la evaluación está activa
-                n_trend_candles = getattr(self, 'required_downtrend_candles', 0) if is_short else self.required_uptrend_candles
-                trend_type_str = "Bajistas" if is_short else "Alcistas"
                 self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Entrada (Activado): Requisito Velas {trend_type_str} ({n_trend_candles} velas)? {'Sí' if condition_required_uptrend_met else 'No'}")
 
             # --- NUEVO: Lógica de Open Interest ---
@@ -2785,9 +2905,9 @@ class SingleSideTradingBot:
                     "short_name": "Velas",
                     "active": bool(self.evaluate_required_uptrend),
                     "passed": bool(condition_required_uptrend_met),
-                    "value": f"{n_trend_candles}v",
-                    "target": f"{n_trend_candles} velas",
-                    "detail": f"Requiere {n_trend_candles} velas {'bajistas' if is_short else 'alcistas'} consecutivas"
+                    "value": f"{n_trend_candles}v" if bool(self.evaluate_required_uptrend) else "OFF",
+                    "target": f"{n_trend_candles} velas" if bool(self.evaluate_required_uptrend) else "Desactivado",
+                    "detail": f"Requiere {n_trend_candles} velas {'bajistas' if is_short else 'alcistas'} consecutivas" if bool(self.evaluate_required_uptrend) else "Filtro desactivado"
                 })
 
                 # 5. Open Interest
@@ -2857,6 +2977,7 @@ class SingleSideTradingBot:
 
                 self.entry_diagnostics = {
                     "strategy": "RSI Momentum",
+                    "trade_side": getattr(self, 'trade_side', 'LONG'),
                     "passed_count": passed_cnt,
                     "total_active": total_active,
                     "ratio_text": f"{passed_cnt}/{total_active}",
@@ -4543,6 +4664,26 @@ class TradingBot:
 
         primary = long_st or short_st or {}
         st_copy = primary.copy()
+
+        # Consolidar diagnóstico de entrada eligiendo el bot con señal activa o mayor avance
+        long_diag = (long_st and long_st.get('entry_diagnostics')) or {}
+        short_diag = (short_st and short_st.get('entry_diagnostics')) or {}
+        chosen_diag = {}
+        if short_diag.get('all_met'):
+            chosen_diag = short_diag
+        elif long_diag.get('all_met'):
+            chosen_diag = long_diag
+        elif long_diag.get('conditions') and short_diag.get('conditions'):
+            l_passed = long_diag.get('passed_count', 0)
+            s_passed = short_diag.get('passed_count', 0)
+            chosen_diag = short_diag if s_passed > l_passed else long_diag
+        elif long_diag.get('conditions'):
+            chosen_diag = long_diag
+        elif short_diag.get('conditions'):
+            chosen_diag = short_diag
+        else:
+            chosen_diag = long_diag or short_diag or {}
+
         # Agregar IDs de órdenes pendientes de cualquiera de los bots activos
         pending_entry = (long_st and long_st.get('pending_entry_order_id')) or (short_st and short_st.get('pending_entry_order_id'))
         pending_exit = (long_st and long_st.get('pending_exit_order_id')) or (short_st and short_st.get('pending_exit_order_id'))
@@ -4571,6 +4712,9 @@ class TradingBot:
             "pending_exit_order_id": pending_exit,
             "pending_tp_order_id": pending_tp,
             "pending_sl_order_id": pending_sl,
+            "entry_diagnostics": chosen_diag,
+            "long_entry_diagnostics": long_diag,
+            "short_entry_diagnostics": short_diag,
         })
         if len(active_positions) == 1:
             sp = active_positions[0]
