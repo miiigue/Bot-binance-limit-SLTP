@@ -77,35 +77,35 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
   }
 
   return (
-    <div key={tradeSide || 'default'} className="flex flex-col gap-1 min-w-[230px] max-w-[380px] py-0.5">
+    <div key={tradeSide || 'default'} className="flex flex-col gap-1 w-full min-w-[320px] max-w-full py-0.5">
       {tradeSide && (
-        <div className="flex items-center justify-between text-[10px] font-mono mb-0.5">
-          <span className={`px-1.5 py-0.2 rounded font-bold ${
-            isShort ? 'bg-rose-950 text-rose-300 border border-rose-600/50' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'
+        <div className="flex items-center justify-between text-[10px] mb-0.5">
+          <span className={`px-1.5 py-0.5 rounded font-sans font-medium ${
+            isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'
           }`}>
             {isShort ? '🔴 SHORT' : '🟢 LONG'}
           </span>
-          <span className={`font-bold ${pnlUsdt >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            PnL: {pnlUsdt >= 0 ? '+' : ''}{pnlUsdt.toFixed(2)} USDT
+          <span className="font-sans font-normal text-slate-300">
+            PnL: <span className={`font-mono font-medium ${pnlUsdt >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{pnlUsdt >= 0 ? '+' : ''}{pnlUsdt.toFixed(2)} USDT</span>
           </span>
         </div>
       )}
       {/* --- FILA 1: TAKE PROFIT --- */}
       {hasTp ? (
         <div className="flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
+          <div className="flex items-center justify-between text-[11px] leading-tight">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-extrabold text-emerald-300 flex items-center gap-1">
+              <span className="font-sans font-medium text-emerald-300 flex items-center gap-1">
                 <span>🎯 TP:</span>
-                <span>+{Number(tp.target_usdt).toFixed(2)} USDT</span>
+                <span className="font-mono font-medium text-emerald-200">+{Number(tp.target_usdt).toFixed(2)} USDT</span>
               </span>
               {hasTs && (
                 ts.armed ? (
-                  <span className="text-[10px] font-bold text-sky-300 flex items-center gap-1 animate-pulse">
+                  <span className="text-[10px] font-sans font-medium text-sky-300 flex items-center gap-1 animate-pulse">
                     <span>🔵 TS Protegiendo</span>
                   </span>
                 ) : tsArmThreshold ? (
-                  <span className="text-[10px] text-sky-400 font-mono hidden sm:inline" title={`Trailing Stop se armará al alcanzar +${tsArmThreshold.toFixed(2)} USDT`}>
+                  <span className="text-[10px] text-sky-400 font-mono font-medium hidden sm:inline" title={`Trailing Stop se armará al alcanzar +${tsArmThreshold.toFixed(2)} USDT`}>
                     ⚡ TS: +{tsArmThreshold.toFixed(2)}
                   </span>
                 ) : null
@@ -113,16 +113,16 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
             </div>
             <div className="flex items-center gap-1.5 text-[10px]">
               {tp.remaining_usdt !== null && tp.remaining_usdt > 0 && (
-                <span className="text-slate-400 font-sans hidden sm:inline">
+                <span className="text-slate-400 font-sans font-normal hidden sm:inline">
                   (Faltan: +{Number(tp.remaining_usdt).toFixed(2)})
                 </span>
               )}
-              <span className={`font-black font-mono ${pnlUsdt >= 0 ? (ts.armed ? 'text-sky-400' : 'text-emerald-400') : 'text-slate-400'}`}>
+              <span className={`font-mono font-medium ${pnlUsdt >= 0 ? (ts.armed ? 'text-sky-400' : 'text-emerald-400') : 'text-slate-400'}`}>
                 {Math.round(tpProgress)}%
               </span>
             </div>
           </div>
-          <div className="relative w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
+          <div className="relative w-full bg-slate-900/90 rounded-full h-2.5 overflow-hidden border border-slate-700/80">
             {hasTs && tsArmPosPct && !ts.armed && (
               <div
                 className="absolute top-0 bottom-0 w-1 bg-sky-400 z-20 shadow-sm shadow-sky-400"
@@ -145,7 +145,7 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 font-bold">
+        <div className="flex items-center gap-1.5 text-[11px] font-sans font-medium text-emerald-400">
           <span>🎯 TP:</span>
           <span>Dinámico por Señal / Trailing</span>
         </div>
@@ -154,28 +154,28 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
       {/* --- FILA 2: TRAILING STOP O STOP LOSS --- */}
       {ts.armed ? (
         <div className="flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
+          <div className="flex items-center justify-between text-[11px] leading-tight">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-extrabold text-sky-300 flex items-center gap-1 animate-pulse">
+              <span className="font-sans font-medium text-sky-300 flex items-center gap-1 animate-pulse">
                 <span>🔵 TS ACTIVO:</span>
-                <span>{ts.floor_value !== null && ts.floor_value !== undefined ? `Piso +${ts.floor_value} USDT` : (ts.label || 'Protegiendo')}</span>
+                <span className="font-mono font-medium text-sky-200">{ts.floor_value !== null && ts.floor_value !== undefined ? `Piso +${ts.floor_value} USDT` : (ts.label || 'Protegiendo')}</span>
               </span>
               {ts.peak_value !== null && ts.peak_value !== undefined && (
-                <span className="text-[10px] text-slate-400 font-sans hidden sm:inline">
+                <span className="text-[10px] text-slate-400 font-sans font-normal hidden sm:inline">
                   (Pico: +{ts.peak_value})
                 </span>
               )}
             </div>
             <div className="flex items-center gap-1.5 text-[10px]">
-              <span className="text-slate-300 font-sans">
+              <span className="text-slate-400 font-sans font-normal">
                 Tolerancia:
               </span>
-              <span className="font-black font-mono text-sky-400">
+              <span className="font-mono font-medium text-sky-400">
                 {Math.round(ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100)}%
               </span>
             </div>
           </div>
-          <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-sky-900/80">
+          <div className="w-full bg-slate-900/90 rounded-full h-2.5 overflow-hidden border border-sky-900/80">
             <div
               className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 shadow-sm shadow-sky-500/50"
               style={{ width: `${Math.min(100, Math.max(5, ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100))}%` }}
@@ -184,27 +184,27 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
         </div>
       ) : hasSl ? (
         <div className="flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[11px] font-mono leading-tight">
-            <span className="font-extrabold text-rose-300 flex items-center gap-1">
+          <div className="flex items-center justify-between text-[11px] leading-tight">
+            <span className="font-sans font-medium text-rose-300 flex items-center gap-1">
               <span>🛑 SL:</span>
-              <span>{Number(slTarget).toFixed(2)} USDT</span>
+              <span className="font-mono font-medium text-rose-200">{Number(slTarget).toFixed(2)} USDT</span>
             </span>
             <div className="flex items-center gap-1.5 text-[10px]">
-              <span className="text-slate-300 font-sans">
-                Colchón: <span className="font-bold font-mono text-slate-200">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
+              <span className="text-slate-400 font-sans font-normal">
+                Colchón: <span className="font-mono font-medium text-slate-300">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
               </span>
               {pnlUsdt >= 0 ? (
-                <span className="font-black font-mono text-emerald-400">
+                <span className="font-sans font-medium text-emerald-400">
                   🛡️ Seguro
                 </span>
               ) : (
-                <span className="font-black font-mono text-rose-400 animate-pulse">
+                <span className="font-mono font-medium text-rose-400 animate-pulse">
                   {Math.round(slFillPct)}% riesgo
                 </span>
               )}
             </div>
           </div>
-          <div className="w-full bg-slate-900/90 rounded-full h-2 overflow-hidden border border-slate-700/80">
+          <div className="w-full bg-slate-900/90 rounded-full h-2.5 overflow-hidden border border-slate-700/80">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
                 slFillPct >= 80
@@ -228,7 +228,7 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
   // Si este par no opera en esta dirección:
   if (isShort && dir === 'LONG') {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono italic py-1">
+      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-sans italic py-1">
         <span>⚪</span>
         <span>Modo Solo LONG</span>
       </div>
@@ -236,7 +236,7 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
   }
   if (!isShort && dir === 'SHORT') {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono italic py-1">
+      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-sans italic py-1">
         <span>⚪</span>
         <span>Modo Solo SHORT</span>
       </div>
@@ -251,7 +251,7 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
   // CASO 1: EN POSICIÓN ABIERTA PARA ESTE LADO
   if (subStatus?.in_position) {
     return (
-      <div className="flex flex-col gap-1 min-w-[240px] max-w-[380px] py-0.5">
+      <div className="flex flex-col gap-1 w-full min-w-[320px] max-w-full py-0.5">
         {renderSinglePositionDiag(subStatus.position_diagnostics || {}, side, subStatus.current_pnl)}
       </div>
     );
@@ -267,26 +267,26 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
     const isCooldown = (cooldownSecs > 0) || pauseReason.includes('Enfriamiento') || pauseReason.includes('Rendimiento');
     const isBtcShield = pauseReason.includes('Escudo BTC');
 
-    let badgeClass = 'text-amber-300/90 border-amber-500/40 bg-amber-950/40';
+    let badgeClass = 'text-amber-300/90 border-amber-500/40 bg-amber-950/40 font-medium font-sans';
     let icon = '⏸️';
     let text = pauseReason || 'En pausa';
 
     if (isHardStop) {
-      badgeClass = 'text-red-300 border-red-500/50 bg-red-950/60 font-bold';
+      badgeClass = 'text-red-300 border-red-500/50 bg-red-950/60 font-semibold font-sans';
       icon = '🛑';
     } else if (isCooldown) {
       const mins = Math.max(1, Math.ceil((cooldownSecs || 60) / 60));
-      badgeClass = 'text-amber-300 border-amber-500/50 bg-amber-950/60 font-bold animate-pulse';
+      badgeClass = 'text-amber-300 border-amber-500/50 bg-amber-950/60 font-semibold font-sans animate-pulse';
       icon = '⏳';
       text = `Cooldown: ${mins}m (${pauseReason || 'Pausa por pérdidas'})`;
     } else if (isBtcShield) {
-      badgeClass = 'text-sky-300 border-sky-500/50 bg-sky-950/60 font-bold';
+      badgeClass = 'text-sky-300 border-sky-500/50 bg-sky-950/60 font-semibold font-sans';
       icon = '🛡️';
     }
 
     return (
       <div className="flex flex-col gap-1 py-1">
-        <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono border ${badgeClass}`}>
+        <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs border ${badgeClass}`}>
           <span>{icon}</span>
           <span className="truncate max-w-[280px]" title={pauseReason}>{text}</span>
         </div>
@@ -300,7 +300,7 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
 
   if (!diag || !Array.isArray(diag.conditions) || diag.conditions.length === 0) {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-slate-400 font-mono py-1">
+      <div className="flex items-center gap-1.5 text-xs text-slate-400 font-sans py-1">
         <span className="animate-spin text-[11px]">🌀</span>
         <span>Analizando mercado ({side})...</span>
       </div>
@@ -310,14 +310,14 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
   const { conditions, all_met, ratio_text } = diag;
 
   return (
-    <div className="flex items-center gap-1 flex-wrap py-0.5 max-w-[420px]">
-      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black font-mono border ${
+    <div className="flex items-center gap-1 flex-wrap py-0.5 max-w-full">
+      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-sans font-medium border ${
         isShort ? 'bg-rose-950/80 text-rose-300 border-rose-700/60' : 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
       }`}>
         {isShort ? '🔴 SHORT' : '🟢 LONG'}
       </span>
       {all_met && (
-        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide ${
+        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold tracking-wide ${
           isShort ? 'bg-rose-500 text-slate-950 border border-rose-400 shadow-rose-500/50' : 'bg-emerald-500 text-slate-950 border border-emerald-400 shadow-emerald-500/50'
         } animate-pulse shadow-sm`}>
           <span>⚡ SEÑAL ({ratio_text})</span>
@@ -329,11 +329,11 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
           return (
             <span
               key={c.id}
-              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-mono text-slate-500 bg-slate-900/60 border border-slate-800"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-400 bg-slate-900/60 border border-slate-800"
               title={`${c.name}: Desactivado en configuración`}
             >
-              <span>⚪</span>
-              <span>{c.short_name || c.name}</span>
+              <span className="text-[9px]">⚪</span>
+              <span className="font-sans font-normal">{c.short_name || c.name}</span>
             </span>
           );
         }
@@ -342,12 +342,12 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
           return (
             <span
               key={c.id}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-600/60 shadow-sm hover:bg-emerald-900 transition-colors cursor-help"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-950/70 text-emerald-300 border border-emerald-600/50 shadow-sm hover:bg-emerald-900/80 transition-colors cursor-help"
               title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
             >
-              <span className="text-[10px]">✅</span>
-              <span>{c.short_name || c.name}:</span>
-              <span className="font-bold">{c.value}</span>
+              <span className="text-[9px]">✅</span>
+              <span className="font-sans font-normal text-emerald-300/90">{c.short_name || c.name}:</span>
+              <span className="font-mono font-medium text-emerald-200">{c.value}</span>
             </span>
           );
         }
@@ -355,12 +355,12 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
         return (
           <span
             key={c.id}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-rose-950/60 text-rose-300/90 border border-rose-800/50 shadow-sm hover:bg-rose-950 transition-colors cursor-help"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-rose-950/50 text-rose-300/90 border border-rose-800/40 shadow-sm hover:bg-rose-950/80 transition-colors cursor-help"
             title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
           >
-            <span className="text-[10px]">❌</span>
-            <span>{c.short_name || c.name}:</span>
-            <span>{c.value}</span>
+            <span className="text-[9px]">❌</span>
+            <span className="font-sans font-normal text-rose-300/80">{c.short_name || c.name}:</span>
+            <span className="font-mono font-medium text-rose-200">{c.value}</span>
           </span>
         );
       })}
@@ -873,14 +873,12 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
             <tr>
               <th scope="col" className="px-2 py-3 text-left text-xs font-extrabold text-slate-100 uppercase tracking-wider w-10"></th>
               <BinanceSortHeader label="Symbol" sortKey="symbol" currentSort={statusSort} onSort={handleStatusSort} />
-              <BinanceSortHeader label="Estrategia" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} className="max-w-[170px]" />
-              <BinanceSortHeader label="Estado" sortKey="state" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Estrategia & Estado" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[170px]" tooltipInfo={{ title: "Estrategia & Estado", desc: "Estrategia asignada arriba y control de pausa/estado del bot con órdenes pendientes abajo." }} />
               <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Precios & Recorrido" sortKey="price_tracking" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Precios & Recorrido", desc: "Precio de entrada vs actual, % rendimiento acumulado y retroceso desde el pico más alto (o suelo)." }} />
-              <BinanceSortHeader label="Current PnL" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} />
-              <BinanceSortHeader label="Hist. PnL" sortKey="historical_pnl" currentSort={statusSort} onSort={handleStatusSort} />
-              <BinanceSortHeader label="Radar & Posición LONG" sortKey="diagnostics_long" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[260px]" tooltipInfo={{ title: "Radar & Telemetría LONG", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones LONG." }} />
-              <BinanceSortHeader label="Radar & Posición SHORT" sortKey="diagnostics_short" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[260px]" tooltipInfo={{ title: "Radar & Telemetría SHORT", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones SHORT en Hedge Mode." }} />
+              <BinanceSortHeader label="PnL (Flotante / Hist.)" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[150px]" tooltipInfo={{ title: "PnL Consolidado", desc: "Flotante actual (no realizado) arriba / Histórico acumulado de trades cerrados abajo." }} />
+              <BinanceSortHeader label="Radar & Posición LONG" sortKey="diagnostics_long" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[340px]" tooltipInfo={{ title: "Radar & Telemetría LONG", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones LONG." }} />
+              <BinanceSortHeader label="Radar & Posición SHORT" sortKey="diagnostics_short" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[340px]" tooltipInfo={{ title: "Radar & Telemetría SHORT", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones SHORT en Hedge Mode." }} />
               <BinanceSortHeader label="Last Error" sortKey="last_error" currentSort={statusSort} onSort={handleStatusSort} />
             </tr>
           </thead>
@@ -987,90 +985,88 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       </div>
                     </td>
 
-                    {/* --- ESTRATEGIA ASIGNADA --- */}
-                    <td className="px-3 py-3 whitespace-nowrap text-xs max-w-[170px]">
-                      {(() => {
-                        const rawStrat = status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3';
-                        const shortStrat = rawStrat.length > 20 ? `${rawStrat.slice(0, 20)}…` : rawStrat;
-                        return (
-                          <span 
-                            className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-indigo-950/80 text-indigo-300 border border-indigo-700/60 shadow-sm truncate max-w-full cursor-help" 
-                            title={`Estrategia completa: ${rawStrat}`}
-                          >
-                            {shortStrat}
-                          </span>
-                        );
-                      })()}
-                    </td>
-
-                    {/* --- ESTADO --- */}
-                    <td className="px-3 py-3 whitespace-nowrap text-xs">
-                      <div className="flex flex-col gap-1">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleTogglePause(e, status.symbol);
-                          }}
-                          disabled={pausingSymbols[status.symbol]}
-                          title={status.is_paused ? `Pausado: ${status.pause_reason || 'Pausa manual'}. Clic para reactivar.` : 'Bot activo. Clic para pausar.'}
-                          className={`px-2.5 py-0.5 inline-flex items-center justify-center text-xs leading-5 font-bold rounded-full border transition-all active:scale-95 cursor-pointer ${
-                            status.state === 'IN_POSITION' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50' :
-                            status.pause_reason?.includes('Hard Stop') ? 'bg-red-950/90 text-red-200 border-red-500/60 hover:bg-red-900 shadow-sm shadow-red-900/40' :
-                            status.cooldown_remaining_seconds > 0 ? 'bg-amber-950/90 text-amber-200 border-amber-500/60 hover:bg-amber-900 shadow-sm shadow-amber-900/40' :
-                            status.pause_reason?.includes('Escudo BTC') ? 'bg-sky-950/90 text-sky-200 border-sky-500/60 hover:bg-sky-900 shadow-sm shadow-sky-900/40' :
-                            status.state === 'Paused' || status.is_paused ? 'bg-amber-950/80 text-amber-200 border-amber-500/50 hover:bg-amber-900' :
-                            status.state === 'ERROR' ? 'bg-red-950/80 text-red-200 border-red-500/50' :
-                            status.state?.includes('WAITING') ? 'bg-indigo-950/80 text-indigo-200 border-indigo-500/50' :
-                            status.state === 'Inactive' ? 'bg-slate-800 text-slate-300 border-slate-700' :
-                            'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-750'
-                        }`}>
-                          {pausingSymbols[status.symbol] ? '⏳ ...' : (
-                            status.is_paused && status.state !== 'IN_POSITION' ? (
-                              status.pause_reason?.includes('Hard Stop') ? '🛑 Hard Stop' :
-                              status.cooldown_remaining_seconds > 0 ? `⏳ Cooldown (${Math.ceil(status.cooldown_remaining_seconds / 60)}m)` :
-                              status.pause_reason?.includes('Escudo BTC') ? '🛡️ Escudo BTC' :
-                              '⏸️ Pausado'
-                            ) : (status.state || 'N/A')
-                          )}
-                        </button>
-                        {/* Chips de órdenes pendientes (soporta sub-posiciones LONG/SHORT) */}
+                    {/* --- ESTRATEGIA & ESTADO UNIFICADOS --- */}
+                    <td className="px-3 py-3 whitespace-nowrap text-xs min-w-[170px]">
+                      <div className="flex flex-col gap-1.5 items-start">
                         {(() => {
-                          const orderChips = [];
-                          const botsToCheck = (status.positions && status.positions.length > 0) ? status.positions : [status];
-                          botsToCheck.forEach((sp, idx) => {
-                            const sideTag = sp.trade_side ? ` (${sp.trade_side[0]})` : '';
-                            if (sp.pending_entry_order_id) {
-                              orderChips.push(
-                                <span key={`entry-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-500/60 shadow-sm" title={`Orden de entrada pendiente${sideTag} ID: ${sp.pending_entry_order_id}`}>
-                                  ⏳ Entrada{sideTag} #{String(sp.pending_entry_order_id).slice(-4)}
-                                </span>
-                              );
-                            }
-                            if (sp.pending_exit_order_id) {
-                              orderChips.push(
-                                <span key={`exit-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-rose-950/90 text-rose-300 border border-rose-500/60 shadow-sm" title={`Orden de salida pendiente${sideTag} ID: ${sp.pending_exit_order_id}`}>
-                                  ⏳ Cierre{sideTag} #{String(sp.pending_exit_order_id).slice(-4)}
-                                </span>
-                              );
-                            }
-                            if (sp.pending_tp_order_id) {
-                              orderChips.push(
-                                <span key={`tp-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-500/60 shadow-sm" title={`TP activo${sideTag} ID: ${sp.pending_tp_order_id}`}>
-                                  🎯 TP{sideTag} #{String(sp.pending_tp_order_id).slice(-4)}
-                                </span>
-                              );
-                            }
-                            if (sp.pending_sl_order_id) {
-                              orderChips.push(
-                                <span key={`sl-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-red-950/90 text-red-300 border border-red-500/60 shadow-sm" title={`SL activo${sideTag} ID: ${sp.pending_sl_order_id}`}>
-                                  🛑 SL{sideTag} #{String(sp.pending_sl_order_id).slice(-4)}
-                                </span>
-                              );
-                            }
-                          });
-                          return orderChips;
+                          const rawStrat = status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3';
+                          const shortStrat = rawStrat.length > 20 ? `${rawStrat.slice(0, 20)}…` : rawStrat;
+                          return (
+                            <span 
+                              className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-mono font-medium bg-indigo-950/80 text-indigo-300 border border-indigo-700/60 shadow-sm truncate max-w-full cursor-help" 
+                              title={`Estrategia completa: ${rawStrat}`}
+                            >
+                              {shortStrat}
+                            </span>
+                          );
                         })()}
+                        <div className="flex flex-col gap-1 w-full">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTogglePause(e, status.symbol);
+                            }}
+                            disabled={pausingSymbols[status.symbol]}
+                            title={status.is_paused ? `Pausado: ${status.pause_reason || 'Pausa manual'}. Clic para reactivar.` : 'Bot activo. Clic para pausar.'}
+                            className={`px-2.5 py-0.5 inline-flex items-center justify-center text-xs leading-5 font-medium rounded-full border transition-all active:scale-95 cursor-pointer ${
+                              status.state === 'IN_POSITION' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50' :
+                              status.pause_reason?.includes('Hard Stop') ? 'bg-red-950/90 text-red-200 border-red-500/60 hover:bg-red-900 shadow-sm shadow-red-900/40' :
+                              status.cooldown_remaining_seconds > 0 ? 'bg-amber-950/90 text-amber-200 border-amber-500/60 hover:bg-amber-900 shadow-sm shadow-amber-900/40' :
+                              status.pause_reason?.includes('Escudo BTC') ? 'bg-sky-950/90 text-sky-200 border-sky-500/60 hover:bg-sky-900 shadow-sm shadow-sky-900/40' :
+                              status.state === 'Paused' || status.is_paused ? 'bg-amber-950/80 text-amber-200 border-amber-500/50 hover:bg-amber-900' :
+                              status.state === 'ERROR' ? 'bg-red-950/80 text-red-200 border-red-500/50' :
+                              status.state?.includes('WAITING') ? 'bg-indigo-950/80 text-indigo-200 border-indigo-500/50' :
+                              status.state === 'Inactive' ? 'bg-slate-800 text-slate-300 border-slate-700' :
+                              'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-750'
+                          }`}>
+                            {pausingSymbols[status.symbol] ? '⏳ ...' : (
+                              status.is_paused && status.state !== 'IN_POSITION' ? (
+                                status.pause_reason?.includes('Hard Stop') ? '🛑 Hard Stop' :
+                                status.cooldown_remaining_seconds > 0 ? `⏳ Cooldown (${Math.ceil(status.cooldown_remaining_seconds / 60)}m)` :
+                                status.pause_reason?.includes('Escudo BTC') ? '🛡️ Escudo BTC' :
+                                '⏸️ Pausado'
+                              ) : (status.state || 'N/A')
+                            )}
+                          </button>
+                          {/* Chips de órdenes pendientes (soporta sub-posiciones LONG/SHORT) */}
+                          {(() => {
+                            const orderChips = [];
+                            const botsToCheck = (status.positions && status.positions.length > 0) ? status.positions : [status];
+                            botsToCheck.forEach((sp, idx) => {
+                              const sideTag = sp.trade_side ? ` (${sp.trade_side[0]})` : '';
+                              if (sp.pending_entry_order_id) {
+                                orderChips.push(
+                                  <span key={`entry-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-500/60 shadow-sm" title={`Orden de entrada pendiente${sideTag} ID: ${sp.pending_entry_order_id}`}>
+                                    ⏳ Entrada{sideTag} #{String(sp.pending_entry_order_id).slice(-4)}
+                                  </span>
+                                );
+                              }
+                              if (sp.pending_exit_order_id) {
+                                orderChips.push(
+                                  <span key={`exit-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-rose-950/90 text-rose-300 border border-rose-500/60 shadow-sm" title={`Orden de salida pendiente${sideTag} ID: ${sp.pending_exit_order_id}`}>
+                                    ⏳ Cierre{sideTag} #{String(sp.pending_exit_order_id).slice(-4)}
+                                  </span>
+                                );
+                              }
+                              if (sp.pending_tp_order_id) {
+                                orderChips.push(
+                                  <span key={`tp-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-500/60 shadow-sm" title={`TP activo${sideTag} ID: ${sp.pending_tp_order_id}`}>
+                                    🎯 TP{sideTag} #{String(sp.pending_tp_order_id).slice(-4)}
+                                  </span>
+                                );
+                              }
+                              if (sp.pending_sl_order_id) {
+                                orderChips.push(
+                                  <span key={`sl-${idx}`} className="inline-flex items-center gap-1 text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-red-950/90 text-red-300 border border-red-500/60 shadow-sm" title={`SL activo${sideTag} ID: ${sp.pending_sl_order_id}`}>
+                                    🛑 SL{sideTag} #{String(sp.pending_sl_order_id).slice(-4)}
+                                  </span>
+                                );
+                              }
+                            });
+                            return orderChips;
+                          })()}
+                        </div>
                       </div>
                     </td>
 
@@ -1089,21 +1085,21 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                               return (
                                 <div key={pIdx} className={`p-1.5 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
                                   <div className="flex items-center gap-1.5">
-                                    <span className={`px-1 py-0.2 rounded text-[9px] font-bold font-mono ${isShort ? 'bg-rose-950 text-rose-300 border border-rose-600/50' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'}`}>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}>
                                       {isShort ? '🔴 SHORT' : '🟢 LONG'}
                                     </span>
-                                    <span className="font-extrabold text-white font-mono text-xs">
+                                    <span className="font-semibold text-white font-mono text-xs">
                                       ${posVal.toFixed(2)} USDT
                                     </span>
-                                    <span className="text-[10px] text-slate-300 font-mono">
+                                    <span className="text-[10px] text-slate-400 font-mono">
                                       ({pos.position_size || 0} {String(status.symbol || '').replace('USDT', '')})
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className="text-[11px] font-bold text-slate-300 font-mono">
-                                      Margen: ~${marginVal.toFixed(2)} USDT
+                                    <span className="text-[11px] font-normal text-slate-300 font-sans">
+                                      Margen: <span className="font-mono font-medium text-slate-200">~${marginVal.toFixed(2)} USDT</span>
                                     </span>
-                                    <span className="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-amber-300 font-bold border border-slate-700 font-mono">
+                                    <span className="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-amber-300 font-medium border border-slate-700 font-mono">
                                       {pos.leverage || status.leverage || 20}x
                                     </span>
                                   </div>
@@ -1113,7 +1109,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                           </div>
                         );
                       })() : (
-                        <span className="text-slate-400 text-xs italic">
+                        <span className="text-slate-400 text-xs italic font-sans">
                           Sin posición
                         </span>
                       )}
@@ -1182,46 +1178,46 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                 <div key={pIdx} className={`p-1.5 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
                                   {positionsToRender.length > 1 && (
                                     <div className="flex items-center justify-between mb-1">
-                                      <span className={`px-1 py-0.2 rounded text-[9px] font-bold font-mono ${isShort ? 'bg-rose-950 text-rose-300 border border-rose-600/50' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'}`}>
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}>
                                         {isShort ? '🔴 SHORT' : '🟢 LONG'}
                                       </span>
                                     </div>
                                   )}
 
                                   {/* Fila 1: Entrada ➔ Actual */}
-                                  <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                                    <span className="text-slate-400">Entrada:</span>
-                                    <span className="text-slate-200 font-bold">${entryPrice.toFixed(precision)}</span>
+                                  <div className="flex items-center gap-1.5 text-[11px]">
+                                    <span className="text-slate-400 font-sans font-normal">Entrada:</span>
+                                    <span className="text-slate-200 font-mono font-medium">${entryPrice.toFixed(precision)}</span>
                                     <span className="text-slate-500">➔</span>
-                                    <span className="text-white font-extrabold">${currentPrice.toFixed(precision)}</span>
+                                    <span className="text-white font-mono font-semibold">${currentPrice.toFixed(precision)}</span>
                                   </div>
 
                                   {/* Fila 2: Rendimiento / Variación acumulada desde entrada */}
-                                  <div className="flex items-center gap-1 mt-0.5 font-mono text-[11px]">
-                                    <span className="text-slate-400 text-[10px]">Recorrido:</span>
-                                    <span className={`font-black ${isFavorable ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  <div className="flex items-center gap-1 mt-0.5 text-[11px]">
+                                    <span className="text-slate-400 font-sans font-normal text-[10px]">Recorrido:</span>
+                                    <span className={`font-mono font-medium ${isFavorable ? 'text-emerald-400' : 'text-rose-400'}`}>
                                       {isFavorable ? '▲ +' : '▼ '}{Math.abs(Number(changePct)).toFixed(2)}%
                                     </span>
                                   </div>
 
                                   {/* Fila 3: Pico Máximo y Caída desde el pico (LONG) o Suelo y Rebote (SHORT) */}
-                                  <div className="mt-1 pt-0.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono">
+                                  <div className="mt-1 pt-0.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
                                     {!isShort ? (
                                       <>
-                                        <span className="text-amber-300/90 font-medium" title="Precio pico más alto alcanzado desde la entrada">
-                                          🏔️ Pico: ${peakVal.toFixed(precision)}
+                                        <span className="text-amber-300/90 font-sans font-normal" title="Precio pico más alto alcanzado desde la entrada">
+                                          🏔️ Pico: <span className="font-mono font-medium">${peakVal.toFixed(precision)}</span>
                                         </span>
-                                        <span className={`font-bold ${(dropFromPeak || 0) > 1.5 ? 'text-amber-400' : 'text-slate-300'}`} title="Porcentaje de caída/retroceso desde el pico más alto">
-                                          Caída: <span className="text-rose-300 font-black">▼ -{Math.abs(Number(dropFromPeak || 0)).toFixed(2)}%</span>
+                                        <span className="font-sans font-normal text-slate-400" title="Porcentaje de caída/retroceso desde el pico más alto">
+                                          Caída: <span className="text-rose-300 font-mono font-medium">▼ -{Math.abs(Number(dropFromPeak || 0)).toFixed(2)}%</span>
                                         </span>
                                       </>
                                     ) : (
                                       <>
-                                        <span className="text-cyan-300/90 font-medium" title="Precio suelo más bajo alcanzado desde la entrada">
-                                          🌊 Suelo: ${troughVal.toFixed(precision)}
+                                        <span className="text-cyan-300/90 font-sans font-normal" title="Precio suelo más bajo alcanzado desde la entrada">
+                                          🌊 Suelo: <span className="font-mono font-medium">${troughVal.toFixed(precision)}</span>
                                         </span>
-                                        <span className={`font-bold ${(riseFromTrough || 0) > 1.5 ? 'text-amber-400' : 'text-slate-300'}`} title="Porcentaje de rebote en contra desde el suelo más bajo">
-                                          Rebote: <span className="text-rose-300 font-black">▲ +{Math.abs(Number(riseFromTrough || 0)).toFixed(2)}%</span>
+                                        <span className="font-sans font-normal text-slate-400" title="Porcentaje de rebote en contra desde el suelo más bajo">
+                                          Rebote: <span className="text-rose-300 font-mono font-medium">▲ +{Math.abs(Number(riseFromTrough || 0)).toFixed(2)}%</span>
                                         </span>
                                       </>
                                     )}
@@ -1235,10 +1231,10 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                         <div className="flex flex-col font-mono text-xs">
                           {status.current_price ? (
                             <>
-                              <span className="text-slate-300 font-bold">
+                              <span className="text-slate-300 font-medium">
                                 ${parseFloat(status.current_price).toFixed(parseFloat(status.current_price) < 1 ? 4 : 2)}
                               </span>
-                              <span className="text-[10px] text-slate-500 italic">📡 En radar</span>
+                              <span className="text-[10px] text-slate-500 font-sans italic">📡 En radar</span>
                             </>
                           ) : (
                             <span className="text-slate-600 font-mono text-[11px]">—</span>
@@ -1247,13 +1243,22 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       )}
                     </td>
 
-                    <td className="px-3 py-3 whitespace-nowrap text-sm">
-                      {status.in_position ? (
+                    {/* --- PnL (FLOTANTE / HISTÓRICO) --- */}
+                    <td className="px-3 py-3 whitespace-nowrap text-xs min-w-[150px]">
+                      <div className="flex flex-col gap-1.5">
+                        {/* Flotante actual */}
                         <div className="flex flex-col">
-                          <span className={`font-mono ${getPnlColorClass(status.current_pnl)}`}>
-                            {formatPnl(status.current_pnl)}
-                          </span>
-                          {(() => {
+                          <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400 font-sans">
+                            <span>Flotante:</span>
+                            {status.in_position ? (
+                              <span className={`font-mono font-medium ${getPnlColorClass(status.current_pnl)}`}>
+                                {formatPnl(status.current_pnl)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 font-mono">0.00 USDT</span>
+                            )}
+                          </div>
+                          {status.in_position && (() => {
                             const activeSubPositions = (status.positions || []).filter(p => p.in_position);
                             if (activeSubPositions.length > 1) {
                               return (
@@ -1261,9 +1266,12 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                   {activeSubPositions.map((sp, pIdx) => {
                                     const isShort = sp.trade_side === 'SHORT';
                                     return (
-                                      <span key={pIdx} className={getPnlColorClass(sp.current_pnl)}>
-                                        {isShort ? '🔴 S: ' : '🟢 L: '}{formatPnl(sp.current_pnl)}
-                                      </span>
+                                      <div key={pIdx} className="flex items-center justify-between text-[10px]">
+                                        <span className="text-slate-400 font-sans">{isShort ? '🔴 S:' : '🟢 L:'}</span>
+                                        <span className={`font-mono font-medium ${getPnlColorClass(sp.current_pnl)}`}>
+                                          {formatPnl(sp.current_pnl)}
+                                        </span>
+                                      </div>
                                     );
                                   })}
                                 </div>
@@ -1272,28 +1280,30 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                             return null;
                           })()}
                         </div>
-                      ) : (
-                        <span className="text-slate-400 text-sm font-mono">N/A</span>
-                      )}
+
+                        {/* Histórico realizado */}
+                        <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-800 text-[10px]">
+                          <span className="text-slate-400 font-sans">Histórico:</span>
+                          <span className={`font-mono font-medium ${getPnlColorClass(status.historical_pnl)}`}>
+                            {formatPnl(status.historical_pnl)}
+                          </span>
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm">
-                      <span className={`font-mono ${getPnlColorClass(status.historical_pnl)}`}>
-                      {formatPnl(status.historical_pnl)}
-                      </span>
-                    </td>
+
                     {/* --- RADAR & TELEMETRÍA LONG --- */}
-                    <td className="px-3 py-2 text-xs min-w-[260px] align-middle">
+                    <td className="px-3 py-2 text-xs min-w-[340px] align-middle">
                       <SideDiagnosticsCell status={status} side="LONG" />
                     </td>
 
                     {/* --- RADAR & TELEMETRÍA SHORT --- */}
-                    <td className="px-3 py-2 text-xs min-w-[260px] align-middle">
+                    <td className="px-3 py-2 text-xs min-w-[340px] align-middle">
                       <SideDiagnosticsCell status={status} side="SHORT" />
                     </td>
                     <td className="px-3 py-3 text-xs">
                       {status.last_error ? (
                         <div 
-                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-rose-950/90 border border-rose-600/70 text-rose-300 font-semibold text-[11px] cursor-help max-w-[200px]"
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-rose-950/90 border border-rose-600/70 text-rose-300 font-medium text-[11px] cursor-help max-w-[200px]"
                           title={`Error en ${status.symbol}: ${status.last_error}`}
                         >
                           <span className="text-rose-400">⚠️</span>
@@ -1307,7 +1317,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                   {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
                   {expandedRows[status.symbol] && (
                     <tr id={`history-${status.symbol}`}>
-                      <td colSpan="11" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
+                      <td colSpan="9" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
                         {loadingHistories[status.symbol] && (
                           <p className="text-xs text-center text-slate-300 font-mono">Cargando historial...</p>
                         )}
@@ -1447,7 +1457,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               ))
             ) : (
               <tr>
-                <td colSpan="11" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
+                <td colSpan="9" className="px-6 py-10 text-center text-sm text-slate-300 font-medium font-sans">
                   {isLoading ? 'Cargando estados...' : (error ? `Error: ${error}` : 'No hay datos de bots disponibles.')}
                 </td>
               </tr>
@@ -1456,48 +1466,47 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
           {sortedStatuses.length > 0 && (
             <tfoot className="bg-slate-950 border-t-2 border-slate-700 font-mono text-xs">
               <tr className="divide-x divide-slate-800">
-                {/* 1 al 4: Expandir, Símbolo, Estrategia, Estado */}
-                <td colSpan="4" className="px-3 py-3 text-left font-sans font-extrabold text-slate-200">
+                {/* 1 al 3: Expandir, Símbolo, Estrategia & Estado */}
+                <td colSpan="3" className="px-3 py-3 text-left font-sans font-bold text-slate-200">
                   <div className="flex items-center gap-2">
                     <span className="text-base">📊</span>
                     <span>TOTALES CONSOLIDADOS ({sortedStatuses.length} pares)</span>
                   </div>
                 </td>
-                {/* 5: Posición & Margen */}
-                <td className="px-3 py-3 font-bold text-slate-200">
+                {/* 4: Posición & Margen */}
+                <td className="px-3 py-3 font-medium text-slate-200">
                   <div className="flex flex-col">
                     <span className="text-[10px] text-slate-400 font-sans">Margen total:</span>
-                    <span className="text-white">${totalMarginCommitted.toFixed(2)} USDT</span>
+                    <span className="text-white font-mono font-medium">${totalMarginCommitted.toFixed(2)} USDT</span>
                   </div>
                 </td>
-                {/* 6: Precios & Recorrido */}
+                {/* 5: Precios & Recorrido */}
                 <td className="px-3 py-3 font-mono text-xs">
                   <div className="flex flex-col">
                     <span className="text-[10px] text-slate-400 font-sans">En posición:</span>
-                    <span className="font-bold text-amber-300">
+                    <span className="font-medium text-amber-300">
                       {sortedStatuses.filter(s => s.in_position).length} pares activos
                     </span>
                   </div>
                 </td>
-                {/* 7: Current PnL (Flotante) */}
-                <td className="px-3 py-3 font-black text-xs font-mono">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-slate-400 font-sans">Flotante neto:</span>
-                    <span className={totalCurrentUnrealizedPnl < 0 ? 'text-rose-400' : totalCurrentUnrealizedPnl > 0 ? 'text-emerald-400' : 'text-slate-300'}>
-                      {totalCurrentUnrealizedPnl >= 0 ? `+${totalCurrentUnrealizedPnl.toFixed(4)}` : totalCurrentUnrealizedPnl.toFixed(4)} USDT
-                    </span>
+                {/* 6: PnL (Flotante / Hist.) */}
+                <td className="px-3 py-3 text-xs font-mono">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="text-[10px] text-slate-400 font-sans">Flotante neto:</span>
+                      <span className={`font-medium ${totalCurrentUnrealizedPnl < 0 ? 'text-rose-400' : totalCurrentUnrealizedPnl > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                        {totalCurrentUnrealizedPnl >= 0 ? `+${totalCurrentUnrealizedPnl.toFixed(4)}` : totalCurrentUnrealizedPnl.toFixed(4)} USDT
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-1.5 pt-0.5 border-t border-slate-800">
+                      <span className="text-[10px] text-slate-400 font-sans">Histórico pares:</span>
+                      <span className={`font-medium ${totalCumulativePnl < 0 ? 'text-rose-400' : totalCumulativePnl > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                        {totalCumulativePnl >= 0 ? `+${totalCumulativePnl.toFixed(4)}` : totalCumulativePnl.toFixed(4)} USDT
+                      </span>
+                    </div>
                   </div>
                 </td>
-                {/* 8: Hist. PnL (Realizado de pares) */}
-                <td className="px-3 py-3 font-black text-xs font-mono">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-slate-400 font-sans">Histórico pares:</span>
-                    <span className={totalCumulativePnl < 0 ? 'text-rose-400' : totalCumulativePnl > 0 ? 'text-emerald-400' : 'text-slate-300'}>
-                      {totalCumulativePnl >= 0 ? `+${totalCumulativePnl.toFixed(4)}` : totalCumulativePnl.toFixed(4)} USDT
-                    </span>
-                  </div>
-                </td>
-                {/* 9, 10 y 11: Radar LONG, Radar SHORT y Last Error */}
+                {/* 7, 8 y 9: Radar LONG, Radar SHORT y Last Error */}
                 <td colSpan="3" className="px-3 py-3 text-right text-[11px] text-slate-400 font-sans">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700/60 text-slate-300">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
