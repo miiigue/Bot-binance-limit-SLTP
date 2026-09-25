@@ -220,95 +220,116 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
   );
 }
 
-function LiveDiagnosticsCell({ status }) {
+function SideDiagnosticsCell({ status, side = 'LONG' }) {
   if (!status) return null;
+  const isShort = side === 'SHORT';
+  const dir = (status.trade_direction || 'BIDIRECTIONAL').toUpperCase();
 
-  // CASO 1: EN POSICIÓN ABIERTA -> Telemetría Visual (Soporta Dual Position Hedge Mode)
-  if (status.in_position) {
-    const activeSubPositions = (status.positions || []).filter(p => p.in_position);
-    if (activeSubPositions.length > 0) {
-      return (
-        <div className="flex flex-col gap-2">
-          {activeSubPositions.map(sp => renderSinglePositionDiag(sp.position_diagnostics || {}, sp.trade_side, sp.current_pnl))}
-        </div>
-      );
-    }
+  // Si este par no opera en esta dirección:
+  if (isShort && dir === 'LONG') {
     return (
-      <div className="flex flex-col gap-1.5 min-w-[240px] max-w-[380px] py-0.5">
-        {renderSinglePositionDiag(status.position_diagnostics || {}, status.trade_side, status.current_pnl)}
+      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono italic py-1">
+        <span>⚪</span>
+        <span>Modo Solo LONG</span>
+      </div>
+    );
+  }
+  if (!isShort && dir === 'SHORT') {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono italic py-1">
+        <span>⚪</span>
+        <span>Modo Solo SHORT</span>
       </div>
     );
   }
 
-  // CASO 2: BOT PAUSADO (Manual, Cooldown, Hard Stop o Escudo BTC)
-  if (status.is_paused) {
-    const isHardStop = status.pause_reason && status.pause_reason.includes('Hard Stop');
-    const isCooldown = status.cooldown_remaining_seconds > 0;
-    const isBtcShield = status.pause_reason && status.pause_reason.includes('Escudo BTC');
+  // Obtener el sub-estado para este lado específico
+  const subStatus = (isShort ? status.short_status : status.long_status) 
+    || (status.positions || []).find(p => p.trade_side === side) 
+    || (status.trade_side === side ? status : null);
+
+  // CASO 1: EN POSICIÓN ABIERTA PARA ESTE LADO
+  if (subStatus?.in_position) {
+    return (
+      <div className="flex flex-col gap-1 min-w-[240px] max-w-[380px] py-0.5">
+        {renderSinglePositionDiag(subStatus.position_diagnostics || {}, side, subStatus.current_pnl)}
+      </div>
+    );
+  }
+
+  // CASO 2: BOT PAUSADO (Manual, Cooldown o Circuit Breaker)
+  const isPaused = subStatus?.is_paused || (status.is_paused && (!subStatus || subStatus.is_paused));
+  const pauseReason = subStatus?.pause_reason || status.pause_reason || '';
+  const cooldownSecs = subStatus?.cooldown_remaining_seconds !== undefined ? subStatus.cooldown_remaining_seconds : status.cooldown_remaining_seconds;
+
+  if (isPaused) {
+    const isHardStop = pauseReason.includes('Hard Stop');
+    const isCooldown = (cooldownSecs > 0) || pauseReason.includes('Enfriamiento') || pauseReason.includes('Rendimiento');
+    const isBtcShield = pauseReason.includes('Escudo BTC');
 
     let badgeClass = 'text-amber-300/90 border-amber-500/40 bg-amber-950/40';
     let icon = '⏸️';
-    let text = status.pause_reason || 'Búsqueda de entradas en pausa';
+    let text = pauseReason || 'En pausa';
 
     if (isHardStop) {
       badgeClass = 'text-red-300 border-red-500/50 bg-red-950/60 font-bold';
       icon = '🛑';
     } else if (isCooldown) {
-      const mins = Math.max(1, Math.ceil(status.cooldown_remaining_seconds / 60));
+      const mins = Math.max(1, Math.ceil((cooldownSecs || 60) / 60));
       badgeClass = 'text-amber-300 border-amber-500/50 bg-amber-950/60 font-bold animate-pulse';
       icon = '⏳';
-      text = `Enfriamiento: ${mins}m restantes (${status.pause_reason || 'Pausa por racha'})`;
+      text = `Cooldown: ${mins}m (${pauseReason || 'Pausa por pérdidas'})`;
     } else if (isBtcShield) {
       badgeClass = 'text-sky-300 border-sky-500/50 bg-sky-950/60 font-bold';
       icon = '🛡️';
     }
 
     return (
-      <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono border ${badgeClass}`}>
-        <span>{icon}</span>
-        <span>{text}</span>
+      <div className="flex flex-col gap-1 py-1">
+        <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono border ${badgeClass}`}>
+          <span>{icon}</span>
+          <span className="truncate max-w-[280px]" title={pauseReason}>{text}</span>
+        </div>
       </div>
     );
   }
 
-  // CASO 3: SIN POSICIÓN -> Radar de Condiciones de Entrada (Sin badge redundante de Filtros 0/2)
-  const diag = (status.entry_diagnostics && Array.isArray(status.entry_diagnostics.conditions) && status.entry_diagnostics.conditions.length > 0)
-    ? status.entry_diagnostics
-    : ((status.positions || []).find(p => p.entry_diagnostics && Array.isArray(p.entry_diagnostics.conditions) && p.entry_diagnostics.conditions.length > 0)?.entry_diagnostics || status.entry_diagnostics);
+  // CASO 3: RADAR DE CONDICIONES DE ENTRADA
+  const diag = (isShort ? status.short_entry_diagnostics : status.long_entry_diagnostics)
+    || subStatus?.entry_diagnostics;
 
   if (!diag || !Array.isArray(diag.conditions) || diag.conditions.length === 0) {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-slate-400 font-mono">
+      <div className="flex items-center gap-1.5 text-xs text-slate-400 font-mono py-1">
         <span className="animate-spin text-[11px]">🌀</span>
-        <span>Analizando mercado...</span>
+        <span>Analizando mercado ({side})...</span>
       </div>
     );
   }
 
-  const { conditions, all_met, ratio_text, trade_side } = diag;
+  const { conditions, all_met, ratio_text } = diag;
 
   return (
     <div className="flex items-center gap-1 flex-wrap py-0.5 max-w-[420px]">
-      {status.trade_direction === 'BIDIRECTIONAL' && (
-        <span className={`inline-flex items-center px-1 py-0.5 rounded text-[9px] font-black font-mono border ${
-          (trade_side || 'LONG') === 'SHORT' ? 'bg-rose-950/80 text-rose-300 border-rose-700/60' : 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
-        }`} title={`Monitoreando radar ${trade_side || 'LONG'}`}>
-          {trade_side || 'LONG'}
-        </span>
-      )}
+      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black font-mono border ${
+        isShort ? 'bg-rose-950/80 text-rose-300 border-rose-700/60' : 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
+      }`}>
+        {isShort ? '🔴 SHORT' : '🟢 LONG'}
+      </span>
       {all_met && (
-        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide bg-emerald-500 text-slate-950 border border-emerald-400 animate-pulse shadow-sm shadow-emerald-500/50">
+        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide ${
+          isShort ? 'bg-rose-500 text-slate-950 border border-rose-400 shadow-rose-500/50' : 'bg-emerald-500 text-slate-950 border border-emerald-400 shadow-emerald-500/50'
+        } animate-pulse shadow-sm`}>
           <span>⚡ SEÑAL ({ratio_text})</span>
         </span>
       )}
 
-      {/* Badges de filtros individuales directamente sin badge redundante 0/2 */}
       {conditions.map((c) => {
         if (!c.active) {
           return (
             <span
               key={c.id}
-              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-500 bg-slate-900/60 border border-slate-800"
+              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-mono text-slate-500 bg-slate-900/60 border border-slate-800"
               title={`${c.name}: Desactivado en configuración`}
             >
               <span>⚪</span>
@@ -345,6 +366,10 @@ function LiveDiagnosticsCell({ status }) {
       })}
     </div>
   );
+}
+
+function LiveDiagnosticsCell({ status }) {
+  return <SideDiagnosticsCell status={status} side="LONG" />;
 }
 
 function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSelectSymbolForChart }) {
@@ -409,6 +434,16 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
     current_pnl: s => s.in_position ? (parseFloat(s.current_pnl) || 0) : -9999999,
     historical_pnl: s => parseFloat(s.historical_pnl) || 0,
     diagnostics: s => s.in_position ? (s.position_diagnostics?.tp_progress_pct || 0) : (s.entry_diagnostics?.passed_count || 0),
+    diagnostics_long: s => {
+      const lSub = s.long_status || (s.positions || []).find(p => p.trade_side === 'LONG') || (s.trade_side === 'LONG' ? s : null);
+      if (lSub?.in_position) return (lSub.position_diagnostics?.tp_progress_pct || 100);
+      return (s.long_entry_diagnostics?.passed_count || lSub?.entry_diagnostics?.passed_count || 0);
+    },
+    diagnostics_short: s => {
+      const sSub = s.short_status || (s.positions || []).find(p => p.trade_side === 'SHORT') || (s.trade_side === 'SHORT' ? s : null);
+      if (sSub?.in_position) return (sSub.position_diagnostics?.tp_progress_pct || 100);
+      return (s.short_entry_diagnostics?.passed_count || sSub?.entry_diagnostics?.passed_count || 0);
+    },
     last_error: s => s.last_error || ''
   }), []);
 
@@ -844,7 +879,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               <BinanceSortHeader label="Precios & Recorrido" sortKey="price_tracking" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Precios & Recorrido", desc: "Precio de entrada vs actual, % rendimiento acumulado y retroceso desde el pico más alto (o suelo)." }} />
               <BinanceSortHeader label="Current PnL" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Hist. PnL" sortKey="historical_pnl" currentSort={statusSort} onSort={handleStatusSort} />
-              <BinanceSortHeader label="Radar & Diagnóstico en Vivo" sortKey="diagnostics" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[280px]" />
+              <BinanceSortHeader label="Radar & Posición LONG" sortKey="diagnostics_long" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[260px]" tooltipInfo={{ title: "Radar & Telemetría LONG", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones LONG." }} />
+              <BinanceSortHeader label="Radar & Posición SHORT" sortKey="diagnostics_short" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[260px]" tooltipInfo={{ title: "Radar & Telemetría SHORT", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones SHORT en Hedge Mode." }} />
               <BinanceSortHeader label="Last Error" sortKey="last_error" currentSort={statusSort} onSort={handleStatusSort} />
             </tr>
           </thead>
@@ -1245,9 +1281,14 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       {formatPnl(status.historical_pnl)}
                       </span>
                     </td>
-                    {/* --- RADAR & DIAGNÓSTICO EN VIVO --- */}
-                    <td className="px-3 py-3 text-xs min-w-[280px]">
-                      <LiveDiagnosticsCell status={status} />
+                    {/* --- RADAR & TELEMETRÍA LONG --- */}
+                    <td className="px-3 py-2 text-xs min-w-[260px] align-middle">
+                      <SideDiagnosticsCell status={status} side="LONG" />
+                    </td>
+
+                    {/* --- RADAR & TELEMETRÍA SHORT --- */}
+                    <td className="px-3 py-2 text-xs min-w-[260px] align-middle">
+                      <SideDiagnosticsCell status={status} side="SHORT" />
                     </td>
                     <td className="px-3 py-3 text-xs">
                       {status.last_error ? (
@@ -1266,7 +1307,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                   {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
                   {expandedRows[status.symbol] && (
                     <tr id={`history-${status.symbol}`}>
-                      <td colSpan="10" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
+                      <td colSpan="11" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
                         {loadingHistories[status.symbol] && (
                           <p className="text-xs text-center text-slate-300 font-mono">Cargando historial...</p>
                         )}
@@ -1406,7 +1447,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               ))
             ) : (
               <tr>
-                <td colSpan="10" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
+                <td colSpan="11" className="px-6 py-10 text-center text-sm text-slate-300 font-semibold">
                   {isLoading ? 'Cargando estados...' : (error ? `Error: ${error}` : 'No hay datos de bots disponibles.')}
                 </td>
               </tr>
@@ -1456,11 +1497,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     </span>
                   </div>
                 </td>
-                {/* 9 y 10: Radar & Diagnóstico + Last Error */}
-                <td colSpan="2" className="px-3 py-3 text-right text-[11px] text-slate-400 font-sans">
+                {/* 9, 10 y 11: Radar LONG, Radar SHORT y Last Error */}
+                <td colSpan="3" className="px-3 py-3 text-right text-[11px] text-slate-400 font-sans">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700/60 text-slate-300">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    Métricas en vivo
+                    Métricas en vivo (Dual Hedge)
                   </span>
                 </td>
               </tr>

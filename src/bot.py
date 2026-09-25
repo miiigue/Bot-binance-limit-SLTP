@@ -1605,32 +1605,53 @@ class SingleSideTradingBot:
         """
         Evalúa los 4 mecanismos de protección de riesgo antes de permitir una nueva entrada.
         Retorna True si el bot debe permanecer o entrar en PAUSA, impidiendo nuevas órdenes.
+        Garantiza que entry_diagnostics refleje de inmediato el estado de pausa/cooldown para no emitir señales falsas.
         """
         now = time.time()
+
+        def _set_paused_diagnostics(reason: str, cooldown_secs: int = 0):
+            self.entry_diagnostics = {
+                "strategy": getattr(self, 'strategy_name', 'RSI Momentum') or 'RSI Momentum',
+                "trade_side": getattr(self, 'trade_side', 'LONG'),
+                "passed_count": 0,
+                "total_active": 0,
+                "ratio_text": "0/0",
+                "all_met": False,
+                "summary": reason,
+                "conditions": [],
+                "is_paused": True,
+                "pause_reason": reason,
+                "cooldown_remaining_seconds": max(0, int(cooldown_secs)),
+                "timestamp": int(time.time() * 1000)
+            }
 
         # 0. Si está en Cooldown activo, verificar si ya expiró
         if getattr(self, 'cooldown_until_ts', 0.0) > 0.0:
             if now < self.cooldown_until_ts:
                 remaining_m = max(1, int((self.cooldown_until_ts - now) / 60))
-                self.logger.info(f"[{self.symbol}] ⏳ Bot en periodo de enfriamiento ({remaining_m}m restantes). Motivo: {self.pause_reason}")
+                remaining_s = max(0, int(self.cooldown_until_ts - now))
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] ⏳ Bot en periodo de enfriamiento ({remaining_m}m restantes). Motivo: {self.pause_reason}")
                 self.is_paused = True
                 self._update_state(BotState.PAUSED)
+                _set_paused_diagnostics(self.pause_reason, remaining_s)
                 return True
             else:
-                self.logger.info(f"[{self.symbol}] 🟢 Periodo de enfriamiento finalizado. Reanudando operaciones normales.")
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] 🟢 Periodo de enfriamiento finalizado. Reanudando operaciones normales.")
                 self.cooldown_until_ts = 0.0
                 self.pause_reason = ""
                 self.is_paused = False
                 self._update_state(BotState.IDLE)
+                self.entry_diagnostics = self._build_default_entry_diagnostics()
 
         # 1. MECANISMO 1: Hard Stop por Pérdida Máxima de la Sesión
         if getattr(self, 'enable_max_loss_per_symbol', False) and getattr(self, 'max_loss_per_symbol_usdt', Decimal('0')) > Decimal('0'):
             limit_neg = -abs(self.max_loss_per_symbol_usdt)
             if getattr(self, 'session_pnl', Decimal('0')) <= limit_neg:
                 self.pause_reason = f"🛑 Hard Stop: Pérdida en sesión ({float(self.session_pnl):.2f} USDT <= -{float(self.max_loss_per_symbol_usdt):.2f} USDT). Requiere reactivación manual."
-                self.logger.warning(f"[{self.symbol}] {self.pause_reason}")
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] {self.pause_reason}")
                 self.is_paused = True
                 self._update_state(BotState.PAUSED)
+                _set_paused_diagnostics(self.pause_reason, 0)
                 return True
 
         # 2. MECANISMO 2: Racha de pérdidas consecutivas
@@ -1639,9 +1660,10 @@ class SingleSideTradingBot:
                 cooldown_secs = self.consecutive_losses_cooldown_minutes * 60
                 self.cooldown_until_ts = now + cooldown_secs
                 self.pause_reason = f"⏳ Enfriamiento por {self.consecutive_losses_count} pérdidas consecutivas (pausa {self.consecutive_losses_cooldown_minutes}m)"
-                self.logger.warning(f"[{self.symbol}] {self.pause_reason}")
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] {self.pause_reason}")
                 self.is_paused = True
                 self._update_state(BotState.PAUSED)
+                _set_paused_diagnostics(self.pause_reason, cooldown_secs)
                 return True
 
         # 3. MECANISMO 3: Filtro de Rendimiento Reciente (Rolling Window)
@@ -1655,12 +1677,13 @@ class SingleSideTradingBot:
                         cooldown_secs = self.rolling_filter_cooldown_minutes * 60
                         self.cooldown_until_ts = now + cooldown_secs
                         self.pause_reason = f"⏳ Filtro de Rendimiento: {losses_in_window}/{len(recent_trades)} pérdidas en últimos trades (pausa {self.rolling_filter_cooldown_minutes}m)"
-                        self.logger.warning(f"[{self.symbol}] {self.pause_reason}")
+                        self.logger.warning(f"[{self.symbol}][{self.trade_side}] {self.pause_reason}")
                         self.is_paused = True
                         self._update_state(BotState.PAUSED)
+                        _set_paused_diagnostics(self.pause_reason, cooldown_secs)
                         return True
             except Exception as e_rf:
-                self.logger.warning(f"[{self.symbol}] Error al evaluar filtro de rendimiento reciente: {e_rf}")
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] Error al evaluar filtro de rendimiento reciente: {e_rf}")
 
         # 4. MECANISMO 4: Escudo de Desplome de Bitcoin (BTC Crash Shield)
         if getattr(self, 'enable_btc_crash_shield', False):
@@ -1669,9 +1692,10 @@ class SingleSideTradingBot:
                 cooldown_secs = self.btc_crash_shield_cooldown_minutes * 60
                 self.cooldown_until_ts = now + cooldown_secs
                 self.pause_reason = f"🛡️ Escudo BTC: Desplome de -{btc_drop_pct:.2f}% en BTCUSDT ({self.btc_crash_timeframe}) (pausa {self.btc_crash_shield_cooldown_minutes}m)"
-                self.logger.warning(f"[{self.symbol}] {self.pause_reason}")
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] {self.pause_reason}")
                 self.is_paused = True
                 self._update_state(BotState.PAUSED)
+                _set_paused_diagnostics(self.pause_reason, cooldown_secs)
                 return True
 
         return False
@@ -1682,17 +1706,32 @@ class SingleSideTradingBot:
             pnl_float = float(final_pnl)
             if pnl_float < -0.0001:
                 self.consecutive_losses_count = getattr(self, 'consecutive_losses_count', 0) + 1
-                self.logger.warning(f"[{self.symbol}] Trade cerrado con pérdida ({pnl_float:.4f} USDT). Racha consecutiva: {self.consecutive_losses_count}")
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] Trade cerrado con pérdida ({pnl_float:.4f} USDT). Racha consecutiva: {self.consecutive_losses_count}")
                 # Si se superó el límite de racha, activar cooldown de inmediato
                 if getattr(self, 'enable_consecutive_losses_cooldown', False) and self.consecutive_losses_count >= getattr(self, 'max_consecutive_losses', 2):
                     cooldown_secs = self.consecutive_losses_cooldown_minutes * 60
                     self.cooldown_until_ts = time.time() + cooldown_secs
                     self.pause_reason = f"⏳ Enfriamiento por {self.consecutive_losses_count} pérdidas consecutivas (pausa {self.consecutive_losses_cooldown_minutes}m)"
                     self.is_paused = True
-                    self.logger.warning(f"[{self.symbol}] ACTIVADO: {self.pause_reason}")
+                    self._update_state(BotState.PAUSED)
+                    self.entry_diagnostics = {
+                        "strategy": getattr(self, 'strategy_name', 'RSI Momentum') or 'RSI Momentum',
+                        "trade_side": getattr(self, 'trade_side', 'LONG'),
+                        "passed_count": 0,
+                        "total_active": 0,
+                        "ratio_text": "0/0",
+                        "all_met": False,
+                        "summary": self.pause_reason,
+                        "conditions": [],
+                        "is_paused": True,
+                        "pause_reason": self.pause_reason,
+                        "cooldown_remaining_seconds": max(0, int(cooldown_secs)),
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] ACTIVADO: {self.pause_reason}")
             else:
                 if getattr(self, 'consecutive_losses_count', 0) > 0:
-                    self.logger.info(f"[{self.symbol}] Trade positivo ({pnl_float:.4f} USDT). Racha de pérdidas consecutivas reseteada a 0.")
+                    self.logger.info(f"[{self.symbol}][{self.trade_side}] Trade positivo ({pnl_float:.4f} USDT). Racha de pérdidas consecutivas reseteada a 0.")
                 self.consecutive_losses_count = 0
 
             # Evaluar Hard Stop inmediato por pérdida máxima en sesión
@@ -1700,7 +1739,22 @@ class SingleSideTradingBot:
                 if getattr(self, 'session_pnl', Decimal('0')) <= -abs(self.max_loss_per_symbol_usdt):
                     self.pause_reason = f"🛑 Hard Stop: Pérdida en sesión ({float(self.session_pnl):.2f} USDT) superó el límite (-{float(self.max_loss_per_symbol_usdt):.2f} USDT)."
                     self.is_paused = True
-                    self.logger.warning(f"[{self.symbol}] ACTIVADO: {self.pause_reason}")
+                    self._update_state(BotState.PAUSED)
+                    self.entry_diagnostics = {
+                        "strategy": getattr(self, 'strategy_name', 'RSI Momentum') or 'RSI Momentum',
+                        "trade_side": getattr(self, 'trade_side', 'LONG'),
+                        "passed_count": 0,
+                        "total_active": 0,
+                        "ratio_text": "0/0",
+                        "all_met": False,
+                        "summary": self.pause_reason,
+                        "conditions": [],
+                        "is_paused": True,
+                        "pause_reason": self.pause_reason,
+                        "cooldown_remaining_seconds": 0,
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] ACTIVADO: {self.pause_reason}")
         except Exception as e:
             self.logger.error(f"[{self.symbol}] Error en _on_trade_closed: {e}")
 
@@ -1781,7 +1835,21 @@ class SingleSideTradingBot:
                             cancel_futures_order(self.symbol, order_id)
                         self.active_support_orders.clear()
                     self._update_state(BotState.PAUSED)
-                    self.logger.info(f"[{self.symbol}] ⏸️ Bot en pausa individual. Omitiendo búsqueda de nuevas entradas.")
+                    self.entry_diagnostics = {
+                        "strategy": getattr(self, 'strategy_name', 'RSI Momentum') or 'RSI Momentum',
+                        "trade_side": getattr(self, 'trade_side', 'LONG'),
+                        "passed_count": 0,
+                        "total_active": 0,
+                        "ratio_text": "0/0",
+                        "all_met": False,
+                        "summary": getattr(self, 'pause_reason', '') or '⏸️ Bot en pausa individual',
+                        "conditions": [],
+                        "is_paused": True,
+                        "pause_reason": getattr(self, 'pause_reason', '') or 'Pausa manual',
+                        "cooldown_remaining_seconds": 0,
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    self.logger.info(f"[{self.symbol}][{self.trade_side}] ⏸️ Bot en pausa individual. Omitiendo búsqueda de nuevas entradas.")
                     return
 
                 klines_df = self._get_market_data()
@@ -4567,7 +4635,12 @@ class TradingBot:
 
     @property
     def is_paused(self) -> bool:
-        return self._is_paused
+        if self._is_paused:
+            return True
+        active_bots = [b for b in [self.long_bot, self.short_bot] if b is not None]
+        if active_bots and all(getattr(b, 'is_paused', False) for b in active_bots):
+            return True
+        return False
 
     @is_paused.setter
     def is_paused(self, val: bool):
@@ -4665,21 +4738,38 @@ class TradingBot:
         primary = long_st or short_st or {}
         st_copy = primary.copy()
 
+        # Cooldown y pausas agregadas
+        long_cd = long_st.get('cooldown_remaining_seconds', 0) if long_st else 0
+        short_cd = short_st.get('cooldown_remaining_seconds', 0) if short_st else 0
+        max_cd = max(long_cd, short_cd)
+
+        pause_reasons = []
+        if long_st and long_st.get('is_paused') and long_st.get('pause_reason'):
+            pause_reasons.append(f"LONG: {long_st.get('pause_reason')}")
+        if short_st and short_st.get('is_paused') and short_st.get('pause_reason'):
+            pause_reasons.append(f"SHORT: {short_st.get('pause_reason')}")
+        combined_pause_reason = " | ".join(pause_reasons) if pause_reasons else (getattr(self, 'pause_reason', '') or '')
+
         # Consolidar diagnóstico de entrada eligiendo el bot con señal activa o mayor avance
         long_diag = (long_st and long_st.get('entry_diagnostics')) or {}
         short_diag = (short_st and short_st.get('entry_diagnostics')) or {}
+
+        # Ignorar señales de bots pausados o que ya están en posición
+        long_eligible = bool(long_st and not long_st.get('is_paused') and not long_st.get('in_position'))
+        short_eligible = bool(short_st and not short_st.get('is_paused') and not short_st.get('in_position'))
+
         chosen_diag = {}
-        if short_diag.get('all_met'):
+        if short_eligible and short_diag.get('all_met'):
             chosen_diag = short_diag
-        elif long_diag.get('all_met'):
+        elif long_eligible and long_diag.get('all_met'):
             chosen_diag = long_diag
-        elif long_diag.get('conditions') and short_diag.get('conditions'):
+        elif long_eligible and short_eligible:
             l_passed = long_diag.get('passed_count', 0)
             s_passed = short_diag.get('passed_count', 0)
             chosen_diag = short_diag if s_passed > l_passed else long_diag
-        elif long_diag.get('conditions'):
+        elif long_eligible:
             chosen_diag = long_diag
-        elif short_diag.get('conditions'):
+        elif short_eligible:
             chosen_diag = short_diag
         else:
             chosen_diag = long_diag or short_diag or {}
@@ -4706,7 +4796,11 @@ class TradingBot:
             "margin_usdt": round(tot_margin, 2),
             "position_value_usdt": round(tot_pos_val, 2),
             "positions": positions,
+            "long_status": long_st,
+            "short_status": short_st,
             "is_paused": self.is_paused,
+            "cooldown_remaining_seconds": max_cd,
+            "pause_reason": combined_pause_reason,
             "current_price": curr_p,
             "pending_entry_order_id": pending_entry,
             "pending_exit_order_id": pending_exit,
