@@ -185,6 +185,18 @@ const defaultConfigValues = {
   marketRegimeEmaPeriod: 50,
   marketRegimeSupertrendPeriod: 10,
   marketRegimeSupertrendMultiplier: 3.0,
+
+  // --- SMART HEDGE & RESGUARDO DINÁMICO ---
+  enableHedgeProtection: false,
+  hedgeTriggerType: 'PERCENT',
+  hedgeTriggerValue: 1.5,
+  hedgeSizeMultiplier: 1.0,
+  enableHedgeTrailingStop: true,
+  hedgeTrailingActivationUSDT: 0.20,
+  hedgeTrailingDropUSDT: 0.30,
+  enableHedgeBasketExit: true,
+  hedgeBasketTargetUSDT: 0.50,
+  hedgeReentryCooldownSeconds: 60,
 };
 
 // --- Diccionario profesional con Explicación y Ejemplo Práctico para cada Parámetro ---
@@ -881,6 +893,18 @@ function ConfigForm({
       if (dataToSend.crashPnlDropThresholdUSDT !== undefined) dataToSend.crash_pnl_drop_threshold_usdt = dataToSend.crashPnlDropThresholdUSDT;
       if (dataToSend.tradeDirection !== undefined) dataToSend.trade_direction = dataToSend.tradeDirection;
       if (dataToSend.autoMirrorShort !== undefined) dataToSend.auto_mirror_short = dataToSend.autoMirrorShort;
+
+      // Smart Hedge & Resguardo Dinámico
+      if (dataToSend.enableHedgeProtection !== undefined) dataToSend.enable_hedge_protection = dataToSend.enableHedgeProtection;
+      if (dataToSend.hedgeTriggerType !== undefined) dataToSend.hedge_trigger_type = dataToSend.hedgeTriggerType;
+      if (dataToSend.hedgeTriggerValue !== undefined) dataToSend.hedge_trigger_value = dataToSend.hedgeTriggerValue;
+      if (dataToSend.hedgeSizeMultiplier !== undefined) dataToSend.hedge_size_multiplier = dataToSend.hedgeSizeMultiplier;
+      if (dataToSend.enableHedgeTrailingStop !== undefined) dataToSend.enable_hedge_trailing_stop = dataToSend.enableHedgeTrailingStop;
+      if (dataToSend.hedgeTrailingActivationUSDT !== undefined) dataToSend.hedge_trailing_activation_usdt = dataToSend.hedgeTrailingActivationUSDT;
+      if (dataToSend.hedgeTrailingDropUSDT !== undefined) dataToSend.hedge_trailing_drop_usdt = dataToSend.hedgeTrailingDropUSDT;
+      if (dataToSend.enableHedgeBasketExit !== undefined) dataToSend.enable_hedge_basket_exit = dataToSend.enableHedgeBasketExit;
+      if (dataToSend.hedgeBasketTargetUSDT !== undefined) dataToSend.hedge_basket_target_usdt = dataToSend.hedgeBasketTargetUSDT;
+      if (dataToSend.hedgeReentryCooldownSeconds !== undefined) dataToSend.hedge_reentry_cooldown_seconds = dataToSend.hedgeReentryCooldownSeconds;
 
       const result = await onSave(dataToSend);
       if (result?.success || !result?.error) {
@@ -2847,6 +2871,207 @@ function ConfigForm({
             </div>
 
           </div>
+        </div>
+      </ConfigSection>
+
+      {/* ========================================================================= */}
+      {/* 🛡️ COBERTURA INTELIGENTE EN HEDGE MODE (SMART HEDGING & RESGUARDO DINÁMICO) */}
+      {/* ========================================================================= */}
+      <ConfigSection 
+        title="🛡️ Cobertura Inteligente en Hedge Mode (Smart Hedging & Resguardo Dinámico)" 
+        className="col-span-1 md:col-span-2 border-2 border-cyan-500/40 bg-gradient-to-br from-slate-950 via-cyan-950/20 to-slate-950 rounded-2xl"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-cyan-800/40">
+            <div>
+              <h4 className="text-sm font-bold text-cyan-300 flex items-center gap-2">
+                <span>🛡️</span> Activar Cobertura Automática por Pérdida
+              </h4>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Abre automáticamente una posición de resguardo opuesta (SHORT si LONG cae, o LONG si SHORT sube) cuando la pérdida cruza tu umbral crítico.
+              </p>
+            </div>
+            <Switch
+              name="enableHedgeProtection"
+              checked={formData.enableHedgeProtection}
+              onChange={handleChange}
+            />
+          </div>
+
+          {formData.enableHedgeProtection && (
+            <div className="space-y-5 pt-2">
+              {/* Fila 1: Disparador y Tamaño */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <ConfigItem 
+                  labelText="Modo de Disparo" 
+                  htmlFor="hedgeTriggerType"
+                  tooltipKey="hedgeTriggerType"
+                >
+                  <select
+                    id="hedgeTriggerType"
+                    name="hedgeTriggerType"
+                    value={formData.hedgeTriggerType || 'PERCENT'}
+                    onChange={handleChange}
+                    className="mt-1 block w-full py-2 px-2.5 border border-slate-700 bg-slate-900 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-cyan-500 text-xs font-semibold cursor-pointer"
+                  >
+                    <option value="PERCENT">📉 Porcentaje de Caída / Recorrido (%)</option>
+                    <option value="USDT">💵 Pérdida Flotante en Dinero ($ USDT)</option>
+                  </select>
+                </ConfigItem>
+
+                <ConfigItem 
+                  labelText={formData.hedgeTriggerType === 'USDT' ? "Pérdida en USDT para Activar" : "% de Caída/Recorrido para Activar"} 
+                  htmlFor="hedgeTriggerValue"
+                  tooltipKey="hedgeTriggerValue"
+                >
+                  <NumberInput
+                    id="hedgeTriggerValue"
+                    name="hedgeTriggerValue"
+                    value={formData.hedgeTriggerValue}
+                    onChange={handleChange}
+                    step={0.1}
+                    min={0.1}
+                  />
+                  <span className="text-[10px] text-cyan-400 mt-1 block">
+                    {formData.hedgeTriggerType === 'USDT' 
+                      ? `Se activa cuando la posición principal pierde -$${formData.hedgeTriggerValue || 1.5} USDT`
+                      : `Se activa cuando el precio cae/sube ${formData.hedgeTriggerValue || 1.5}% en contra`}
+                  </span>
+                </ConfigItem>
+
+                <ConfigItem 
+                  labelText="Multiplicador de Tamaño (x)" 
+                  htmlFor="hedgeSizeMultiplier"
+                  tooltipKey="hedgeSizeMultiplier"
+                >
+                  <NumberInput
+                    id="hedgeSizeMultiplier"
+                    name="hedgeSizeMultiplier"
+                    value={formData.hedgeSizeMultiplier}
+                    onChange={handleChange}
+                    step={0.1}
+                    min={0.5}
+                    max={3.0}
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">
+                    {Number(formData.hedgeSizeMultiplier) === 1 
+                      ? "1.0x: Cobertura simétrica exacta (mismo tamaño)" 
+                      : `${formData.hedgeSizeMultiplier}x: Cobertura Asimétrica agresiva`}
+                  </span>
+                </ConfigItem>
+              </div>
+
+              {/* Fila 2: Trailing Stop del Resguardo */}
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-amber-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🎯</span>
+                    <div>
+                      <h5 className="text-xs font-bold text-amber-300">Trailing Stop de Ganancia en la Cobertura</h5>
+                      <p className="text-[11px] text-slate-400">Persigue el movimiento adverso y toma ganancias en cuanto frena y rebota.</p>
+                    </div>
+                  </div>
+                  <Switch
+                    name="enableHedgeTrailingStop"
+                    checked={formData.enableHedgeTrailingStop}
+                    onChange={handleChange}
+                  />
+                </div>
+
+                {formData.enableHedgeTrailingStop && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-800">
+                    <ConfigItem 
+                      labelText="Ganancia para Armar Trailing (USDT)" 
+                      htmlFor="hedgeTrailingActivationUSDT"
+                      tooltipKey="hedgeTrailingActivationUSDT"
+                    >
+                      <NumberInput
+                        id="hedgeTrailingActivationUSDT"
+                        name="hedgeTrailingActivationUSDT"
+                        value={formData.hedgeTrailingActivationUSDT}
+                        onChange={handleChange}
+                        step={0.05}
+                        min={0.05}
+                      />
+                    </ConfigItem>
+
+                    <ConfigItem 
+                      labelText="Retroceso desde Pico para Cerrar (USDT)" 
+                      htmlFor="hedgeTrailingDropUSDT"
+                      tooltipKey="hedgeTrailingDropUSDT"
+                    >
+                      <NumberInput
+                        id="hedgeTrailingDropUSDT"
+                        name="hedgeTrailingDropUSDT"
+                        value={formData.hedgeTrailingDropUSDT}
+                        onChange={handleChange}
+                        step={0.05}
+                        min={0.05}
+                      />
+                    </ConfigItem>
+                  </div>
+                )}
+              </div>
+
+              {/* Fila 3: Cierre de Cesta Neta (Basket Exit) */}
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-emerald-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🧺</span>
+                    <div>
+                      <h5 className="text-xs font-bold text-emerald-300">Cierre Sintético de Cesta (Net Basket Exit)</h5>
+                      <p className="text-[11px] text-slate-400">Si ambas posiciones están abiertas y la suma neta combinada da ganancia, cierra ambas de golpe.</p>
+                    </div>
+                  </div>
+                  <Switch
+                    name="enableHedgeBasketExit"
+                    checked={formData.enableHedgeBasketExit}
+                    onChange={handleChange}
+                  />
+                </div>
+
+                {formData.enableHedgeBasketExit && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-800">
+                    <ConfigItem 
+                      labelText="Objetivo de Ganancia Neta Combinada (USDT)" 
+                      htmlFor="hedgeBasketTargetUSDT"
+                      tooltipKey="hedgeBasketTargetUSDT"
+                    >
+                      <NumberInput
+                        id="hedgeBasketTargetUSDT"
+                        name="hedgeBasketTargetUSDT"
+                        value={formData.hedgeBasketTargetUSDT}
+                        onChange={handleChange}
+                        step={0.1}
+                        min={0.1}
+                      />
+                      <span className="text-[10px] text-emerald-400 mt-1 block">
+                        Cierra LONG y SHORT simultáneamente al llegar a +${formData.hedgeBasketTargetUSDT || 0.50} USDT netos
+                      </span>
+                    </ConfigItem>
+
+                    <ConfigItem 
+                      labelText="Cooldown entre Coberturas (segundos)" 
+                      htmlFor="hedgeReentryCooldownSeconds"
+                      tooltipKey="hedgeReentryCooldownSeconds"
+                    >
+                      <NumberInput
+                        id="hedgeReentryCooldownSeconds"
+                        name="hedgeReentryCooldownSeconds"
+                        value={formData.hedgeReentryCooldownSeconds}
+                        onChange={handleChange}
+                        step={10}
+                        min={10}
+                      />
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Espera mínima antes de volver a abrir otra cobertura si la primera cerró
+                      </span>
+                    </ConfigItem>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </ConfigSection>
 

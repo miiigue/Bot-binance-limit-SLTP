@@ -1177,10 +1177,15 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                               const coinName = String(status.symbol || '').replace('USDT', '');
                               return (
                                 <div key={pIdx} className={`p-1 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className={`px-1 py-0.2 rounded text-[10px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}>
                                       {isShort ? '🔴 SHORT' : '🟢 LONG'}
                                     </span>
+                                    {pos.is_hedge_position && (
+                                      <span className="px-1 py-0.2 rounded text-[9px] font-sans font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-500/50" title="Posición abierta automáticamente como Resguardo / Cobertura">
+                                        🛡️ Resguardo
+                                      </span>
+                                    )}
                                     <span className="font-semibold text-white font-mono text-[10px]">
                                       ${posVal.toFixed(2)} USDT
                                     </span>
@@ -1199,6 +1204,16 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                 </div>
                               );
                             })}
+                            {status.hedge_info?.is_hedged && status.hedge_info?.basket_net_pnl !== undefined && status.hedge_info?.basket_net_pnl !== null && (
+                              <div className="mt-1 px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-500/40 flex items-center justify-between text-[10px]">
+                                <span className="text-cyan-300 font-sans font-medium flex items-center gap-1">
+                                  <span>🧺</span> Cesta Neta:
+                                </span>
+                                <span className={`font-mono font-bold ${status.hedge_info.basket_net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {status.hedge_info.basket_net_pnl >= 0 ? '+' : ''}{Number(status.hedge_info.basket_net_pnl).toFixed(4)} USDT
+                                </span>
+                              </div>
+                            )}
                           </div>
                         );
                       })()}

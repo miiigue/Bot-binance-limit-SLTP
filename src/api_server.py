@@ -336,6 +336,18 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'rsi_short_entry_level_low': _val('rsiShortEntryLevelLow', 55.0),
             'rsi_short_entry_level_high': _val('rsiShortEntryLevelHigh', 70.0),
             'rsi_threshold_down': _val('rsiThresholdDown', 2.0),
+
+            # --- SMART HEDGE & RESGUARDO DINÁMICO ---
+            'enable_hedge_protection': str(frontend_data.get('enableHedgeProtection', False)).lower(),
+            'hedge_trigger_type': str(_val('hedgeTriggerType', 'PERCENT')).upper(),
+            'hedge_trigger_value': _val('hedgeTriggerValue', 1.5),
+            'hedge_size_multiplier': _val('hedgeSizeMultiplier', 1.0),
+            'enable_hedge_trailing_stop': str(frontend_data.get('enableHedgeTrailingStop', True)).lower(),
+            'hedge_trailing_activation_usdt': _val('hedgeTrailingActivationUSDT', 0.20),
+            'hedge_trailing_drop_usdt': _val('hedgeTrailingDropUSDT', 0.30),
+            'enable_hedge_basket_exit': str(frontend_data.get('enableHedgeBasketExit', True)).lower(),
+            'hedge_basket_target_usdt': _val('hedgeBasketTargetUSDT', 0.50),
+            'hedge_reentry_cooldown_seconds': _val('hedgeReentryCooldownSeconds', 60),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -610,6 +622,18 @@ def _build_frontend_config_dict():
             ('rsi_short_entry_level_low', 'rsiShortEntryLevelLow'),
             ('rsi_short_entry_level_high', 'rsiShortEntryLevelHigh'),
             ('rsi_threshold_down', 'rsiThresholdDown'),
+
+            # --- SMART HEDGE & RESGUARDO DINÁMICO ---
+            ('enable_hedge_protection', 'enableHedgeProtection'),
+            ('hedge_trigger_type', 'hedgeTriggerType'),
+            ('hedge_trigger_value', 'hedgeTriggerValue'),
+            ('hedge_size_multiplier', 'hedgeSizeMultiplier'),
+            ('enable_hedge_trailing_stop', 'enableHedgeTrailingStop'),
+            ('hedge_trailing_activation_usdt', 'hedgeTrailingActivationUSDT'),
+            ('hedge_trailing_drop_usdt', 'hedgeTrailingDropUSDT'),
+            ('enable_hedge_basket_exit', 'enableHedgeBasketExit'),
+            ('hedge_basket_target_usdt', 'hedgeBasketTargetUSDT'),
+            ('hedge_reentry_cooldown_seconds', 'hedgeReentryCooldownSeconds'),
         ]:
             if key_ini in config_dict['TRADING']:
                 frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
