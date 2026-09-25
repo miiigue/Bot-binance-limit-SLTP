@@ -35,6 +35,34 @@ const getPnlColorClass = (pnl) => {
   if (value < 0) return 'text-rose-400 font-bold';
   return 'text-slate-300 font-bold';
 };
+
+// --- HELPER: EXTRAER POSICIONES ACTIVAS (HEDGE DUAL LONG & SHORT) ---
+function getActivePositions(status) {
+  if (!status) return [];
+  // 1. Sub-estados explícitos en status.long_status / status.short_status
+  const subPositions = [];
+  if (status.long_status?.in_position) {
+    subPositions.push({ ...status.long_status, trade_side: 'LONG' });
+  }
+  if (status.short_status?.in_position) {
+    subPositions.push({ ...status.short_status, trade_side: 'SHORT' });
+  }
+  if (subPositions.length > 0) return subPositions;
+
+  // 2. Verificar array status.positions
+  if (Array.isArray(status.positions) && status.positions.length > 0) {
+    const active = status.positions.filter(p => p && p.in_position);
+    if (active.length > 0) return active;
+  }
+
+  // 3. Fallback al objeto principal si in_position es true
+  if (status.in_position) {
+    return [status];
+  }
+
+  return [];
+}
+
 // --- SUBCOMPONENTE DE DIAGNÓSTICO EN TIEMPO REAL (RADAR & PROTECCIÓN) ---
 function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
   const pnlUsdt = pos?.pnl_usdt !== undefined ? Number(pos.pnl_usdt) : (parseFloat(pnlVal) || 0);
@@ -874,11 +902,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               <th scope="col" className="px-2 py-3 text-left text-xs font-extrabold text-slate-100 uppercase tracking-wider w-10"></th>
               <BinanceSortHeader label="Symbol" sortKey="symbol" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Estrategia & Estado" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[170px]" tooltipInfo={{ title: "Estrategia & Estado", desc: "Estrategia asignada arriba y control de pausa/estado del bot con órdenes pendientes abajo." }} />
-              <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
-              <BinanceSortHeader label="Precios & Recorrido" sortKey="price_tracking" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Precios & Recorrido", desc: "Precio de entrada vs actual, % rendimiento acumulado y retroceso desde el pico más alto (o suelo)." }} />
               <BinanceSortHeader label="PnL (Flotante / Hist.)" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[150px]" tooltipInfo={{ title: "PnL Consolidado", desc: "Flotante actual (no realizado) arriba / Histórico acumulado de trades cerrados abajo." }} />
               <BinanceSortHeader label="Radar & Posición LONG" sortKey="diagnostics_long" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[340px]" tooltipInfo={{ title: "Radar & Telemetría LONG", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones LONG." }} />
               <BinanceSortHeader label="Radar & Posición SHORT" sortKey="diagnostics_short" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[340px]" tooltipInfo={{ title: "Radar & Telemetría SHORT", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones SHORT en Hedge Mode." }} />
+              <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Precios & Recorrido" sortKey="price_tracking" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Precios & Recorrido", desc: "Precio de entrada vs actual, % rendimiento acumulado y retroceso desde el pico más alto (o suelo)." }} />
               <BinanceSortHeader label="Last Error" sortKey="last_error" currentSort={statusSort} onSort={handleStatusSort} />
             </tr>
           </thead>
@@ -907,8 +935,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     {/* --- Símbolo con botones de cierre y badges de dirección --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-sm font-bold text-white">
                       <div className="flex items-center space-x-2">
-                        {status.in_position && (() => {
-                          const activeSubPositions = (status.positions || []).filter(p => p.in_position);
+                        {(() => {
+                          const activeSubPositions = getActivePositions(status);
                           if (activeSubPositions.length > 1) {
                             return (
                               <div className="flex items-center gap-1">
@@ -1070,36 +1098,101 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       </div>
                     </td>
 
-                    {/* --- POSICIÓN & MARGEN --- */}
+                    {/* --- PnL (FLOTANTE / HISTÓRICO) --- */}
+                    <td className="px-3 py-3 whitespace-nowrap text-xs min-w-[150px]">
+                      <div className="flex flex-col gap-1.5">
+                        {/* Flotante actual */}
+                        <div className="flex flex-col">
+                          <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400 font-sans">
+                            <span>Flotante:</span>
+                            {status.in_position ? (
+                              <span className={`font-mono font-medium ${getPnlColorClass(status.current_pnl)}`}>
+                                {formatPnl(status.current_pnl)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 font-mono">0.00 USDT</span>
+                            )}
+                          </div>
+                          {(() => {
+                            const activeSubPositions = getActivePositions(status);
+                            if (activeSubPositions.length > 1) {
+                              return (
+                                <div className="flex flex-col gap-0.5 mt-0.5 text-[10px] font-mono">
+                                  {activeSubPositions.map((sp, pIdx) => {
+                                    const isShort = sp.trade_side === 'SHORT';
+                                    return (
+                                      <div key={pIdx} className="flex items-center justify-between text-[10px]">
+                                        <span className="text-slate-400 font-sans">{isShort ? '🔴 S:' : '🟢 L:'}</span>
+                                        <span className={`font-mono font-medium ${getPnlColorClass(sp.current_pnl)}`}>
+                                          {formatPnl(sp.current_pnl)}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
+
+                        {/* Histórico realizado */}
+                        <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-800 text-[10px]">
+                          <span className="text-slate-400 font-sans">Histórico:</span>
+                          <span className={`font-mono font-medium ${getPnlColorClass(status.historical_pnl)}`}>
+                            {formatPnl(status.historical_pnl)}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* --- RADAR & TELEMETRÍA LONG --- */}
+                    <td className="px-3 py-2 text-xs min-w-[340px] align-middle">
+                      <SideDiagnosticsCell status={status} side="LONG" />
+                    </td>
+
+                    {/* --- RADAR & TELEMETRÍA SHORT --- */}
+                    <td className="px-3 py-2 text-xs min-w-[340px] align-middle">
+                      <SideDiagnosticsCell status={status} side="SHORT" />
+                    </td>
+
+                    {/* --- POSICIÓN & MARGEN (A LA DERECHA DE RADAR SHORT) --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-xs">
-                      {status?.in_position ? (() => {
-                        const activeSubPositions = (status.positions || []).filter(p => p.in_position);
-                        const positionsToRender = activeSubPositions.length > 0 ? activeSubPositions : [status];
+                      {(() => {
+                        const activePositions = getActivePositions(status);
+                        if (activePositions.length === 0) {
+                          return (
+                            <span className="text-slate-400 text-xs italic font-sans">
+                              Sin posición
+                            </span>
+                          );
+                        }
                         return (
-                          <div className="flex flex-col space-y-1.5">
-                            {positionsToRender.map((pos, pIdx) => {
-                              const side = pos.trade_side || (positionsToRender.length === 1 ? status.trade_side : null);
+                          <div className="flex flex-col space-y-1">
+                            {activePositions.map((pos, pIdx) => {
+                              const side = pos.trade_side || (activePositions.length === 1 ? status.trade_side : (pIdx === 0 ? 'LONG' : 'SHORT'));
                               const isShort = side === 'SHORT';
                               const posVal = Number(pos.position_value_usdt) || Math.abs((Number(pos.entry_price) || 0) * (Number(pos.position_size) || 0));
                               const marginVal = Number(pos.margin_usdt) || (posVal / (Number(pos.leverage) || 20));
+                              const coinName = String(status.symbol || '').replace('USDT', '');
                               return (
-                                <div key={pIdx} className={`p-1.5 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
+                                <div key={pIdx} className={`p-1 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
                                   <div className="flex items-center gap-1.5">
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}>
+                                    <span className={`px-1 py-0.2 rounded text-[10px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}>
                                       {isShort ? '🔴 SHORT' : '🟢 LONG'}
                                     </span>
-                                    <span className="font-semibold text-white font-mono text-xs">
+                                    <span className="font-semibold text-white font-mono text-[10px]">
                                       ${posVal.toFixed(2)} USDT
                                     </span>
-                                    <span className="text-[10px] text-slate-400 font-mono">
-                                      ({pos.position_size || 0} {String(status.symbol || '').replace('USDT', '')})
+                                    <span className="text-[9px] text-slate-400 font-mono">
+                                      ({pos.position_size || 0} {coinName})
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className="text-[11px] font-normal text-slate-300 font-sans">
+                                    <span className="text-[10px] font-normal text-slate-300 font-sans">
                                       Margen: <span className="font-mono font-medium text-slate-200">~${marginVal.toFixed(2)} USDT</span>
                                     </span>
-                                    <span className="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-amber-300 font-medium border border-slate-700 font-mono">
+                                    <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-amber-300 font-medium border border-slate-700 font-mono">
                                       {pos.leverage || status.leverage || 20}x
                                     </span>
                                   </div>
@@ -1108,27 +1201,37 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                             })}
                           </div>
                         );
-                      })() : (
-                        <span className="text-slate-400 text-xs italic font-sans">
-                          Sin posición
-                        </span>
-                      )}
+                      })()}
                     </td>
 
                     {/* --- PRECIOS & RECORRIDO (PICO & DRAWDOWN) --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-xs">
-                      {status?.in_position ? (() => {
-                        const activeSubPositions = (status.positions || []).filter(p => p.in_position);
-                        const positionsToRender = activeSubPositions.length > 0 ? activeSubPositions : [status];
+                      {(() => {
+                        const activePositions = getActivePositions(status);
+                        if (activePositions.length === 0) {
+                          return (
+                            <div className="flex flex-col font-mono text-xs">
+                              {status.current_price ? (
+                                <>
+                                  <span className="text-slate-300 font-medium text-[10px]">
+                                    ${parseFloat(status.current_price).toFixed(parseFloat(status.current_price) < 1 ? 4 : 2)}
+                                  </span>
+                                  <span className="text-[9px] text-slate-500 font-sans italic">📡 En radar</span>
+                                </>
+                              ) : (
+                                <span className="text-slate-600 font-mono text-[10px]">—</span>
+                              )}
+                            </div>
+                          );
+                        }
                         return (
-                          <div className="flex flex-col space-y-1.5 min-w-[220px]">
-                            {positionsToRender.map((pos, pIdx) => {
-                              const side = pos.trade_side || (positionsToRender.length === 1 ? status.trade_side : 'LONG');
+                          <div className="flex flex-col space-y-1 min-w-[210px]">
+                            {activePositions.map((pos, pIdx) => {
+                              const side = pos.trade_side || (activePositions.length === 1 ? status.trade_side : (pIdx === 0 ? 'LONG' : 'SHORT'));
                               const isShort = side === 'SHORT';
                               const entryPrice = parseFloat(pos.entry_price) || 0;
                               let currentPrice = parseFloat(pos.current_price || status.current_price) || 0;
                               
-                              // Fallback dinámico inteligente: si currentPrice no viene o es igual a entryPrice con PnL no nulo
                               if (entryPrice > 0 && (currentPrice === 0 || (currentPrice === entryPrice && Math.abs(parseFloat(pos.current_pnl ?? status.current_pnl ?? 0)) > 0.0001))) {
                                 const pnlVal = parseFloat(pos.current_pnl !== undefined ? pos.current_pnl : (status.current_pnl || 0)) || 0;
                                 const qty = Math.abs(parseFloat(pos.position_size || status.position_size || 0));
@@ -1175,17 +1278,17 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                               }
 
                               return (
-                                <div key={pIdx} className={`p-1.5 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
-                                  {positionsToRender.length > 1 && (
-                                    <div className="flex items-center justify-between mb-1">
-                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}>
+                                <div key={pIdx} className={`p-1 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
+                                  {activePositions.length > 1 && (
+                                    <div className="flex items-center justify-between mb-0.5">
+                                      <span className={`px-1 py-0.2 rounded text-[9px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}>
                                         {isShort ? '🔴 SHORT' : '🟢 LONG'}
                                       </span>
                                     </div>
                                   )}
 
                                   {/* Fila 1: Entrada ➔ Actual */}
-                                  <div className="flex items-center gap-1.5 text-[11px]">
+                                  <div className="flex items-center gap-1.5 text-[10px]">
                                     <span className="text-slate-400 font-sans font-normal">Entrada:</span>
                                     <span className="text-slate-200 font-mono font-medium">${entryPrice.toFixed(precision)}</span>
                                     <span className="text-slate-500">➔</span>
@@ -1193,15 +1296,15 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                   </div>
 
                                   {/* Fila 2: Rendimiento / Variación acumulada desde entrada */}
-                                  <div className="flex items-center gap-1 mt-0.5 text-[11px]">
-                                    <span className="text-slate-400 font-sans font-normal text-[10px]">Recorrido:</span>
+                                  <div className="flex items-center gap-1 mt-0.5 text-[10px]">
+                                    <span className="text-slate-400 font-sans font-normal text-[9px]">Recorrido:</span>
                                     <span className={`font-mono font-medium ${isFavorable ? 'text-emerald-400' : 'text-rose-400'}`}>
                                       {isFavorable ? '▲ +' : '▼ '}{Math.abs(Number(changePct)).toFixed(2)}%
                                     </span>
                                   </div>
 
                                   {/* Fila 3: Pico Máximo y Caída desde el pico (LONG) o Suelo y Rebote (SHORT) */}
-                                  <div className="mt-1 pt-0.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
+                                  <div className="mt-0.5 pt-0.5 border-t border-slate-800/80 flex items-center justify-between text-[9px]">
                                     {!isShort ? (
                                       <>
                                         <span className="text-amber-300/90 font-sans font-normal" title="Precio pico más alto alcanzado desde la entrada">
@@ -1227,78 +1330,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                             })}
                           </div>
                         );
-                      })() : (
-                        <div className="flex flex-col font-mono text-xs">
-                          {status.current_price ? (
-                            <>
-                              <span className="text-slate-300 font-medium">
-                                ${parseFloat(status.current_price).toFixed(parseFloat(status.current_price) < 1 ? 4 : 2)}
-                              </span>
-                              <span className="text-[10px] text-slate-500 font-sans italic">📡 En radar</span>
-                            </>
-                          ) : (
-                            <span className="text-slate-600 font-mono text-[11px]">—</span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-
-                    {/* --- PnL (FLOTANTE / HISTÓRICO) --- */}
-                    <td className="px-3 py-3 whitespace-nowrap text-xs min-w-[150px]">
-                      <div className="flex flex-col gap-1.5">
-                        {/* Flotante actual */}
-                        <div className="flex flex-col">
-                          <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400 font-sans">
-                            <span>Flotante:</span>
-                            {status.in_position ? (
-                              <span className={`font-mono font-medium ${getPnlColorClass(status.current_pnl)}`}>
-                                {formatPnl(status.current_pnl)}
-                              </span>
-                            ) : (
-                              <span className="text-slate-500 font-mono">0.00 USDT</span>
-                            )}
-                          </div>
-                          {status.in_position && (() => {
-                            const activeSubPositions = (status.positions || []).filter(p => p.in_position);
-                            if (activeSubPositions.length > 1) {
-                              return (
-                                <div className="flex flex-col gap-0.5 mt-0.5 text-[10px] font-mono">
-                                  {activeSubPositions.map((sp, pIdx) => {
-                                    const isShort = sp.trade_side === 'SHORT';
-                                    return (
-                                      <div key={pIdx} className="flex items-center justify-between text-[10px]">
-                                        <span className="text-slate-400 font-sans">{isShort ? '🔴 S:' : '🟢 L:'}</span>
-                                        <span className={`font-mono font-medium ${getPnlColorClass(sp.current_pnl)}`}>
-                                          {formatPnl(sp.current_pnl)}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              );
-                            }
-                            return null;
-                          })()}
-                        </div>
-
-                        {/* Histórico realizado */}
-                        <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-800 text-[10px]">
-                          <span className="text-slate-400 font-sans">Histórico:</span>
-                          <span className={`font-mono font-medium ${getPnlColorClass(status.historical_pnl)}`}>
-                            {formatPnl(status.historical_pnl)}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* --- RADAR & TELEMETRÍA LONG --- */}
-                    <td className="px-3 py-2 text-xs min-w-[340px] align-middle">
-                      <SideDiagnosticsCell status={status} side="LONG" />
-                    </td>
-
-                    {/* --- RADAR & TELEMETRÍA SHORT --- */}
-                    <td className="px-3 py-2 text-xs min-w-[340px] align-middle">
-                      <SideDiagnosticsCell status={status} side="SHORT" />
+                      })()}
                     </td>
                     <td className="px-3 py-3 text-xs">
                       {status.last_error ? (
@@ -1473,23 +1505,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     <span>TOTALES CONSOLIDADOS ({sortedStatuses.length} pares)</span>
                   </div>
                 </td>
-                {/* 4: Posición & Margen */}
-                <td className="px-3 py-3 font-medium text-slate-200">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-slate-400 font-sans">Margen total:</span>
-                    <span className="text-white font-mono font-medium">${totalMarginCommitted.toFixed(2)} USDT</span>
-                  </div>
-                </td>
-                {/* 5: Precios & Recorrido */}
-                <td className="px-3 py-3 font-mono text-xs">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-slate-400 font-sans">En posición:</span>
-                    <span className="font-medium text-amber-300">
-                      {sortedStatuses.filter(s => s.in_position).length} pares activos
-                    </span>
-                  </div>
-                </td>
-                {/* 6: PnL (Flotante / Hist.) */}
+                {/* 4: PnL (Flotante / Hist.) */}
                 <td className="px-3 py-3 text-xs font-mono">
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between gap-1.5">
@@ -1506,13 +1522,31 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     </div>
                   </div>
                 </td>
-                {/* 7, 8 y 9: Radar LONG, Radar SHORT y Last Error */}
-                <td colSpan="3" className="px-3 py-3 text-right text-[11px] text-slate-400 font-sans">
+                {/* 5 y 6: Radar LONG y Radar SHORT */}
+                <td colSpan="2" className="px-3 py-3 text-center text-[11px] text-slate-400 font-sans">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700/60 text-slate-300">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                     Métricas en vivo (Dual Hedge)
                   </span>
                 </td>
+                {/* 7: Posición & Margen */}
+                <td className="px-3 py-3 font-medium text-slate-200">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 font-sans">Margen total:</span>
+                    <span className="text-white font-mono font-medium">${totalMarginCommitted.toFixed(2)} USDT</span>
+                  </div>
+                </td>
+                {/* 8: Precios & Recorrido */}
+                <td className="px-3 py-3 font-mono text-xs">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 font-sans">En posición:</span>
+                    <span className="font-medium text-amber-300">
+                      {sortedStatuses.filter(s => s.in_position).length} pares activos
+                    </span>
+                  </div>
+                </td>
+                {/* 9: Last Error */}
+                <td className="px-3 py-3 text-slate-600 font-mono text-[11px] text-center">—</td>
               </tr>
             </tfoot>
           )}
