@@ -413,53 +413,6 @@ def adjust_quantity_for_symbol(symbol: str, quantity: float | Decimal) -> float 
 
     return float(qty_dec)
 
-def create_futures_market_order(symbol: str, side: str, quantity: float, position_side: str | None = None):
-    """
-    Crea una orden de mercado de futuros (MARKET).
-    Ajusta automáticamente la cantidad a la precisión requerida y resuelve positionSide (One-Way vs Hedge).
-    """
-    logger = get_logger()
-    client = get_futures_client()
-    if not client:
-        logger.error("No se pudo obtener el cliente UMFutures para crear orden.")
-        return None
-
-    if side not in ['BUY', 'SELL']:
-        logger.error(f"Lado de orden inválido: {side}. Debe ser 'BUY' o 'SELL'.")
-        return None
-
-    adj_qty = adjust_quantity_for_symbol(symbol, quantity)
-    if adj_qty is None or adj_qty <= 0:
-        logger.error(f"[{symbol}] Cantidad inválida para orden {quantity} tras ajuste por lot size.")
-        return None
-
-    # Respetar Hedge Mode vs One-Way Mode
-    hedge = is_hedge_mode()
-    if hedge:
-        position_side_to_use = position_side if position_side in ('LONG', 'SHORT') else ('LONG' if side == 'BUY' else 'SHORT')
-    else:
-        position_side_to_use = 'BOTH'
-
-    params = {
-        'symbol': symbol.upper(),
-        'side': side,
-        'type': 'MARKET',
-        'quantity': adj_qty,
-        'positionSide': position_side_to_use
-    }
-
-    logger.warning(f"[{symbol}] Creando orden MARKET: {side} {adj_qty} (PositionSide={position_side_to_use})")
-
-    try:
-        order = client.new_order(**params)
-        logger.info(f"[{symbol}] Orden MARKET exitosa: ID={order.get('orderId')}, Status={order.get('status')}")
-        return order
-    except ClientError as e:
-        logger.error(f"[{symbol}] Error de API al crear orden MARKET {side} {adj_qty}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
-        return None
-    except Exception as e:
-        logger.error(f"[{symbol}] Error inesperado al crear orden MARKET {side} {adj_qty}: {e}", exc_info=True)
-        return None
 
 def get_futures_position(symbol: str, position_side: str | None = None):
     """
@@ -592,16 +545,7 @@ def create_futures_limit_order(symbol: str, side: str, quantity: float, price: f
     """
     Crea una orden LIMIT en Binance Futures.
     Utiliza timeInForce='GTC' (Good 'Til Canceled).
-
-    Args:
-        symbol: Símbolo del par (ej: 'BTCUSDT').
-        side: 'BUY' o 'SELL'.
-        quantity: La cantidad a comprar/vender.
-        price: El precio límite para la orden.
-        position_side: 'LONG', 'SHORT' o 'BOTH'. Si es None, autodetecta según Hedge Mode y side.
-
-    Returns:
-        El diccionario de respuesta de la API si la orden se creó exitosamente, None si falló.
+    Ajusta automáticamente la cantidad al LOT_SIZE del símbolo y resuelve positionSide (One-Way vs Hedge).
     """
     client = get_futures_client()
     logger = get_logger()
@@ -614,49 +558,47 @@ def create_futures_limit_order(symbol: str, side: str, quantity: float, price: f
         logger.error(f"Lado inválido '{side}' para crear orden LIMIT.")
         return None
 
-    if position_side:
-        pos_side = position_side.upper()
-    else:
-        if is_hedge_mode():
-            pos_side = 'LONG' if side == 'BUY' else 'SHORT'
+    adj_qty = adjust_quantity_for_symbol(symbol, quantity)
+    if adj_qty is None or adj_qty <= 0:
+        logger.error(f"[{symbol}] Cantidad inválida para orden LIMIT ({quantity}) tras ajuste por lot size.")
+        return None
+
+    hedge = is_hedge_mode()
+    if hedge:
+        if position_side and position_side.upper() in ('LONG', 'SHORT'):
+            pos_side = position_side.upper()
         else:
-            pos_side = 'BOTH'
+            pos_side = 'LONG' if side == 'BUY' else 'SHORT'
+    else:
+        pos_side = 'BOTH'
 
     price_str = str(price)
 
     try:
-        logger.info(f"Intentando crear orden LIMIT {side} para {quantity} {symbol} @ {price_str} (positionSide={pos_side})")
+        logger.info(f"[{symbol}] Creando orden LIMIT {side} para {adj_qty} @ {price_str} (positionSide={pos_side})")
         params = {
             'symbol': symbol.upper(),
             'side': side,
             'type': 'LIMIT',
             'timeInForce': 'GTC',
-            'quantity': quantity,
+            'quantity': adj_qty,
             'price': price_str,
             'positionSide': pos_side
         }
         order = client.new_order(**params)
-        logger.info(f"Orden LIMIT {side} creada para {symbol}. Respuesta API: {order}")
+        logger.info(f"[{symbol}] Orden LIMIT {side} creada con éxito: ID={order.get('orderId')}, Status={order.get('status')}")
         return order
+    except ClientError as e:
+        logger.error(f"[{symbol}] Error de API al crear orden LIMIT {side} {adj_qty} @ {price_str}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
+        return None
     except Exception as e:
-        logger.error(f"Error al crear orden LIMIT {side} para {symbol} @ {price_str}: {e}", exc_info=True)
+        logger.error(f"[{symbol}] Error al crear orden LIMIT {side} @ {price_str}: {e}", exc_info=True)
         return None
 
 def create_futures_market_order(symbol: str, side: str, quantity: float, reduce_only: bool = False, position_side: str | None = None) -> dict | None:
     """
     Crea una orden MARKET (a mercado) en Binance Futures.
-    Se ejecuta de forma inmediata al precio actual disponible en el order book.
-    Comportamiento idéntico al backtesting.
-
-    Args:
-        symbol: Símbolo del par (ej: 'BTCUSDT').
-        side: 'BUY' o 'SELL'.
-        quantity: Cantidad de contratos/monedas a operar.
-        reduce_only: Si es True, solo reduce/cierra posición existente (solo en modo unidireccional).
-        position_side: 'LONG', 'SHORT' o 'BOTH' opcional. Si es None, autodetecta según Hedge Mode.
-
-    Returns:
-        El diccionario de respuesta de la API si la orden se ejecutó exitosamente, None si falló.
+    Ajusta automáticamente la cantidad al LOT_SIZE del símbolo y resuelve positionSide (One-Way vs Hedge).
     """
     client = get_futures_client()
     logger = get_logger()
@@ -669,28 +611,40 @@ def create_futures_market_order(symbol: str, side: str, quantity: float, reduce_
         logger.error(f"Lado inválido '{side}' para crear orden MARKET.")
         return None
 
-    if position_side:
-        pos_side = position_side.upper()
+    adj_qty = adjust_quantity_for_symbol(symbol, quantity)
+    if adj_qty is None or adj_qty <= 0:
+        logger.error(f"[{symbol}] Cantidad inválida para orden MARKET ({quantity}) tras ajuste por lot size.")
+        return None
+
+    hedge = is_hedge_mode()
+    if hedge:
+        if position_side and position_side.upper() in ('LONG', 'SHORT'):
+            pos_side = position_side.upper()
+        else:
+            pos_side = 'LONG' if side == 'BUY' else 'SHORT'
     else:
-        pos_side = 'LONG' if is_hedge_mode() else 'BOTH'
+        pos_side = 'BOTH'
 
     try:
-        logger.info(f"Intentando crear orden MARKET {side} para {quantity} {symbol} (positionSide={pos_side}, reduceOnly={reduce_only})")
+        logger.warning(f"[{symbol}] Creando orden MARKET {side} para {adj_qty} (positionSide={pos_side}, reduceOnly={reduce_only if not hedge else False})")
         params = {
             'symbol': symbol.upper(),
             'side': side,
             'type': 'MARKET',
-            'quantity': quantity,
+            'quantity': adj_qty,
             'positionSide': pos_side
         }
-        if not is_hedge_mode() and reduce_only:
+        if not hedge and reduce_only:
             params['reduceOnly'] = 'true'
 
         order = client.new_order(**params)
-        logger.info(f"Orden MARKET {side} ejecutada para {symbol}. Respuesta API: {order}")
+        logger.info(f"[{symbol}] Orden MARKET {side} ejecutada con éxito: ID={order.get('orderId')}, Status={order.get('status')}")
         return order
+    except ClientError as e:
+        logger.error(f"[{symbol}] Error de API al crear orden MARKET {side} {adj_qty}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
+        return None
     except Exception as e:
-        logger.error(f"Error al crear orden MARKET {side} para {symbol}: {e}", exc_info=True)
+        logger.error(f"[{symbol}] Error al crear orden MARKET {side} para {symbol}: {e}", exc_info=True)
         return None
 
 def get_order_status(symbol: str, order_id: int) -> dict | None:
@@ -761,13 +715,14 @@ def create_futures_take_profit_order(symbol: str, side: str, quantity: float, ta
         logger.error("Cliente de Binance no inicializado al intentar crear orden Take Profit.")
         return None
 
-    if position_side:
-        pos_side = position_side.upper()
-    else:
-        if is_hedge_mode():
-            pos_side = 'SHORT' if side == 'BUY' else 'LONG'
+    hedge = is_hedge_mode()
+    if hedge:
+        if position_side and position_side.upper() in ('LONG', 'SHORT'):
+            pos_side = position_side.upper()
         else:
-            pos_side = 'BOTH'
+            pos_side = 'SHORT' if side == 'BUY' else 'LONG'
+    else:
+        pos_side = 'BOTH'
 
     params = {
         'symbol': symbol,
@@ -780,7 +735,7 @@ def create_futures_take_profit_order(symbol: str, side: str, quantity: float, ta
         params['closePosition'] = 'true'
     else:
         params['closePosition'] = 'false'
-        params['quantity'] = quantity
+        params['quantity'] = adjust_quantity_for_symbol(symbol, quantity) or quantity
 
     logger.info(f"Intentando colocar orden TAKE_PROFIT_MARKET para {symbol}: Side={side}, TP Price={take_profit_price}, ClosePos={close_position}, PositionSide={pos_side}, Params={params}")
     try:
@@ -811,13 +766,14 @@ def create_futures_stop_loss_order(symbol: str, side: str, quantity: float, stop
         logger.error("Cliente de Binance no inicializado al intentar crear orden Stop Loss.")
         return None
 
-    if position_side:
-        pos_side = position_side.upper()
-    else:
-        if is_hedge_mode():
-            pos_side = 'SHORT' if side == 'BUY' else 'LONG'
+    hedge = is_hedge_mode()
+    if hedge:
+        if position_side and position_side.upper() in ('LONG', 'SHORT'):
+            pos_side = position_side.upper()
         else:
-            pos_side = 'BOTH'
+            pos_side = 'SHORT' if side == 'BUY' else 'LONG'
+    else:
+        pos_side = 'BOTH'
 
     o_type = order_type if order_type in ('STOP_MARKET', 'STOP') else 'STOP_MARKET'
     w_type = trigger_type if trigger_type in ('MARK_PRICE', 'CONTRACT_PRICE') else 'MARK_PRICE'
@@ -834,7 +790,7 @@ def create_futures_stop_loss_order(symbol: str, side: str, quantity: float, stop
         params['closePosition'] = 'true'
     else:
         params['closePosition'] = 'false'
-        params['quantity'] = quantity
+        params['quantity'] = adjust_quantity_for_symbol(symbol, quantity) or quantity
 
     logger.info(f"Intentando colocar orden {o_type} para {symbol}: Side={side}, SL Price={stop_loss_price}, WorkingType={w_type}, ClosePos={close_position}, PositionSide={pos_side}, Params={params}")
     try:

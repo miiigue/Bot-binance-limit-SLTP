@@ -1707,6 +1707,16 @@ class SingleSideTradingBot:
         self.logger.info(f"[{self.symbol}] --- Inicio run_once. Estado: {self.current_state.value} (in_position={self.in_position}, pending_entry={self.pending_entry_order_id}) ---")
         
         try:
+            # 0. Auto-recuperación si el bot quedó en estado ERROR
+            if self.current_state == BotState.ERROR:
+                self.logger.info(f"[{self.symbol}][{self.trade_side}] Bot en estado ERROR. Verificando estado en Binance para auto-recuperación...")
+                self._verify_position_status()
+                if not self.in_position and not self.pending_entry_order_id and not self.pending_exit_order_id:
+                    self.logger.info(f"[{self.symbol}][{self.trade_side}] Sin posición ni órdenes pendientes en Binance. Auto-recuperando estado a IDLE.")
+                    self.current_state = BotState.IDLE
+                    self.state = BotState.IDLE
+                    self.last_error_message = None
+
             # 1. Si hay una orden de entrada pendiente, verificar de inmediato si fue FILLED o CANCELED
             if self.pending_entry_order_id:
                 self._check_pending_entry_order()
@@ -2397,7 +2407,8 @@ class SingleSideTradingBot:
                     self._update_state(BotState.WAITING_EXIT_FILL)
             else:
                 self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden MARKET {close_side} para cerrar posición (Razón: {reason}).")
-                self._set_error_state(f"Failed to place market exit order (reason: {reason}).")
+                self.last_error_message = f"Failed to place market exit order (reason: {reason})."
+                self._update_state(BotState.IN_POSITION)
         elif reason and any(kw in reason.lower() for kw in ['stop_loss', 'emergency', 'trailing', 'crash']):
             # Para salidas de emergencia (SL, trailing stops), usar MARKET para garantizar ejecución
             self.logger.warning(f"[{self.symbol}][{self.trade_side}] Salida de emergencia ({reason}): usando orden MARKET {close_side} para garantizar cierre.")
@@ -2423,7 +2434,8 @@ class SingleSideTradingBot:
                     self._update_state(BotState.WAITING_EXIT_FILL)
             else:
                 self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden MARKET {close_side} de emergencia (Razón: {reason}).")
-                self._set_error_state(f"Failed to place emergency market exit order (reason: {reason}).")
+                self.last_error_message = f"Failed to place emergency market exit order (reason: {reason})."
+                self._update_state(BotState.IN_POSITION)
         else:
             order_result = create_futures_limit_order(self.symbol, close_side, quantity_to_sell, limit_sell_price_adjusted, position_side=pos_side)
 
@@ -2436,7 +2448,8 @@ class SingleSideTradingBot:
                 self._update_state(BotState.WAITING_EXIT_FILL)
             else:
                 self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden LIMIT {close_side} para cerrar posición (Razón: {reason}).")
-                self._set_error_state(f"Failed to place exit order (reason: {reason}).")
+                self.last_error_message = f"Failed to place exit order (reason: {reason})."
+                self._update_state(BotState.IN_POSITION)
     # --- Fin del nuevo método ---
 
     def _check_entry_conditions(self, klines_df: pd.DataFrame):
@@ -2935,7 +2948,8 @@ class SingleSideTradingBot:
                             self._update_state(BotState.WAITING_ENTRY_FILL)
                     else:
                         self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden MARKET {entry_order_side}.")
-                        self._set_error_state(f"Failed to place market entry order ({entry_order_side}).")
+                        self.last_error_message = f"Failed to place market entry order ({entry_order_side})."
+                        self._update_state(BotState.IDLE)
                 else:
                     self.logger.warning(f"[{self.symbol}][{self.trade_side}] SEÑAL DE ENTRADA ({self.entry_reason}). Intentando colocar orden LIMIT {entry_order_side} @ {limit_entry_price:.{price_precision_log}f}, Cantidad={quantity}")
                     self._update_state(BotState.PLACING_ENTRY)
@@ -2949,7 +2963,8 @@ class SingleSideTradingBot:
                         self._update_state(BotState.WAITING_ENTRY_FILL)
                     else:
                         self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden LIMIT {entry_order_side}.")
-                        self._set_error_state(f"Failed to place entry order ({entry_order_side}).") 
+                        self.last_error_message = f"Failed to place entry order ({entry_order_side})."
+                        self._update_state(BotState.IDLE) 
             else:
                 # self.logger.debug(f"[{self.symbol}] No hay señal de entrada en este ciclo.") # Ya logueado arriba
                 self._update_state(BotState.IDLE) 
