@@ -55,25 +55,31 @@ git push origin main
 
 ## 3. Despliegue en el VPS Remoto (SSH desde PowerShell)
 
-### Opción A: Despliegue Completo (Backend + Frontend)
+> [!IMPORTANT]
+> En el VPS remoto `/opt/bot-binance`, el archivo `config.ini` se modifica de manera continua durante el tiempo de ejecución (por el servidor API al guardar ajustes, llaves o cambios de estado).
+> Un `git pull origin main` directo **SIEMPRE FALLARÁ** con el error:
+> `error: Your local changes to the following files would be overwritten by merge: config.ini`.
+> **REGLA MANDATORIA:** Todos los comandos de despliegue DEBEN ejecutar `git stash` antes de `git pull` y `git stash pop` después para preservar la configuración local y evitar rechazos de Git.
+
+### Opción A: Despliegue Estándar Completo (Backend + Frontend)
 Usar cuando se hayan modificado componentes de la interfaz web (`frontend/`) o archivos del bot:
 
 ```powershell
-ssh root@178.105.192.140 "cd /opt/bot-binance && git pull origin main && cd frontend && npm run build && cd .. && systemctl restart binance-bot"
+ssh root@178.105.192.140 "cd /opt/bot-binance && git stash && git pull origin main && git stash pop && cd frontend && npm run build && cd .. && systemctl restart binance-bot"
 ```
 
 ### Opción B: Despliegue Rápido (Solo Backend / Python)
 Usar cuando únicamente se hayan modificado archivos `.py` o parámetros de configuración, sin cambios en frontend:
 
 ```powershell
-ssh root@178.105.192.140 "cd /opt/bot-binance && git pull origin main && systemctl restart binance-bot"
+ssh root@178.105.192.140 "cd /opt/bot-binance && git stash && git pull origin main && git stash pop && systemctl restart binance-bot"
 ```
 
-### Opción C: Resolución de Conflictos en el VPS
-Si en el VPS se modificaron archivos locales (como `config.ini` o bases de datos) y `git pull` es rechazado:
+### Opción C: Forzar Actualización Limpia (Si persiste conflicto irrecuperable)
+Si `git stash pop` reportara conflicto de fusión en `config.ini` que impida el despliegue automático:
 
 ```powershell
-ssh root@178.105.192.140 "cd /opt/bot-binance && git stash && git pull origin main && git stash pop && cd frontend && npm run build && cd .. && systemctl restart binance-bot"
+ssh root@178.105.192.140 "cd /opt/bot-binance && git stash drop || true && git checkout -- config.ini && git pull origin main && cd frontend && npm run build && cd .. && systemctl restart binance-bot"
 ```
 
 ---
