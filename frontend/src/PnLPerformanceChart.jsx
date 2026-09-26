@@ -1,6 +1,62 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import Tooltip from './Tooltip';
 
+// Helper robusto para parsear fechas de diversas fuentes y formatos (ISO, timestamp numérico, SQLite)
+const parseDate = (val) => {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val === 'number') {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const s = String(val).trim();
+  if (!s) return null;
+  if (/^\d{10,13}$/.test(s)) {
+    const d = new Date(Number(s.length === 10 ? s + '000' : s));
+    if (!isNaN(d.getTime())) return d;
+  }
+  const iso = s.includes('T') ? (s.endsWith('Z') || s.includes('+') ? s : s + 'Z') : s.replace(' ', 'T') + 'Z';
+  let d = new Date(iso);
+  if (!isNaN(d.getTime())) return d;
+  d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+// Formatea duración transcurrida legible (ej: 2d 5h 14m, 3h 22m, 45m 12s, 30s)
+const formatDuration = (ms) => {
+  if (!ms || ms < 0 || isNaN(ms)) return '0s';
+  const totalSeconds = Math.floor(ms / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+};
+
+// Formato de hora compacto para el eje X (ej: 14:32)
+const formatTimeHHmm = (d) => {
+  if (!d) return '--:--';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+};
+
+// Formato completo de fecha y hora para el inspector (ej: 26 sept 2026, 14:32:15)
+const formatFullDateTime = (d) => {
+  if (!d) return '---';
+  return d.toLocaleString([], {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+};
+
 function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
   const [trades, setTrades] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,6 +79,8 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
   const [rankingViewMode, setRankingViewMode] = useState('COINS');
   // Estado para la inspección interactiva del trade seleccionado al pasar el cursor o tocar la barra
   const [activeTradeInspector, setActiveTradeInspector] = useState(null);
+  // Estado para la inspección interactiva de los puntos en la curva de capital (Punto Cero y cierres)
+  const [selectedEquityIndex, setSelectedEquityIndex] = useState(null);
 
   // Cargar datos financieros y de billetera
   const fetchAllData = async () => {
@@ -231,33 +289,105 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
     ? Math.min(...filteredTrades.map(t => getTradePnL(t)))
     : 0;
 
-  // Curva de Capital (Cumulative Equity) y Maximum Drawdown (MDD)
-  const { equityPoints, maxDrawdownUSDT, maxDrawdownPercent } = useMemo(() => {
+  // Curva de Capital (Cumulative Equity), Maximum Drawdown (MDD) y Lapso de Tiempo
+  const {
+    equityPoints,
+    maxDrawdownUSDT,
+    maxDrawdownPercent,
+    totalSessionElapsedStr,
+    puntoCeroDate,
+    lastCloseDate
+  } = useMemo(() => {
+    // 1. Ordenar cronológicamente ascendente (desde el primer trade hasta el más reciente)
+    const sortedTrades = [...filteredTrades].sort((a, b) => {
+      const da = parseDate(a.close_timestamp || a.open_timestamp)?.getTime() || (a.id || 0);
+      const db = parseDate(b.close_timestamp || b.open_timestamp)?.getTime() || (b.id || 0);
+      return da - db;
+    });
+
+    if (sortedTrades.length === 0) {
+      return {
+        equityPoints: [],
+        maxDrawdownUSDT: 0,
+        maxDrawdownPercent: '0.00',
+        totalSessionElapsedStr: '0s',
+        puntoCeroDate: null,
+        lastCloseDate: null
+      };
+    }
+
+    // 2. Establecer el Punto Cero (apertura de la primera posición)
+    const pCeroDate = parseDate(sortedTrades[0].open_timestamp) || parseDate(sortedTrades[0].close_timestamp) || new Date();
+    const lCloseDate = parseDate(sortedTrades[sortedTrades.length - 1].close_timestamp) || parseDate(sortedTrades[sortedTrades.length - 1].open_timestamp) || pCeroDate;
+    const sessionElapsedMs = Math.max(0, lCloseDate.getTime() - pCeroDate.getTime());
+    const sessionElapsedFormatted = formatDuration(sessionElapsedMs);
+
     let runningTotal = 0;
     let peak = 0;
     let maxDD = 0;
 
-    const points = filteredTrades.map((t, idx) => {
+    const points = [];
+
+    // Punto Cero: Momento exacto de apertura de la primera posición
+    points.push({
+      index: 0,
+      isPuntoCero: true,
+      label: 'Punto Cero (Inicio)',
+      symbol: sortedTrades[0].symbol || 'INICIO',
+      side: sortedTrades[0].trade_type || 'LONG',
+      pnl: 0,
+      cumulative: 0,
+      date: pCeroDate,
+      time: formatTimeHHmm(pCeroDate),
+      fullDateTime: formatFullDateTime(pCeroDate),
+      elapsedMs: 0,
+      elapsedStr: '0s (Inicio)',
+      diffUSDT: 0,
+      diffPercent: 0,
+      diffDirection: 'NONE',
+      tradeObj: null
+    });
+
+    // Puntos de Cierre: 1 hasta N
+    sortedTrades.forEach((t, idx) => {
       const pnl = getTradePnL(t);
+      const prevCumulative = runningTotal;
       runningTotal += pnl;
+
       if (runningTotal > peak) peak = runningTotal;
       const currentDD = peak - runningTotal;
       if (currentDD > maxDD) maxDD = currentDD;
 
-      return {
+      const cDate = parseDate(t.close_timestamp) || parseDate(t.open_timestamp) || pCeroDate;
+      const tradeElapsedMs = Math.max(0, cDate.getTime() - pCeroDate.getTime());
+      const tradeElapsedFormatted = formatDuration(tradeElapsedMs);
+
+      const diffUSDT = runningTotal - prevCumulative; // Equivale al PnL de este cierre
+      let diffPct = 0;
+      if (prevCumulative === 0) {
+        diffPct = diffUSDT !== 0 ? (diffUSDT > 0 ? 100 : -100) : 0;
+      } else {
+        diffPct = (diffUSDT / Math.abs(prevCumulative)) * 100;
+      }
+
+      points.push({
         index: idx + 1,
-        symbol: t.symbol,
+        isPuntoCero: false,
+        label: `Cierre #${idx + 1}`,
+        symbol: t.symbol || '',
+        side: t.trade_type || 'LONG',
         pnl,
         cumulative: runningTotal,
-        time: t.close_timestamp ? (() => {
-          const raw = String(t.close_timestamp).trim();
-          const iso = (raw.includes('T') || raw.includes('Z') || raw.includes('+'))
-            ? (raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z')
-            : raw.replace(' ', 'T') + 'Z';
-          const p = new Date(iso);
-          return isNaN(p.getTime()) ? t.close_timestamp : p.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        })() : `#${idx + 1}`
-      };
+        date: cDate,
+        time: formatTimeHHmm(cDate),
+        fullDateTime: formatFullDateTime(cDate),
+        elapsedMs: tradeElapsedMs,
+        elapsedStr: tradeElapsedFormatted,
+        diffUSDT,
+        diffPercent: diffPct,
+        diffDirection: diffUSDT > 0 ? 'UP' : (diffUSDT < 0 ? 'DOWN' : 'FLAT'),
+        tradeObj: t
+      });
     });
 
     const totalBalanceRef = riskData ? parseFloat(riskData.total_balance) || 1000 : 1000;
@@ -266,14 +396,24 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
     return {
       equityPoints: points,
       maxDrawdownUSDT: maxDD,
-      maxDrawdownPercent: maxDDPct
+      maxDrawdownPercent: maxDDPct,
+      totalSessionElapsedStr: sessionElapsedFormatted,
+      puntoCeroDate: pCeroDate,
+      lastCloseDate: lCloseDate
     };
   }, [filteredTrades, riskData]);
 
+  // Selección del punto a inspeccionar (por defecto el último cierre registrado)
+  const activeEquityIndex = (selectedEquityIndex !== null && selectedEquityIndex >= 0 && selectedEquityIndex < equityPoints.length)
+    ? selectedEquityIndex
+    : (equityPoints.length > 0 ? equityPoints.length - 1 : 0);
+
+  const inspectedEquityPoint = equityPoints[activeEquityIndex] || null;
+
   // SVG Dimensiones y Escalas
   const svgWidth = 800;
-  const svgHeight = 220;
-  const padding = { top: 20, right: 30, bottom: 30, left: 60 };
+  const svgHeight = 250;
+  const padding = { top: 25, right: 35, bottom: 45, left: 60 };
 
   const minEquity = equityPoints.length > 0 ? Math.min(0, ...equityPoints.map(p => p.cumulative)) : 0;
   const maxEquity = equityPoints.length > 0 ? Math.max(1, ...equityPoints.map(p => p.cumulative)) : 1;
@@ -299,6 +439,26 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
   const areaPath = equityPoints.length > 0
     ? `${linePath} L ${getX(equityPoints.length - 1)} ${zeroY} L ${getX(0)} ${zeroY} Z`
     : '';
+
+  // Marcas de tiempo en el eje X para mostrar las horas de los cierres sin solapamientos
+  const xAxisTicks = useMemo(() => {
+    if (equityPoints.length <= 1) return [];
+    if (equityPoints.length <= 8) {
+      return equityPoints.map((pt, i) => ({ point: pt, index: i }));
+    }
+    const count = 7;
+    const step = (equityPoints.length - 1) / (count - 1);
+    const result = [];
+    const usedIndices = new Set();
+    for (let c = 0; c < count; c++) {
+      const idx = Math.min(equityPoints.length - 1, Math.round(c * step));
+      if (!usedIndices.has(idx)) {
+        usedIndices.add(idx);
+        result.push({ point: equityPoints[idx], index: idx });
+      }
+    }
+    return result;
+  }, [equityPoints]);
 
   // ========================================================
   // DESGLOSE Y RANKING POR CRIPTOMONEDA (CON ORDENAMIENTO)
@@ -1274,21 +1434,106 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
 
         </div>
 
-        {/* Curva de Capital Acumulado SVG */}
+        {/* Curva de Capital Acumulado SVG con Horas y Tiempo Transcurrido */}
         {equityPoints.length > 1 ? (
           <div className="mt-4 p-4 bg-gray-950 rounded-xl border border-gray-800 relative">
-            <div className="flex items-center justify-between px-2 mb-2">
-              <span className="text-xs font-bold text-gray-300 flex items-center gap-1">
-                <span>📈 Curva de Crecimiento de Capital ({equityPoints.length} operaciones)</span>
-                <Tooltip title="Curva de Crecimiento de Capital" text="Muestra la evolución cronológica del saldo acumulado trade a trade. Una pendiente ascendente constante refleja consistencia en la estrategia." />
-              </span>
-              <span className="text-xs font-mono text-emerald-400">
-                Total Acumulado: {netPnL >= 0 ? `+${netPnL.toFixed(4)}` : netPnL.toFixed(4)} USDT
-              </span>
+            {/* Cabecera de la Curva con Lapso Total desde Punto Cero */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-200 flex items-center gap-1.5">
+                  <span>📈 Curva de Crecimiento de Capital</span>
+                  <Tooltip title="Curva de Crecimiento de Capital" text="Muestra la evolución cronológica del capital desde la apertura de la primera posición (Punto Cero) hasta cada cierre registrado." />
+                </span>
+                <span className="bg-slate-800 text-slate-300 text-[11px] px-2 py-0.5 rounded font-mono font-semibold">
+                  {filteredTrades.length} {filteredTrades.length === 1 ? 'cierre' : 'cierres'}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+                {/* Lapso de tiempo transcurrido desde Punto Cero hasta el último cierre */}
+                <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 px-2.5 py-1 rounded-lg shadow-sm">
+                  <span className="text-amber-400 font-bold">⏱️ Lapso Total:</span>
+                  <span className="text-white font-black">{totalSessionElapsedStr}</span>
+                  <span className="text-slate-400 text-[10px] hidden sm:inline">(Punto Cero ➔ Último)</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 px-2.5 py-1 rounded-lg shadow-sm">
+                  <span className="text-slate-400">Total Acumulado:</span>
+                  <span className={`font-black ${netPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {netPnL >= 0 ? `+${netPnL.toFixed(4)}` : netPnL.toFixed(4)} USDT
+                  </span>
+                </div>
+              </div>
             </div>
 
+            {/* Inspector Interactivo del Punto / Cierre Seleccionado (Al tocar o pasar el cursor) */}
+            {inspectedEquityPoint && (
+              <div className="mb-3 p-3 bg-slate-900/95 rounded-xl border border-slate-700 shadow-lg transition-all animate-fadeIn">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${
+                      inspectedEquityPoint.isPuntoCero 
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+                        : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                    }`}>
+                      {inspectedEquityPoint.isPuntoCero ? '🎯 PUNTO CERO' : `📍 CIERRE #${inspectedEquityPoint.index}`}
+                    </span>
+                    <span className="text-xs font-bold text-white font-mono">
+                      {inspectedEquityPoint.isPuntoCero ? 'Apertura de la Primera Posición (Punto de Referencia)' : `${inspectedEquityPoint.symbol} (${inspectedEquityPoint.side})`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-slate-300 font-mono text-[11px]">📅 {inspectedEquityPoint.fullDateTime}</span>
+                    <span className="bg-slate-800 text-amber-300 px-2 py-0.5 rounded font-mono font-bold text-[11px] border border-slate-700">
+                      ⏱️ {inspectedEquityPoint.isPuntoCero ? 'Inicio (0s)' : `+${inspectedEquityPoint.elapsedStr} desde Punto Cero`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                  {/* Resultado del cierre */}
+                  <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">PnL del Cierre</span>
+                    <span className={`text-sm font-black ${inspectedEquityPoint.isPuntoCero ? 'text-slate-400' : (inspectedEquityPoint.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400')}`}>
+                      {inspectedEquityPoint.isPuntoCero ? '0.0000 USDT' : `${inspectedEquityPoint.pnl >= 0 ? '+' : ''}${inspectedEquityPoint.pnl.toFixed(4)} USDT`}
+                    </span>
+                  </div>
+
+                  {/* Capital Acumulado */}
+                  <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Capital Acumulado</span>
+                    <span className={`text-sm font-black ${inspectedEquityPoint.cumulative >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {inspectedEquityPoint.cumulative >= 0 ? '+' : ''}${inspectedEquityPoint.cumulative.toFixed(4)} USDT
+                    </span>
+                  </div>
+
+                  {/* Diferencia vs Cierre Anterior */}
+                  <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Diferencia vs Anterior</span>
+                    <span className={`text-sm font-black ${inspectedEquityPoint.isPuntoCero ? 'text-slate-400' : (inspectedEquityPoint.diffUSDT >= 0 ? 'text-emerald-400' : 'text-rose-400')}`}>
+                      {inspectedEquityPoint.isPuntoCero ? 'Base Inicial (0.00)' : `${inspectedEquityPoint.diffUSDT >= 0 ? '+' : ''}${inspectedEquityPoint.diffUSDT.toFixed(4)} USDT`}
+                    </span>
+                  </div>
+
+                  {/* % Crecimiento / Bajada */}
+                  <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">% Rendimiento vs Anterior</span>
+                    {inspectedEquityPoint.isPuntoCero ? (
+                      <span className="text-xs text-slate-400 font-bold">Punto 0.00%</span>
+                    ) : (
+                      <span className={`text-sm font-black inline-flex items-center gap-1 ${inspectedEquityPoint.diffUSDT >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <span>{inspectedEquityPoint.diffUSDT >= 0 ? '▲ Crecimiento:' : '▼ Bajada:'}</span>
+                        <span>{inspectedEquityPoint.diffUSDT >= 0 ? '+' : ''}{inspectedEquityPoint.diffPercent.toFixed(2)}%</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Gráfico SVG con Eje X de Horas y Guía Interactiva */}
             <div className="w-full overflow-x-auto">
-              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-56">
+              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-64 select-none">
                 <defs>
                   <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#10b981" stopOpacity="0.40" />
@@ -1296,6 +1541,7 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
                   </linearGradient>
                 </defs>
 
+                {/* Línea horizontal en Y = 0 */}
                 <line
                   x1={padding.left}
                   y1={zeroY}
@@ -1306,10 +1552,12 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
                   strokeWidth="1.5"
                 />
 
+                {/* Área bajo la curva */}
                 {areaPath && (
                   <path d={areaPath} fill="url(#equityGradient)" />
                 )}
 
+                {/* Línea de evolución de capital */}
                 {linePath && (
                   <path
                     d={linePath}
@@ -1321,20 +1569,123 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
                   />
                 )}
 
-                {equityPoints.map((pt, i) => (
-                  <g key={i} className="group cursor-pointer">
-                    <circle
-                      cx={getX(i)}
-                      cy={getY(pt.cumulative)}
-                      r={equityPoints.length > 50 ? 2 : 3.5}
-                      fill={pt.pnl >= 0 ? '#10b981' : '#f43f5e'}
-                      stroke="#0f172a"
-                      strokeWidth="1.5"
+                {/* Eje horizontal de tiempo (base del gráfico) */}
+                <line
+                  x1={padding.left}
+                  y1={svgHeight - padding.bottom}
+                  x2={svgWidth - padding.right}
+                  y2={svgHeight - padding.bottom}
+                  stroke="#334155"
+                  strokeWidth="1"
+                />
+
+                {/* Ticks y Horas de cada cierre a lo largo del eje X */}
+                {xAxisTicks.map(({ point: pt, index: idx }) => (
+                  <g key={`tick-${idx}`}>
+                    <line
+                      x1={getX(idx)}
+                      y1={svgHeight - padding.bottom}
+                      x2={getX(idx)}
+                      y2={svgHeight - padding.bottom + 5}
+                      stroke="#475569"
+                      strokeWidth="1"
                     />
-                    <title>{`${pt.symbol} (Trade #${pt.index}): ${pt.pnl >= 0 ? '+' : ''}${pt.pnl.toFixed(4)} USDT | Acumulado: ${pt.cumulative.toFixed(4)} USDT`}</title>
+                    <text
+                      x={getX(idx)}
+                      y={svgHeight - padding.bottom + 17}
+                      fill="#94a3b8"
+                      fontSize="10"
+                      textAnchor="middle"
+                      fontFamily="monospace"
+                    >
+                      {pt.time}
+                    </text>
                   </g>
                 ))}
 
+                {/* Línea guía vertical y distintivo de hora para el punto inspeccionado */}
+                {inspectedEquityPoint && (
+                  <g>
+                    <line
+                      x1={getX(activeEquityIndex)}
+                      y1={padding.top}
+                      x2={getX(activeEquityIndex)}
+                      y2={svgHeight - padding.bottom}
+                      stroke="#38bdf8"
+                      strokeWidth="1.5"
+                      strokeDasharray="3 3"
+                      opacity="0.85"
+                    />
+                    {/* Badge destacado de hora bajo el eje */}
+                    <rect
+                      x={getX(activeEquityIndex) - 24}
+                      y={svgHeight - padding.bottom + 23}
+                      width="48"
+                      height="17"
+                      rx="4"
+                      fill="#0284c7"
+                      opacity="0.95"
+                    />
+                    <text
+                      x={getX(activeEquityIndex)}
+                      y={svgHeight - padding.bottom + 35}
+                      fill="#ffffff"
+                      fontSize="10"
+                      fontWeight="bold"
+                      textAnchor="middle"
+                      fontFamily="monospace"
+                    >
+                      {inspectedEquityPoint.time}
+                    </text>
+                  </g>
+                )}
+
+                {/* Puntos de Cierre interactivos */}
+                {equityPoints.map((pt, i) => {
+                  const isSelected = i === activeEquityIndex;
+                  const isZero = pt.isPuntoCero;
+                  return (
+                    <g
+                      key={`point-${i}`}
+                      className="cursor-pointer"
+                      onClick={() => setSelectedEquityIndex(i)}
+                      onTouchStart={() => setSelectedEquityIndex(i)}
+                      onMouseEnter={() => setSelectedEquityIndex(i)}
+                    >
+                      {/* Target táctil amplio e invisible para facilitar pulsar en pantallas móviles */}
+                      <circle
+                        cx={getX(i)}
+                        cy={getY(pt.cumulative)}
+                        r={16}
+                        fill="transparent"
+                      />
+                      {/* Resalte del punto seleccionado */}
+                      {isSelected && (
+                        <circle
+                          cx={getX(i)}
+                          cy={getY(pt.cumulative)}
+                          r={8}
+                          fill="none"
+                          stroke="#38bdf8"
+                          strokeWidth="2.5"
+                          opacity="0.8"
+                        />
+                      )}
+                      {/* Círculo del punto */}
+                      <circle
+                        cx={getX(i)}
+                        cy={getY(pt.cumulative)}
+                        r={isSelected ? 6 : (isZero ? 4.5 : (equityPoints.length > 50 ? 2.5 : 4))}
+                        fill={isZero ? '#fbbf24' : (pt.pnl >= 0 ? '#10b981' : '#f43f5e')}
+                        stroke={isSelected ? '#38bdf8' : '#0f172a'}
+                        strokeWidth={isSelected ? 2.5 : 1.5}
+                      />
+                      <title>{`${pt.label} (${pt.symbol}): ${pt.isPuntoCero ? 'Inicio 0.00' : (pt.pnl >= 0 ? '+' : '') + pt.pnl.toFixed(4)} USDT | Hora: ${pt.time}`}</title>
+                    </g>
+                  );
+                })}
+
+                {/* Etiquetas de valores de escala Y */}
                 <text x={padding.left - 8} y={getY(maxEquity) + 4} fill="#94a3b8" fontSize="10" textAnchor="end">
                   +{maxEquity.toFixed(2)}
                 </text>
@@ -1348,14 +1699,19 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
                 )}
               </svg>
             </div>
+            
+            {/* Pie del Gráfico con Guía de Uso */}
+            <div className="mt-2 text-center text-[11px] text-gray-500 flex items-center justify-center gap-2">
+              <span>👆 Toca o pasa el cursor sobre cualquier punto para ver el detalle de ese cierre y su rendimiento.</span>
+            </div>
           </div>
         ) : (
           <div className="py-8 text-center bg-gray-50 dark:bg-gray-800/40 rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
             <p className="text-sm font-semibold text-gray-600 dark:text-gray-300">
-              {totalTrades === 0 ? 'No hay operaciones cerradas registradas todavía.' : 'Se necesita al menos 2 operaciones para graficar la curva.'}
+              {totalTrades === 0 ? 'No hay operaciones cerradas registradas todavía.' : 'Se necesita al menos 1 operación cerrada para graficar la curva.'}
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              En cuanto el bot cierre sus primeros trades, la curva de capital y el ranking por moneda se actualizarán en tiempo real.
+              En cuanto el bot abra y cierre sus primeros trades, la curva de capital y el tiempo transcurrido desde el punto cero se actualizarán en tiempo real.
             </p>
           </div>
         )}

@@ -415,12 +415,12 @@ function MainDashboard() {
                 </span>
               </div>
 
-              <div className="flex items-center gap-1 bg-amber-600/30 border border-amber-700/30 px-1.5 py-0.5 rounded font-mono text-[10px] text-slate-950 font-bold">
-                <span>Total Pool:</span>
-                <span className="font-mono font-black">
+              <div className="flex items-baseline gap-1.5 font-mono text-slate-950 font-bold">
+                <span className="text-[11px] font-extrabold uppercase text-slate-900">Total Pool:</span>
+                <span className="text-base font-black">
                   ${(Number(headerPnlData?.poolBalance) || 5000).toFixed(2)}
                 </span>
-                <span className={`font-black ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
+                <span className={`text-xs font-black ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
                   ({(Number(headerPnlData?.walletPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.walletPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.walletPnl) || 0).toFixed(2)})
                 </span>
               </div>
@@ -443,7 +443,7 @@ function MainDashboard() {
             
             {/* PNL Info Central */}
             <div className="flex-initial px-2">
-              <div className="flex items-center gap-2 text-slate-950 font-bold">
+              <div className="flex items-center gap-3 text-slate-950 font-bold">
                 {/* Flotante en vivo */}
                 <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border border-slate-800 px-3 py-1 rounded-xl shadow-sm">
                   <span className="text-xs text-slate-400">Flotante ({headerPnlData?.coinsInPosition || 0} pos):</span>
@@ -454,13 +454,13 @@ function MainDashboard() {
                 </div>
 
                 {/* Total Pool */}
-                <div className="flex items-center gap-1.5 bg-slate-950/10 border border-slate-900/20 px-2.5 py-1 rounded-xl shadow-sm text-slate-950">
-                  <span className="text-xs font-bold text-slate-900">Total Pool:</span>
-                  <span className="text-sm font-mono font-black text-slate-950">
-                    ${(Number(headerPnlData?.poolBalance) || 5000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
+                <div className="flex items-baseline gap-2.5 text-slate-950">
+                  <span className="text-sm font-extrabold uppercase tracking-wide text-slate-900">Total Pool:</span>
+                  <span className="text-2xl sm:text-3xl font-mono font-black tracking-tight text-slate-950">
+                    ${(Number(headerPnlData?.poolBalance) || 5000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <span className={`text-xs font-mono font-black px-1.5 py-0.2 rounded border ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'bg-rose-500/20 border-rose-600/40 text-rose-950' : 'bg-emerald-500/20 border-emerald-600/40 text-emerald-950'}`} title="Rendimiento neto de cartera (Balance Binance - Capital Inicial)">
-                    {(Number(headerPnlData?.walletPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.walletPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.walletPnl) || 0).toFixed(2)} USDT
+                  <span className={`text-lg sm:text-xl font-mono font-black tracking-tight ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`} title="Rendimiento neto de cartera (Balance Binance - Capital Inicial)">
+                    ({(Number(headerPnlData?.walletPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.walletPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.walletPnl) || 0).toFixed(2)} USDT)
                   </span>
                 </div>
               </div>
