@@ -108,10 +108,13 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
     <div key={tradeSide || 'default'} className="flex flex-col gap-1 w-full min-w-[320px] max-w-full py-0.5">
       {tradeSide && (
         <div className="flex items-center justify-between text-[10px] mb-0.5">
-          <span className={`px-1.5 py-0.5 rounded font-sans font-medium ${
-            isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'
-          }`}>
-            {isShort ? '🔴 SHORT' : '🟢 LONG'}
+          <span 
+            title={isShort ? 'Posición SHORT' : 'Posición LONG'}
+            className={`px-1 py-0.2 rounded text-[10px] font-sans font-medium ${
+              isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'
+            }`}
+          >
+            {isShort ? '🔴' : '🟢'}
           </span>
           <span className="font-sans font-normal text-slate-300">
             PnL: <span className={`font-mono font-medium ${pnlUsdt >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{pnlUsdt >= 0 ? '+' : ''}{pnlUsdt.toFixed(2)} USDT</span>
@@ -330,7 +333,7 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
     return (
       <div className="flex items-center gap-1.5 text-xs text-slate-400 font-sans py-1">
         <span className="animate-spin text-[11px]">🌀</span>
-        <span>Analizando mercado ({side})...</span>
+        <span>Analizando mercado...</span>
       </div>
     );
   }
@@ -339,10 +342,13 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
 
   return (
     <div className="flex items-center gap-1 flex-wrap py-0.5 max-w-full">
-      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-sans font-medium border ${
-        isShort ? 'bg-rose-950/80 text-rose-300 border-rose-700/60' : 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
-      }`}>
-        {isShort ? '🔴 SHORT' : '🟢 LONG'}
+      <span 
+        title={isShort ? 'Radar SHORT' : 'Radar LONG'}
+        className={`inline-flex items-center px-1 py-0.5 rounded text-[10px] font-sans font-medium border ${
+          isShort ? 'bg-rose-950/80 text-rose-300 border-rose-700/60' : 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
+        }`}
+      >
+        {isShort ? '🔴' : '🟢'}
       </span>
       {all_met && (
         <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold tracking-wide ${
@@ -912,16 +918,31 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
           </thead>
           <tbody className="divide-y divide-slate-800">
             {sortedStatuses.length > 0 ? (
-              sortedStatuses.map((status) => (
-                <React.Fragment key={status.symbol}>
-                  <tr 
-                    className={`transition-colors duration-150 cursor-pointer ${
-                      status.in_position 
-                        ? 'bg-emerald-950/20 hover:bg-emerald-950/40 border-l-4 border-l-emerald-500' 
-                        : 'hover:bg-slate-800/60'
-                    }`}
-                    onClick={() => toggleRow(status.symbol)}
-                  >
+              sortedStatuses.map((status) => {
+                const activePositions = getActivePositions(status);
+                const hasActivePos = activePositions.length > 0 || Boolean(status.in_position);
+
+                let rowBgClass = 'hover:bg-slate-800/60';
+                if (hasActivePos) {
+                  const hasLong = activePositions.some(p => p.trade_side === 'LONG') || (!activePositions.some(p => p.trade_side === 'SHORT') && status.trade_side !== 'SHORT');
+                  const hasShort = activePositions.some(p => p.trade_side === 'SHORT') || (!activePositions.some(p => p.trade_side === 'LONG') && status.trade_side === 'SHORT');
+                  const isBoth = hasLong && hasShort;
+
+                  if (isBoth) {
+                    rowBgClass = 'bg-cyan-950/75 hover:bg-cyan-900/40 border-l-4 border-l-cyan-400';
+                  } else if (hasShort) {
+                    rowBgClass = 'bg-rose-950/75 hover:bg-rose-900/40 border-l-4 border-l-rose-500';
+                  } else {
+                    rowBgClass = 'bg-emerald-950/75 hover:bg-emerald-900/40 border-l-4 border-l-emerald-400';
+                  }
+                }
+
+                return (
+                  <React.Fragment key={status.symbol}>
+                    <tr 
+                      className={`transition-colors duration-150 cursor-pointer ${rowBgClass}`}
+                      onClick={() => toggleRow(status.symbol)}
+                    >
                     {/* --- CELDA CON BOTÓN DE EXPANDIR --- */}
                     <td className="px-2 py-3 whitespace-nowrap text-sm text-slate-300">
                       <button 
@@ -1178,8 +1199,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                               return (
                                 <div key={pIdx} className={`p-1 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className={`px-1 py-0.2 rounded text-[10px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}>
-                                      {isShort ? '🔴 SHORT' : '🟢 LONG'}
+                                    <span 
+                                      title={isShort ? 'Posición SHORT' : 'Posición LONG'}
+                                      className={`px-1 py-0.2 rounded text-[10px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}
+                                    >
+                                      {isShort ? '🔴' : '🟢'}
                                     </span>
                                     {pos.is_hedge_position && (
                                       <span className="px-1 py-0.2 rounded text-[9px] font-sans font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-500/50" title="Posición abierta automáticamente como Resguardo / Cobertura">
@@ -1296,8 +1320,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                 <div key={pIdx} className={`p-1 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
                                   {activePositions.length > 1 && (
                                     <div className="flex items-center justify-between mb-0.5">
-                                      <span className={`px-1 py-0.2 rounded text-[9px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}>
-                                        {isShort ? '🔴 SHORT' : '🟢 LONG'}
+                                      <span 
+                                        title={isShort ? 'Posición SHORT' : 'Posición LONG'}
+                                        className={`px-1 py-0.2 rounded text-[9px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}
+                                      >
+                                        {isShort ? '🔴' : '🟢'}
                                       </span>
                                     </div>
                                   )}
@@ -1501,8 +1528,9 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     </tr>
                   )}
                 </React.Fragment>
-              ))
-            ) : (
+              );
+            })
+          ) : (
               <tr>
                 <td colSpan="9" className="px-6 py-10 text-center text-sm text-slate-300 font-medium font-sans">
                   {isLoading ? 'Cargando estados...' : (error ? `Error: ${error}` : 'No hay datos de bots disponibles.')}
