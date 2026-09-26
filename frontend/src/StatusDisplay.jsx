@@ -107,15 +107,7 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
   return (
     <div key={tradeSide || 'default'} className="flex flex-col gap-1 w-full min-w-[320px] max-w-full py-0.5">
       {tradeSide && (
-        <div className="flex items-center justify-between text-[10px] mb-0.5">
-          <span 
-            title={isShort ? 'Posición SHORT' : 'Posición LONG'}
-            className={`px-1 py-0.2 rounded text-[10px] font-sans font-medium ${
-              isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'
-            }`}
-          >
-            {isShort ? '🔴' : '🟢'}
-          </span>
+        <div className="flex items-center justify-end text-[10px] mb-0.5">
           <span className="font-sans font-normal text-slate-300">
             PnL: <span className={`font-mono font-medium ${pnlUsdt >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{pnlUsdt >= 0 ? '+' : ''}{pnlUsdt.toFixed(2)} USDT</span>
           </span>
@@ -260,7 +252,6 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
   if (isShort && dir === 'LONG') {
     return (
       <div className="flex items-center gap-1.5 text-xs text-slate-500 font-sans italic py-1">
-        <span>⚪</span>
         <span>Modo Solo LONG</span>
       </div>
     );
@@ -268,7 +259,6 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
   if (!isShort && dir === 'SHORT') {
     return (
       <div className="flex items-center gap-1.5 text-xs text-slate-500 font-sans italic py-1">
-        <span>⚪</span>
         <span>Modo Solo SHORT</span>
       </div>
     );
@@ -342,14 +332,6 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
 
   return (
     <div className="flex items-center gap-1 flex-wrap py-0.5 max-w-full">
-      <span 
-        title={isShort ? 'Radar SHORT' : 'Radar LONG'}
-        className={`inline-flex items-center px-1 py-0.5 rounded text-[10px] font-sans font-medium border ${
-          isShort ? 'bg-rose-950/80 text-rose-300 border-rose-700/60' : 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
-        }`}
-      >
-        {isShort ? '🔴' : '🟢'}
-      </span>
       {all_met && (
         <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold tracking-wide ${
           isShort ? 'bg-rose-500 text-slate-950 border border-rose-400 shadow-rose-500/50' : 'bg-emerald-500 text-slate-950 border border-emerald-400 shadow-emerald-500/50'
@@ -359,18 +341,7 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
       )}
 
       {conditions.map((c) => {
-        if (!c.active) {
-          return (
-            <span
-              key={c.id}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-400 bg-slate-900/60 border border-slate-800"
-              title={`${c.name}: Desactivado en configuración`}
-            >
-              <span className="text-[9px]">⚪</span>
-              <span className="font-sans font-normal">{c.short_name || c.name}</span>
-            </span>
-          );
-        }
+        if (!c.active) return null;
 
         if (c.passed) {
           return (
@@ -953,52 +924,9 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                         {expandedRows[status.symbol] ? '▼' : '▶'}
                       </button>
                     </td>
-                    {/* --- Símbolo con botones de cierre y badges de dirección --- */}
+                    {/* --- Símbolo y badges de dirección --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-sm font-bold text-white">
                       <div className="flex items-center space-x-2">
-                        {(() => {
-                          const activeSubPositions = getActivePositions(status);
-                          if (activeSubPositions.length > 1) {
-                            return (
-                              <div className="flex items-center gap-1">
-                                {activeSubPositions.map(sp => {
-                                  const isShort = sp.trade_side === 'SHORT';
-                                  const key = `${status.symbol}_${sp.trade_side}`;
-                                  const isClosing = closingSymbols[key] || closingSymbols[status.symbol];
-                                  return (
-                                    <button
-                                      key={sp.trade_side}
-                                      onClick={(e) => handleCloseSinglePosition(e, status.symbol, sp.trade_side)}
-                                      disabled={isClosing}
-                                      className={`px-1.5 py-0.5 flex-shrink-0 flex items-center justify-center text-[10px] font-extrabold text-white rounded shadow transition-transform transform active:scale-95 disabled:bg-gray-600 ${
-                                        isShort ? 'bg-rose-700 hover:bg-rose-800' : 'bg-emerald-700 hover:bg-emerald-800'
-                                      }`}
-                                      title={`Cerrar posición ${sp.trade_side} de ${status.symbol} a mercado`}
-                                    >
-                                      {isClosing ? '..' : `✕ ${isShort ? 'S' : 'L'}`}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            );
-                          }
-                          const singleSide = activeSubPositions[0]?.trade_side || status.trade_side || null;
-                          const isShort = singleSide === 'SHORT';
-                          const key = singleSide ? `${status.symbol}_${singleSide}` : status.symbol;
-                          const isClosing = closingSymbols[key] || closingSymbols[status.symbol];
-                          return (
-                            <button
-                              onClick={(e) => handleCloseSinglePosition(e, status.symbol, singleSide)}
-                              disabled={isClosing}
-                              className={`w-5 h-5 flex-shrink-0 flex items-center justify-center text-xs font-extrabold text-white rounded-full shadow transition-transform transform active:scale-95 disabled:bg-gray-600 ${
-                                isShort ? 'bg-rose-600 hover:bg-rose-700' : 'bg-red-600 hover:bg-red-700'
-                              }`}
-                              title={`Cerrar posición ${singleSide || ''} de ${status.symbol} a mercado en Binance`}
-                            >
-                              {isClosing ? '..' : '✕'}
-                            </button>
-                          );
-                        })()}
                         <div className="flex flex-col">
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono text-sm">{status.symbol}</span>
@@ -1143,7 +1071,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                     const isShort = sp.trade_side === 'SHORT';
                                     return (
                                       <div key={pIdx} className="flex items-center justify-between text-[10px]">
-                                        <span className="text-slate-400 font-sans">{isShort ? '🔴 S:' : '🟢 L:'}</span>
+                                        <span className="text-slate-400 font-sans">{isShort ? 'S:' : 'L:'}</span>
                                         <span className={`font-mono font-medium ${getPnlColorClass(sp.current_pnl)}`}>
                                           {formatPnl(sp.current_pnl)}
                                         </span>
@@ -1199,12 +1127,6 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                               return (
                                 <div key={pIdx} className={`p-1 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span 
-                                      title={isShort ? 'Posición SHORT' : 'Posición LONG'}
-                                      className={`px-1 py-0.2 rounded text-[10px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}
-                                    >
-                                      {isShort ? '🔴' : '🟢'}
-                                    </span>
                                     {pos.is_hedge_position && (
                                       <span className="px-1 py-0.2 rounded text-[9px] font-sans font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-500/50" title="Posición abierta automáticamente como Resguardo / Cobertura">
                                         🛡️ Resguardo
@@ -1318,16 +1240,6 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
 
                               return (
                                 <div key={pIdx} className={`p-1 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
-                                  {activePositions.length > 1 && (
-                                    <div className="flex items-center justify-between mb-0.5">
-                                      <span 
-                                        title={isShort ? 'Posición SHORT' : 'Posición LONG'}
-                                        className={`px-1 py-0.2 rounded text-[9px] font-sans font-medium ${isShort ? 'bg-rose-950/80 text-rose-300 border border-rose-600/50' : 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'}`}
-                                      >
-                                        {isShort ? '🔴' : '🟢'}
-                                      </span>
-                                    </div>
-                                  )}
 
                                   {/* Fila 1: Entrada ➔ Actual */}
                                   <div className="flex items-center gap-1.5 text-[10px]">

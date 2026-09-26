@@ -439,17 +439,6 @@ function MainDashboard() {
                 </div>
                 <span className="text-[10px] font-bold text-slate-900 tracking-wider">WTN Solutions LLC</span>
               </div>
-
-              <button
-                type="button"
-                onClick={handleToggleSound}
-                className={`ml-1 px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 shadow-sm ${
-                  soundOn ? 'bg-slate-950 text-emerald-300 border border-emerald-500/50' : 'bg-slate-800 text-slate-300 border border-slate-700'
-                }`}
-                title={soundOn ? 'Silenciar sonidos' : 'Activar alertas sonoras'}
-              >
-                <span>{soundOn ? '🔊 ON' : '🔇 OFF'}</span>
-              </button>
             </div>
             
             {/* PNL Info Central */}
@@ -474,16 +463,6 @@ function MainDashboard() {
                     {(Number(headerPnlData?.walletPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.walletPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.walletPnl) || 0).toFixed(2)} USDT
                   </span>
                 </div>
-
-                {/* PnL Cerrado */}
-                {isAdmin && (
-                  <div className="hidden xl:flex items-center gap-1 bg-slate-950/90 text-white border border-slate-800 px-2.5 py-1 rounded-xl shadow-sm text-xs" title="PnL neto de operaciones cerradas">
-                    <span className="text-slate-400 text-[11px]">Cerrado:</span>
-                    <span className={`font-mono font-black ${(Number(headerPnlData?.totalPnl) || 0) < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                      {(Number(headerPnlData?.totalPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.totalPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.totalPnl) || 0).toFixed(2)}
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
             

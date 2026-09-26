@@ -24,7 +24,7 @@ export default function ApiUsageWidget({ apiUsage = null }) {
     ? 'bg-amber-400'
     : 'bg-emerald-400';
 
-  const label = isCritical ? 'Alerta API' : isWarning ? 'Atención API' : 'API Binance';
+  const label = isCritical ? 'Alerta API' : isWarning ? 'Atención API' : 'API';
 
   return (
     <>
