@@ -225,7 +225,7 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
         val = frontend_data.get(key)
         if val is None or str(val).strip() == '':
             return str(default)
-        return str(val)
+        return str(val).strip().replace(',', '.')
 
     config_output = {
         'BINANCE': {
@@ -636,7 +636,11 @@ def _build_frontend_config_dict():
             ('hedge_reentry_cooldown_seconds', 'hedgeReentryCooldownSeconds'),
         ]:
             if key_ini in config_dict['TRADING']:
-                frontend_config[key_frontend] = config_dict['TRADING'][key_ini]
+                raw_v = config_dict['TRADING'][key_ini]
+                if key_ini.startswith('enable_') or key_ini.startswith('evaluate_') or key_ini in ('auto_mirror_short',):
+                    frontend_config[key_frontend] = str(raw_v).lower() == 'true'
+                else:
+                    frontend_config[key_frontend] = raw_v
     if 'riskPercentage' not in frontend_config:
         try:
             frontend_config['riskPercentage'] = float(risk_manager.risk_percentage * Decimal('100'))
@@ -1684,12 +1688,13 @@ def load_initial_config():
     loaded_trading_params = {}
     for key, value_str in temp_trading_params.items():
         original_value = value_str
+        clean_str = str(value_str).strip().replace(',', '.') if value_str is not None else ''
         try:
-            if key in ['rsi_period', 'rsi_candles_window', 'rsi_positive_candles_required', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_candles_window', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations', 'max_consecutive_losses', 'consecutive_losses_cooldown_minutes', 'rolling_trades_window', 'rolling_max_losses', 'rolling_filter_cooldown_minutes', 'btc_crash_shield_cooldown_minutes', 'market_regime_ema_period', 'market_regime_supertrend_period']:
-                if value_str is None or str(value_str).strip() == '':
-                    loaded_trading_params[key] = 20 if 'period' in key else 0
+            if key in ['rsi_period', 'rsi_candles_window', 'rsi_positive_candles_required', 'volume_sma_period', 'cycle_sleep_seconds', 'order_timeout_seconds', 'downtrend_check_candles', 'downtrend_candles_window', 'downtrend_level_check', 'required_uptrend_candles', 'ma_period', 'support_history_candles', 'support_pivot_window', 'support_confirmations', 'max_consecutive_losses', 'consecutive_losses_cooldown_minutes', 'rolling_trades_window', 'rolling_max_losses', 'rolling_filter_cooldown_minutes', 'btc_crash_shield_cooldown_minutes', 'market_regime_ema_period', 'market_regime_supertrend_period', 'hedge_reentry_cooldown_seconds']:
+                if not clean_str:
+                    loaded_trading_params[key] = 20 if 'period' in key else (60 if 'cooldown' in key else 0)
                 else:
-                    loaded_trading_params[key] = int(value_str)
+                    loaded_trading_params[key] = int(float(clean_str))
             elif key in ['rsi_threshold_up', 'rsi_positive_delta_min', 'rsi_threshold_down', 'rsi_entry_level_low', 'rsi_entry_level_high',
                          'rsi_target',
                          'volume_factor', 'position_size_usdt', 'stop_loss_usdt', 'take_profit_usdt',
@@ -1698,11 +1703,13 @@ def load_initial_config():
                          'pnl_trailing_stop_activation_usdt', 'pnl_trailing_stop_drop_usdt',
                          'support_level_tolerance_percent', 'support_order_stop_loss_percent', 'support_order_take_profit_percent',
                          'risk_percentage', 'max_loss_per_symbol_usdt', 'btc_crash_drop_percent', 'market_regime_supertrend_multiplier',
-                         'crash_rsi_drop_threshold', 'crash_price_drop_percent', 'crash_pnl_drop_threshold_usdt']:
-                if value_str is None or str(value_str).strip() == '':
+                         'crash_rsi_drop_threshold', 'crash_price_drop_percent', 'crash_pnl_drop_threshold_usdt',
+                         'hedge_trigger_value', 'hedge_size_multiplier', 'hedge_trailing_activation_usdt',
+                         'hedge_trailing_drop_usdt', 'hedge_basket_target_usdt']:
+                if not clean_str:
                     loaded_trading_params[key] = 0.0
                 else:
-                    loaded_trading_params[key] = float(value_str)
+                    loaded_trading_params[key] = float(clean_str)
             elif key in ['evaluate_rsi_delta', 'evaluate_volume_filter', 'evaluate_rsi_range',
                          'evaluate_downtrend_candles_block', 'evaluate_downtrend_levels_block',
                          'evaluate_required_uptrend', 'enable_take_profit_pnl', 'enable_stop_loss_pnl',
@@ -1710,10 +1717,11 @@ def load_initial_config():
                          'evaluate_open_interest_increase', 'evaluate_ma_filter', 'evaluate_support_strategy',
                          'enable_max_loss_per_symbol', 'enable_consecutive_losses_cooldown',
                          'enable_rolling_performance_filter', 'enable_btc_crash_shield', 'enable_market_regime_filter',
-                         'enable_emergency_crash_exit', 'enable_crash_rsi_drop', 'enable_crash_price_drop', 'enable_crash_pnl_drop']:
-                loaded_trading_params[key] = str(value_str).lower() == 'true'
+                         'enable_emergency_crash_exit', 'enable_crash_rsi_drop', 'enable_crash_price_drop', 'enable_crash_pnl_drop',
+                         'enable_hedge_protection', 'enable_hedge_trailing_stop', 'enable_hedge_basket_exit']:
+                loaded_trading_params[key] = clean_str.lower() == 'true'
             else:
-                loaded_trading_params[key] = value_str
+                loaded_trading_params[key] = clean_str if clean_str != '' else value_str
         except (ValueError, TypeError):
             logger.warning(f"Aviso al convertir parámetro de TRADING '{key}' con valor '{original_value}'. Usando fallback.")
             if key in ['rsi_period', 'volume_sma_period']:

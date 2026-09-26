@@ -684,6 +684,42 @@ function ConfigForm({
         newFormData.riskPercentage = rp;
         newFormData.risk_percentage = rp;
       }
+
+      // Sincronizar campos de Smart Hedge
+      if (propInitialConfig.enableHedgeProtection !== undefined || propInitialConfig.enable_hedge_protection !== undefined) {
+        const v = propInitialConfig.enableHedgeProtection ?? propInitialConfig.enable_hedge_protection;
+        newFormData.enableHedgeProtection = Boolean(v === true || v === 'true');
+      }
+      if (propInitialConfig.hedgeTriggerType !== undefined || propInitialConfig.hedge_trigger_type !== undefined) {
+        newFormData.hedgeTriggerType = String(propInitialConfig.hedgeTriggerType ?? propInitialConfig.hedge_trigger_type).toUpperCase();
+      }
+      if (propInitialConfig.hedgeTriggerValue !== undefined || propInitialConfig.hedge_trigger_value !== undefined) {
+        newFormData.hedgeTriggerValue = propInitialConfig.hedgeTriggerValue ?? propInitialConfig.hedge_trigger_value;
+      }
+      if (propInitialConfig.hedgeSizeMultiplier !== undefined || propInitialConfig.hedge_size_multiplier !== undefined) {
+        newFormData.hedgeSizeMultiplier = propInitialConfig.hedgeSizeMultiplier ?? propInitialConfig.hedge_size_multiplier;
+      }
+      if (propInitialConfig.enableHedgeTrailingStop !== undefined || propInitialConfig.enable_hedge_trailing_stop !== undefined) {
+        const v = propInitialConfig.enableHedgeTrailingStop ?? propInitialConfig.enable_hedge_trailing_stop;
+        newFormData.enableHedgeTrailingStop = Boolean(v === true || v === 'true');
+      }
+      if (propInitialConfig.hedgeTrailingActivationUSDT !== undefined || propInitialConfig.hedge_trailing_activation_usdt !== undefined) {
+        newFormData.hedgeTrailingActivationUSDT = propInitialConfig.hedgeTrailingActivationUSDT ?? propInitialConfig.hedge_trailing_activation_usdt;
+      }
+      if (propInitialConfig.hedgeTrailingDropUSDT !== undefined || propInitialConfig.hedge_trailing_drop_usdt !== undefined) {
+        newFormData.hedgeTrailingDropUSDT = propInitialConfig.hedgeTrailingDropUSDT ?? propInitialConfig.hedge_trailing_drop_usdt;
+      }
+      if (propInitialConfig.enableHedgeBasketExit !== undefined || propInitialConfig.enable_hedge_basket_exit !== undefined) {
+        const v = propInitialConfig.enableHedgeBasketExit ?? propInitialConfig.enable_hedge_basket_exit;
+        newFormData.enableHedgeBasketExit = Boolean(v === true || v === 'true');
+      }
+      if (propInitialConfig.hedgeBasketTargetUSDT !== undefined || propInitialConfig.hedge_basket_target_usdt !== undefined) {
+        newFormData.hedgeBasketTargetUSDT = propInitialConfig.hedgeBasketTargetUSDT ?? propInitialConfig.hedge_basket_target_usdt;
+      }
+      if (propInitialConfig.hedgeReentryCooldownSeconds !== undefined || propInitialConfig.hedge_reentry_cooldown_seconds !== undefined) {
+        newFormData.hedgeReentryCooldownSeconds = propInitialConfig.hedgeReentryCooldownSeconds ?? propInitialConfig.hedge_reentry_cooldown_seconds;
+      }
+
       setFormData(newFormData);
 
       const stratName = propInitialConfig.activeStrategyName || propInitialConfig.active_strategy_name;
@@ -894,17 +930,57 @@ function ConfigForm({
       if (dataToSend.tradeDirection !== undefined) dataToSend.trade_direction = dataToSend.tradeDirection;
       if (dataToSend.autoMirrorShort !== undefined) dataToSend.auto_mirror_short = dataToSend.autoMirrorShort;
 
+      const sanitizeNum = (v) => {
+        if (v === null || v === undefined || v === '') return v;
+        if (typeof v === 'string') {
+          const clean = v.trim().replace(',', '.');
+          const num = Number(clean);
+          return isNaN(num) ? clean : num;
+        }
+        return v;
+      };
+
       // Smart Hedge & Resguardo Dinámico
-      if (dataToSend.enableHedgeProtection !== undefined) dataToSend.enable_hedge_protection = dataToSend.enableHedgeProtection;
-      if (dataToSend.hedgeTriggerType !== undefined) dataToSend.hedge_trigger_type = dataToSend.hedgeTriggerType;
-      if (dataToSend.hedgeTriggerValue !== undefined) dataToSend.hedge_trigger_value = dataToSend.hedgeTriggerValue;
-      if (dataToSend.hedgeSizeMultiplier !== undefined) dataToSend.hedge_size_multiplier = dataToSend.hedgeSizeMultiplier;
-      if (dataToSend.enableHedgeTrailingStop !== undefined) dataToSend.enable_hedge_trailing_stop = dataToSend.enableHedgeTrailingStop;
-      if (dataToSend.hedgeTrailingActivationUSDT !== undefined) dataToSend.hedge_trailing_activation_usdt = dataToSend.hedgeTrailingActivationUSDT;
-      if (dataToSend.hedgeTrailingDropUSDT !== undefined) dataToSend.hedge_trailing_drop_usdt = dataToSend.hedgeTrailingDropUSDT;
-      if (dataToSend.enableHedgeBasketExit !== undefined) dataToSend.enable_hedge_basket_exit = dataToSend.enableHedgeBasketExit;
-      if (dataToSend.hedgeBasketTargetUSDT !== undefined) dataToSend.hedge_basket_target_usdt = dataToSend.hedgeBasketTargetUSDT;
-      if (dataToSend.hedgeReentryCooldownSeconds !== undefined) dataToSend.hedge_reentry_cooldown_seconds = dataToSend.hedgeReentryCooldownSeconds;
+      if (dataToSend.enableHedgeProtection !== undefined) {
+        dataToSend.enableHedgeProtection = Boolean(dataToSend.enableHedgeProtection === true || dataToSend.enableHedgeProtection === 'true');
+        dataToSend.enable_hedge_protection = dataToSend.enableHedgeProtection;
+      }
+      if (dataToSend.hedgeTriggerType !== undefined) {
+        dataToSend.hedge_trigger_type = String(dataToSend.hedgeTriggerType).toUpperCase().trim();
+        dataToSend.hedgeTriggerType = dataToSend.hedge_trigger_type;
+      }
+      if (dataToSend.hedgeTriggerValue !== undefined) {
+        dataToSend.hedge_trigger_value = sanitizeNum(dataToSend.hedgeTriggerValue);
+        dataToSend.hedgeTriggerValue = dataToSend.hedge_trigger_value;
+      }
+      if (dataToSend.hedgeSizeMultiplier !== undefined) {
+        dataToSend.hedge_size_multiplier = sanitizeNum(dataToSend.hedgeSizeMultiplier);
+        dataToSend.hedgeSizeMultiplier = dataToSend.hedge_size_multiplier;
+      }
+      if (dataToSend.enableHedgeTrailingStop !== undefined) {
+        dataToSend.enableHedgeTrailingStop = Boolean(dataToSend.enableHedgeTrailingStop === true || dataToSend.enableHedgeTrailingStop === 'true');
+        dataToSend.enable_hedge_trailing_stop = dataToSend.enableHedgeTrailingStop;
+      }
+      if (dataToSend.hedgeTrailingActivationUSDT !== undefined) {
+        dataToSend.hedge_trailing_activation_usdt = sanitizeNum(dataToSend.hedgeTrailingActivationUSDT);
+        dataToSend.hedgeTrailingActivationUSDT = dataToSend.hedge_trailing_activation_usdt;
+      }
+      if (dataToSend.hedgeTrailingDropUSDT !== undefined) {
+        dataToSend.hedge_trailing_drop_usdt = sanitizeNum(dataToSend.hedgeTrailingDropUSDT);
+        dataToSend.hedgeTrailingDropUSDT = dataToSend.hedge_trailing_drop_usdt;
+      }
+      if (dataToSend.enableHedgeBasketExit !== undefined) {
+        dataToSend.enableHedgeBasketExit = Boolean(dataToSend.enableHedgeBasketExit === true || dataToSend.enableHedgeBasketExit === 'true');
+        dataToSend.enable_hedge_basket_exit = dataToSend.enableHedgeBasketExit;
+      }
+      if (dataToSend.hedgeBasketTargetUSDT !== undefined) {
+        dataToSend.hedge_basket_target_usdt = sanitizeNum(dataToSend.hedgeBasketTargetUSDT);
+        dataToSend.hedgeBasketTargetUSDT = dataToSend.hedge_basket_target_usdt;
+      }
+      if (dataToSend.hedgeReentryCooldownSeconds !== undefined) {
+        dataToSend.hedge_reentry_cooldown_seconds = sanitizeNum(dataToSend.hedgeReentryCooldownSeconds);
+        dataToSend.hedgeReentryCooldownSeconds = dataToSend.hedge_reentry_cooldown_seconds;
+      }
 
       const result = await onSave(dataToSend);
       if (result?.success || !result?.error) {
@@ -3315,23 +3391,23 @@ function ConfigForm({
 // --- Componentes Reutilizables ---
 function NumberInput({ id, name, value, onChange, step = "any", min, max, disabled }) {
   const handleChange = (e) => {
-    // Permitir vaciar el campo o escribir un número
-    const val = e.target.value;
-    if (val === '' || !isNaN(val)) {
+    // Permitir vaciar el campo, signo menos o números con coma/punto
+    const rawVal = e.target.value;
+    const sanitizedVal = typeof rawVal === 'string' ? rawVal.replace(',', '.') : rawVal;
+    if (sanitizedVal === '' || sanitizedVal === '-' || sanitizedVal === '.' || sanitizedVal === '-.' || !isNaN(sanitizedVal)) {
+      e.target.value = sanitizedVal;
       onChange(e);
     }
   };
 
   return (
     <input
-      type="number"
+      type="text"
+      inputMode="decimal"
       id={id}
       name={name}
-      value={value}
+      value={value ?? ''}
       onChange={handleChange}
-      step={step}
-      min={min}
-      max={max}
       disabled={disabled}
       className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-800 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:opacity-50"
     />

@@ -67,6 +67,39 @@ _btc_crash_cache = {
 # Formato: {cache_key: {'timestamp': float, 'is_bullish': bool, 'detail': str, 'value': float}}
 _market_regime_cache = {}
 
+def _safe_int(val, default=0):
+    if val is None:
+        return default
+    s = str(val).strip().replace(',', '.')
+    if not s:
+        return default
+    try:
+        return int(float(s))
+    except (ValueError, TypeError):
+        return default
+
+def _safe_float(val, default=0.0):
+    if val is None:
+        return default
+    s = str(val).strip().replace(',', '.')
+    if not s:
+        return default
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default
+
+def _safe_decimal(val, default_str="0"):
+    if val is None:
+        return Decimal(default_str)
+    s = str(val).strip().replace(',', '.')
+    if not s:
+        return Decimal(default_str)
+    try:
+        return Decimal(s)
+    except Exception:
+        return Decimal(default_str)
+
 class SingleSideTradingBot:
     """
     Clase que encapsula la lógica de trading para UN símbolo y UN lado específico ('LONG' o 'SHORT').
@@ -127,29 +160,7 @@ class SingleSideTradingBot:
         self.tp_price = None
         self.entry_reason = ""
         self.exit_reason = ""
-        def _safe_int(val, default):
-            if val is None or str(val).strip() == '':
-                return default
-            try:
-                return int(val)
-            except (ValueError, TypeError):
-                return default
 
-        def _safe_float(val, default):
-            if val is None or str(val).strip() == '':
-                return default
-            try:
-                return float(val)
-            except (ValueError, TypeError):
-                return default
-
-        def _safe_decimal(val, default_str):
-            if val is None or str(val).strip() == '':
-                return Decimal(default_str)
-            try:
-                return Decimal(str(val))
-            except Exception:
-                return Decimal(default_str)
 
         self.downtrend_check_candles = _safe_int(trading_params.get('downtrend_check_candles'), 0)
         self.downtrend_candles_window = _safe_int(trading_params.get('downtrend_candles_window'), 5)
@@ -396,21 +407,6 @@ class SingleSideTradingBot:
         if 'strategy_name' in new_params and new_params['strategy_name']:
             self.strategy_name = str(new_params['strategy_name'])
         
-        def _safe_int(val, default):
-            if val is None or str(val).strip() == '': return default
-            try: return int(val)
-            except (ValueError, TypeError): return default
-
-        def _safe_float(val, default):
-            if val is None or str(val).strip() == '': return default
-            try: return float(val)
-            except (ValueError, TypeError): return default
-
-        def _safe_decimal(val, default_str):
-            if val is None or str(val).strip() == '': return Decimal(default_str)
-            try: return Decimal(str(val))
-            except Exception: return Decimal(default_str)
-
         self.downtrend_check_candles = _safe_int(new_params.get('downtrend_check_candles'), self.downtrend_check_candles)
         self.downtrend_candles_window = _safe_int(new_params.get('downtrend_candles_window'), self.downtrend_candles_window)
         self.downtrend_level_check = _safe_int(new_params.get('downtrend_level_check'), self.downtrend_level_check)
@@ -2308,9 +2304,18 @@ class SingleSideTradingBot:
         Ejecuta una entrada inmediata a mercado para resguardo / cobertura.
         Configura el trailing stop especializado de resguardo para cerrar con ganancias.
         """
-        if self.in_position or self.pending_entry_order_id:
-            self.logger.warning(f"[{self.symbol}][{self.trade_side}] open_hedge_market_entry rechazado: ya en posición ({self.in_position}) o orden pendiente ({self.pending_entry_order_id}).")
+        if self.in_position:
+            self.logger.warning(f"[{self.symbol}][{self.trade_side}] open_hedge_market_entry rechazado: ya en posición ({self.in_position}).")
             return False
+
+        if self.pending_entry_order_id:
+            self.logger.info(f"[{self.symbol}][{self.trade_side}] Cancelando orden pendiente previa ({self.pending_entry_order_id}) para dar paso a la entrada de Resguardo de Mercado.")
+            try:
+                from src.binance_client import cancel_order
+                cancel_order(self.symbol, self.pending_entry_order_id)
+            except Exception as e_c:
+                self.logger.debug(f"Aviso cancelando orden previa para resguardo: {e_c}")
+            self.pending_entry_order_id = None
 
         if getattr(self, 'is_paused', False):
             self.logger.warning(f"[{self.symbol}][{self.trade_side}] open_hedge_market_entry rechazado: bot pausado.")
@@ -2345,10 +2350,28 @@ class SingleSideTradingBot:
             self.logger.warning(f"[{self.symbol}][{self.trade_side}] Cantidad ajustada inválida ({quantity}) para orden hedge.")
             return False
 
-        # Validar con RiskManager
+        # Validar con RiskManager (cobertura defensiva autorizada si el balance libre en Binance cubre el margen)
         if self.risk_manager and not self.risk_manager.can_open_position(order_margin_usdt):
-            self.logger.warning(f"[{self.symbol}][{self.trade_side}] Orden de resguardo denegada por RiskManager (Margen: {order_margin_usdt:.2f} USDT).")
-            return False
+            allowed_by_balance = False
+            try:
+                from src.binance_client import get_account_balance_usdt
+                avail_balance = get_account_balance_usdt() or Decimal('0')
+                if avail_balance >= order_margin_usdt:
+                    allowed_by_balance = True
+                    self.logger.warning(
+                        f"[{self.symbol}][{self.trade_side}] Exposición máxima en RiskManager alcanzada, "
+                        f"pero se AUTORIZA orden de resguardo por ser cobertura defensiva con balance disponible ({avail_balance:.2f} USDT >= {order_margin_usdt:.2f} USDT)."
+                    )
+                else:
+                    self.logger.warning(
+                        f"[{self.symbol}][{self.trade_side}] Orden de resguardo denegada: saldo insuficiente "
+                        f"(Requerido: {order_margin_usdt:.2f}, Disponible: {avail_balance:.2f} USDT)."
+                    )
+            except Exception as e_rm:
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] Error evaluando saldo para resguardo: {e_rm}")
+
+            if not allowed_by_balance:
+                return False
 
         entry_order_side = 'BUY' if self.trade_side == 'LONG' else 'SELL'
         self.entry_reason = reason
@@ -4662,14 +4685,14 @@ class TradingBot:
         # --- PARÁMETROS DE SMART HEDGE & RESGUARDO DINÁMICO ---
         self.enable_hedge_protection = str(self.params.get('enable_hedge_protection', 'false')).lower() == 'true'
         self.hedge_trigger_type = str(self.params.get('hedge_trigger_type', 'PERCENT')).upper().strip()
-        self.hedge_trigger_value = abs(float(self.params.get('hedge_trigger_value', 1.5)))
-        self.hedge_size_multiplier = float(self.params.get('hedge_size_multiplier', 1.0))
+        self.hedge_trigger_value = abs(_safe_float(self.params.get('hedge_trigger_value'), 1.5))
+        self.hedge_size_multiplier = _safe_float(self.params.get('hedge_size_multiplier'), 1.0)
         self.enable_hedge_trailing_stop = str(self.params.get('enable_hedge_trailing_stop', 'true')).lower() == 'true'
-        self.hedge_trailing_activation_usdt = float(self.params.get('hedge_trailing_activation_usdt', 0.20))
-        self.hedge_trailing_drop_usdt = float(self.params.get('hedge_trailing_drop_usdt', 0.30))
+        self.hedge_trailing_activation_usdt = _safe_float(self.params.get('hedge_trailing_activation_usdt'), 0.20)
+        self.hedge_trailing_drop_usdt = _safe_float(self.params.get('hedge_trailing_drop_usdt'), 0.30)
         self.enable_hedge_basket_exit = str(self.params.get('enable_hedge_basket_exit', 'true')).lower() == 'true'
-        self.hedge_basket_target_usdt = float(self.params.get('hedge_basket_target_usdt', 0.50))
-        self.hedge_reentry_cooldown_seconds = int(self.params.get('hedge_reentry_cooldown_seconds', 60))
+        self.hedge_basket_target_usdt = _safe_float(self.params.get('hedge_basket_target_usdt'), 0.50)
+        self.hedge_reentry_cooldown_seconds = _safe_int(self.params.get('hedge_reentry_cooldown_seconds'), 60)
         self.last_hedge_timestamp = 0.0
         self.hedge_executions_count = 0
 
@@ -4787,6 +4810,28 @@ class TradingBot:
         if not getattr(self, 'enable_hedge_protection', False):
             return
 
+        # Garantizar dinámicamente que existan los sub-bots de resguardo si enable_hedge_protection está activo
+        if self.short_bot is None:
+            try:
+                from src.config_loader import derive_short_params
+                short_p = derive_short_params(self.params) if self.auto_mirror_short else self.params.copy()
+                short_p['trade_side'] = 'SHORT'
+                self.short_bot = SingleSideTradingBot(self.symbol, short_p, self.risk_manager, trade_side='SHORT')
+                self.short_bot.is_hedge_only = True
+                self.logger.info(f"[{self.symbol}] Sub-bot SHORT instanciado dinámicamente para cobertura (Hedge Only).")
+            except Exception as e_sb:
+                self.logger.error(f"[{self.symbol}] Error creando short_bot para cobertura: {e_sb}")
+
+        if self.long_bot is None:
+            try:
+                long_p = self.params.copy()
+                long_p['trade_side'] = 'LONG'
+                self.long_bot = SingleSideTradingBot(self.symbol, long_p, self.risk_manager, trade_side='LONG')
+                self.long_bot.is_hedge_only = True
+                self.logger.info(f"[{self.symbol}] Sub-bot LONG instanciado dinámicamente para cobertura (Hedge Only).")
+            except Exception as e_lb:
+                self.logger.error(f"[{self.symbol}] Error creando long_bot para cobertura: {e_lb}")
+
         long_st = self.long_bot.get_status() if self.long_bot else None
         short_st = self.short_bot.get_status() if self.short_bot else None
 
@@ -4801,7 +4846,7 @@ class TradingBot:
         # -------------------------------------------------------------
         if long_in_pos and short_in_pos and getattr(self, 'enable_hedge_basket_exit', True):
             net_basket_pnl = round(long_pnl + short_pnl, 4)
-            target_pnl = float(getattr(self, 'hedge_basket_target_usdt', 0.50))
+            target_pnl = _safe_float(getattr(self, 'hedge_basket_target_usdt', 0.50), 0.50)
             if net_basket_pnl >= target_pnl:
                 self.logger.warning(
                     f"[{self.symbol}][HEDGE] 🎯 CIERRE DE CESTA NETA ALCANZADO: "
@@ -4820,21 +4865,28 @@ class TradingBot:
 
         # Respetar cooldown entre aperturas de resguardo
         now = time.time()
-        cooldown_sec = getattr(self, 'hedge_reentry_cooldown_seconds', 60)
+        cooldown_sec = _safe_int(getattr(self, 'hedge_reentry_cooldown_seconds', 60), 60)
         if (now - getattr(self, 'last_hedge_timestamp', 0.0)) < cooldown_sec:
             return
 
         trigger_type = str(getattr(self, 'hedge_trigger_type', 'PERCENT')).upper().strip()
-        trigger_val = abs(float(getattr(self, 'hedge_trigger_value', 1.5)))
-        multiplier = float(getattr(self, 'hedge_size_multiplier', 1.0))
-        act_usdt = Decimal(str(getattr(self, 'hedge_trailing_activation_usdt', 0.20)))
-        drop_usdt = Decimal(str(getattr(self, 'hedge_trailing_drop_usdt', 0.30)))
+        trigger_val = abs(_safe_float(getattr(self, 'hedge_trigger_value', 1.5), 1.5))
+        multiplier = _safe_float(getattr(self, 'hedge_size_multiplier', 1.0), 1.0)
+        act_usdt = _safe_decimal(getattr(self, 'hedge_trailing_activation_usdt', 0.20), "0.20")
+        drop_usdt = _safe_decimal(getattr(self, 'hedge_trailing_drop_usdt', 0.30), "0.30")
+
+        self.logger.debug(
+            f"[{self.symbol}][HEDGE] Verificando resguardo: LONG_in_pos={long_in_pos} (PnL={long_pnl:+.2f}), "
+            f"SHORT_in_pos={short_in_pos} (PnL={short_pnl:+.2f}), Modo={trigger_type}, TriggerVal={trigger_val}"
+        )
 
         # -------------------------------------------------------------
         # 2. DISPARO DE RESGUARDO PARA LONG (Abre SHORT)
         # -------------------------------------------------------------
         if long_in_pos and not short_in_pos and self.short_bot:
-            if not self.short_bot.pending_entry_order_id and not getattr(self.short_bot, 'is_paused', False):
+            if getattr(self.short_bot, 'is_paused', False):
+                self.logger.debug(f"[{self.symbol}][HEDGE] short_bot pausado, no se puede ejecutar cobertura.")
+            else:
                 long_entry = float(long_st.get('entry_price') or 0.0)
                 curr_price = float(long_st.get('current_price') or (getattr(self.long_bot, 'current_market_price', 0.0) or 0.0))
 
@@ -4873,7 +4925,9 @@ class TradingBot:
         # 3. DISPARO DE RESGUARDO PARA SHORT (Abre LONG)
         # -------------------------------------------------------------
         if short_in_pos and not long_in_pos and self.long_bot:
-            if not self.long_bot.pending_entry_order_id and not getattr(self.long_bot, 'is_paused', False):
+            if getattr(self.long_bot, 'is_paused', False):
+                self.logger.debug(f"[{self.symbol}][HEDGE] long_bot pausado, no se puede ejecutar cobertura.")
+            else:
                 short_entry = float(short_st.get('entry_price') or 0.0)
                 curr_price = float(short_st.get('current_price') or (getattr(self.short_bot, 'current_market_price', 0.0) or 0.0))
 
@@ -4923,21 +4977,21 @@ class TradingBot:
         if 'hedge_trigger_type' in new_params:
             self.hedge_trigger_type = str(new_params['hedge_trigger_type']).upper().strip()
         if 'hedge_trigger_value' in new_params:
-            self.hedge_trigger_value = abs(float(new_params['hedge_trigger_value']))
+            self.hedge_trigger_value = abs(_safe_float(new_params['hedge_trigger_value'], getattr(self, 'hedge_trigger_value', 1.5)))
         if 'hedge_size_multiplier' in new_params:
-            self.hedge_size_multiplier = float(new_params['hedge_size_multiplier'])
+            self.hedge_size_multiplier = _safe_float(new_params['hedge_size_multiplier'], getattr(self, 'hedge_size_multiplier', 1.0))
         if 'enable_hedge_trailing_stop' in new_params:
             self.enable_hedge_trailing_stop = str(new_params['enable_hedge_trailing_stop']).lower() == 'true'
         if 'hedge_trailing_activation_usdt' in new_params:
-            self.hedge_trailing_activation_usdt = float(new_params['hedge_trailing_activation_usdt'])
+            self.hedge_trailing_activation_usdt = _safe_float(new_params['hedge_trailing_activation_usdt'], getattr(self, 'hedge_trailing_activation_usdt', 0.20))
         if 'hedge_trailing_drop_usdt' in new_params:
-            self.hedge_trailing_drop_usdt = float(new_params['hedge_trailing_drop_usdt'])
+            self.hedge_trailing_drop_usdt = _safe_float(new_params['hedge_trailing_drop_usdt'], getattr(self, 'hedge_trailing_drop_usdt', 0.30))
         if 'enable_hedge_basket_exit' in new_params:
             self.enable_hedge_basket_exit = str(new_params['enable_hedge_basket_exit']).lower() == 'true'
         if 'hedge_basket_target_usdt' in new_params:
-            self.hedge_basket_target_usdt = float(new_params['hedge_basket_target_usdt'])
+            self.hedge_basket_target_usdt = _safe_float(new_params['hedge_basket_target_usdt'], getattr(self, 'hedge_basket_target_usdt', 0.50))
         if 'hedge_reentry_cooldown_seconds' in new_params:
-            self.hedge_reentry_cooldown_seconds = int(new_params['hedge_reentry_cooldown_seconds'])
+            self.hedge_reentry_cooldown_seconds = _safe_int(new_params['hedge_reentry_cooldown_seconds'], getattr(self, 'hedge_reentry_cooldown_seconds', 60))
 
         if self.trade_direction in ('LONG', 'BIDIRECTIONAL'):
             if self.long_bot is None:
