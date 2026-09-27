@@ -682,7 +682,10 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
     const slices = activePositions.map((pos, idx) => {
       const entryPrice = parseFloat(pos.entry_price || pos.current_price || 1);
       const qty = parseFloat(pos.current_position || pos.position_size || 0);
-      const margin = entryPrice > 0 && qty > 0 ? (entryPrice * qty) / 10 : 25;
+      const lev = parseFloat(pos.leverage || 12);
+      const margin = parseFloat(pos.margin_usdt) > 0 
+        ? parseFloat(pos.margin_usdt) 
+        : (entryPrice > 0 && qty > 0 ? (entryPrice * qty) / lev : 25);
       allocatedMargin += margin;
       return {
         symbol: pos.symbol,

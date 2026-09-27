@@ -4323,6 +4323,18 @@ class SingleSideTradingBot:
         return sorted(confirmed_supports, reverse=True) # Devolverlos del más alto al más bajo
     # -----------------------------------------------
 
+    @property
+    def margin_for_current_position(self) -> Decimal:
+        """Calcula el margen real en USDT comprometido por la posición actual (Tamaño Nocional / Apalancamiento)."""
+        if not self.in_position:
+            return Decimal('0')
+        entry_p = Decimal(str(self.last_known_entry_price or (self.current_position.get('entry_price') if self.current_position else 0) or 0))
+        qty = Decimal(str(self.last_known_position_size or (self.current_position.get('quantity') if self.current_position else 0) or 0))
+        lev = Decimal(str(getattr(self, 'leverage', 12) or 12))
+        if lev <= 0:
+            lev = Decimal('12')
+        return (entry_p * qty) / lev
+
     def get_status(self):
         """
         Recopila y devuelve un diccionario con el estado actual del bot.
@@ -5067,6 +5079,14 @@ class TradingBot:
         return bool((self.long_bot and self.long_bot.in_position) or (self.short_bot and self.short_bot.in_position))
 
     @property
+    def leverage(self) -> int:
+        if self.long_bot and hasattr(self.long_bot, 'leverage'):
+            return int(self.long_bot.leverage)
+        if self.short_bot and hasattr(self.short_bot, 'leverage'):
+            return int(self.short_bot.leverage)
+        return int(self.params.get('leverage', 12) or 12)
+
+    @property
     def margin_for_current_position(self) -> Decimal:
         m = Decimal('0')
         if self.long_bot and hasattr(self.long_bot, 'margin_for_current_position'):
@@ -5074,6 +5094,10 @@ class TradingBot:
         if self.short_bot and hasattr(self.short_bot, 'margin_for_current_position'):
             m += self.short_bot.margin_for_current_position
         return m
+
+    @property
+    def margin_usdt(self) -> float:
+        return float(self.margin_for_current_position)
 
     @property
     def current_position(self) -> dict | None:

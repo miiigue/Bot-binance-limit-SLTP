@@ -2378,7 +2378,7 @@ class RiskManager:
             self.logger.info(f"Balance actualizado. Nuevo Saldo: {self.total_balance} USDT, Exposición Máxima: {self.max_exposure} USDT")
 
     def get_current_exposure(self) -> Decimal:
-        """Calcula en tiempo real la suma exacta del margen en riesgo en todas las posiciones abiertas activas."""
+        """Calcula en tiempo real la suma exacta del margen real en riesgo en todas las posiciones abiertas activas."""
         total_exp = Decimal('0')
         try:
             with status_lock:
@@ -2390,13 +2390,17 @@ class RiskManager:
                         elif hasattr(bot_instance, 'current_position') and bot_instance.current_position:
                             entry_p = Decimal(str(bot_instance.current_position.get('entry_price', 0)))
                             qty = Decimal(str(bot_instance.current_position.get('quantity', 0)))
-                            lev = Decimal(str(getattr(bot_instance, 'leverage', 1)))
+                            lev = Decimal(str(getattr(bot_instance, 'leverage', 12) or 12))
                             if lev > 0:
                                 total_exp += (entry_p * qty) / lev
                             else:
-                                total_exp += entry_p * qty
+                                total_exp += (entry_p * qty) / Decimal('12')
                         elif hasattr(bot_instance, 'position_size_usdt'):
-                            total_exp += Decimal(str(bot_instance.position_size_usdt))
+                            lev = Decimal(str(getattr(bot_instance, 'leverage', 12) or 12))
+                            if lev > 0:
+                                total_exp += Decimal(str(bot_instance.position_size_usdt)) / lev
+                            else:
+                                total_exp += Decimal(str(bot_instance.position_size_usdt)) / Decimal('12')
         except Exception as e:
             self.logger.warning(f"Error calculando exposición actual en RiskManager: {e}")
         return total_exp
@@ -2427,25 +2431,37 @@ class RiskManager:
 
     def get_status(self):
         with self.lock:
+            real_margin = None
+            free_margin = None
             try:
-                new_bal = get_account_balance_usdt()
-                if new_bal is not None:
-                    self.total_balance = new_bal
-                    self.max_exposure = self.total_balance * self.risk_percentage
-            except Exception:
-                pass
+                from src.binance_client import get_futures_account_details
+                acc = get_futures_account_details()
+                if acc:
+                    if acc.get('total_wallet_balance') and acc['total_wallet_balance'] > Decimal('0'):
+                        self.total_balance = acc['total_wallet_balance']
+                        self.max_exposure = self.total_balance * self.risk_percentage
+                    if acc.get('total_position_initial_margin') is not None:
+                        real_margin = acc['total_position_initial_margin']
+                    if acc.get('available_balance') is not None:
+                        free_margin = acc['available_balance']
+            except Exception as e_acc:
+                self.logger.warning(f"Error consultando detalles oficiales de cuenta en Binance: {e_acc}")
 
-            real_exp = self.get_current_exposure()
-            self.current_exposure = real_exp
-            free_margin = max(Decimal('0'), self.total_balance - real_exp)
-            exp_pct = (real_exp / self.total_balance * Decimal('100')) if self.total_balance > Decimal('0') else Decimal('0')
+            if real_margin is None:
+                real_margin = self.get_current_exposure()
+            self.current_exposure = real_margin
+
+            if free_margin is None:
+                free_margin = max(Decimal('0'), self.total_balance - real_margin)
+
+            exp_pct = (real_margin / self.total_balance * Decimal('100')) if self.total_balance > Decimal('0') else Decimal('0')
 
             return {
                 'total_balance': f"{self.total_balance:.2f}",
                 'risk_percentage': f"{self.risk_percentage:.2%}",
                 'risk_percentage_raw': float(self.risk_percentage * Decimal('100')),
                 'max_exposure': f"{self.max_exposure:.2f}",
-                'current_exposure': f"{real_exp:.2f}",
+                'current_exposure': f"{real_margin:.2f}",
                 'free_margin': f"{free_margin:.2f}",
                 'exposure_percentage': f"{exp_pct:.1f}%",
                 'exposure_percentage_raw': float(exp_pct)

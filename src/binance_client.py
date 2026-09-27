@@ -974,6 +974,30 @@ def get_account_balance_usdt() -> Decimal | None:
         logger.error(f"Error al obtener el saldo de la cuenta de futuros: {e}")
         return None
 
+def get_futures_account_details() -> dict | None:
+    """
+    Obtiene los detalles oficiales y precisos de margen y balance de la cuenta de futuros de Binance:
+    totalWalletBalance, totalMarginBalance, totalPositionInitialMargin, availableBalance, totalOpenOrderInitialMargin.
+    """
+    client = get_futures_client()
+    if not client:
+        return None
+    try:
+        acc = client.account()
+        if not acc:
+            return None
+        return {
+            'total_wallet_balance': Decimal(str(acc.get('totalWalletBalance', '0'))),
+            'total_margin_balance': Decimal(str(acc.get('totalMarginBalance', '0'))),
+            'total_position_initial_margin': Decimal(str(acc.get('totalPositionInitialMargin', '0'))),
+            'total_open_order_initial_margin': Decimal(str(acc.get('totalOpenOrderInitialMargin', '0'))),
+            'available_balance': Decimal(str(acc.get('availableBalance', '0'))),
+        }
+    except Exception as e:
+        logger = get_logger()
+        logger.warning(f"Error al consultar detalles de margen/cuenta en Binance: {e}")
+        return None
+
 def get_last_account_trade(symbol: str, start_time: datetime = None) -> dict | None:
     """
     Obtiene el último trade de la cuenta para un símbolo específico, opcionalmente
