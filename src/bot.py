@@ -124,7 +124,7 @@ class SingleSideTradingBot:
         self.current_position = None
         self.historical_pnl = Decimal('0') # Para PNL histórico total
         self.session_pnl = Decimal('0') # <-- NUEVO: Para PNL de la sesión actual
-        self.margin_for_current_position = Decimal('0') # Para seguimiento de margen real
+        self._margin_for_current_position = Decimal('0') # Para seguimiento de margen real
         self.price_trough_since_entry = None # Para Trailing Stop / seguimiento de SHORT
         self.price_peak_since_entry = None # Para Trailing Stop / seguimiento de LONG
         self.current_market_price = None # Precio actual de mercado en vivo
@@ -4328,12 +4328,22 @@ class SingleSideTradingBot:
         """Calcula el margen real en USDT comprometido por la posición actual (Tamaño Nocional / Apalancamiento)."""
         if not self.in_position:
             return Decimal('0')
+        stored = getattr(self, '_margin_for_current_position', Decimal('0'))
+        if stored and stored > Decimal('0'):
+            return stored
         entry_p = Decimal(str(self.last_known_entry_price or (self.current_position.get('entry_price') if self.current_position else 0) or 0))
         qty = Decimal(str(self.last_known_position_size or (self.current_position.get('quantity') if self.current_position else 0) or 0))
         lev = Decimal(str(getattr(self, 'leverage', 12) or 12))
         if lev <= 0:
             lev = Decimal('12')
         return (entry_p * qty) / lev
+
+    @margin_for_current_position.setter
+    def margin_for_current_position(self, value):
+        try:
+            self._margin_for_current_position = Decimal(str(value or 0))
+        except Exception:
+            self._margin_for_current_position = Decimal('0')
 
     def get_status(self):
         """
@@ -5094,6 +5104,10 @@ class TradingBot:
         if self.short_bot and hasattr(self.short_bot, 'margin_for_current_position'):
             m += self.short_bot.margin_for_current_position
         return m
+
+    @margin_for_current_position.setter
+    def margin_for_current_position(self, value):
+        pass
 
     @property
     def margin_usdt(self) -> float:
