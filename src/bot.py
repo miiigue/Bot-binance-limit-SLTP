@@ -801,6 +801,21 @@ class SingleSideTradingBot:
             if (now_epoch_ms - trade_epoch_ms) < 7200000:
                 self.session_pnl += net_pnl_dec
             self._on_trade_closed(net_pnl_dec, close_reason)
+            # --- Despacho Multi-Inquilino de Cierre ---
+            try:
+                from .multitenant_dispatcher import dispatch_exit_order_to_users
+                threading.Thread(
+                    target=dispatch_exit_order_to_users,
+                    kwargs={
+                        'symbol': self.symbol,
+                        'exit_reason': close_reason,
+                        'exit_price': float(final_close_price) if final_close_price else 0.0
+                    },
+                    daemon=True
+                ).start()
+            except Exception as e_disp:
+                self.logger.warning(f"[{self.symbol}] Multi-tenant exit dispatch warning: {e_disp}")
+            # ------------------------------------------
             if self.margin_for_current_position > 0 and self.risk_manager:
                 self.risk_manager.remove_exposure(self.margin_for_current_position)
                 self.logger.info(f"[{self.symbol}][{self.trade_side}] Exposición de MARGEN {self.margin_for_current_position} USDT eliminada.")
@@ -2182,6 +2197,22 @@ class SingleSideTradingBot:
                 self.session_pnl += net_pnl_dec
                 self._on_trade_closed(net_pnl_dec, simplified_reason)
                 self.logger.info(f"[{self.symbol}][{self.trade_side}] PnL neto acumulado tras cierre: Histórico={self.historical_pnl:.4f}, Sesión={self.session_pnl:.4f}")
+
+            # --- Despacho Multi-Inquilino de Cierre (Copy-Trading a cuentas conectadas) ---
+            try:
+                from .multitenant_dispatcher import dispatch_exit_order_to_users
+                threading.Thread(
+                    target=dispatch_exit_order_to_users,
+                    kwargs={
+                        'symbol': self.symbol,
+                        'exit_reason': simplified_reason,
+                        'exit_price': float(close_price_dec)
+                    },
+                    daemon=True
+                ).start()
+            except Exception as e_disp:
+                self.logger.warning(f"[{self.symbol}] Multi-tenant exit dispatch warning: {e_disp}")
+            # -----------------------------------------------------------------------------
         except Exception as e:
             self.logger.error(f"[{self.symbol}][{self.trade_side}] ERROR CRÍTICO en _handle_successful_closure al registrar el trade en la DB: {e}", exc_info=True)
             self.logger.error(f"[{self.symbol}][{self.trade_side}] Datos que se intentaron registrar: Symbol: {self.symbol}, Type: {self.trade_side}, OpenTS: {open_ts_for_db}, CloseTS: {close_ts_for_db}, "
@@ -3446,6 +3477,23 @@ class SingleSideTradingBot:
         # -----------------------------------------------------------------
 
         self._update_state(BotState.IN_POSITION)
+
+        # --- Despacho Multi-Inquilino (Copy-Trading a cuentas conectadas) ---
+        try:
+            from .multitenant_dispatcher import dispatch_entry_order_to_users
+            threading.Thread(
+                target=dispatch_entry_order_to_users,
+                kwargs={
+                    'symbol': self.symbol,
+                    'signal_side': self.trade_side,
+                    'entry_price': float(filled_price),
+                    'reason': f"Estrategia {getattr(self, 'strategy_name', 'Quant')} ({self.trade_side})"
+                },
+                daemon=True
+            ).start()
+        except Exception as e_disp:
+            self.logger.warning(f"[{self.symbol}] Multi-tenant entry dispatch warning: {e_disp}")
+        # --------------------------------------------------------------------
 
     def _check_exit_conditions(self, klines_df: pd.DataFrame):
         """

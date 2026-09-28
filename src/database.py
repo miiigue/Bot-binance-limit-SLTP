@@ -1,26 +1,168 @@
-# Este módulo interactuará con la base de datos SQLite.
+# Este módulo interactuará con la base de datos (PostgreSQL si DATABASE_URL existe, o SQLite).
 
 import sqlite3
 import json
-from datetime import datetime # Asegurar importación directa de datetime
+import re
+from datetime import datetime
 import os
-from decimal import Decimal # Mantener para posible conversión
+from decimal import Decimal
 import pandas as pd
-from typing import Union # <-- NUEVA IMPORTACIÓN
+from typing import Union
 from .crypto_vault import encrypt_secret, decrypt_secret, mask_api_key
 
-# Importamos la configuración y el logger (Logger sí, Config no es necesaria aquí)
-# from .config_loader import load_config # Ya no necesitamos leer config de DB
+try:
+    import psycopg2
+    from psycopg2.extras import DictCursor
+    HAS_PSYCOPG2 = True
+except ImportError:
+    HAS_PSYCOPG2 = False
+
 from .logger_setup import get_logger
 
-# Definir el nombre del archivo de la base de datos
-# Lo ubicaremos en el directorio raíz del proyecto (un nivel arriba de 'src')
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATABASE_FILE = os.path.join(BASE_DIR, 'trades_limit.db')
 
+
+class PGCompatCursor:
+    """
+    Adaptador de cursor para PostgreSQL que emula el comportamiento de sqlite3.Cursor:
+    - Traduce placeholders '?' a '%s'.
+    - Ignora comandos PRAGMA específicos de SQLite.
+    - Traduce funciones SQLite (ej. IFNULL -> COALESCE, strftime).
+    - Proporciona 'lastrowid' para sentencias INSERT.
+    - Permite acceso tanto por nombre de columna como por índice posicional.
+    """
+    def __init__(self, pg_cursor):
+        self._cur = pg_cursor
+        self.lastrowid = None
+
+    def execute(self, query, params=None):
+        q = query.strip()
+        # 1. Ignorar PRAGMAs de SQLite
+        if q.upper().startswith("PRAGMA"):
+            return self
+
+        # 2. Traducción de funciones y sintaxis SQLite -> PostgreSQL
+        q = re.sub(r'\bIFNULL\b', 'COALESCE', q, flags=re.IGNORECASE)
+        q = re.sub(r"strftime\s*\(\s*'%s'\s*,\s*([a-zA-Z0-9_]+)\s*\)", r"EXTRACT(EPOCH FROM \1)", q, flags=re.IGNORECASE)
+        q = q.replace('?', '%s')
+
+        # 3. Soporte transparente para lastrowid en sentencias INSERT
+        is_insert = q.upper().startswith("INSERT INTO")
+        if is_insert and "RETURNING" not in q.upper():
+            q_with_ret = q.rstrip(';') + " RETURNING id;"
+            try:
+                if params:
+                    self._cur.execute(q_with_ret, params)
+                else:
+                    self._cur.execute(q_with_ret)
+                row = self._cur.fetchone()
+                if row:
+                    self.lastrowid = row['id'] if ('id' in row) else row[0]
+                return self
+            except Exception:
+                pass
+
+        if params:
+            self._cur.execute(q, params)
+        else:
+            self._cur.execute(q)
+        return self
+
+    def fetchone(self):
+        return self._cur.fetchone()
+
+    def fetchall(self):
+        return self._cur.fetchall()
+
+    def fetchmany(self, size=None):
+        return self._cur.fetchmany(size) if size else self._cur.fetchmany()
+
+    @property
+    def description(self):
+        return self._cur.description
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    def close(self):
+        try:
+            self._cur.close()
+        except Exception:
+            pass
+
+    def __iter__(self):
+        return iter(self._cur)
+
+
+class PGCompatConnection:
+    """
+    Adaptador de conexión PostgreSQL que emula sqlite3.Connection.
+    """
+    def __init__(self, pg_conn):
+        self._conn = pg_conn
+
+    def __setattr__(self, name, value):
+        if name == 'row_factory':
+            return
+        super().__setattr__(name, value)
+
+    @property
+    def row_factory(self):
+        return None
+
+    def cursor(self):
+        return PGCompatCursor(self._conn.cursor(cursor_factory=DictCursor))
+
+    def execute(self, query, params=None):
+        cur = self.cursor()
+        cur.execute(query, params)
+        return cur
+
+    def commit(self):
+        try:
+            self._conn.commit()
+        except Exception:
+            pass
+
+    def rollback(self):
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+
+    def close(self):
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.rollback()
+        else:
+            self.commit()
+
+
 def get_db_connection(timeout=10):
-    """Establece una conexión con la base de datos SQLite con timeout y modo WAL habilitado."""
+    """
+    Retorna una conexión a la base de datos:
+    - Si DATABASE_URL está configurada y psycopg2 está disponible, conecta a PostgreSQL con compatibilidad transparente.
+    - Si no, conecta a SQLite con modo WAL y timeout configurado.
+    """
     logger = get_logger()
+    pg_url = os.environ.get('DATABASE_URL')
+    if pg_url and HAS_PSYCOPG2:
+        try:
+            pg_conn = psycopg2.connect(pg_url)
+            return PGCompatConnection(pg_conn)
+        except Exception as e:
+            logger.warning(f"Aviso al conectar con PostgreSQL ({pg_url.split('@')[-1] if '@' in pg_url else pg_url}): {e}. Usando SQLite de respaldo.")
+
     try:
         conn = sqlite3.connect(DATABASE_FILE, timeout=timeout)
         conn.row_factory = sqlite3.Row
@@ -43,8 +185,7 @@ def purge_duplicate_trades() -> int:
     logger = get_logger()
     conn = None
     try:
-        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection(timeout=10)
         cursor = conn.cursor()
 
         cursor.execute("SELECT id, symbol, close_reason, close_timestamp, pnl_usdt, binance_trade_id FROM trades ORDER BY id ASC")
@@ -114,8 +255,20 @@ def purge_duplicate_trades() -> int:
             conn.close()
 
 def init_db_schema():
-    """Inicializa el esquema de la base de datos si no existe."""
+    """Inicializa el esquema de la base de datos (PostgreSQL si DATABASE_URL existe, o SQLite)."""
     logger = get_logger()
+    pg_url = os.environ.get('DATABASE_URL')
+    if pg_url and HAS_PSYCOPG2:
+        try:
+            from .setup_postgres import ensure_postgres_database, init_postgres_schema, migrate_from_sqlite
+            ensure_postgres_database(pg_url)
+            init_postgres_schema(pg_url)
+            migrate_from_sqlite(DATABASE_FILE, pg_url)
+            logger.info("Esquema relacional y migraciones PostgreSQL inicializadas exitosamente.")
+            return True
+        except Exception as e_pg:
+            logger.error(f"Fallo al inicializar esquema PostgreSQL: {e_pg}. Continuando con inicialización SQLite de respaldo...", exc_info=True)
+
     conn = None
     try:
         conn = sqlite3.connect(DATABASE_FILE, timeout=10) # Timeout de 10 segundos
@@ -442,7 +595,7 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
 
     conn = None
     try:
-        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        conn = get_db_connection(timeout=10)
         cursor = conn.cursor()
 
         # Si este trade es registrado por el bot (no Binance Sync) y ya existe un trade reciente de 'Binance Testnet Sync' en los últimos 60s,
@@ -566,8 +719,7 @@ def get_total_database_metrics() -> dict:
         "strategies_breakdown": []
     }
     try:
-        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection(timeout=10)
         cur = conn.cursor()
         
         # 1. Agregado general
@@ -705,8 +857,7 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
     conn = None
     trades = []
     try:
-        conn = sqlite3.connect(DATABASE_FILE)
-        conn.row_factory = sqlite3.Row 
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         query = """
@@ -721,7 +872,7 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
         cursor.execute(query, (symbol.upper(), n))
         rows = cursor.fetchall()
         trades = [_enrich_trade_commission_fields(dict(row)) for row in rows]
-    except sqlite3.Error as e:
+    except Exception as e:
         logger.error(f"Error al acceder a la base de datos para obtener trades de {symbol}: {e}", exc_info=True)
     finally:
         if conn:
@@ -743,8 +894,7 @@ def get_all_recent_trades(limit: int = 2000) -> list[dict]:
     conn = None
     trades = []
     try:
-        conn = sqlite3.connect(DATABASE_FILE)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         query = """
@@ -755,7 +905,7 @@ def get_all_recent_trades(limit: int = 2000) -> list[dict]:
             SELECT * FROM trades
             ORDER BY id DESC
             LIMIT ?
-        )
+        ) AS subq
         ORDER BY id ASC
         """
         cursor.execute(query, (limit,))
@@ -774,18 +924,15 @@ def get_bot_setting(key: str, default: str | None = None) -> str | None:
     conn = None
     for attempt in range(3):
         try:
-            conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+            conn = get_db_connection(timeout=10)
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM bot_settings WHERE key = ?", (key,))
             row = cursor.fetchone()
             return row[0] if row else default
-        except sqlite3.OperationalError as e:
-            logger.warning(f"get_bot_setting('{key}') intento {attempt+1}/3 falló (SQLite bloqueado): {e}")
+        except Exception as e:
+            logger.warning(f"get_bot_setting('{key}') intento {attempt+1}/3 falló: {e}")
             import time as _time
             _time.sleep(0.15 * (attempt + 1))
-        except Exception as e:
-            logger.error(f"get_bot_setting('{key}') error inesperado: {e}")
-            return default
         finally:
             if conn:
                 conn.close()
@@ -797,7 +944,7 @@ def set_bot_setting(key: str, value: str) -> bool:
     """Guarda o actualiza una configuración persistente en la base de datos."""
     conn = None
     try:
-        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        conn = get_db_connection(timeout=10)
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS bot_settings (
@@ -869,7 +1016,7 @@ def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol
                 trade_epoch = int(time_ms / 1000) if time_ms > 0 else int(datetime.now().timestamp())
                 existing_trade_id = None
                 try:
-                    conn_chk = sqlite3.connect(DATABASE_FILE, timeout=5)
+                    conn_chk = get_db_connection(timeout=5)
                     cur_chk = conn_chk.cursor()
                     cur_chk.execute("""
                         SELECT id, binance_trade_id FROM trades 
@@ -951,13 +1098,13 @@ def check_if_binance_trade_exists(binance_trade_id: Union[int, None]) -> bool: #
     if binance_trade_id is None: # No podemos buscar un ID nulo de esta forma
         return False
     try:
-        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        conn = get_db_connection(timeout=10)
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM trades WHERE binance_trade_id = ?", (binance_trade_id,))
         exists = cursor.fetchone() is not None
         logger.debug(f"Chequeo existencia Binance Trade ID {binance_trade_id}: {'Existe' if exists else 'No existe'}")
         return exists
-    except sqlite3.Error as e:
+    except Exception as e:
         logger.error(f"Error al chequear existencia de Binance Trade ID {binance_trade_id}: {e}", exc_info=True)
         return False # Asumir que no existe en caso de error para evitar problemas mayores
     finally:
@@ -971,8 +1118,7 @@ def get_trade_by_binance_id(binance_trade_id: Union[int, None]) -> Union[dict, N
     if binance_trade_id is None:
         return None
     try:
-        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
-        conn.row_factory = sqlite3.Row # Para acceder a columnas por nombre
+        conn = get_db_connection(timeout=10)
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM trades WHERE binance_trade_id = ?", (binance_trade_id,))
         row = cursor.fetchone()
@@ -982,21 +1128,24 @@ def get_trade_by_binance_id(binance_trade_id: Union[int, None]) -> Union[dict, N
         else:
             logger.debug(f"Ningún trade encontrado en DB con Binance ID {binance_trade_id}")
             return None
-    except sqlite3.Error as e:
+    except Exception as e:
         logger.error(f"Error al obtener trade por Binance ID {binance_trade_id}: {e}", exc_info=True)
         return None
+    finally:
+        if conn:
+            conn.close()
 
 def clear_trade_history() -> bool:
     """Elimina todos los trades de la base de datos y guarda timestamp de corte para no re-descargar historial antiguo de Binance."""
     logger = get_logger()
     conn = None
     try:
-        conn = sqlite3.connect(DATABASE_FILE, timeout=10)
+        conn = get_db_connection(timeout=10)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM trades")
         try:
             cursor.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
-        except sqlite3.Error:
+        except Exception:
             pass
         try:
             from src.binance_client import get_server_time

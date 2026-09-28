@@ -67,7 +67,7 @@ def dispatch_entry_order_to_users(symbol: str, signal_side: str, entry_price: fl
         username = user['username']
         user_symbols = [s.strip().upper() for s in str(user.get('symbols_to_trade', '')).split(',') if s.strip()]
 
-        if clean_sym not in user_symbols:
+        if user_symbols and clean_sym not in user_symbols:
             continue
 
         try:
@@ -87,8 +87,16 @@ def dispatch_entry_order_to_users(symbol: str, signal_side: str, entry_price: fl
             if has_position:
                 continue  # Ya está en posición, evitar sobre-operar
 
-            # 2. Calcular tamaño de orden según capital asignado y apalancamiento
+            # 2. Calcular tamaño de orden según capital asignado/detectado y apalancamiento
+            balance_detected = float(user.get('balance_detected', 0.0) or 0.0)
             allocated_usdt = float(user.get('allocated_usdt', 100.0) or 100.0)
+            
+            # Protección automática: si el balance en Binance es menor que el valor asignado, usar 25% del capital real
+            if 10.0 < balance_detected < allocated_usdt:
+                allocated_usdt = round(balance_detected * 0.25, 2)
+            elif balance_detected <= 10.0 and allocated_usdt > 10.0:
+                allocated_usdt = 10.0
+
             leverage = int(user.get('leverage', 10) or 10)
 
             # Ajustar apalancamiento en la cuenta del usuario
@@ -102,8 +110,19 @@ def dispatch_entry_order_to_users(symbol: str, signal_side: str, entry_price: fl
                 continue
 
             raw_qty = notional / entry_price
-            # Redondeo según convención de decimales (ej. 3 decimales para SOL, 2 para ETH, etc.)
-            qty = round(raw_qty, 3) if raw_qty > 1 else round(raw_qty, 4)
+            if clean_sym.startswith('BTC'):
+                qty = round(raw_qty, 3)
+            elif clean_sym.startswith('ETH'):
+                qty = round(raw_qty, 2)
+            elif clean_sym.startswith('SOL'):
+                qty = round(raw_qty, 1) if raw_qty >= 1 else round(raw_qty, 2)
+            elif clean_sym.startswith('DOGE') or clean_sym.startswith('XRP') or clean_sym.startswith('ADA'):
+                qty = math.floor(raw_qty)
+            else:
+                qty = round(raw_qty, 2) if raw_qty > 1 else round(raw_qty, 4)
+
+            if qty <= 0:
+                continue
 
             # 3. Enviar orden MARKET o LIMIT al broker de Binance del usuario
             side = 'BUY' if signal_side.upper() == 'LONG' else 'SELL'

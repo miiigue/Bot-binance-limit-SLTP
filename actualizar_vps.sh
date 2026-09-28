@@ -15,6 +15,32 @@ if [ -d "venv" ]; then
     venv/bin/pip install -r requirements.txt --quiet
 fi
 
+echo "1.2. Asegurando base de datos PostgreSQL en el VPS..."
+if ! command -v psql &> /dev/null; then
+    echo "Instalando paquetes de PostgreSQL..."
+    apt-get update -qq && apt-get install -y postgresql postgresql-contrib -qq
+fi
+
+systemctl start postgresql
+systemctl enable postgresql
+
+# Crear usuario y base de datos bot_database si no existen
+su - postgres -c "psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='bot_user'\" | grep -q 1 || psql -c \"CREATE USER bot_user WITH PASSWORD 'bot_secure_password_2026';\""
+su - postgres -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname='bot_database'\" | grep -q 1 || psql -c \"CREATE DATABASE bot_database OWNER bot_user;\""
+su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE bot_database TO bot_user;\""
+
+# Asegurar DATABASE_URL en el archivo .env sin alterar las demás variables
+if [ -f ".env" ]; then
+    if ! grep -q "DATABASE_URL" .env; then
+        echo "DATABASE_URL=postgresql://bot_user:bot_secure_password_2026@localhost:5432/bot_database" >> .env
+    fi
+fi
+
+echo "1.3. Aplicando esquemas y migrando datos de SQLite a PostgreSQL..."
+if [ -d "venv" ]; then
+    venv/bin/python3 src/setup_postgres.py
+fi
+
 echo "2. Compilando Frontend (React/Vite con Login & Inversionistas)..."
 cd frontend
 npm install

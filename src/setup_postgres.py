@@ -251,6 +251,123 @@ def migrate_from_sqlite(sqlite_path: str, pg_url: str):
         except Exception as e:
             print(f"  ⚠️ Error migrando trades: {e}")
 
+        # 3. Migrar Transacciones de Inversionistas
+        try:
+            s_cur.execute("SELECT * FROM investor_transactions")
+            inv_txs = s_cur.fetchall()
+            for tx in inv_txs:
+                tx_dict = dict(tx)
+                pg_cur.execute("""
+                    INSERT INTO investor_transactions (id, user_id, amount_usdt, transaction_type, notes, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    tx_dict.get('id'), tx_dict.get('user_id'), tx_dict.get('amount_usdt'),
+                    tx_dict.get('transaction_type'), tx_dict.get('notes'), tx_dict.get('created_at')
+                ))
+            print(f"  ✓ {len(inv_txs)} transacciones de inversionistas migradas.")
+            pg_cur.execute("SELECT setval('investor_transactions_id_seq', (SELECT COALESCE(MAX(id), 1) FROM investor_transactions));")
+        except Exception as e:
+            print(f"  ⚠️ Error migrando investor_transactions: {e}")
+
+        # 4. Migrar Ajustes del Bot
+        try:
+            s_cur.execute("SELECT * FROM bot_settings")
+            settings = s_cur.fetchall()
+            for s in settings:
+                s_dict = dict(s)
+                pg_cur.execute("""
+                    INSERT INTO bot_settings (key, value)
+                    VALUES (%s, %s)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """, (s_dict.get('key'), s_dict.get('value')))
+            print(f"  ✓ {len(settings)} configuraciones globales migradas.")
+        except Exception as e:
+            print(f"  ⚠️ Error migrando bot_settings: {e}")
+
+        # 5. Migrar Tablas Multi-Tenant si existían en SQLite
+        try:
+            s_cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_api_keys'")
+            if s_cur.fetchone():
+                s_cur.execute("SELECT * FROM user_api_keys")
+                keys = s_cur.fetchall()
+                for k in keys:
+                    k_dict = dict(k)
+                    pg_cur.execute("""
+                        INSERT INTO user_api_keys (
+                            id, user_id, exchange, api_key_encrypted, api_secret_encrypted,
+                            api_key_masked, is_testnet, is_valid, last_verified_at,
+                            balance_detected, created_at, updated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (id) DO NOTHING
+                    """, (
+                        k_dict.get('id'), k_dict.get('user_id'), k_dict.get('exchange', 'binance'),
+                        k_dict.get('api_key_encrypted'), k_dict.get('api_secret_encrypted'),
+                        k_dict.get('api_key_masked'), bool(k_dict.get('is_testnet', False)),
+                        bool(k_dict.get('is_valid', False)), k_dict.get('last_verified_at'),
+                        k_dict.get('balance_detected', 0.0), k_dict.get('created_at'), k_dict.get('updated_at')
+                    ))
+                print(f"  ✓ {len(keys)} claves de API de usuarios migradas.")
+                pg_cur.execute("SELECT setval('user_api_keys_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_api_keys));")
+        except Exception as e:
+            print(f"  ⚠️ Error migrando user_api_keys: {e}")
+
+        try:
+            s_cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_bot_settings'")
+            if s_cur.fetchone():
+                s_cur.execute("SELECT * FROM user_bot_settings")
+                bot_sets = s_cur.fetchall()
+                for bs in bot_sets:
+                    bs_dict = dict(bs)
+                    pg_cur.execute("""
+                        INSERT INTO user_bot_settings (
+                            id, user_id, is_running, allocated_usdt, leverage, margin_type,
+                            symbols_to_trade, strategy_name, max_open_positions,
+                            last_started_at, last_stopped_at, error_message, updated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (id) DO NOTHING
+                    """, (
+                        bs_dict.get('id'), bs_dict.get('user_id'), bool(bs_dict.get('is_running', False)),
+                        bs_dict.get('allocated_usdt', 100.0), bs_dict.get('leverage', 10),
+                        bs_dict.get('margin_type', 'ISOLATED'), bs_dict.get('symbols_to_trade', 'BTCUSDT,ETHUSDT,SOLUSDT'),
+                        bs_dict.get('strategy_name', 'WTN Scalper Pro'), bs_dict.get('max_open_positions', 3),
+                        bs_dict.get('last_started_at'), bs_dict.get('last_stopped_at'),
+                        bs_dict.get('error_message'), bs_dict.get('updated_at')
+                    ))
+                print(f"  ✓ {len(bot_sets)} configuraciones de bot de usuario migradas.")
+                pg_cur.execute("SELECT setval('user_bot_settings_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_bot_settings));")
+        except Exception as e:
+            print(f"  ⚠️ Error migrando user_bot_settings: {e}")
+
+        try:
+            s_cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_trades'")
+            if s_cur.fetchone():
+                s_cur.execute("SELECT * FROM user_trades")
+                utrades = s_cur.fetchall()
+                for ut in utrades:
+                    ut_dict = dict(ut)
+                    pg_cur.execute("""
+                        INSERT INTO user_trades (
+                            id, user_id, symbol, trade_type, open_timestamp, close_timestamp,
+                            open_price, close_price, quantity, position_size_usdt,
+                            pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason,
+                            binance_trade_id, strategy_name, is_testnet
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (id) DO NOTHING
+                    """, (
+                        ut_dict.get('id'), ut_dict.get('user_id'), ut_dict.get('symbol'),
+                        ut_dict.get('trade_type'), ut_dict.get('open_timestamp'), ut_dict.get('close_timestamp'),
+                        ut_dict.get('open_price'), ut_dict.get('close_price'), ut_dict.get('quantity'),
+                        ut_dict.get('position_size_usdt'), ut_dict.get('pnl_usdt'),
+                        ut_dict.get('gross_pnl_usdt', 0.0), ut_dict.get('commission_usdt', 0.0),
+                        ut_dict.get('close_reason'), str(ut_dict.get('binance_trade_id')) if ut_dict.get('binance_trade_id') else None,
+                        ut_dict.get('strategy_name'), bool(ut_dict.get('is_testnet', False))
+                    ))
+                print(f"  ✓ {len(utrades)} trades de usuarios migrados.")
+                pg_cur.execute("SELECT setval('user_trades_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_trades));")
+        except Exception as e:
+            print(f"  ⚠️ Error migrando user_trades: {e}")
+
         pg_conn.commit()
         s_conn.close()
         pg_cur.close()

@@ -615,18 +615,6 @@ function MainDashboard() {
               <>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('my_bot')}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'my_bot'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                >
-                  <span>⚡</span> Mi Bot Personal
-                </button>
-
-                <button
-                  type="button"
                   onClick={() => setActiveTab('my_investment')}
                   className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                     activeTab === 'my_investment'
@@ -634,7 +622,19 @@ function MainDashboard() {
                       : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
                   }`}
                 >
-                  <span>🥧</span> Mi Inversión (Mi Torta)
+                  <span>🥧</span> Mi Inversión en el Fondo
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('my_bot')}
+                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
+                    activeTab === 'my_bot'
+                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
+                  }`}
+                >
+                  <span>🔑</span> Mi Cuenta Binance (API)
                 </button>
 
                 <button
