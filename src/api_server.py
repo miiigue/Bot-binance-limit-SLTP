@@ -2502,3 +2502,132 @@ def handle_risk_config():
     
     # GET request
     return jsonify(risk_manager.get_status()), 200 
+
+# --- Rutas de Notas / Bitácora y Asistente ---
+
+@app.route('/api/notes', methods=['GET', 'POST'])
+def handle_user_notes():
+    from src.database import get_bot_setting, set_bot_setting
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        notes = data.get('notes', '')
+        chat_history = data.get('chat_history')
+        set_bot_setting('user_scratchpad_notes', notes)
+        if chat_history is not None:
+            import json as _json
+            set_bot_setting('user_scratchpad_chat', _json.dumps(chat_history))
+        return jsonify({'status': 'success', 'notes': notes}), 200
+    
+    # GET
+    notes = get_bot_setting('user_scratchpad_notes', '') or ''
+    chat_raw = get_bot_setting('user_scratchpad_chat', '[]') or '[]'
+    try:
+        import json as _json
+        chat_history = _json.loads(chat_raw)
+    except Exception:
+        chat_history = []
+    return jsonify({'notes': notes, 'chat_history': chat_history, 'status': 'success'}), 200
+
+@app.route('/api/notes/chat', methods=['POST'])
+def handle_assistant_chat():
+    from src.database import get_bot_setting, set_bot_setting
+    data = request.get_json(silent=True) or {}
+    user_msg = (data.get('message') or '').strip()
+    notes = data.get('notes', '')
+    
+    if not user_msg:
+        return jsonify({'error': 'Mensaje vacío'}), 400
+
+    # Auto-guardar notas si se enviaron
+    if notes:
+        set_bot_setting('user_scratchpad_notes', notes)
+
+    # 1. Obtener telemetría en vivo del bot
+    risk_info = risk_manager.get_status() if risk_manager else {}
+    open_positions = []
+    with status_lock:
+        for sym, w in list(worker_statuses.items()):
+            if hasattr(w, 'in_position') and w.in_position:
+                st = w.get_status() if hasattr(w, 'get_status') else {}
+                side = st.get('trade_side', 'LONG')
+                entry_p = st.get('entry_price', 0)
+                curr_p = st.get('current_price', 0)
+                pnl = st.get('current_pnl', 0)
+                open_positions.append(f"{sym} ({side}) @ {entry_p}, PnL: {pnl:+.2f} USDT")
+
+    positions_str = ", ".join(open_positions) if open_positions else "Ninguna posición abierta en este momento"
+    
+    # 2. Verificar si hay clave de Gemini API en config.ini o entorno
+    gemini_key = None
+    try:
+        cfg = load_config()
+        if cfg:
+            if cfg.has_section('AI') and cfg.has_option('AI', 'gemini_api_key'):
+                gemini_key = cfg.get('AI', 'gemini_api_key').strip()
+            elif cfg.has_section('BINANCE') and cfg.has_option('BINANCE', 'gemini_api_key'):
+                gemini_key = cfg.get('BINANCE', 'gemini_api_key').strip()
+    except Exception:
+        pass
+    if not gemini_key:
+        gemini_key = os.environ.get('GEMINI_API_KEY')
+
+    assistant_reply = ""
+
+    # 3. Si hay API key de Gemini, llamar al modelo Gemini 2.5 Flash
+    if gemini_key:
+        try:
+            import requests as _requests
+            prompt_context = f"""Eres el Copiloto de Inteligencia Artificial integrado en el Dashboard de WTN Algo-Trading (Binance Futures Bot).
+Estado en vivo del bot:
+- Saldo Cartera: {risk_info.get('total_balance', 'N/A')} USDT
+- Margen en Uso: {risk_info.get('current_exposure', 'N/A')} USDT ({risk_info.get('exposure_percentage', '0%')})
+- Margen Disponible: {risk_info.get('free_margin', 'N/A')} USDT
+- Posiciones Activas: {positions_str}
+- Notas de la bitácora del usuario: {notes[:500]}
+
+Pregunta o instrucción del usuario:
+\"{user_msg}\"
+
+Responde en español, de forma concisa, analítica, profesional y con formato markdown legible."""
+
+            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt_context}]}]
+            }
+            res = _requests.post(gemini_url, json=payload, timeout=15)
+            if res.ok:
+                resp_json = res.json()
+                assistant_reply = resp_json.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '')
+            else:
+                api_logger.warning(f"Error Gemini API ({res.status_code}): {res.text}")
+        except Exception as e_gem:
+            api_logger.warning(f"Excepción llamando a Gemini API: {e_gem}")
+
+    # 4. Si no hay Gemini API o falló, respuesta contextual inteligente de trading
+    if not assistant_reply:
+        lower_msg = user_msg.lower()
+        if any(w in lower_msg for w in ['posicion', 'posiciones', 'abierta', 'abiertas']):
+            assistant_reply = f"📊 **Posiciones Actuales:**\n{positions_str}\n\n*Margen comprometido:* {risk_info.get('current_exposure', '0')} USDT."
+        elif any(w in lower_msg for w in ['balance', 'saldo', 'cuenta', 'dinero', 'pool']):
+            assistant_reply = f"💰 **Estado Financiero:**\n- Saldo Total: **{risk_info.get('total_balance', '0')} USDT**\n- Margen Libre: **{risk_info.get('free_margin', '0')} USDT**\n- Exposición: **{risk_info.get('exposure_percentage', '0%')}**"
+        elif any(w in lower_msg for w in ['trailing', 'stop', 'tp', 'sl', 'ganancia', 'cierre']):
+            assistant_reply = "📈 **Consejo de Trailing Stop:**\nEl análisis de 102 trades mostró que una activación a **5.5 USDT** y caída de **2.5 USDT** captura un 144% más de recorrido evitando salidas falsas por ruido de 1m."
+        else:
+            assistant_reply = f"📝 **Mensaje registrado en bitácora:**\n\"{user_msg}\"\n\n🤖 *Estado en vivo:* Saldo {risk_info.get('total_balance', '0')} USDT | {len(open_positions)} pos abiertas.\n\n*(Tip: Puedes agregar tu `gemini_api_key` en `config.ini` [AI] para activar respuestas de IA generativa completa).* "
+
+    # Guardar en historial de chat
+    import json as _json
+    chat_raw = get_bot_setting('user_scratchpad_chat', '[]') or '[]'
+    try:
+        hist = _json.loads(chat_raw)
+    except Exception:
+        hist = []
+    hist.append({"role": "user", "text": user_msg, "time": datetime.now().strftime("%H:%M")})
+    hist.append({"role": "assistant", "text": assistant_reply, "time": datetime.now().strftime("%H:%M")})
+    set_bot_setting('user_scratchpad_chat', _json.dumps(hist[-20:]))
+
+    return jsonify({
+        'reply': assistant_reply,
+        'chat_history': hist[-20:],
+        'status': 'success'
+    }), 200 

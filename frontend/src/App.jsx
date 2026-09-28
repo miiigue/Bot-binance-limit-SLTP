@@ -13,6 +13,7 @@ import ToastContainer from './ToastContainer';
 import BacktestLab from './BacktestLab';
 import UserDropdown from './UserDropdown';
 import ApiUsageWidget from './ApiUsageWidget';
+import FloatingNotesModal from './FloatingNotesModal';
 import { isSoundEnabled, setSoundEnabled, playProfitSound, playEntrySound, playLossSound } from './soundEffects';
 import './index.css';
 
@@ -420,7 +421,7 @@ function MainDashboard() {
                 <span className="text-base font-black">
                   ${(Number(headerPnlData?.poolBalance) || 5000).toFixed(2)}
                 </span>
-                <span className={`text-xs font-black ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
+                <span className={`text-base font-black ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
                   ({(Number(headerPnlData?.walletPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.walletPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.walletPnl) || 0).toFixed(2)})
                 </span>
               </div>
@@ -459,7 +460,7 @@ function MainDashboard() {
                   <span className="text-2xl sm:text-3xl font-mono font-black tracking-tight text-slate-950">
                     ${(Number(headerPnlData?.poolBalance) || 5000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <span className={`text-lg sm:text-xl font-mono font-black tracking-tight ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`} title="Rendimiento neto de cartera (Balance Binance - Capital Inicial)">
+                  <span className={`text-2xl sm:text-3xl font-mono font-black tracking-tight ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`} title="Rendimiento neto de cartera (Balance Binance - Capital Inicial)">
                     ({(Number(headerPnlData?.walletPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.walletPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.walletPnl) || 0).toFixed(2)} USDT)
                   </span>
                 </div>
@@ -750,6 +751,9 @@ function MainDashboard() {
 
       {/* Contenedor de Notificaciones Toast Flotantes */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
+
+      {/* Botón Flotante de Bitácora & Asistente IA */}
+      <FloatingNotesModal />
     </div>
   );
 }
