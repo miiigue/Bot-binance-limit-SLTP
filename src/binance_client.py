@@ -1056,6 +1056,7 @@ def get_futures_account_details() -> dict | None:
             'total_margin_balance': Decimal(str(acc.get('totalMarginBalance', '0'))),
             'total_position_initial_margin': Decimal(str(acc.get('totalPositionInitialMargin', '0'))),
             'total_open_order_initial_margin': Decimal(str(acc.get('totalOpenOrderInitialMargin', '0'))),
+            'total_unrealized_profit': Decimal(str(acc.get('totalUnrealizedProfit', '0'))),
             'available_balance': Decimal(str(acc.get('availableBalance', '0'))),
         }
     except Exception as e:

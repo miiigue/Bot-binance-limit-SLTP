@@ -548,6 +548,25 @@ class SingleSideTradingBot:
         Soporta Hedge Mode ('LONG' o 'SHORT') y modo One-Way.
         """
         self.logger.info(f"[{self.symbol}][{self.trade_side}] Comprobando posición inicial en Binance...")
+
+        # Limpieza proactiva de órdenes de entrada huérfanas previas en Binance para evitar congelamiento de margen
+        try:
+            from src.binance_client import get_futures_client
+            client = get_futures_client()
+            if client:
+                open_orders = client.get_orders(symbol=self.symbol)
+                for o in open_orders:
+                    if not o.get('reduceOnly'):
+                        o_side = o.get('positionSide', '')
+                        if o_side == self.trade_side or o_side in ('BOTH', ''):
+                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] Cancelando orden huérfana previa {o.get('orderId')} ({o.get('side')} {o.get('type')}) para liberar margen.")
+                            try:
+                                client.cancel_order(symbol=self.symbol, orderId=o.get('orderId'))
+                            except Exception:
+                                pass
+        except Exception as e_clean:
+            self.logger.debug(f"Aviso limpiando órdenes previas para {self.symbol}: {e_clean}")
+
         position_info = get_futures_position_information()
 
         if position_info is None:
@@ -2381,28 +2400,36 @@ class SingleSideTradingBot:
             self.logger.warning(f"[{self.symbol}][{self.trade_side}] Cantidad ajustada inválida ({quantity}) para orden hedge.")
             return False
 
-        # Validar con RiskManager (cobertura defensiva autorizada si el balance libre en Binance cubre el margen)
-        if self.risk_manager and not self.risk_manager.can_open_position(order_margin_usdt):
-            allowed_by_balance = False
-            try:
-                from src.binance_client import get_account_balance_usdt
-                avail_balance = get_account_balance_usdt() or Decimal('0')
-                if avail_balance >= order_margin_usdt:
-                    allowed_by_balance = True
+        # Validar disponibilidad de margen en Binance y RiskManager con escalado adaptativo
+        try:
+            from src.binance_client import get_account_balance_usdt
+            avail_balance = get_account_balance_usdt() or Decimal('0')
+            if avail_balance > Decimal('0') and avail_balance < order_margin_usdt:
+                if avail_balance >= Decimal('5.0'):
+                    scaled_margin = round(avail_balance * Decimal('0.85'), 2)
                     self.logger.warning(
-                        f"[{self.symbol}][{self.trade_side}] Exposición máxima en RiskManager alcanzada, "
-                        f"pero se AUTORIZA orden de resguardo por ser cobertura defensiva con balance disponible ({avail_balance:.2f} USDT >= {order_margin_usdt:.2f} USDT)."
+                        f"[{self.symbol}][{self.trade_side}] Saldo disponible ({avail_balance:.2f} USDT) menor al margen óptimo ({order_margin_usdt:.2f} USDT). "
+                        f"Ajustando tamaño adaptativo de resguardo a {scaled_margin:.2f} USDT para garantizar cobertura inmediata."
                     )
+                    order_margin_usdt = scaled_margin
+                    notional_order_usdt = order_margin_usdt * Decimal(str(self.leverage))
+                    quantity = self._adjust_quantity(notional_order_usdt / market_price)
                 else:
-                    self.logger.warning(
-                        f"[{self.symbol}][{self.trade_side}] Orden de resguardo denegada: saldo insuficiente "
-                        f"(Requerido: {order_margin_usdt:.2f}, Disponible: {avail_balance:.2f} USDT)."
-                    )
-            except Exception as e_rm:
-                self.logger.warning(f"[{self.symbol}][{self.trade_side}] Error evaluando saldo para resguardo: {e_rm}")
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] Saldo libre en Binance ({avail_balance:.2f} USDT) insuficiente para resguardo.")
+                    return False
+        except Exception as e_bal:
+            self.logger.debug(f"Aviso verificando saldo para resguardo: {e_bal}")
 
-            if not allowed_by_balance:
-                return False
+        if not quantity or quantity <= Decimal('0'):
+            self.logger.warning(f"[{self.symbol}][{self.trade_side}] Cantidad ajustada inválida ({quantity}) tras escalado adaptativo de resguardo.")
+            return False
+
+        # Si el RiskManager supera el tope autorizado, pero hay saldo en Binance, autorizar por ser cobertura defensiva
+        if self.risk_manager and not self.risk_manager.can_open_position(order_margin_usdt):
+            self.logger.warning(
+                f"[{self.symbol}][{self.trade_side}] Exposición máxima en RiskManager alcanzada, "
+                f"pero se AUTORIZA orden de resguardo por ser cobertura defensiva (Margen: {order_margin_usdt:.2f} USDT)."
+            )
 
         entry_order_side = 'BUY' if self.trade_side == 'LONG' else 'SELL'
         self.entry_reason = reason

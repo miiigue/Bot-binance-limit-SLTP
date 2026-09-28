@@ -2661,7 +2661,9 @@ class RiskManager:
     def get_status(self):
         with self.lock:
             real_margin = None
-            free_margin = None
+            open_orders_margin = Decimal('0')
+            margin_balance = self.total_balance
+            unrealized_pnl = Decimal('0')
             try:
                 from src.binance_client import get_futures_account_details
                 acc = get_futures_account_details()
@@ -2673,6 +2675,12 @@ class RiskManager:
                         real_margin = acc['total_position_initial_margin']
                     if acc.get('available_balance') is not None:
                         free_margin = acc['available_balance']
+                    if acc.get('total_open_order_initial_margin') is not None:
+                        open_orders_margin = acc['total_open_order_initial_margin']
+                    if acc.get('total_margin_balance') is not None:
+                        margin_balance = acc['total_margin_balance']
+                    if acc.get('total_unrealized_profit') is not None:
+                        unrealized_pnl = acc['total_unrealized_profit']
             except Exception as e_acc:
                 self.logger.warning(f"Error consultando detalles oficiales de cuenta en Binance: {e_acc}")
 
@@ -2681,17 +2689,20 @@ class RiskManager:
             self.current_exposure = real_margin
 
             if free_margin is None:
-                free_margin = max(Decimal('0'), self.total_balance - real_margin)
+                free_margin = max(Decimal('0'), self.total_balance - real_margin - open_orders_margin)
 
             exp_pct = (real_margin / self.total_balance * Decimal('100')) if self.total_balance > Decimal('0') else Decimal('0')
 
             return {
                 'total_balance': f"{self.total_balance:.2f}",
+                'margin_balance': f"{margin_balance:.2f}",
                 'risk_percentage': f"{self.risk_percentage:.2%}",
                 'risk_percentage_raw': float(self.risk_percentage * Decimal('100')),
                 'max_exposure': f"{self.max_exposure:.2f}",
                 'current_exposure': f"{real_margin:.2f}",
+                'open_orders_margin': f"{open_orders_margin:.2f}",
                 'free_margin': f"{free_margin:.2f}",
+                'unrealized_pnl': f"{unrealized_pnl:.2f}",
                 'exposure_percentage': f"{exp_pct:.1f}%",
                 'exposure_percentage_raw': float(exp_pct)
             }
@@ -2731,6 +2742,36 @@ def handle_risk_config():
     
     # GET request
     return jsonify(risk_manager.get_status()), 200 
+
+
+@app.route('/api/wallet/cancel_stale_orders', methods=['POST'])
+def cancel_stale_orders_endpoint():
+    """Cancela proactivamente todas las órdenes límite de entrada huérfanas en Binance para liberar margen retenido."""
+    try:
+        from src.binance_client import get_futures_client
+        client = get_futures_client()
+        if not client:
+            return jsonify({"status": "error", "message": "Cliente Binance no disponible"}), 500
+
+        orders = client.get_orders()
+        cancelled = 0
+        for o in orders:
+            if not o.get('reduceOnly'):
+                try:
+                    client.cancel_order(symbol=o.get('symbol'), orderId=o.get('orderId'))
+                    cancelled += 1
+                except Exception:
+                    pass
+
+        api_logger.info(f"Limpieza manual de órdenes huérfanas: {cancelled} órdenes de entrada canceladas.")
+        return jsonify({
+            "status": "success",
+            "message": f"Se cancelaron {cancelled} órdenes de entrada huérfanas y se liberó el margen retenido.",
+            "cancelled_count": cancelled
+        }), 200
+    except Exception as e:
+        api_logger.error(f"Error cancelando órdenes huérfanas: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500 
 
 # --- Rutas de Notas / Bitácora y Asistente ---
 
