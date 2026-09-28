@@ -10,6 +10,11 @@ cd /opt/bot-binance
 echo "1. Descargando últimos cambios desde GitHub..."
 git pull origin main
 
+echo "1.1. Actualizando librerías de Python..."
+if [ -d "venv" ]; then
+    venv/bin/pip install -r requirements.txt --quiet
+fi
+
 echo "2. Compilando Frontend (React/Vite con Login & Inversionistas)..."
 cd frontend
 npm install

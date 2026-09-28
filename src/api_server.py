@@ -28,7 +28,10 @@ from src.database import (
     count_users, create_user, get_user_by_id, get_user_by_identifier, update_last_login,
     approve_user, reject_user, add_investor_transaction, get_all_investors_summary,
     get_investor_portfolio, get_investor_transactions, toggle_user_status,
-    get_admin_investor_dossier, DATABASE_FILE
+    get_admin_investor_dossier, DATABASE_FILE,
+    save_user_api_keys, get_user_api_keys, delete_user_api_keys,
+    get_user_bot_settings, update_user_bot_settings,
+    get_user_trades, get_user_trading_metrics, format_account_number
 )
 from src.auth import (
     hash_password, verify_password, generate_jwt, decode_jwt,
@@ -36,7 +39,10 @@ from src.auth import (
     record_failed_login, clear_failed_logins
 )
 from src.bot import TradingBot, BotState 
-from src.binance_client import get_account_balance_usdt, reset_futures_client, get_futures_client
+from src.binance_client import (
+    get_account_balance_usdt, reset_futures_client, get_futures_client,
+    verify_user_binance_credentials, get_user_futures_client
+)
 from src.backtester import get_historical_klines_paginated, run_strategy_backtest, run_portfolio_backtest
 
 # Timestamp until which sync is paused after a reset (prevents re-importing trades)
@@ -737,16 +743,30 @@ def auth_register_endpoint():
                 "is_first_user": True
             })
         else:
-            # Esquema C: Siguientes usuarios quedan pendientes de aprobación con su monto solicitado
-            user_id = create_user(username=username, email=email, password_hash=pwd_hash, role='investor', status='pending', requested_capital=investment_amount)
+            # Usuarios quedan activos para acceder de inmediato, configurar sus claves API de Binance y operar su bot
+            user_id = create_user(username=username, email=email, password_hash=pwd_hash, role='investor', status='active', requested_capital=investment_amount)
             if not user_id:
-                return jsonify({"status": "error", "message": "Error al registrar la solicitud."}), 500
+                return jsonify({"status": "error", "message": "Error al registrar la cuenta."}), 500
 
-            api_logger.info(f"Nueva solicitud de inversionista registrada (pendiente): {username} | Monto a invertir: ${investment_amount:,.2f} USDT")
+            # Inicializar configuración de bot por defecto
+            get_user_bot_settings(user_id)
+
+            token = generate_jwt(user_id=user_id, username=username, role='investor')
+            user_data = {
+                "id": user_id,
+                "username": username,
+                "email": email,
+                "role": 'investor',
+                "status": 'active',
+                "account_number": format_account_number(user_id)
+            }
+            api_logger.info(f"Nuevo usuario SaaS registrado y activo: {username} (ID: {user_id})")
             return jsonify({
                 "status": "success",
-                "message": "Registro completado con éxito. Tu cuenta está en revisión y debe ser aprobada por el Administrador antes de que puedas ingresar.",
-                "pending_approval": True,
+                "message": "¡Cuenta creada exitosamente! Ya puedes ingresar tus claves API de Binance y activar tu bot.",
+                "token": token,
+                "user": user_data,
+                "pending_approval": False,
                 "requested_capital": investment_amount
             })
     except Exception as e:
@@ -895,6 +915,215 @@ def investor_statement_endpoint():
         })
     except Exception as e:
         api_logger.error(f"Error en investor_statement: {e}", exc_info=True)
+
+# =====================================================================
+# --- ENDPOINTS MULTI-TENANT (SaaS): GESTIÓN DE CLAVES API Y BOT PERSONAL ---
+# =====================================================================
+
+@app.route('/api/user/keys', methods=['GET'])
+@token_required
+def user_keys_get_endpoint():
+    """Consulta las claves API de Binance asociadas al usuario actual (enmascaradas)."""
+    try:
+        user_id = request.current_user['user_id']
+        keys = get_user_api_keys(user_id=user_id, decrypt=False)
+        return jsonify({
+            "status": "success",
+            "has_keys": bool(keys and keys.get('api_key_masked')),
+            "keys": keys or {}
+        })
+    except Exception as e:
+        api_logger.error(f"Error al consultar claves de usuario {request.current_user.get('user_id')}: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/user/keys', methods=['POST'])
+@token_required
+def user_keys_save_endpoint():
+    """Valida contra Binance y guarda las credenciales cifradas con AES-256."""
+    try:
+        user_id = request.current_user['user_id']
+        data = request.get_json(force=True, silent=True) or {}
+        api_key = str(data.get('api_key', '')).strip()
+        api_secret = str(data.get('api_secret', '')).strip()
+        is_testnet = bool(data.get('is_testnet', False))
+
+        if not api_key or not api_secret:
+            return jsonify({"status": "error", "message": "Debes ingresar tu API Key y tu API Secret de Binance."}), 400
+
+        # Verificación activa en tiempo real contra Binance
+        verify_result = verify_user_binance_credentials(api_key=api_key, api_secret=api_secret, is_testnet=is_testnet)
+        if not verify_result.get('valid'):
+            return jsonify({
+                "status": "error",
+                "message": verify_result.get('error', 'No se pudo verificar la API Key en Binance.'),
+                "details": verify_result
+            }), 400
+
+        balance_usdt = verify_result.get('balance_usdt', 0.0)
+        saved = save_user_api_keys(
+            user_id=user_id,
+            api_key=api_key,
+            api_secret=api_secret,
+            is_testnet=is_testnet,
+            is_valid=True,
+            balance_detected=balance_usdt
+        )
+
+        if not saved:
+            return jsonify({"status": "error", "message": "Error al persistir las credenciales en la base de datos."}), 500
+
+        api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) conectó con éxito sus claves de Binance (Testnet={is_testnet}, Saldo=${balance_usdt:,.2f})")
+        return jsonify({
+            "status": "success",
+            "message": f"¡Conexión exitosa con Binance! Balance detectado: ${balance_usdt:,.2f} USDT.",
+            "verification": verify_result
+        })
+    except Exception as e:
+        api_logger.error(f"Error al guardar claves API: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/user/keys', methods=['DELETE'])
+@token_required
+def user_keys_delete_endpoint():
+    """Elimina las credenciales de API del usuario y apaga su bot por seguridad."""
+    try:
+        user_id = request.current_user['user_id']
+        update_user_bot_settings(user_id=user_id, is_running=False)
+        deleted = delete_user_api_keys(user_id=user_id)
+        if deleted:
+            api_logger.info(f"Usuario {user_id} eliminó sus claves API.")
+            return jsonify({"status": "success", "message": "Claves API eliminadas de forma segura."})
+        return jsonify({"status": "error", "message": "No se encontraron claves registradas para eliminar."}), 404
+    except Exception as e:
+        api_logger.error(f"Error al eliminar claves: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/user/bot', methods=['GET'])
+@token_required
+def user_bot_status_endpoint():
+    """Retorna el estado operativo, parámetros de trading y métricas del bot del usuario."""
+    try:
+        user_id = request.current_user['user_id']
+        settings = get_user_bot_settings(user_id=user_id)
+        keys = get_user_api_keys(user_id=user_id, decrypt=False)
+        metrics = get_user_trading_metrics(user_id=user_id)
+
+        live_balance = float(keys.get('balance_detected', 0.0)) if keys else 0.0
+        return jsonify({
+            "status": "success",
+            "bot_settings": settings,
+            "has_valid_keys": bool(keys and keys.get('is_valid')),
+            "is_testnet": bool(keys.get('is_testnet', False)) if keys else False,
+            "api_key_masked": keys.get('api_key_masked') if keys else None,
+            "balance_usdt": live_balance,
+            "metrics": metrics
+        })
+    except Exception as e:
+        api_logger.error(f"Error al consultar estado de bot de usuario: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/user/bot/toggle', methods=['POST'])
+@token_required
+def user_bot_toggle_endpoint():
+    """Activa o pausa el bot personal del usuario."""
+    try:
+        user_id = request.current_user['user_id']
+        keys = get_user_api_keys(user_id=user_id, decrypt=False)
+        if not keys or not keys.get('is_valid'):
+            return jsonify({
+                "status": "error",
+                "message": "Antes de activar el bot debes conectar y verificar tus claves API de Binance."
+            }), 400
+
+        data = request.get_json(force=True, silent=True) or {}
+        settings = get_user_bot_settings(user_id=user_id)
+        current_state = bool(settings.get('is_running', False))
+        target_state = bool(data.get('is_running', not current_state))
+
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if target_state:
+            update_user_bot_settings(user_id=user_id, is_running=True, last_started_at=now_str, error_message=None)
+            api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) ENCENDIÓ su bot personal.")
+            msg = "¡Bot personal activado! El algoritmo institucional operará en tu cuenta de Binance."
+        else:
+            update_user_bot_settings(user_id=user_id, is_running=False, last_stopped_at=now_str)
+            api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) PAUSÓ su bot personal.")
+            msg = "Bot personal pausado. No se abrirán nuevas operaciones."
+
+        new_settings = get_user_bot_settings(user_id=user_id)
+        return jsonify({
+            "status": "success",
+            "message": msg,
+            "is_running": target_state,
+            "bot_settings": new_settings
+        })
+    except Exception as e:
+        api_logger.error(f"Error en toggle de bot de usuario: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/user/bot/settings', methods=['POST'])
+@token_required
+def user_bot_update_settings_endpoint():
+    """Actualiza capital asignado, apalancamiento y pares para el bot personal del usuario."""
+    try:
+        user_id = request.current_user['user_id']
+        data = request.get_json(force=True, silent=True) or {}
+
+        updates = {}
+        if 'allocated_usdt' in data:
+            try:
+                updates['allocated_usdt'] = max(10.0, float(data['allocated_usdt']))
+            except (ValueError, TypeError):
+                pass
+        if 'leverage' in data:
+            try:
+                updates['leverage'] = min(50, max(1, int(data['leverage'])))
+            except (ValueError, TypeError):
+                pass
+        if 'margin_type' in data:
+            m_type = str(data['margin_type']).upper().strip()
+            if m_type in ['ISOLATED', 'CROSSED']:
+                updates['margin_type'] = m_type
+        if 'symbols_to_trade' in data:
+            syms = [s.strip().upper() for s in str(data['symbols_to_trade']).split(',') if s.strip()]
+            if syms:
+                updates['symbols_to_trade'] = ','.join(syms)
+
+        if updates:
+            update_user_bot_settings(user_id=user_id, **updates)
+
+        new_settings = get_user_bot_settings(user_id=user_id)
+        return jsonify({
+            "status": "success",
+            "message": "Configuración de tu bot actualizada con éxito.",
+            "bot_settings": new_settings
+        })
+    except Exception as e:
+        api_logger.error(f"Error al actualizar settings de bot de usuario: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/user/trades', methods=['GET'])
+@token_required
+def user_trades_endpoint():
+    """Retorna las operaciones personales y métricas de rendimiento del usuario."""
+    try:
+        user_id = request.current_user['user_id']
+        limit = min(200, int(request.args.get('limit', 50)))
+        trades = get_user_trades(user_id=user_id, limit=limit)
+        metrics = get_user_trading_metrics(user_id=user_id)
+        return jsonify({
+            "status": "success",
+            "trades": trades,
+            "metrics": metrics
+        })
+    except Exception as e:
+        api_logger.error(f"Error al obtener trades de usuario: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

@@ -7,6 +7,7 @@ import os
 from decimal import Decimal # Mantener para posible conversión
 import pandas as pd
 from typing import Union # <-- NUEVA IMPORTACIÓN
+from .crypto_vault import encrypt_secret, decrypt_secret, mask_api_key
 
 # Importamos la configuración y el logger (Logger sí, Config no es necesaria aquí)
 # from .config_loader import load_config # Ya no necesitamos leer config de DB
@@ -194,6 +195,74 @@ def init_db_schema():
             transaction_type TEXT NOT NULL,
             notes TEXT,
             created_at DATETIME NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """)
+        conn.commit()
+
+        # =====================================================================
+        # --- TABLAS MULTI-TENANT (SaaS): CLAVES API, CONFIGURACIÓN & TRADES ---
+        # =====================================================================
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            exchange TEXT DEFAULT 'binance',
+            api_key_encrypted TEXT NOT NULL,
+            api_secret_encrypted TEXT NOT NULL,
+            api_key_masked TEXT,
+            is_testnet BOOLEAN DEFAULT 0,
+            is_valid BOOLEAN DEFAULT 0,
+            last_verified_at DATETIME,
+            balance_detected REAL DEFAULT 0.0,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(user_id, exchange, is_testnet)
+        )
+        """)
+        conn.commit()
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_bot_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE,
+            is_running BOOLEAN DEFAULT 0,
+            allocated_usdt REAL DEFAULT 100.0,
+            leverage INTEGER DEFAULT 10,
+            margin_type TEXT DEFAULT 'ISOLATED',
+            symbols_to_trade TEXT DEFAULT 'BTCUSDT,ETHUSDT,SOLUSDT',
+            strategy_name TEXT DEFAULT 'WTN Scalper Pro',
+            max_open_positions INTEGER DEFAULT 3,
+            last_started_at DATETIME,
+            last_stopped_at DATETIME,
+            error_message TEXT,
+            updated_at DATETIME,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """)
+        conn.commit()
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            trade_type TEXT NOT NULL,
+            open_timestamp DATETIME NOT NULL,
+            close_timestamp DATETIME,
+            open_price REAL NOT NULL,
+            close_price REAL,
+            quantity REAL NOT NULL,
+            position_size_usdt REAL,
+            pnl_usdt REAL,
+            gross_pnl_usdt REAL DEFAULT 0.0,
+            commission_usdt REAL DEFAULT 0.0,
+            close_reason TEXT,
+            binance_trade_id TEXT,
+            strategy_name TEXT,
+            is_testnet BOOLEAN DEFAULT 0,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
         """)
@@ -1398,10 +1467,357 @@ def get_investor_portfolio(user_id: int, live_pool_balance: float = None) -> dic
     except Exception as e:
         get_logger().error(f"Error al obtener portafolio del inversionista {user_id}: {e}", exc_info=True)
         return None
+# =====================================================================
+# --- FUNCIONES MULTI-TENANT (SaaS): CLAVES API, CONFIGURACIÓN & TRADES ---
+# =====================================================================
+
+def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: bool = False, is_valid: bool = True, balance_detected: float = 0.0) -> bool:
+    """
+    Guarda o actualiza las credenciales de API de Binance de un usuario,
+    cifrándolas con AES-256-GCM antes de persistir en la base de datos.
+    """
+    logger = get_logger()
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        enc_key = encrypt_secret(api_key)
+        enc_secret = encrypt_secret(api_secret)
+        masked_key = mask_api_key(api_key)
+
+        # Verificar si ya existe registro para este usuario y exchange/red
+        cursor.execute("SELECT id FROM user_api_keys WHERE user_id = ? AND exchange = 'binance' AND is_testnet = ?", (user_id, int(is_testnet)))
+        row = cursor.fetchone()
+
+        if row:
+            cursor.execute("""
+                UPDATE user_api_keys
+                SET api_key_encrypted = ?, api_secret_encrypted = ?, api_key_masked = ?,
+                    is_valid = ?, last_verified_at = ?, balance_detected = ?, updated_at = ?
+                WHERE id = ?
+            """, (enc_key, enc_secret, masked_key, int(is_valid), now_str, float(balance_detected), now_str, row['id'] if isinstance(row, dict) or hasattr(row, '__getitem__') else row[0]))
+        else:
+            cursor.execute("""
+                INSERT INTO user_api_keys (user_id, exchange, api_key_encrypted, api_secret_encrypted, api_key_masked, is_testnet, is_valid, last_verified_at, balance_detected, created_at, updated_at)
+                VALUES (?, 'binance', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (user_id, enc_key, enc_secret, masked_key, int(is_testnet), int(is_valid), now_str, float(balance_detected), now_str, now_str))
+
+        conn.commit()
+        logger.info(f"Claves API Binance guardadas con cifrado AES-256 para usuario ID={user_id} (Testnet: {is_testnet})")
+        return True
+    except Exception as e:
+        logger.error(f"Error al guardar claves API de usuario {user_id}: {e}", exc_info=True)
+        return False
     finally:
         conn.close()
 
-# --- FIN NUEVAS FUNCIONES ---
+
+def get_user_api_keys(user_id: int, is_testnet: bool = None, decrypt: bool = True) -> dict:
+    """
+    Recupera las credenciales de API de un usuario.
+    Si decrypt=True, descifra la API Key y Secret en memoria para el bot.
+    Si decrypt=False, retorna la versión enmascarada para la interfaz de usuario.
+    """
+    logger = get_logger()
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        cursor = conn.cursor()
+        if is_testnet is not None:
+            cursor.execute("""
+                SELECT * FROM user_api_keys 
+                WHERE user_id = ? AND exchange = 'binance' AND is_testnet = ?
+            """, (user_id, int(is_testnet)))
+        else:
+            cursor.execute("""
+                SELECT * FROM user_api_keys 
+                WHERE user_id = ? AND exchange = 'binance' 
+                ORDER BY is_testnet ASC LIMIT 1
+            """, (user_id,))
+
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        data = dict(row)
+        if decrypt:
+            data['api_key'] = decrypt_secret(data.get('api_key_encrypted', ''))
+            data['api_secret'] = decrypt_secret(data.get('api_secret_encrypted', ''))
+        else:
+            # Eliminar campos cifrados por seguridad en vistas de API
+            data.pop('api_key_encrypted', None)
+            data.pop('api_secret_encrypted', None)
+
+        return data
+    except Exception as e:
+        logger.error(f"Error al obtener claves API de usuario {user_id}: {e}", exc_info=True)
+        return None
+    finally:
+        conn.close()
+
+
+def delete_user_api_keys(user_id: int, is_testnet: bool = None) -> bool:
+    """Elimina las credenciales de API de un usuario de la base de datos."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        if is_testnet is not None:
+            cursor.execute("DELETE FROM user_api_keys WHERE user_id = ? AND is_testnet = ?", (user_id, int(is_testnet)))
+        else:
+            cursor.execute("DELETE FROM user_api_keys WHERE user_id = ?", (user_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al eliminar claves API de usuario {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_user_bot_settings(user_id: int) -> dict:
+    """
+    Retorna la configuración operativa del bot del usuario.
+    Si no existe registro, crea la configuración por defecto y la retorna.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return {}
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM user_bot_settings WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+
+        # Crear configuración predeterminada si es nuevo usuario
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""
+            INSERT INTO user_bot_settings (
+                user_id, is_running, allocated_usdt, leverage, margin_type,
+                symbols_to_trade, strategy_name, max_open_positions, updated_at
+            ) VALUES (?, 0, 100.0, 10, 'ISOLATED', 'BTCUSDT,ETHUSDT,SOLUSDT', 'WTN Scalper Pro', 3, ?)
+        """, (user_id, now_str))
+        conn.commit()
+
+        cursor.execute("SELECT * FROM user_bot_settings WHERE user_id = ?", (user_id,))
+        new_row = cursor.fetchone()
+        return dict(new_row) if new_row else {}
+    except Exception as e:
+        get_logger().error(f"Error al obtener configuración de bot de usuario {user_id}: {e}")
+        return {}
+    finally:
+        conn.close()
+
+
+def update_user_bot_settings(user_id: int, **kwargs) -> bool:
+    """Actualiza campos específicos de la configuración del bot del usuario."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        # Asegurar que el registro base existe
+        cursor.execute("SELECT id FROM user_bot_settings WHERE user_id = ?", (user_id,))
+        if not cursor.fetchone():
+            get_user_bot_settings(user_id)
+
+        allowed_fields = [
+            'is_running', 'allocated_usdt', 'leverage', 'margin_type',
+            'symbols_to_trade', 'strategy_name', 'max_open_positions',
+            'last_started_at', 'last_stopped_at', 'error_message'
+        ]
+
+        updates = []
+        values = []
+        for k, v in kwargs.items():
+            if k in allowed_fields:
+                updates.append(f"{k} = ?")
+                if isinstance(v, bool):
+                    values.append(int(v))
+                else:
+                    values.append(v)
+
+        if not updates:
+            return True
+
+        updates.append("updated_at = ?")
+        values.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        values.append(user_id)
+
+        sql = f"UPDATE user_bot_settings SET {', '.join(updates)} WHERE user_id = ?"
+        cursor.execute(sql, values)
+        conn.commit()
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al actualizar configuración de bot de usuario {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_all_active_bot_users() -> list:
+    """
+    Retorna la lista de todos los usuarios que tienen su bot encendido (is_running = 1)
+    junto con sus credenciales de API descifradas y parámetros de trading.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT u.id as user_id, u.username, u.email, u.status as user_status,
+                   b.is_running, b.allocated_usdt, b.leverage, b.margin_type,
+                   b.symbols_to_trade, b.strategy_name, b.max_open_positions,
+                   k.api_key_encrypted, k.api_secret_encrypted, k.api_key_masked,
+                   k.is_testnet, k.is_valid, k.balance_detected
+            FROM users u
+            JOIN user_bot_settings b ON u.id = b.user_id
+            JOIN user_api_keys k ON u.id = k.user_id
+            WHERE b.is_running = 1 
+              AND u.status IN ('active', 'pending')
+              AND k.is_valid = 1
+        """)
+        rows = cursor.fetchall()
+        active_list = []
+        for r in rows:
+            d = dict(r)
+            d['api_key'] = decrypt_secret(d.get('api_key_encrypted', ''))
+            d['api_secret'] = decrypt_secret(d.get('api_secret_encrypted', ''))
+            if d['api_key'] and d['api_secret']:
+                active_list.append(d)
+        return active_list
+    except Exception as e:
+        get_logger().error(f"Error al consultar usuarios con bot activo: {e}")
+        return []
+    finally:
+        conn.close()
+
+
+def record_user_trade(user_id: int, symbol: str, trade_type: str, open_timestamp, 
+                      open_price: float, quantity: float, position_size_usdt: float,
+                      close_timestamp=None, close_price=None, pnl_usdt=None, 
+                      gross_pnl_usdt: float = 0.0, commission_usdt: float = 0.0, 
+                      close_reason: str = None, binance_trade_id: str = None, 
+                      strategy_name: str = 'WTN Scalper Pro', is_testnet: bool = False) -> int:
+    """Registra una operación ejecutada en la cuenta personal de un usuario."""
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        cursor = conn.cursor()
+        def _fmt(ts):
+            if isinstance(ts, datetime):
+                return ts.strftime('%Y-%m-%d %H:%M:%S')
+            return str(ts) if ts else None
+
+        cursor.execute("""
+            INSERT INTO user_trades (
+                user_id, symbol, trade_type, open_timestamp, close_timestamp,
+                open_price, close_price, quantity, position_size_usdt,
+                pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason,
+                binance_trade_id, strategy_name, is_testnet
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            user_id, symbol.upper(), trade_type.upper(), _fmt(open_timestamp), _fmt(close_timestamp),
+            float(open_price or 0.0), float(close_price) if close_price is not None else None,
+            float(quantity or 0.0), float(position_size_usdt or 0.0),
+            float(pnl_usdt) if pnl_usdt is not None else None,
+            float(gross_pnl_usdt or 0.0), float(commission_usdt or 0.0),
+            close_reason, str(binance_trade_id or '') if binance_trade_id else None,
+            strategy_name, int(is_testnet)
+        ))
+        conn.commit()
+        return cursor.lastrowid
+    except Exception as e:
+        get_logger().error(f"Error al registrar trade personal de usuario {user_id}: {e}", exc_info=True)
+        return None
+    finally:
+        conn.close()
+
+
+def get_user_trades(user_id: int, limit: int = 50) -> list:
+    """Retorna el historial de operaciones de la cuenta personal del usuario."""
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM user_trades 
+            WHERE user_id = ? 
+            ORDER BY id DESC LIMIT ?
+        """, (user_id, limit))
+        rows = cursor.fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        get_logger().error(f"Error al obtener trades de usuario {user_id}: {e}")
+        return []
+    finally:
+        conn.close()
+
+
+def get_user_trading_metrics(user_id: int) -> dict:
+    """Calcula las métricas de rendimiento del bot personal del usuario."""
+    conn = get_db_connection()
+    if not conn:
+        return {
+            "total_trades": 0, "winning_trades": 0, "losing_trades": 0,
+            "win_rate": 0.0, "total_pnl": 0.0, "total_commission": 0.0,
+            "gross_pnl": 0.0, "profit_factor": 0.0
+        }
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN pnl_usdt > 0 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl_usdt < 0 THEN 1 ELSE 0 END) as losses,
+                   SUM(pnl_usdt) as net_pnl,
+                   SUM(gross_pnl_usdt) as gross_pnl,
+                   SUM(commission_usdt) as total_comm,
+                   SUM(CASE WHEN pnl_usdt > 0 THEN pnl_usdt ELSE 0 END) as gross_win,
+                   SUM(CASE WHEN pnl_usdt < 0 THEN abs(pnl_usdt) ELSE 0 END) as gross_loss
+            FROM user_trades 
+            WHERE user_id = ? AND close_timestamp IS NOT NULL
+        """, (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            return {}
+
+        total = row['total'] or 0
+        wins = row['wins'] or 0
+        losses = row['losses'] or 0
+        net_pnl = round(float(row['net_pnl'] or 0.0), 4)
+        gross_pnl = round(float(row['gross_pnl'] or 0.0), 4)
+        comm = round(float(row['total_comm'] or 0.0), 4)
+        gross_win = float(row['gross_win'] or 0.0)
+        gross_loss = float(row['gross_loss'] or 0.0)
+
+        win_rate = round((wins / total * 100.0), 1) if total > 0 else 0.0
+        profit_factor = round((gross_win / gross_loss), 2) if gross_loss > 0 else (round(gross_win, 2) if gross_win > 0 else 1.0)
+
+        return {
+            "total_trades": total,
+            "winning_trades": wins,
+            "losing_trades": losses,
+            "win_rate": win_rate,
+            "total_pnl": net_pnl,
+            "gross_pnl": gross_pnl,
+            "total_commission": comm,
+            "profit_factor": profit_factor
+        }
+    except Exception as e:
+        get_logger().error(f"Error al calcular métricas de trading para usuario {user_id}: {e}")
+        return {}
+    finally:
+        conn.close()
+
+# --- FIN NUEVAS FUNCIONES MULTI-TENANT ---
 
 # Ejemplo de uso (actualizado para SQLite)
 if __name__ == '__main__':

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AuthProvider, useAuth } from './AuthContext';
 import AuthModal from './AuthModal';
+import UserBotPanel from './UserBotPanel';
 import InvestorPortfolio from './InvestorPortfolio';
 import AdminInvestors from './AdminInvestors';
 import ConfigForm from './ConfigForm';
@@ -57,15 +58,15 @@ function MainDashboard() {
   const [activeStrategyDisplayName, setActiveStrategyDisplayName] = useState('');
 
   // Pestañas dinámicas según el rol:
-  // Admin: 'monitor', 'config', 'chart', 'performance', 'radar', 'backtest', 'investors'
-  // Investor: 'my_investment', 'performance', 'chart'
-  const [activeTab, setActiveTab] = useState(isInvestor ? 'my_investment' : 'monitor');
+  // Admin: 'monitor', 'my_bot', 'config', 'chart', 'performance', 'radar', 'backtest', 'investors'
+  // Investor: 'my_bot', 'my_investment', 'performance', 'chart'
+  const [activeTab, setActiveTab] = useState(isInvestor ? 'my_bot' : 'monitor');
   const [chartSelectedSymbol, setChartSelectedSymbol] = useState('SOLUSDT');
 
   // Asegurar que si el rol es Inversionista, nunca esté en una pestaña de Admin
   useEffect(() => {
-    if (isInvestor && !['my_investment', 'performance', 'chart'].includes(activeTab)) {
-      setActiveTab('my_investment');
+    if (isInvestor && !['my_bot', 'my_investment', 'performance', 'chart'].includes(activeTab)) {
+      setActiveTab('my_bot');
     }
   }, [isInvestor, activeTab]);
 
@@ -525,6 +526,18 @@ function MainDashboard() {
 
                 <button
                   type="button"
+                  onClick={() => setActiveTab('my_bot')}
+                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
+                    activeTab === 'my_bot'
+                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
+                  }`}
+                >
+                  <span>⚡</span> Mi Bot Personal
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setActiveTab('config')}
                   className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                     activeTab === 'config'
@@ -597,9 +610,21 @@ function MainDashboard() {
               </>
             )}
 
-            {/* === PESTAÑAS EXCLUSIVAS DE INVERSIONISTA (SOLO LECTURA) === */}
+            {/* === PESTAÑAS DE INVERSIONISTA / USUARIO === */}
             {isInvestor && (
               <>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('my_bot')}
+                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
+                    activeTab === 'my_bot'
+                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
+                  }`}
+                >
+                  <span>⚡</span> Mi Bot Personal
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setActiveTab('my_investment')}
@@ -674,6 +699,11 @@ function MainDashboard() {
 
         {!initialLoadingError && (
           <>
+            {/* PESTAÑA: Mi Bot Personal (Cuentas individuales Binance) */}
+            {activeTab === 'my_bot' && (
+              <UserBotPanel />
+            )}
+
             {/* PESTAÑA: Mi Inversión (Inversionista) */}
             {activeTab === 'my_investment' && isInvestor && (
               <InvestorPortfolio />

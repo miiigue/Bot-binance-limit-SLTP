@@ -291,7 +291,72 @@ def get_futures_client(force_reload: bool = False):
     except Exception as e:
         logger.critical(f"Error inesperado durante la inicialización de UMFutures Client: {e}")
         return None
-        return None
+
+MAINNET_BASE_URL = "https://fapi.binance.com"
+
+def get_user_futures_client(api_key: str, api_secret: str, is_testnet: bool = False):
+    """
+    Crea un cliente UMFutures aislado para las credenciales de un usuario específico.
+    """
+    base_url = TESTNET_BASE_URL if is_testnet else MAINNET_BASE_URL
+    session = requests.Session()
+    session.mount(base_url, HTTPAdapter(pool_connections=20, pool_maxsize=20))
+    client = UMFutures(key=api_key.strip(), secret=api_secret.strip(), base_url=base_url)
+    client.session = session
+    return client
+
+def verify_user_binance_credentials(api_key: str, api_secret: str, is_testnet: bool = False) -> dict:
+    """
+    Verifica las credenciales de Binance Futures de un usuario en tiempo real:
+    - Comprueba autenticación y firma HMAC-SHA256
+    - Comprueba permisos de futuros y consulta balance USDT
+    - Comprueba que la cuenta tenga acceso operativo
+    """
+    logger = get_logger()
+    if not api_key or not api_secret:
+        return {"valid": False, "error": "Debes proporcionar API Key y API Secret de Binance."}
+
+    try:
+        client = get_user_futures_client(api_key, api_secret, is_testnet=is_testnet)
+        
+        # 1. Probar conectividad y hora
+        client.time()
+
+        # 2. Consultar balance de la cuenta de Futuros
+        balances = client.balance()
+        usdt_bal = 0.0
+        if isinstance(balances, list):
+            for b in balances:
+                if str(b.get('asset', '')).upper() == 'USDT':
+                    usdt_bal = float(b.get('balance', 0.0) or b.get('availableBalance', 0.0) or 0.0)
+                    break
+
+        # 3. Consultar información de cuenta para verificar permisos de trading
+        acc_info = client.account()
+        can_trade = bool(acc_info.get('canTrade', False))
+
+        network_name = "Binance Futures Testnet (Simulación)" if is_testnet else "Binance Futures Real (Mainnet)"
+        return {
+            "valid": True,
+            "balance_usdt": round(usdt_bal, 2),
+            "can_trade": can_trade,
+            "is_testnet": is_testnet,
+            "network": network_name,
+            "message": f"Conexión verificada exitosamente en {network_name}. Balance detectado: ${usdt_bal:,.2f} USDT."
+        }
+    except ClientError as e:
+        err_msg = f"Error de Binance API (Código {e.error_code}): {e.error_message}"
+        if e.error_code == -2015:
+            err_msg = "Clave API o Secret inválido, o tu IP no tiene permisos en esta clave."
+        elif e.error_code == -2014:
+            err_msg = "Formato de API-key rechazado por Binance."
+        elif e.error_code == -1021:
+            err_msg = "Desincronización de hora (Timestamp) entre el servidor y Binance."
+        logger.warning(f"Fallo en verificación de claves API: {err_msg}")
+        return {"valid": False, "error": err_msg, "code": e.error_code}
+    except Exception as e:
+        logger.error(f"Error inesperado al verificar claves de Binance: {e}", exc_info=True)
+        return {"valid": False, "error": f"Error de conexión: {str(e)}"}
 
 def get_historical_klines(symbol: str, interval: str, limit: int = 500):
     """
