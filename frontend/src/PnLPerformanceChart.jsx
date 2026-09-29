@@ -1053,24 +1053,16 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
         <div className="absolute -top-24 -right-24 w-72 h-72 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
         
         <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-gray-800 relative z-10">
-          <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-indigo-500/20 text-indigo-400 rounded-xl border border-indigo-500/30 shadow-inner">
-              <span className="text-2xl">🛡️</span>
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-white tracking-wide">
-                  Monitor de Billetera Binance & Salud de Margen
-                </h2>
-                <Tooltip title="Monitor de Margen y Billetera" text="Monitorea en vivo el balance total, margen retenido en trades activos y margen libre disponible en tu cuenta de Binance Futures." />
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Futures Testnet Live
-                </span>
-              </div>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Datos en tiempo real de tu cuenta: balance disponible, capital comprometido y protección contra liquidación.
-              </p>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-white tracking-wide">
+                Billetera Binance & Salud de Margen
+              </h2>
+              <Tooltip title="Margen y Billetera" text="Monitorea en vivo el balance total, margen retenido en trades activos y margen libre disponible en tu cuenta de Binance Futures." />
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Futures Testnet Live
+              </span>
             </div>
           </div>
 
@@ -1296,26 +1288,18 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
         
         {/* Cabecera de KPIs */}
         <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-gray-200 dark:border-gray-800">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-emerald-500/20 text-emerald-500 rounded-lg">
-              <span className="text-xl">📈</span>
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <span>Rendimiento Financiero y Estadísticas de Trading</span>
-                <Tooltip title="Estadísticas de Trading" text="Historial completo de trades cerrados, ratio de acierto, factor de beneficio y curva de capital acumulado en vivo." />
-                <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
-                  netPnL >= 0 
-                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
-                    : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
-                }`}>
-                  {netPnL >= 0 ? `+${netPnL.toFixed(2)} USDT` : `${netPnL.toFixed(2)} USDT`}
-                </span>
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Historial completo de trades cerrados, ratio de acierto y control de Drawdown.
-              </p>
-            </div>
+          <div>
+            <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <span>Rendimiento Financiero</span>
+              <Tooltip title="Rendimiento Financiero" text="Historial completo de trades cerrados, ratio de acierto, factor de beneficio y curva de capital acumulado en vivo." />
+              <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
+                netPnL >= 0 
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
+                  : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+              }`}>
+                {netPnL >= 0 ? `+${netPnL.toFixed(2)} USDT` : `${netPnL.toFixed(2)} USDT`}
+              </span>
+            </h2>
           </div>
 
           {/* Filtro por moneda, por estrategia y Exportar CSV */}

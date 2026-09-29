@@ -569,7 +569,7 @@ function MainDashboard() {
                       : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
                   }`}
                 >
-                  <span>👥</span> Inversionistas & Fondos
+                  <span>👥</span> Inversionistas
                 </button>
 
                 <button
