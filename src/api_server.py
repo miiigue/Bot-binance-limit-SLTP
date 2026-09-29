@@ -944,8 +944,8 @@ def user_keys_save_endpoint():
     try:
         user_id = request.current_user['user_id']
         data = request.get_json(force=True, silent=True) or {}
-        api_key = str(data.get('api_key', '')).strip()
-        api_secret = str(data.get('api_secret', '')).strip()
+        api_key = "".join(str(data.get('api_key', '')).split()).strip('"\'')
+        api_secret = "".join(str(data.get('api_secret', '')).split()).strip('"\'')
         is_testnet = bool(data.get('is_testnet', False))
 
         if not api_key or not api_secret:

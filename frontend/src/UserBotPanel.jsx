@@ -59,8 +59,32 @@ export default function UserBotPanel() {
   // Guardar / Conectar API Keys
   const handleSaveApiKeys = async (e) => {
     e.preventDefault();
-    if (!apiKey.trim() || !apiSecret.trim()) {
+    const cleanKey = apiKey.replace(/\s+/g, '').replace(/['"]/g, '');
+    const cleanSecret = apiSecret.replace(/\s+/g, '').replace(/['"]/g, '');
+
+    if (!cleanKey || !cleanSecret) {
       setFeedback({ type: 'error', text: 'Por favor ingresa tanto tu API Key como tu API Secret de Binance.' });
+      return;
+    }
+
+    if (cleanKey === cleanSecret) {
+      setFeedback({ type: 'error', text: 'El API Key y el Secret Key son idénticos. Asegúrate de copiar cada uno en su campo correspondiente.' });
+      return;
+    }
+
+    if (cleanKey.includes('BEGIN') || cleanSecret.includes('BEGIN')) {
+      setFeedback({ 
+        type: 'error', 
+        text: 'Detectamos una clave asimétrica RSA/Ed25519. Binance Futures requiere una clave de tipo HMAC ("Generada por el sistema") de 64 caracteres alfanuméricos.' 
+      });
+      return;
+    }
+
+    if (cleanKey.length < 30 || cleanSecret.length < 30) {
+      setFeedback({ 
+        type: 'error', 
+        text: 'La clave ingresada es demasiado corta. Las claves estándar de Binance tienen 64 caracteres. Verifica que no haya quedado incompleta al copiar.' 
+      });
       return;
     }
 
@@ -72,8 +96,8 @@ export default function UserBotPanel() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          api_key: apiKey.trim(),
-          api_secret: apiSecret.trim(),
+          api_key: cleanKey,
+          api_secret: cleanSecret,
           is_testnet: isTestnet
         })
       });
@@ -492,32 +516,46 @@ export default function UserBotPanel() {
                 />
               </div>
 
-              <div className="flex items-center justify-between p-3 bg-slate-950 rounded-xl border border-slate-800">
-                <span className="text-xs text-slate-300 font-bold">Modo de Entorno:</span>
-                <div className="flex gap-2">
+              <div className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-300 font-bold flex items-center gap-1.5">
+                    <span>🌐</span> ¿Dónde creaste tu API Key?
+                  </span>
+                  <span className="text-[10px] text-amber-400 font-mono font-bold">
+                    {isTestnet ? 'MODO DEMO / TESTNET' : 'MODO FONDOS REALES'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setIsTestnet(false)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold border transition ${
+                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition text-center flex flex-col items-center justify-center gap-0.5 ${
                       !isTestnet 
-                        ? 'bg-amber-400 text-slate-950 border-amber-400 font-black' 
-                        : 'bg-slate-900 text-slate-400 border-slate-800'
+                        ? 'bg-amber-400 text-slate-950 border-amber-400 font-black shadow-lg shadow-amber-400/20' 
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
                     }`}
                   >
-                    Binance Real (Mainnet)
+                    <span>🟡 Binance Real (Mainnet)</span>
+                    <span className="text-[9px] opacity-80 font-normal">www.binance.com</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsTestnet(true)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold border transition ${
+                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition text-center flex flex-col items-center justify-center gap-0.5 ${
                       isTestnet 
-                        ? 'bg-amber-400 text-slate-950 border-amber-400 font-black' 
-                        : 'bg-slate-900 text-slate-400 border-slate-800'
+                        ? 'bg-amber-400 text-slate-950 border-amber-400 font-black shadow-lg shadow-amber-400/20' 
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
                     }`}
                   >
-                    Testnet (Demo)
+                    <span>🧪 Testnet (Simulación)</span>
+                    <span className="text-[9px] opacity-80 font-normal">testnet.binancefuture.com</span>
                   </button>
                 </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  {isTestnet 
+                    ? '⚠️ Asegúrate de que las credenciales provengan de testnet.binancefuture.com (o Mock Trading).' 
+                    : 'ℹ️ Las credenciales deben ser creadas en tu cuenta real de Binance con permiso "Enable Futures" (Habilitar Futuros).'}
+                </p>
               </div>
 
               <div className="flex gap-3 pt-2">

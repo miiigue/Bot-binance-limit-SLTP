@@ -346,10 +346,40 @@ def verify_user_binance_credentials(api_key: str, api_secret: str, is_testnet: b
         }
     except ClientError as e:
         err_msg = f"Error de Binance API (Código {e.error_code}): {e.error_message}"
-        if e.error_code == -2015:
-            err_msg = "Clave API o Secret inválido, o tu IP no tiene permisos en esta clave."
-        elif e.error_code == -2014:
-            err_msg = "Formato de API-key rechazado por Binance."
+        
+        # Si falló en la red elegida con error de credenciales/formato (-2014 o -2015), probamos la red alternativa
+        if e.error_code in (-2014, -2015):
+            alt_is_testnet = not is_testnet
+            try:
+                alt_client = get_user_futures_client(api_key, api_secret, is_testnet=alt_is_testnet)
+                alt_client.time()
+                alt_balances = alt_client.balance()
+                if isinstance(alt_balances, list):
+                    alt_name = "Testnet (Demo)" if alt_is_testnet else "Binance Real (Mainnet)"
+                    curr_name = "Binance Real (Mainnet)" if not is_testnet else "Testnet (Demo)"
+                    err_msg = (
+                        f"¡Detectamos tu clave en la red opuesta! Tu API Key fue creada en {alt_name}, "
+                        f"pero seleccionaste '{curr_name}'. Por favor activa el botón '{alt_name}' en el modal para vincularla."
+                    )
+                    logger.info(f"Detección inteligente de red API: Clave pertenece a {alt_name}")
+                    return {"valid": False, "error": err_msg, "suggested_testnet": alt_is_testnet, "code": e.error_code}
+            except Exception:
+                pass
+
+        if e.error_code == -2014:
+            err_msg = (
+                "Formato de API Key no válido para Binance (Código -2014). "
+                "Asegúrate de: 1) Copiar la API Key completa (64 caracteres) y no el Secret Key. "
+                "2) Que sea una clave de tipo HMAC (generada por el sistema) y no Ed25519 o RSA. "
+                "3) Si la creaste en Testnet/Demo, activa el botón 'Testnet (Demo)' antes de guardar."
+            )
+        elif e.error_code == -2015:
+            err_msg = (
+                "Clave API o Secret inválido, o permisos insuficientes (Código -2015). "
+                "Asegúrate de: 1) Haber habilitado la casilla 'Enable Futures' (Habilitar Futuros) en la gestión de API de Binance. "
+                "2) Que la clave no tenga restricciones de IP o incluya la IP del servidor. "
+                "3) Que el Secret Key esté copiado correctamente."
+            )
         elif e.error_code == -1021:
             err_msg = "Desincronización de hora (Timestamp) entre el servidor y Binance."
         logger.warning(f"Fallo en verificación de claves API: {err_msg}")
