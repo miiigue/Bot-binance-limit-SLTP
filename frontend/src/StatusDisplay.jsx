@@ -449,6 +449,26 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
       if (sSub?.in_position) return (sSub.position_diagnostics?.tp_progress_pct || 100);
       return (s.short_entry_diagnostics?.passed_count || sSub?.entry_diagnostics?.passed_count || 0);
     },
+    liquidation_risk: s => {
+      const active = getActivePositions(s);
+      if (active.length === 0) return -1;
+      let maxRisk = 0;
+      active.forEach(p => {
+        const lp = parseFloat(p.liquidation_price) || 0;
+        const cp = parseFloat(p.current_price || s.current_price) || 0;
+        const ep = parseFloat(p.entry_price) || 0;
+        if (lp > 0 && cp > 0 && ep > 0) {
+          const isShort = (p.trade_side === 'SHORT');
+          const distToLiq = isShort ? (lp - cp) : (cp - lp);
+          const distEntry = isShort ? (lp - ep) : (ep - lp);
+          if (distEntry > 0) {
+            const r = Math.min(100, Math.max(0, (1 - distToLiq / distEntry) * 100));
+            if (r > maxRisk) maxRisk = r;
+          }
+        }
+      });
+      return maxRisk;
+    },
     last_error: s => s.last_error || ''
   }), []);
 
@@ -883,7 +903,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               <BinanceSortHeader label="Radar & Posición LONG" sortKey="diagnostics_long" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[340px]" tooltipInfo={{ title: "Radar & Telemetría LONG", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones LONG." }} />
               <BinanceSortHeader label="Radar & Posición SHORT" sortKey="diagnostics_short" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[340px]" tooltipInfo={{ title: "Radar & Telemetría SHORT", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones SHORT en Hedge Mode." }} />
               <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
-              <BinanceSortHeader label="Liq. & Riesgo" sortKey="price_tracking" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Liquidación & Riesgo", desc: "Precio de liquidación de Binance y barra de proximidad al mismo. Si la barra llega al 100% la posición se liquida." }} />
+              <BinanceSortHeader label="Liq. & Riesgo" sortKey="liquidation_risk" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Liquidación & Riesgo", desc: "Precio de liquidación de Binance y barra de proximidad al mismo. Si la barra llega al 100% la posición se liquida." }} />
               <BinanceSortHeader label="Precios & Recorrido" sortKey="price_tracking" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Precios & Recorrido", desc: "Precio de entrada vs actual, % rendimiento acumulado y retroceso desde el pico más alto (o suelo)." }} />
               <BinanceSortHeader label="Last Error" sortKey="last_error" currentSort={statusSort} onSort={handleStatusSort} />
             </tr>
@@ -1211,19 +1231,22 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                               const entryPrice = parseFloat(pos.entry_price) || 0;
                               const precision = liqPrice > 0 ? (liqPrice < 1 ? 4 : (liqPrice < 10 ? 3 : 2)) : 2;
 
-                              // Calcular % de proximidad a liquidación
+                              // Calcular % de proximidad a liquidación y distancia porcentual desde precio actual
                               let riskPct = 0;
+                              let distPct = 0;
                               if (liqPrice > 0 && currPrice > 0 && entryPrice > 0) {
                                 if (isShort) {
                                   // SHORT: liquidación hacia arriba
                                   const distToLiq = liqPrice - currPrice;
                                   const distEntryToLiq = liqPrice - entryPrice;
                                   riskPct = distEntryToLiq > 0 ? Math.min(100, Math.max(0, (1 - distToLiq / distEntryToLiq) * 100)) : 0;
+                                  distPct = currPrice > 0 ? (distToLiq / currPrice) * 100 : 0;
                                 } else {
                                   // LONG: liquidación hacia abajo
                                   const distToLiq = currPrice - liqPrice;
                                   const distEntryToLiq = entryPrice - liqPrice;
                                   riskPct = distEntryToLiq > 0 ? Math.min(100, Math.max(0, (1 - distToLiq / distEntryToLiq) * 100)) : 0;
+                                  distPct = currPrice > 0 ? (distToLiq / currPrice) * 100 : 0;
                                 }
                               }
 
@@ -1239,14 +1262,15 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                         <span className="font-mono font-semibold text-red-300">${liqPrice.toFixed(precision)}</span>
                                       </div>
                                       {/* Barra de riesgo */}
-                                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden" title={`Riesgo de liquidación: ${riskPct.toFixed(1)}%`}>
+                                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden" title={`Riesgo de liquidación: ${riskPct.toFixed(1)}% (Distancia: ${distPct.toFixed(1)}%)`}>
                                         <div
                                           className={`h-full rounded-full transition-all duration-500 ${riskColor}`}
                                           style={{ width: `${riskPct}%` }}
                                         />
                                       </div>
-                                      <div className={`text-[9px] font-mono mt-0.5 ${riskTextColor}`}>
-                                        {riskPct.toFixed(1)}% hacia liq.
+                                      <div className={`text-[9px] font-mono mt-0.5 flex items-center justify-between ${riskTextColor}`}>
+                                        <span>{riskPct.toFixed(1)}% riesgo</span>
+                                        {distPct > 0 && <span className="text-slate-400 font-normal">({distPct.toFixed(1)}% dist.)</span>}
                                       </div>
                                     </>
                                   ) : (

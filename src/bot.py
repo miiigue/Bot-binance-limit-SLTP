@@ -129,6 +129,7 @@ class SingleSideTradingBot:
         self.price_peak_since_entry = None # Para Trailing Stop / seguimiento de LONG
         self.current_market_price = None # Precio actual de mercado en vivo
         self.last_known_liquidation_price = 0.0 # Precio de liquidación de Binance
+        self.parent_coordinator = None # Referencia al coordinador TradingBot si existe
         s_init = trading_params.get('strategy_name') or trading_params.get('active_strategy_name')
         if not s_init or str(s_init).strip().lower() == 'global':
             try:
@@ -653,6 +654,15 @@ class SingleSideTradingBot:
             self.current_market_price = mark_p if mark_p > 0 else float(entry_price_binance)
             self.price_peak_since_entry = max(float(entry_price_binance), self.current_market_price)
             self.price_trough_since_entry = min(float(entry_price_binance), self.current_market_price)
+            # Capturar precio de liquidación en arranque
+            liq_p_raw = position_data.get('liquidationPrice')
+            if liq_p_raw is not None:
+                try:
+                    liq_p = float(liq_p_raw)
+                    if liq_p > 0:
+                        self.last_known_liquidation_price = liq_p
+                except (ValueError, TypeError):
+                    pass
             if initial_margin > 0 and self.risk_manager:
                 self.risk_manager.add_exposure(initial_margin)
         else:
@@ -2315,8 +2325,27 @@ class SingleSideTradingBot:
         self.price_trailing_stop_armed = False
         # --- Limpiar también estado de trailing de PNL ---
         self.pnl_peak_since_activation = None
-        self.pnl_trailing_stop_armed = False
-        # --- Limpiar estado de cobertura/resguardo ---
+        # --- Limpiar estado de cobertura/resguardo y notificar al coordinador ---
+        was_hedge = getattr(self, 'is_hedge_position', False) or getattr(self, 'is_hedge_only', False)
+        reason_closed = getattr(self, 'current_exit_reason', '') or getattr(self, 'exit_reason', '') or ''
+        if was_hedge:
+            parent = getattr(self, 'parent_coordinator', None)
+            if parent:
+                r_lower = str(reason_closed).lower()
+                if any(kw in r_lower for kw in ['trailing', 'ts']):
+                    friendly = "Cerrada por Trailing Stop (TS)"
+                elif any(kw in r_lower for kw in ['take_profit', 'tp']):
+                    friendly = "Cerrada por Take Profit (TP)"
+                elif any(kw in r_lower for kw in ['stop_loss', 'sl']):
+                    friendly = "Cerrada por Stop Loss (SL)"
+                elif 'basket' in r_lower:
+                    friendly = "Cerrada por Cesta Neta (Basket)"
+                else:
+                    friendly = f"Cerrada ({reason_closed})" if reason_closed else "Cerrada por TS/Mercado"
+                parent.last_hedge_close_reason = friendly
+                parent.last_hedge_close_ts = time.time()
+                parent.last_hedge_timestamp = time.time() # Iniciar cooldown de re-entrada inmediatamente tras cierre
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] 🛡️ Notificado a coordinador: Cobertura {friendly}. Cooldown de re-entrada iniciado ({getattr(parent, 'hedge_reentry_cooldown_seconds', 60)}s).")
         self.is_hedge_position = False
         # --- Limpiar diagnóstico de posición activa ---
         self.position_diagnostics = {}
@@ -4878,6 +4907,11 @@ class TradingBot:
                 )
                 self.long_bot.is_hedge_only = True
 
+        if self.long_bot:
+            self.long_bot.parent_coordinator = self
+        if self.short_bot:
+            self.short_bot.parent_coordinator = self
+
         self.logger.info(f"[{self.symbol}] TradingBot coordinador inicializado (Dirección: {self.trade_direction}, Auto-Mirror: {self.auto_mirror_short}, Hedge: {self.enable_hedge_protection}). LONG activo: {self.long_bot is not None}, SHORT activo: {self.short_bot is not None}")
 
     def run_once(self):
@@ -4949,6 +4983,7 @@ class TradingBot:
                 short_p['trade_side'] = 'SHORT'
                 self.short_bot = SingleSideTradingBot(self.symbol, short_p, self.risk_manager, trade_side='SHORT')
                 self.short_bot.is_hedge_only = True
+                self.short_bot.parent_coordinator = self
                 self.logger.info(f"[{self.symbol}] Sub-bot SHORT instanciado dinámicamente para cobertura (Hedge Only).")
             except Exception as e_sb:
                 self.logger.error(f"[{self.symbol}] Error creando short_bot para cobertura: {e_sb}")
@@ -4959,6 +4994,7 @@ class TradingBot:
                 long_p['trade_side'] = 'LONG'
                 self.long_bot = SingleSideTradingBot(self.symbol, long_p, self.risk_manager, trade_side='LONG')
                 self.long_bot.is_hedge_only = True
+                self.long_bot.parent_coordinator = self
                 self.logger.info(f"[{self.symbol}] Sub-bot LONG instanciado dinámicamente para cobertura (Hedge Only).")
             except Exception as e_lb:
                 self.logger.error(f"[{self.symbol}] Error creando long_bot para cobertura: {e_lb}")
@@ -5407,6 +5443,7 @@ class TradingBot:
             st_copy['price_trough'] = sp.get('price_trough')
             st_copy['drop_from_peak_pct'] = sp.get('drop_from_peak_pct')
             st_copy['rise_from_trough_pct'] = sp.get('rise_from_trough_pct')
+            st_copy['liquidation_price'] = sp.get('liquidation_price')
 
         return st_copy
 
