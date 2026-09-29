@@ -79,5 +79,7 @@
     "cycleSleepSeconds": 3,
     "cycle_sleep_seconds": 3,
     "mode": "paper",
-    "orderTimeoutSeconds": 30
+    "orderTimeoutSeconds": 30,
+    "entryOrderType": "MARKET",
+    "entry_order_type": "MARKET"
 }

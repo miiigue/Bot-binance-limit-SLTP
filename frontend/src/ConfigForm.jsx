@@ -111,7 +111,8 @@ const defaultConfigValues = {
   cycleSleepSeconds: 5,
   mode: 'paper',
   orderTimeoutSeconds: 60,
-  entryOrderType: 'LIMIT',
+  entryOrderType: 'MARKET',
+  entry_order_type: 'MARKET',
   evaluateRsiDelta: true,
   evaluateVolumeFilter: true,
   evaluateRsiRange: true,
@@ -720,6 +721,13 @@ function ConfigForm({
         newFormData.hedgeReentryCooldownSeconds = propInitialConfig.hedgeReentryCooldownSeconds ?? propInitialConfig.hedge_reentry_cooldown_seconds;
       }
 
+      // Sincronizar Tipo de Orden (LIMIT vs MARKET) de forma estricta
+      if (propInitialConfig.entry_order_type !== undefined || propInitialConfig.entryOrderType !== undefined) {
+        const ot = String(propInitialConfig.entryOrderType || propInitialConfig.entry_order_type || 'MARKET').toUpperCase().trim();
+        newFormData.entryOrderType = ot;
+        newFormData.entry_order_type = ot;
+      }
+
       setFormData(newFormData);
 
       const stratName = propInitialConfig.activeStrategyName || propInitialConfig.active_strategy_name;
@@ -753,6 +761,11 @@ function ConfigForm({
               setRiskPercentage(rp);
               newFormData.riskPercentage = rp;
               newFormData.risk_percentage = rp;
+            }
+            if (data.entry_order_type !== undefined || data.entryOrderType !== undefined) {
+              const ot = String(data.entryOrderType || data.entry_order_type || 'MARKET').toUpperCase().trim();
+              newFormData.entryOrderType = ot;
+              newFormData.entry_order_type = ot;
             }
             setFormData(newFormData);
             const stratName = data.activeStrategyName || data.active_strategy_name;
@@ -828,9 +841,12 @@ function ConfigForm({
   const handleInspectStrategy = (stratName) => {
     const stratObj = (availableStrategies || []).find(s => s.name === stratName);
     if (stratObj && stratObj.config) {
+      const cardOrderType = String(stratObj.config.entryOrderType || stratObj.config.entry_order_type || formData.entryOrderType || 'MARKET').toUpperCase().trim();
       setFormData(prev => ({
         ...prev,
         ...stratObj.config,
+        entryOrderType: cardOrderType,
+        entry_order_type: cardOrderType,
         activeStrategyName: stratName
       }));
       setStrategyNameInput(stratName);
@@ -847,7 +863,7 @@ function ConfigForm({
     setShowSuccessMessage(false);
     setError(null);
 
-    const nameToSave = (overrideName || strategyNameInput || '').trim();
+    const nameToSave = (overrideName || strategyNameInput || formData.activeStrategyName || 'Estrategia_Activa').trim();
     if (!nameToSave) {
       setValidationError("⚠️ Debes escribir un NOMBRE para la configuración antes de guardar.");
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -930,6 +946,11 @@ function ConfigForm({
       if (dataToSend.tradeDirection !== undefined) dataToSend.trade_direction = dataToSend.tradeDirection;
       if (dataToSend.autoMirrorShort !== undefined) dataToSend.auto_mirror_short = dataToSend.autoMirrorShort;
 
+      // Sincronización estricta de Tipo de Orden (LIMIT vs MARKET)
+      const cleanOrderType = String(dataToSend.entryOrderType || dataToSend.entry_order_type || 'MARKET').toUpperCase().trim();
+      dataToSend.entryOrderType = cleanOrderType;
+      dataToSend.entry_order_type = cleanOrderType;
+
       const sanitizeNum = (v) => {
         if (v === null || v === undefined || v === '') return v;
         if (typeof v === 'string') {
@@ -939,6 +960,18 @@ function ConfigForm({
         }
         return v;
       };
+
+      if (dataToSend.leverage !== undefined) dataToSend.leverage = sanitizeNum(dataToSend.leverage);
+      if (dataToSend.positionSizeUSDT !== undefined) dataToSend.position_size_usdt = sanitizeNum(dataToSend.positionSizeUSDT);
+      if (dataToSend.stopLossUSDT !== undefined) dataToSend.stop_loss_usdt = sanitizeNum(dataToSend.stopLossUSDT);
+      if (dataToSend.takeProfitUSDT !== undefined) dataToSend.take_profit_usdt = sanitizeNum(dataToSend.takeProfitUSDT);
+      if (dataToSend.rsiType !== undefined) dataToSend.rsi_type = String(dataToSend.rsiType).toUpperCase().trim();
+      if (dataToSend.rsiInterval !== undefined) dataToSend.rsi_interval = String(dataToSend.rsiInterval).trim();
+      if (dataToSend.rsiPeriod !== undefined) dataToSend.rsi_period = sanitizeNum(dataToSend.rsiPeriod);
+      if (dataToSend.cycleSleepSeconds !== undefined) dataToSend.cycle_sleep_seconds = sanitizeNum(dataToSend.cycleSleepSeconds);
+      if (dataToSend.orderTimeoutSeconds !== undefined) dataToSend.order_timeout_seconds = sanitizeNum(dataToSend.orderTimeoutSeconds);
+      if (dataToSend.volumeSmaPeriod !== undefined) dataToSend.volume_sma_period = sanitizeNum(dataToSend.volumeSmaPeriod);
+      if (dataToSend.volumeFactor !== undefined) dataToSend.volume_factor = sanitizeNum(dataToSend.volumeFactor);
 
       // Smart Hedge & Resguardo Dinámico
       if (dataToSend.enableHedgeProtection !== undefined) {
@@ -1121,6 +1154,9 @@ function ConfigForm({
         throw new Error(strategyData.error || `Error HTTP ${response.status}`);
       }
       const newFormData = { ...defaultConfigValues, ...strategyData }; 
+      const stratOrderType = String(strategyData.entryOrderType || strategyData.entry_order_type || 'MARKET').toUpperCase().trim();
+      newFormData.entryOrderType = stratOrderType;
+      newFormData.entry_order_type = stratOrderType;
       const stratRisk = strategyData.riskPercentage ?? strategyData.risk_percentage;
       if (stratRisk !== undefined) {
         const rp = Number(stratRisk);
@@ -1439,7 +1475,7 @@ function ConfigForm({
                     symbolsList.map((sym) => {
                       const assignedStrat = strategyAssignments[sym] || strategyNameInput || (availableStrategies[0]?.name) || 'v3_RSI-SNIPER-MOMENTUM_v3';
                       const stratObj = (availableStrategies || []).find(s => s.name === assignedStrat);
-                      const orderType = (stratObj?.config?.entryOrderType || stratObj?.config?.entry_order_type || 'LIMIT').toUpperCase();
+                      const orderType = (stratObj?.config?.entryOrderType || stratObj?.config?.entry_order_type || (multiStrategyEnabled ? 'MARKET' : (formData.entryOrderType || 'MARKET'))).toUpperCase();
 
                       return (
                         <tr key={sym} className="hover:bg-slate-900/40 transition-colors">

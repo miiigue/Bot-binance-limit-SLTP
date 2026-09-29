@@ -55,5 +55,7 @@
     "symbolsToTrade": "DOGEUSDT,XRPUSDT,XLMUSDT,SOLUSDT,BTCUSDT,ETHUSDT",
     "takeProfitUSDT": 25,
     "volumeFactor": 1,
-    "volumeSmaPeriod": 7
+    "volumeSmaPeriod": 7,
+    "entryOrderType": "MARKET",
+    "entry_order_type": "MARKET"
 }

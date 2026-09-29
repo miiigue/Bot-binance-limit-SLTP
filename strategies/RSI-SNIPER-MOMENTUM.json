@@ -98,5 +98,7 @@
     "support_confirmations": 2,
     "support_level_tolerance_percent": 0.5,
     "support_order_stop_loss_percent": 2,
-    "support_order_take_profit_percent": 4
+    "support_order_take_profit_percent": 4,
+    "entryOrderType": "MARKET",
+    "entry_order_type": "MARKET"
 }

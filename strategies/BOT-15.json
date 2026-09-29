@@ -76,5 +76,7 @@
     "dca_volume_multiplier": 1.2,
     "cycleSleepSeconds": 10,
     "mode": "paper",
-    "orderTimeoutSeconds": 55
+    "orderTimeoutSeconds": 55,
+    "entryOrderType": "MARKET",
+    "entry_order_type": "MARKET"
 }

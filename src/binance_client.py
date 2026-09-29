@@ -97,21 +97,21 @@ def get_api_usage_stats(trading_params: dict = None, active_symbols_count: int =
             rsi_interval = cfg.get('TRADING', 'rsi_interval', fallback='3m') if cfg else '3m'
             btc_shield = cfg.getboolean('TRADING', 'enable_btc_crash_shield', fallback=True) if cfg else True
             regime_filter = cfg.getboolean('TRADING', 'enable_market_regime_filter', fallback=False) if cfg else False
-            order_type = cfg.get('TRADING', 'entry_order_type', fallback='LIMIT') if cfg else 'LIMIT'
+            order_type = cfg.get('TRADING', 'entry_order_type', fallback='MARKET') if cfg else 'MARKET'
         except Exception:
             sleep_sec = 3.0
             sym_count = active_symbols_count or 6
             rsi_interval = '3m'
             btc_shield = True
             regime_filter = False
-            order_type = 'LIMIT'
+            order_type = 'MARKET'
     else:
         sleep_sec = float(trading_params.get('cycle_sleep_seconds') or trading_params.get('cycleSleepSeconds') or 3.0)
         sym_count = active_symbols_count if active_symbols_count is not None else len(trading_params.get('symbolsToTrade', '').split(',')) if isinstance(trading_params.get('symbolsToTrade'), str) else 6
         rsi_interval = str(trading_params.get('rsi_interval') or trading_params.get('rsiInterval') or '3m')
         btc_shield = bool(trading_params.get('enable_btc_crash_shield') or trading_params.get('enableBtcCrashShield', True))
         regime_filter = bool(trading_params.get('enable_market_regime_filter') or trading_params.get('enableMarketRegimeFilter', False))
-        order_type = str(trading_params.get('entry_order_type') or trading_params.get('entryOrderType') or 'LIMIT')
+        order_type = str(trading_params.get('entry_order_type') or trading_params.get('entryOrderType') or 'MARKET')
 
     sleep_sec = max(0.5, sleep_sec)
     sym_count = max(1, sym_count)

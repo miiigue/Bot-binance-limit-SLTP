@@ -322,9 +322,9 @@ class SingleSideTradingBot:
             # ---------------------------------------------------
 
             # --- Tipo de orden de entrada y salida: LIMIT o MARKET ---
-            self.entry_order_type = str(self.params.get('entry_order_type', 'LIMIT')).upper()
+            self.entry_order_type = str(self.params.get('entry_order_type') or self.params.get('entryOrderType') or 'MARKET').upper().strip()
             if self.entry_order_type not in ('LIMIT', 'MARKET'):
-                self.entry_order_type = 'LIMIT'
+                self.entry_order_type = 'MARKET'
             self.logger.info(f"[{self.symbol}] Tipo de orden configurado: {self.entry_order_type}")
 
             # Validaciones básicas de parámetros
@@ -483,11 +483,30 @@ class SingleSideTradingBot:
                     self.logger.warning(f"[{self.symbol}] Hot-reload: No se pudo configurar apalancamiento: {e_lev}")
 
         self.order_timeout_seconds = _safe_int(new_params.get('order_timeout_seconds'), self.order_timeout_seconds)
-        if 'entry_order_type' in new_params:
-            new_order_type = str(new_params['entry_order_type']).upper()
+        raw_order_type = new_params.get('entry_order_type') or new_params.get('entryOrderType')
+        if raw_order_type:
+            new_order_type = str(raw_order_type).upper().strip()
             if new_order_type in ('LIMIT', 'MARKET'):
+                old_order_type = getattr(self, 'entry_order_type', 'MARKET')
                 self.entry_order_type = new_order_type
                 self.logger.info(f"[{self.symbol}] Hot-reload: entry_order_type actualizado a {self.entry_order_type}")
+                # Si se cambia a MARKET y teníamos una orden límite de entrada pendiente, cancelarla inmediatamente para no bloquear margen
+                if new_order_type == 'MARKET' and old_order_type == 'LIMIT':
+                    if getattr(self, 'pending_entry_order_id', None) and not self.in_position:
+                        try:
+                            self.logger.warning(f"[{self.symbol}] Cancelando orden límite de entrada {self.pending_entry_order_id} por cambio a MARKET...")
+                            cancel_futures_order(self.symbol, self.pending_entry_order_id)
+                            self.pending_entry_order_id = None
+                            self._update_state(BotState.WAITING_SIGNAL)
+                        except Exception as e_c:
+                            self.logger.error(f"[{self.symbol}] Error cancelando orden límite en hot-reload: {e_c}")
+                    for sup_price, o_id in list(getattr(self, 'active_support_orders', {}).items()):
+                        try:
+                            cancel_futures_order(self.symbol, o_id)
+                            self.logger.info(f"[{self.symbol}] Cancelada orden de soporte {o_id} en {sup_price} por cambio a MARKET")
+                        except Exception:
+                            pass
+                    self.active_support_orders = {}
 
         # --- HOT-RELOAD CIRCUIT BREAKERS ---
         if 'enable_max_loss_per_symbol' in new_params:

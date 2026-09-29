@@ -227,11 +227,26 @@ def config_to_dict(config: configparser.ConfigParser) -> dict:
 
 def map_frontend_trading_binance(frontend_data: dict) -> dict:
     """Mapea los datos del frontend a la estructura esperada por configparser para [TRADING] y [BINANCE]."""
+    import re
     def _val(key, default):
         val = frontend_data.get(key)
-        if val is None or str(val).strip() == '':
-            return str(default)
-        return str(val).strip().replace(',', '.')
+        if val is not None and str(val).strip() != '':
+            return str(val).strip().replace(',', '.')
+        snake_key = re.sub(r'(?<!^)(?=[A-Z])', '_', key).lower()
+        val = frontend_data.get(snake_key)
+        if val is not None and str(val).strip() != '':
+            return str(val).strip().replace(',', '.')
+        parts = key.split('_')
+        camel_key = parts[0] + ''.join(x.title() for x in parts[1:])
+        val = frontend_data.get(camel_key)
+        if val is not None and str(val).strip() != '':
+            return str(val).strip().replace(',', '.')
+        return str(default)
+
+    raw_order_type = frontend_data.get('entry_order_type') or frontend_data.get('entryOrderType') or 'MARKET'
+    entry_order_type_clean = str(raw_order_type).upper().strip()
+    if entry_order_type_clean not in ('LIMIT', 'MARKET'):
+        entry_order_type_clean = 'MARKET'
 
     config_output = {
         'BINANCE': {
@@ -261,7 +276,7 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'take_profit_usdt': _val('takeProfitUSDT', 30),
             'cycle_sleep_seconds': _val('cycleSleepSeconds', 5),
             'order_timeout_seconds': _val('orderTimeoutSeconds', 10),
-            'entry_order_type': str(_val('entryOrderType', 'LIMIT')).upper(),
+            'entry_order_type': entry_order_type_clean,
             'evaluate_rsi_delta': str(frontend_data.get('evaluateRsiDelta', True)).lower(),
             'evaluate_volume_filter': str(frontend_data.get('evaluateVolumeFilter', True)).lower(),
             'evaluate_rsi_range': str(frontend_data.get('evaluateRsiRange', True)).lower(),
@@ -644,9 +659,18 @@ def _build_frontend_config_dict():
             if key_ini in config_dict['TRADING']:
                 raw_v = config_dict['TRADING'][key_ini]
                 if key_ini.startswith('enable_') or key_ini.startswith('evaluate_') or key_ini in ('auto_mirror_short',):
-                    frontend_config[key_frontend] = str(raw_v).lower() == 'true'
+                    val = str(raw_v).lower() == 'true'
                 else:
-                    frontend_config[key_frontend] = raw_v
+                    val = raw_v
+                frontend_config[key_frontend] = val
+                frontend_config[key_ini] = val
+
+    # Garantizar que entryOrderType y entry_order_type estén siempre sincronizados y no sean None
+    ot = str(frontend_config.get('entryOrderType') or frontend_config.get('entry_order_type') or 'MARKET').upper().strip()
+    if ot not in ('LIMIT', 'MARKET'):
+        ot = 'MARKET'
+    frontend_config['entryOrderType'] = ot
+    frontend_config['entry_order_type'] = ot
     if 'riskPercentage' not in frontend_config:
         try:
             frontend_config['riskPercentage'] = float(risk_manager.risk_percentage * Decimal('100'))
@@ -1390,7 +1414,13 @@ def update_config_endpoint():
             try:
                 os.makedirs(STRATEGIES_PATH, exist_ok=True)
                 strat_file_path = os.path.join(STRATEGIES_PATH, f"{actual_name_to_save_in_ini}.json")
-                strat_clean_data = {**frontend_data, "symbolsToTrade": symbols_to_save, "activeStrategyName": actual_name_to_save_in_ini}
+                strat_clean_data = {
+                    **frontend_data,
+                    "symbolsToTrade": symbols_to_save,
+                    "activeStrategyName": actual_name_to_save_in_ini,
+                    "entryOrderType": ini_other_data['TRADING']['entry_order_type'],
+                    "entry_order_type": ini_other_data['TRADING']['entry_order_type'],
+                }
                 with open(strat_file_path, 'w', encoding='utf-8') as sf:
                     json.dump(strat_clean_data, sf, indent=4)
                 logger.info(f"Estrategia '{actual_name_to_save_in_ini}' sincronizada en {strat_file_path}")
@@ -1434,6 +1464,8 @@ def update_config_endpoint():
                                     logger.info(f"-> Hot-reload multi-estrategia exitoso para {sym} con '{s_name}'")
                                     continue
                             params_to_use = loaded_trading_params.copy()
+                            params_to_use['entry_order_type'] = ini_other_data['TRADING']['entry_order_type']
+                            params_to_use['entryOrderType'] = ini_other_data['TRADING']['entry_order_type']
                             params_to_use['strategy_name'] = actual_name_to_save_in_ini or get_strategy_for_symbol(sym)
                             bot_inst.update_trading_params(params_to_use)
                             logger.info(f"-> Hot-reload exitoso para bot {sym}")
@@ -2126,6 +2158,12 @@ def _save_strategy_logic(strategy_name: str, data: dict):
     logger = get_logger()
     strategy_file_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
     try:
+        ot = str(data.get('entryOrderType') or data.get('entry_order_type') or 'MARKET').upper().strip()
+        if ot not in ('LIMIT', 'MARKET'):
+            ot = 'MARKET'
+        data['entryOrderType'] = ot
+        data['entry_order_type'] = ot
+
         with open(strategy_file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
         logger.info(f"Estrategia '{strategy_name}' guardada exitosamente en {strategy_file_path}")
@@ -2155,6 +2193,13 @@ def _load_strategy_logic(strategy_name: str):
     try:
         with open(strategy_file_path, 'r', encoding='utf-8') as f:
             strategy_data = json.load(f)
+
+        ot = str(strategy_data.get('entryOrderType') or strategy_data.get('entry_order_type') or 'MARKET').upper().strip()
+        if ot not in ('LIMIT', 'MARKET'):
+            ot = 'MARKET'
+        strategy_data['entryOrderType'] = ot
+        strategy_data['entry_order_type'] = ot
+
         logger.info(f"Estrategia '{strategy_name}' cargada exitosamente.")
 
         # Sincronizar porcentaje de riesgo en caliente al cargar la estrategia
@@ -2239,6 +2284,11 @@ def list_strategies():
             try:
                 with open(full_path, 'r', encoding='utf-8') as sf:
                     config_data = json.load(sf)
+                ot = str(config_data.get('entryOrderType') or config_data.get('entry_order_type') or 'MARKET').upper().strip()
+                if ot not in ('LIMIT', 'MARKET'):
+                    ot = 'MARKET'
+                config_data['entryOrderType'] = ot
+                config_data['entry_order_type'] = ot
             except Exception as e:
                 logger.warning(f"No se pudo leer config para {strategy_name}: {e}")
             results.append({
