@@ -1,5 +1,7 @@
 {
     "activeStrategyName": "v3_RSI-SNIPER-MOMENTUM_v3",
+    "entryOrderType": "MARKET",
+    "entry_order_type": "MARKET",
     "cycleSleepSeconds": 3,
     "dcaMaxReentries": 1,
     "dcaPriceDropPercent": 2.0,
