@@ -883,6 +883,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
               <BinanceSortHeader label="Radar & Posición LONG" sortKey="diagnostics_long" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[340px]" tooltipInfo={{ title: "Radar & Telemetría LONG", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones LONG." }} />
               <BinanceSortHeader label="Radar & Posición SHORT" sortKey="diagnostics_short" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[340px]" tooltipInfo={{ title: "Radar & Telemetría SHORT", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones SHORT en Hedge Mode." }} />
               <BinanceSortHeader label="Posición & Margen" sortKey="margin" currentSort={statusSort} onSort={handleStatusSort} />
+              <BinanceSortHeader label="Liq. & Riesgo" sortKey="price_tracking" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Liquidación & Riesgo", desc: "Precio de liquidación de Binance y barra de proximidad al mismo. Si la barra llega al 100% la posición se liquida." }} />
               <BinanceSortHeader label="Precios & Recorrido" sortKey="price_tracking" currentSort={statusSort} onSort={handleStatusSort} tooltipInfo={{ title: "Precios & Recorrido", desc: "Precio de entrada vs actual, % rendimiento acumulado y retroceso desde el pico más alto (o suelo)." }} />
               <BinanceSortHeader label="Last Error" sortKey="last_error" currentSort={statusSort} onSort={handleStatusSort} />
             </tr>
@@ -1160,6 +1161,100 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                 </span>
                               </div>
                             )}
+                          </div>
+                        );
+                      })()}
+                      {/* --- MENSAJES DIAGNÓSTICOS DE COBERTURA --- */}
+                      {status.hedge_info?.enabled && (() => {
+                        const noOpenReason = status.hedge_info?.no_open_reason;
+                        const lastCloseReason = status.hedge_info?.last_close_reason;
+                        const cooldownRemaining = status.hedge_info?.cooldown_remaining || 0;
+                        const isHedged = status.hedge_info?.is_hedged;
+                        if (isHedged) return null; // Ya hay cobertura activa, no mostrar diagnósticos
+                        return (
+                          <div className="mt-1.5 flex flex-col gap-1">
+                            {lastCloseReason && (
+                              <div className="px-1.5 py-0.5 rounded bg-amber-950/50 border border-amber-600/40 text-[9px] font-sans text-amber-300 flex items-start gap-1">
+                                <span>🔔</span>
+                                <span>Última cobertura: <span className="font-medium">{lastCloseReason}</span></span>
+                              </div>
+                            )}
+                            {noOpenReason && (
+                              <div className={`px-1.5 py-0.5 rounded border text-[9px] font-sans flex items-start gap-1 ${
+                                cooldownRemaining > 0
+                                  ? 'bg-orange-950/50 border-orange-600/40 text-orange-300'
+                                  : 'bg-slate-800/60 border-slate-600/40 text-slate-400'
+                              }`}>
+                                <span>{cooldownRemaining > 0 ? '⏳' : 'ℹ️'}</span>
+                                <span>{noOpenReason}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+
+                    {/* --- LIQUIDACIÓN & RIESGO --- */}
+                    <td className="px-3 py-3 whitespace-nowrap text-xs min-w-[160px]">
+                      {(() => {
+                        const activePos = getActivePositions(status);
+                        if (activePos.length === 0) {
+                          return <span className="text-slate-600 font-mono text-[10px]">—</span>;
+                        }
+                        return (
+                          <div className="flex flex-col space-y-1.5">
+                            {activePos.map((pos, pIdx) => {
+                              const side = pos.trade_side || (pIdx === 0 ? 'LONG' : 'SHORT');
+                              const isShort = side === 'SHORT';
+                              const liqPrice = parseFloat(pos.liquidation_price) || 0;
+                              const currPrice = parseFloat(pos.current_price || status.current_price) || 0;
+                              const entryPrice = parseFloat(pos.entry_price) || 0;
+                              const precision = liqPrice > 0 ? (liqPrice < 1 ? 4 : (liqPrice < 10 ? 3 : 2)) : 2;
+
+                              // Calcular % de proximidad a liquidación
+                              let riskPct = 0;
+                              if (liqPrice > 0 && currPrice > 0 && entryPrice > 0) {
+                                if (isShort) {
+                                  // SHORT: liquidación hacia arriba
+                                  const distToLiq = liqPrice - currPrice;
+                                  const distEntryToLiq = liqPrice - entryPrice;
+                                  riskPct = distEntryToLiq > 0 ? Math.min(100, Math.max(0, (1 - distToLiq / distEntryToLiq) * 100)) : 0;
+                                } else {
+                                  // LONG: liquidación hacia abajo
+                                  const distToLiq = currPrice - liqPrice;
+                                  const distEntryToLiq = entryPrice - liqPrice;
+                                  riskPct = distEntryToLiq > 0 ? Math.min(100, Math.max(0, (1 - distToLiq / distEntryToLiq) * 100)) : 0;
+                                }
+                              }
+
+                              const riskColor = riskPct >= 80 ? 'bg-red-500' : riskPct >= 50 ? 'bg-orange-400' : riskPct >= 25 ? 'bg-yellow-400' : 'bg-emerald-400';
+                              const riskTextColor = riskPct >= 80 ? 'text-red-400' : riskPct >= 50 ? 'text-orange-400' : riskPct >= 25 ? 'text-yellow-400' : 'text-emerald-400';
+
+                              return (
+                                <div key={pIdx} className={`p-1 rounded border ${isShort ? 'bg-rose-950/20 border-rose-600/30' : 'bg-emerald-950/20 border-emerald-600/30'}`}>
+                                  {liqPrice > 0 ? (
+                                    <>
+                                      <div className="flex items-center justify-between text-[10px] mb-1">
+                                        <span className="text-slate-400 font-sans">Liq. {isShort ? '(S)' : '(L)'}:</span>
+                                        <span className="font-mono font-semibold text-red-300">${liqPrice.toFixed(precision)}</span>
+                                      </div>
+                                      {/* Barra de riesgo */}
+                                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden" title={`Riesgo de liquidación: ${riskPct.toFixed(1)}%`}>
+                                        <div
+                                          className={`h-full rounded-full transition-all duration-500 ${riskColor}`}
+                                          style={{ width: `${riskPct}%` }}
+                                        />
+                                      </div>
+                                      <div className={`text-[9px] font-mono mt-0.5 ${riskTextColor}`}>
+                                        {riskPct.toFixed(1)}% hacia liq.
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-500 text-[9px] font-sans italic">Liq. no disponible aún</span>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })()}

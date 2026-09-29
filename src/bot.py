@@ -128,6 +128,7 @@ class SingleSideTradingBot:
         self.price_trough_since_entry = None # Para Trailing Stop / seguimiento de SHORT
         self.price_peak_since_entry = None # Para Trailing Stop / seguimiento de LONG
         self.current_market_price = None # Precio actual de mercado en vivo
+        self.last_known_liquidation_price = 0.0 # Precio de liquidación de Binance
         s_init = trading_params.get('strategy_name') or trading_params.get('active_strategy_name')
         if not s_init or str(s_init).strip().lower() == 'global':
             try:
@@ -697,6 +698,16 @@ class SingleSideTradingBot:
             mark_p = float(mark_p_raw) if (mark_p_raw and float(mark_p_raw) > 0) else 0.0
             if mark_p <= 0 and abs(pos_amt_binance) > Decimal('1e-9'):
                 mark_p = float(entry_price_binance + (unrealized_pnl_binance / pos_amt_binance))
+
+            # Capturar precio de liquidación de Binance
+            liq_p_raw = position_data.get('liquidationPrice')
+            if liq_p_raw is not None:
+                try:
+                    liq_p = float(liq_p_raw)
+                    if liq_p > 0:
+                        self.last_known_liquidation_price = liq_p
+                except (ValueError, TypeError):
+                    pass
 
             if mark_p > 0:
                 self.current_market_price = mark_p
@@ -4536,6 +4547,7 @@ class SingleSideTradingBot:
             "consecutive_losses": getattr(self, "consecutive_losses_count", 0),
             "is_hedge_position": getattr(self, "is_hedge_position", False),
             "is_hedge_only": getattr(self, "is_hedge_only", False),
+            "liquidation_price": getattr(self, "last_known_liquidation_price", 0.0),
         }
 
     # --- Lógica de la Estrategia de Soportes ---
@@ -4811,6 +4823,9 @@ class TradingBot:
         self.hedge_reentry_cooldown_seconds = _safe_int(self.params.get('hedge_reentry_cooldown_seconds'), 60)
         self.last_hedge_timestamp = 0.0
         self.hedge_executions_count = 0
+        self.last_hedge_close_reason = ""  # Por qué se cerró la última cobertura (ej: "trailing_stop")
+        self.last_hedge_close_ts = 0.0     # Timestamp del último cierre de cobertura
+        self.hedge_no_open_reason = ""     # Por qué NO se abrió cobertura en la última evaluación
 
         self.long_bot: SingleSideTradingBot | None = None
         self.short_bot: SingleSideTradingBot | None = None
@@ -4982,7 +4997,14 @@ class TradingBot:
         # Respetar cooldown entre aperturas de resguardo
         now = time.time()
         cooldown_sec = _safe_int(getattr(self, 'hedge_reentry_cooldown_seconds', 60), 60)
-        if (now - getattr(self, 'last_hedge_timestamp', 0.0)) < cooldown_sec:
+        elapsed = now - getattr(self, 'last_hedge_timestamp', 0.0)
+        if elapsed < cooldown_sec:
+            remaining = int(cooldown_sec - elapsed)
+            reason_txt = getattr(self, 'last_hedge_close_reason', '') or 'cierre anterior'
+            self.hedge_no_open_reason = (
+                f"⏳ Cooldown activo tras {reason_txt}: {remaining}s restantes "
+                f"(configurado: {cooldown_sec}s)"
+            )
             return
 
         trigger_type = str(getattr(self, 'hedge_trigger_type', 'PERCENT')).upper().strip()
@@ -5002,6 +5024,7 @@ class TradingBot:
         if long_in_pos and not short_in_pos and self.short_bot:
             if getattr(self.short_bot, 'is_paused', False):
                 self.logger.debug(f"[{self.symbol}][HEDGE] short_bot pausado, no se puede ejecutar cobertura.")
+                self.hedge_no_open_reason = "⚠️ short_bot pausado — cobertura bloqueada"
             else:
                 long_entry = float(long_st.get('entry_price') or 0.0)
                 curr_price = float(long_st.get('current_price') or (getattr(self.long_bot, 'current_market_price', 0.0) or 0.0))
@@ -5035,7 +5058,18 @@ class TradingBot:
                     if success:
                         self.last_hedge_timestamp = now
                         self.hedge_executions_count += 1
+                        self.hedge_no_open_reason = ""  # Cobertura abierta, limpiar mensaje
                     return
+                else:
+                    # Trigger no alcanzado — reportar progreso
+                    if trigger_type == 'PERCENT':
+                        self.hedge_no_open_reason = (
+                            f"Esperando trigger: caída LONG {drop_pct:.2f}% / {trigger_val:.2f}% necesario"
+                        )
+                    else:
+                        self.hedge_no_open_reason = (
+                            f"Esperando trigger: PnL LONG {long_pnl:+.2f} USDT / -{trigger_val:.2f} USDT necesario"
+                        )
 
         # -------------------------------------------------------------
         # 3. DISPARO DE RESGUARDO PARA SHORT (Abre LONG)
@@ -5076,7 +5110,18 @@ class TradingBot:
                     if success:
                         self.last_hedge_timestamp = now
                         self.hedge_executions_count += 1
+                        self.hedge_no_open_reason = ""  # Cobertura abierta, limpiar mensaje
                     return
+                else:
+                    # Trigger no alcanzado — reportar progreso
+                    if trigger_type == 'PERCENT':
+                        self.hedge_no_open_reason = (
+                            f"Esperando trigger: subida SHORT {rise_pct:.2f}% / {trigger_val:.2f}% necesario"
+                        )
+                    else:
+                        self.hedge_no_open_reason = (
+                            f"Esperando trigger: PnL SHORT {short_pnl:+.2f} USDT / -{trigger_val:.2f} USDT necesario"
+                        )
 
     def update_trading_params(self, new_params: dict):
         if not new_params:
@@ -5094,6 +5139,8 @@ class TradingBot:
             self.hedge_trigger_type = str(new_params['hedge_trigger_type']).upper().strip()
         if 'hedge_trigger_value' in new_params:
             self.hedge_trigger_value = abs(_safe_float(new_params['hedge_trigger_value'], getattr(self, 'hedge_trigger_value', 1.5)))
+        if 'hedge_reentry_cooldown_seconds' in new_params:
+            self.hedge_reentry_cooldown_seconds = _safe_int(new_params['hedge_reentry_cooldown_seconds'], getattr(self, 'hedge_reentry_cooldown_seconds', 60))
         if 'hedge_size_multiplier' in new_params:
             self.hedge_size_multiplier = _safe_float(new_params['hedge_size_multiplier'], getattr(self, 'hedge_size_multiplier', 1.0))
         if 'enable_hedge_trailing_stop' in new_params:
@@ -5344,7 +5391,11 @@ class TradingBot:
                 "basket_exit_enabled": getattr(self, 'enable_hedge_basket_exit', True),
                 "basket_target_usdt": getattr(self, 'hedge_basket_target_usdt', 0.50),
                 "is_hedged": bool(long_st and long_st.get('in_position') and short_st and short_st.get('in_position')),
-                "basket_net_pnl": round(tot_current_pnl, 4) if (long_st and long_st.get('in_position') and short_st and short_st.get('in_position')) else None
+                "basket_net_pnl": round(tot_current_pnl, 4) if (long_st and long_st.get('in_position') and short_st and short_st.get('in_position')) else None,
+                "no_open_reason": getattr(self, 'hedge_no_open_reason', ''),
+                "last_close_reason": getattr(self, 'last_hedge_close_reason', ''),
+                "cooldown_seconds": _safe_int(getattr(self, 'hedge_reentry_cooldown_seconds', 60), 60),
+                "cooldown_remaining": max(0, int(_safe_int(getattr(self, 'hedge_reentry_cooldown_seconds', 60), 60) - (time.time() - getattr(self, 'last_hedge_timestamp', 0.0)))),
             },
         })
         if len(active_positions) == 1:
