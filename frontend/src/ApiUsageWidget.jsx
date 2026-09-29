@@ -31,14 +31,12 @@ export default function ApiUsageWidget({ apiUsage = null }) {
       <button
         type="button"
         onClick={() => setIsModalOpen(true)}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-slate-900/90 border border-slate-700/80 text-slate-300 hover:text-white hover:bg-slate-800 transition shadow-sm active:scale-95 cursor-pointer select-none"
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-mono font-bold border transition shadow-sm active:scale-95 cursor-pointer select-none ${colorClasses}`}
         title="Ver telemetría de consumo de API de Binance"
       >
-        <span className="text-[11px] uppercase font-bold text-slate-400">API:</span>
-        <span className="font-extrabold text-white">
-          {usedPct}%
-        </span>
-        <span className="text-[10px] text-slate-400">
+        <span className="text-[11px] uppercase font-bold opacity-80">API:</span>
+        <span className="font-extrabold">{usedPct}%</span>
+        <span className="text-[10px] opacity-75">
           ({usedWeight}/{maxWeight})
         </span>
       </button>

@@ -377,6 +377,12 @@ def init_db_schema():
         """)
         conn.commit()
 
+        try:
+            cursor.execute("ALTER TABLE user_api_keys ADD COLUMN api_base_url TEXT DEFAULT NULL")
+            conn.commit()
+        except Exception:
+            pass
+
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_bot_settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1620,7 +1626,7 @@ def get_investor_portfolio(user_id: int, live_pool_balance: float = None) -> dic
 # --- FUNCIONES MULTI-TENANT (SaaS): CLAVES API, CONFIGURACIÓN & TRADES ---
 # =====================================================================
 
-def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: bool = False, is_valid: bool = True, balance_detected: float = 0.0) -> bool:
+def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: bool = False, is_valid: bool = True, balance_detected: float = 0.0, api_base_url: str = None) -> bool:
     """
     Guarda o actualiza las credenciales de API de Binance de un usuario,
     cifrándolas con AES-256-GCM antes de persistir en la base de datos.
@@ -1644,14 +1650,14 @@ def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: 
             cursor.execute("""
                 UPDATE user_api_keys
                 SET api_key_encrypted = ?, api_secret_encrypted = ?, api_key_masked = ?,
-                    is_valid = ?, last_verified_at = ?, balance_detected = ?, updated_at = ?
+                    is_valid = ?, last_verified_at = ?, balance_detected = ?, api_base_url = ?, updated_at = ?
                 WHERE id = ?
-            """, (enc_key, enc_secret, masked_key, int(is_valid), now_str, float(balance_detected), now_str, row['id'] if isinstance(row, dict) or hasattr(row, '__getitem__') else row[0]))
+            """, (enc_key, enc_secret, masked_key, int(is_valid), now_str, float(balance_detected), api_base_url, now_str, row['id'] if isinstance(row, dict) or hasattr(row, '__getitem__') else row[0]))
         else:
             cursor.execute("""
-                INSERT INTO user_api_keys (user_id, exchange, api_key_encrypted, api_secret_encrypted, api_key_masked, is_testnet, is_valid, last_verified_at, balance_detected, created_at, updated_at)
-                VALUES (?, 'binance', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (user_id, enc_key, enc_secret, masked_key, int(is_testnet), int(is_valid), now_str, float(balance_detected), now_str, now_str))
+                INSERT INTO user_api_keys (user_id, exchange, api_key_encrypted, api_secret_encrypted, api_key_masked, is_testnet, is_valid, last_verified_at, balance_detected, api_base_url, created_at, updated_at)
+                VALUES (?, 'binance', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (user_id, enc_key, enc_secret, masked_key, int(is_testnet), int(is_valid), now_str, float(balance_detected), api_base_url, now_str, now_str))
 
         conn.commit()
         logger.info(f"Claves API Binance guardadas con cifrado AES-256 para usuario ID={user_id} (Testnet: {is_testnet})")

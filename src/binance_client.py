@@ -293,100 +293,147 @@ def get_futures_client(force_reload: bool = False):
         return None
 
 MAINNET_BASE_URL = "https://fapi.binance.com"
+DEMO_BASE_URL = "https://demo-fapi.binance.com"
+TESTNET_BASE_URL = "https://testnet.binancefuture.com"
 
-def get_user_futures_client(api_key: str, api_secret: str, is_testnet: bool = False):
+def get_user_futures_client(api_key: str, api_secret: str, is_testnet: bool = False, base_url: str = None):
     """
     Crea un cliente UMFutures aislado para las credenciales de un usuario específico.
+    Soporta Mainnet Real, Binance Demo Trading (demo.binance.com) y Testnet oficial.
     """
-    base_url = TESTNET_BASE_URL if is_testnet else MAINNET_BASE_URL
+    import re
+    clean_key = re.sub(r'[\s"\'\r\n\t]+', '', str(api_key or '')).strip()
+    clean_secret = re.sub(r'[\s"\'\r\n\t]+', '', str(api_secret or '')).strip()
+
+    if base_url:
+        selected_url = base_url
+    elif is_testnet:
+        selected_url = DEMO_BASE_URL
+    else:
+        selected_url = MAINNET_BASE_URL
+
     session = requests.Session()
-    session.mount(base_url, HTTPAdapter(pool_connections=20, pool_maxsize=20))
-    client = UMFutures(key=api_key.strip(), secret=api_secret.strip(), base_url=base_url)
+    session.mount(selected_url, HTTPAdapter(pool_connections=20, pool_maxsize=20))
+    client = UMFutures(key=clean_key, secret=clean_secret, base_url=selected_url)
     client.session = session
     return client
 
 def verify_user_binance_credentials(api_key: str, api_secret: str, is_testnet: bool = False) -> dict:
     """
     Verifica las credenciales de Binance Futures de un usuario en tiempo real:
-    - Comprueba autenticación y firma HMAC-SHA256
-    - Comprueba permisos de futuros y consulta balance USDT
-    - Comprueba que la cuenta tenga acceso operativo
+    - Auto-sanitiza espacios, comillas y caracteres invisibles.
+    - Procesa y detecta inteligentemente la red correcta:
+      1) Binance Demo Trading (demo-fapi.binance.com / demo.binance.com)
+      2) Binance Futures Testnet (testnet.binancefuture.com)
+      3) Binance Futures Real (fapi.binance.com / binance.com)
+    - Comprueba autenticación y firma HMAC-SHA256.
+    - Comprueba permisos de futuros y consulta balance USDT.
+    - Comprueba que la cuenta tenga acceso operativo.
     """
+    import re
     logger = get_logger()
     if not api_key or not api_secret:
         return {"valid": False, "error": "Debes proporcionar API Key y API Secret de Binance."}
 
-    try:
-        client = get_user_futures_client(api_key, api_secret, is_testnet=is_testnet)
-        
-        # 1. Probar conectividad y hora
-        client.time()
+    clean_key = re.sub(r'[\s"\'\r\n\t]+', '', str(api_key or '')).strip()
+    clean_secret = re.sub(r'[\s"\'\r\n\t]+', '', str(api_secret or '')).strip()
 
-        # 2. Consultar balance de la cuenta de Futuros
-        balances = client.balance()
-        usdt_bal = 0.0
-        if isinstance(balances, list):
-            for b in balances:
-                if str(b.get('asset', '')).upper() == 'USDT':
-                    usdt_bal = float(b.get('balance', 0.0) or b.get('availableBalance', 0.0) or 0.0)
-                    break
+    # Si el usuario seleccionó Testnet/Demo, priorizamos Demo Trading y luego Testnet
+    if is_testnet:
+        candidates = [
+            (DEMO_BASE_URL, "Binance Demo Trading (demo.binance.com)", True),
+            (TESTNET_BASE_URL, "Binance Futures Testnet (testnet.binancefuture.com)", True),
+            (MAINNET_BASE_URL, "Binance Futures Real (Mainnet)", False),
+        ]
+    else:
+        candidates = [
+            (MAINNET_BASE_URL, "Binance Futures Real (Mainnet)", False),
+            (DEMO_BASE_URL, "Binance Demo Trading (demo.binance.com)", True),
+            (TESTNET_BASE_URL, "Binance Futures Testnet (testnet.binancefuture.com)", True),
+        ]
 
-        # 3. Consultar información de cuenta para verificar permisos de trading
-        acc_info = client.account()
-        can_trade = bool(acc_info.get('canTrade', False))
+    last_client_error = None
+    all_errors = []
 
-        network_name = "Binance Futures Testnet (Simulación)" if is_testnet else "Binance Futures Real (Mainnet)"
-        return {
-            "valid": True,
-            "balance_usdt": round(usdt_bal, 2),
-            "can_trade": can_trade,
-            "is_testnet": is_testnet,
-            "network": network_name,
-            "message": f"Conexión verificada exitosamente en {network_name}. Balance detectado: ${usdt_bal:,.2f} USDT."
-        }
-    except ClientError as e:
-        err_msg = f"Error de Binance API (Código {e.error_code}): {e.error_message}"
-        
-        # Si falló en la red elegida con error de credenciales/formato (-2014 o -2015), probamos la red alternativa
-        if e.error_code in (-2014, -2015):
-            alt_is_testnet = not is_testnet
-            try:
-                alt_client = get_user_futures_client(api_key, api_secret, is_testnet=alt_is_testnet)
-                alt_client.time()
-                alt_balances = alt_client.balance()
-                if isinstance(alt_balances, list):
-                    alt_name = "Testnet (Demo)" if alt_is_testnet else "Binance Real (Mainnet)"
-                    curr_name = "Binance Real (Mainnet)" if not is_testnet else "Testnet (Demo)"
+    for cand_url, cand_name, cand_is_testnet in candidates:
+        try:
+            cand_client = get_user_futures_client(clean_key, clean_secret, is_testnet=cand_is_testnet, base_url=cand_url)
+            cand_client.time()
+            balances = cand_client.balance()
+
+            if isinstance(balances, list):
+                # ¡Conexión exitosa encontrada!
+                usdt_bal = 0.0
+                for b in balances:
+                    if str(b.get('asset', '')).upper() == 'USDT':
+                        usdt_bal = float(b.get('balance', 0.0) or b.get('availableBalance', 0.0) or 0.0)
+                        break
+
+                acc_info = cand_client.account()
+                can_trade = bool(acc_info.get('canTrade', False))
+
+                # Si la red encontrada coincide con el modo seleccionado (o si ambos son tipo testnet/demo)
+                if cand_is_testnet == is_testnet:
+                    logger.info(f"Claves verificadas exitosamente en {cand_name}. Balance: ${usdt_bal:,.2f} USDT")
+                    return {
+                        "valid": True,
+                        "balance_usdt": round(usdt_bal, 2),
+                        "can_trade": can_trade,
+                        "is_testnet": cand_is_testnet,
+                        "api_base_url": cand_url,
+                        "network": cand_name,
+                        "message": f"Conexión verificada exitosamente en {cand_name}. Balance detectado: ${usdt_bal:,.2f} USDT."
+                    }
+                else:
+                    # Se detectó pero en la red contraria (ej: puso modo Real pero la clave es de Demo)
+                    curr_name = "Binance Real (Mainnet)" if not is_testnet else "Demo / Testnet"
+                    alt_name = "Demo / Testnet" if cand_is_testnet else "Binance Real (Mainnet)"
                     err_msg = (
-                        f"¡Detectamos tu clave en la red opuesta! Tu API Key fue creada en {alt_name}, "
-                        f"pero seleccionaste '{curr_name}'. Por favor activa el botón '{alt_name}' en el modal para vincularla."
+                        f"¡Detectamos tu clave en {cand_name}! Tu API Key funciona en {alt_name}, "
+                        f"pero en el panel tenías seleccionado '{curr_name}'. Por favor activa el botón '{alt_name}' para vincularla."
                     )
-                    logger.info(f"Detección inteligente de red API: Clave pertenece a {alt_name}")
-                    return {"valid": False, "error": err_msg, "suggested_testnet": alt_is_testnet, "code": e.error_code}
-            except Exception:
-                pass
+                    logger.info(f"Detección inteligente de red: clave pertenece a {cand_name}")
+                    return {
+                        "valid": False,
+                        "error": err_msg,
+                        "suggested_testnet": cand_is_testnet,
+                        "suggested_network": cand_name,
+                        "api_base_url": cand_url,
+                        "balance_usdt": round(usdt_bal, 2)
+                    }
+        except ClientError as e:
+            last_client_error = e
+            all_errors.append((cand_name, e.error_code, e.error_message))
+        except Exception as e:
+            all_errors.append((cand_name, -1, str(e)))
 
-        if e.error_code == -2014:
+    # Si ninguna red aceptó las credenciales, analizamos el código de error
+    err_msg = "No se pudo verificar la API Key en Binance."
+    if last_client_error:
+        code = last_client_error.error_code
+        if code == -2014:
             err_msg = (
-                "Formato de API Key no válido para Binance (Código -2014). "
-                "Asegúrate de: 1) Copiar la API Key completa (64 caracteres) y no el Secret Key. "
-                "2) Que sea una clave de tipo HMAC (generada por el sistema) y no Ed25519 o RSA. "
-                "3) Si la creaste en Testnet/Demo, activa el botón 'Testnet (Demo)' antes de guardar."
+                "Formato de API Key no reconocido por Binance (Código -2014). "
+                "Causas frecuentes y solución: "
+                "1) En Binance, al crear la API Key debes seleccionar 'System generated (HMAC)' (no Ed25519/RSA). "
+                "2) Si creaste la clave en Demo Trading (demo.binance.com), asegúrate de tener activo el botón 'Demo / Testnet'. "
+                "3) Copia la API Key completa (64 caracteres) y su Secret Key correspondiente sin espacios."
             )
-        elif e.error_code == -2015:
+        elif code == -2015:
             err_msg = (
-                "Clave API o Secret inválido, o permisos insuficientes (Código -2015). "
-                "Asegúrate de: 1) Haber habilitado la casilla 'Enable Futures' (Habilitar Futuros) en la gestión de API de Binance. "
-                "2) Que la clave no tenga restricciones de IP o incluya la IP del servidor. "
-                "3) Que el Secret Key esté copiado correctamente."
+                "Credenciales inválidas o permisos insuficientes en Binance (Código -2015). "
+                "Causas frecuentes y solución: "
+                "1) En la gestión de API de Binance, debes marcar obligatoriamente la casilla 'Enable Futures' (Habilitar Futuros). "
+                "2) En 'Restricciones de acceso de IP', selecciona 'Sin restricciones' (Unrestricted) o autoriza la IP del servidor: 178.105.192.140. "
+                "3) Verifica que el Secret Key sea el que generó Binance para esta API Key."
             )
-        elif e.error_code == -1021:
+        elif code == -1021:
             err_msg = "Desincronización de hora (Timestamp) entre el servidor y Binance."
-        logger.warning(f"Fallo en verificación de claves API: {err_msg}")
-        return {"valid": False, "error": err_msg, "code": e.error_code}
-    except Exception as e:
-        logger.error(f"Error inesperado al verificar claves de Binance: {e}", exc_info=True)
-        return {"valid": False, "error": f"Error de conexión: {str(e)}"}
+        else:
+            err_msg = f"Error de Binance API (Código {code}): {last_client_error.error_message}"
+
+    logger.warning(f"Fallo en verificación de claves API: {err_msg} | Intentos: {all_errors}")
+    return {"valid": False, "error": err_msg, "code": getattr(last_client_error, 'error_code', -1)}
 
 def get_historical_klines(symbol: str, interval: str, limit: int = 500):
     """

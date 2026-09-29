@@ -41,7 +41,12 @@ def get_cached_user_client(user_info: dict):
     if not api_key or not api_secret:
         return None
 
-    client = get_user_futures_client(api_key=api_key, api_secret=api_secret, is_testnet=is_testnet)
+    client = get_user_futures_client(
+        api_key=api_key, 
+        api_secret=api_secret, 
+        is_testnet=is_testnet, 
+        base_url=user_info.get('api_base_url')
+    )
     _user_clients_cache[user_id] = {
         'client': client,
         'timestamp': now

@@ -985,22 +985,25 @@ def user_keys_save_endpoint():
             }), 400
 
         balance_usdt = verify_result.get('balance_usdt', 0.0)
+        detected_base_url = verify_result.get('api_base_url')
+        network_name = verify_result.get('network', 'Binance')
         saved = save_user_api_keys(
             user_id=user_id,
             api_key=api_key,
             api_secret=api_secret,
             is_testnet=is_testnet,
             is_valid=True,
-            balance_detected=balance_usdt
+            balance_detected=balance_usdt,
+            api_base_url=detected_base_url
         )
 
         if not saved:
             return jsonify({"status": "error", "message": "Error al persistir las credenciales en la base de datos."}), 500
 
-        api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) conectó con éxito sus claves de Binance (Testnet={is_testnet}, Saldo=${balance_usdt:,.2f})")
+        api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) conectó con éxito sus claves de {network_name} (Testnet={is_testnet}, Saldo=${balance_usdt:,.2f})")
         return jsonify({
             "status": "success",
-            "message": f"¡Conexión exitosa con Binance! Balance detectado: ${balance_usdt:,.2f} USDT.",
+            "message": f"¡Conexión exitosa con {network_name}! Balance detectado: ${balance_usdt:,.2f} USDT.",
             "verification": verify_result
         })
     except Exception as e:
@@ -2813,10 +2816,25 @@ def cancel_stale_orders_endpoint():
                 except Exception:
                     pass
 
+        # Resetear el estado de seguimiento de órdenes pendientes en los workers en ejecución
+        try:
+            with status_lock:
+                for sym, worker in worker_statuses.items():
+                    if hasattr(worker, 'long_bot') and worker.long_bot:
+                        worker.long_bot.pending_entry_order_id = None
+                        worker.long_bot.pending_reentry_order_id = None
+                        worker.long_bot.active_support_orders = {}
+                    if hasattr(worker, 'short_bot') and worker.short_bot:
+                        worker.short_bot.pending_entry_order_id = None
+                        worker.short_bot.pending_reentry_order_id = None
+                        worker.short_bot.active_support_orders = {}
+        except Exception as _w_err:
+            api_logger.warning(f"Aviso al limpiar estados de workers tras cancelar órdenes: {_w_err}")
+
         api_logger.info(f"Limpieza manual de órdenes huérfanas: {cancelled} órdenes de entrada canceladas.")
         return jsonify({
             "status": "success",
-            "message": f"Se cancelaron {cancelled} órdenes de entrada huérfanas y se liberó el margen retenido.",
+            "message": f"Se cancelaron {cancelled} órdenes de entrada pendientes y se liberó el margen retenido.",
             "cancelled_count": cancelled
         }), 200
     except Exception as e:

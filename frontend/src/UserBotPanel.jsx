@@ -547,14 +547,14 @@ export default function UserBotPanel() {
                         : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
                     }`}
                   >
-                    <span>🧪 Testnet (Simulación)</span>
-                    <span className="text-[9px] opacity-80 font-normal">testnet.binancefuture.com</span>
+                    <span>🧪 Demo / Testnet</span>
+                    <span className="text-[9px] opacity-80 font-normal">demo.binance.com</span>
                   </button>
                 </div>
                 <p className="text-[10px] text-slate-400 leading-relaxed">
                   {isTestnet 
-                    ? '⚠️ Asegúrate de que las credenciales provengan de testnet.binancefuture.com (o Mock Trading).' 
-                    : 'ℹ️ Las credenciales deben ser creadas en tu cuenta real de Binance con permiso "Enable Futures" (Habilitar Futuros).'}
+                    ? '⚠️ Compatible con Demo Trading (demo.binance.com) y Testnet oficial. Recuerda crear la clave como "System generated (HMAC)".' 
+                    : 'ℹ️ Claves de tu cuenta real de Binance con permisos "Enable Reading" y "Enable Futures". Tipo: "System generated (HMAC)".'}
                 </p>
               </div>
 
