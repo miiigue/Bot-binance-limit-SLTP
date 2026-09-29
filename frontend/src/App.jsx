@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { AuthProvider, useAuth } from './AuthContext';
 import AuthModal from './AuthModal';
 import UserBotPanel from './UserBotPanel';
@@ -56,6 +56,14 @@ function MainDashboard() {
   const [isLoadingStrategies, setIsLoadingStrategies] = useState(false);
   const [strategyError, setStrategyError] = useState(null);
   const [activeStrategyDisplayName, setActiveStrategyDisplayName] = useState('');
+
+  const activeStrategyDisplay = useMemo(() => {
+    if (activeStrategyDisplayName) return activeStrategyDisplayName;
+    const name = config?.activeStrategyName;
+    if (!name) return 'v3_RSI-SNIPER-MOMENTUM_v3';
+    const found = availableStrategies?.find(s => s.name === name || s.filename === name || s.id === name);
+    return found?.name || name;
+  }, [activeStrategyDisplayName, config?.activeStrategyName, availableStrategies]);
 
   // Pestañas dinámicas según el rol:
   // Admin: 'monitor', 'my_bot', 'config', 'chart', 'performance', 'radar', 'backtest', 'investors'
@@ -388,10 +396,15 @@ function MainDashboard() {
           {/* Vista Móvil (< md) */}
           <div className="flex flex-col gap-1.5 md:hidden">
             <div className="flex items-center justify-between gap-1.5 min-w-0">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-sm font-black tracking-tight text-slate-950 truncate">WTN ALGO-TRADING</span>
-                <span className="bg-slate-950 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shadow-sm">
-                  BINANCE
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm font-black tracking-tight text-slate-950 truncate">WTN ALGO-TRADING</span>
+                  <span className="bg-slate-950 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shadow-sm">
+                    BINANCE
+                  </span>
+                </div>
+                <span className="text-[9px] font-bold text-slate-900 truncate max-w-[190px]" title={activeStrategyDisplay}>
+                  {activeStrategyDisplay}
                 </span>
               </div>
 
@@ -439,7 +452,9 @@ function MainDashboard() {
                     BINANCE
                   </span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-900 tracking-wider">WTN Solutions LLC</span>
+                <span className="text-[10px] font-bold text-slate-900 tracking-wider truncate max-w-[260px]" title={activeStrategyDisplay}>
+                  {activeStrategyDisplay}
+                </span>
               </div>
             </div>
             
@@ -526,18 +541,6 @@ function MainDashboard() {
 
                 <button
                   type="button"
-                  onClick={() => setActiveTab('my_bot')}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'my_bot'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                >
-                  <span>⚡</span> Mi Bot Personal
-                </button>
-
-                <button
-                  type="button"
                   onClick={() => setActiveTab('config')}
                   className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                     activeTab === 'config'
@@ -606,6 +609,18 @@ function MainDashboard() {
                   }`}
                 >
                   <span>🧪</span> Backtesting
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('my_bot')}
+                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
+                    activeTab === 'my_bot'
+                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
+                  }`}
+                >
+                  <span>⚡</span> Mi Bot Personal
                 </button>
               </>
             )}

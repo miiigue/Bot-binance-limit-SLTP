@@ -178,7 +178,7 @@ export default function UserBotPanel() {
     return (
       <div className="flex flex-col items-center justify-center p-16 text-slate-400">
         <div className="w-12 h-12 border-4 border-amber-400 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-sm font-mono font-bold tracking-wide">Cargando tu cuenta personal de Binance...</p>
+        <p className="text-sm font-semibold tracking-wide">Cargando tu cuenta personal de Binance...</p>
       </div>
     );
   }
@@ -192,29 +192,29 @@ export default function UserBotPanel() {
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-mono font-bold mb-3">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-bold mb-3">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
               MODALIDAD: CUENTA PROPIA BINANCE (COPY-TRADING)
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               Mi Cuenta Binance (Fondos Propios)
             </h1>
-            <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl font-mono">
+            <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
               Mantén el control y custodia total de tus fondos en tu propio Binance. Las compras y ventas del algoritmo institucional gestionado por el Administrador se replican automáticamente en tu cuenta.
             </p>
           </div>
 
           {/* Tarjeta de Saldo Binance y Replicación */}
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-4 bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 font-mono shadow-inner">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-4 bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 shadow-inner">
             <div className="pr-4 border-r border-slate-800">
-              <span className="text-[10px] text-slate-500 block uppercase tracking-wider">Tu Balance Binance</span>
-              <span className="text-xl font-black text-emerald-400">${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs text-slate-400">USDT</span></span>
+              <span className="text-[10px] text-slate-500 block uppercase tracking-wider font-semibold">Tu Balance Binance</span>
+              <span className="text-xl font-black font-mono text-emerald-400">${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs text-slate-400 font-sans">USDT</span></span>
             </div>
             <div>
-              <span className="text-[10px] text-slate-500 block uppercase tracking-wider">Replicación Algorítmica</span>
+              <span className="text-[10px] text-slate-500 block uppercase tracking-wider font-semibold">Replicación Algorítmica</span>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className={`w-3 h-3 rounded-full ${isBotRunning ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'}`}></span>
-                <span className={`text-xs font-black ${isBotRunning ? 'text-emerald-400' : 'text-slate-400'}`}>
+                <span className={`text-xs font-bold ${isBotRunning ? 'text-emerald-400' : 'text-slate-400'}`}>
                   {isBotRunning ? 'SINCRONIZACIÓN ACTIVA' : 'SINCRONIZACIÓN PAUSADA'}
                 </span>
               </div>
@@ -224,7 +224,7 @@ export default function UserBotPanel() {
 
         {/* Mensaje de Alerta / Feedback */}
         {feedback && (
-          <div className={`mt-4 p-3.5 rounded-xl border text-xs font-mono flex items-center justify-between animate-fadeIn ${
+          <div className={`mt-4 p-3.5 rounded-xl border text-xs flex items-center justify-between animate-fadeIn ${
             feedback.type === 'success' ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300' :
             feedback.type === 'error' ? 'bg-rose-500/15 border-rose-500/30 text-rose-300' :
             'bg-sky-500/15 border-sky-500/30 text-sky-300'
@@ -241,10 +241,10 @@ export default function UserBotPanel() {
         {/* Tarjeta de Conexión de Claves */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-white font-mono uppercase tracking-wider flex items-center gap-2">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
               <span>🔑</span> Claves API de Binance
             </h3>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
               hasKeys 
                 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
                 : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
@@ -254,15 +254,15 @@ export default function UserBotPanel() {
           </div>
 
           {hasKeys ? (
-            <div className="space-y-3 font-mono">
+            <div className="space-y-3">
               <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-xs space-y-2">
                 <div className="flex justify-between text-slate-400">
                   <span>API Key:</span>
-                  <span className="text-amber-400 font-bold">{botData?.api_key_masked}</span>
+                  <span className="text-amber-400 font-mono font-bold">{botData?.api_key_masked}</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
                   <span>Entorno:</span>
-                  <span className="text-slate-200">{botData?.is_testnet ? 'Testnet (Demo)' : 'Binance Real (Live)'}</span>
+                  <span className="text-slate-200 font-medium">{botData?.is_testnet ? 'Testnet (Demo)' : 'Binance Real (Live)'}</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
                   <span>Seguridad:</span>
@@ -273,14 +273,14 @@ export default function UserBotPanel() {
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowApiModal(true)}
-                  className="flex-1 py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold font-mono transition"
+                  className="flex-1 py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition"
                 >
                   Actualizar Claves
                 </button>
                 <button
                   onClick={handleDeleteApiKeys}
                   disabled={actionLoading}
-                  className="py-2.5 px-3 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold font-mono transition"
+                  className="py-2.5 px-3 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition"
                 >
                   Desconectar
                 </button>
@@ -288,12 +288,12 @@ export default function UserBotPanel() {
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-xs text-slate-400 font-mono">
+              <p className="text-xs text-slate-400 leading-relaxed">
                 Conecta tu cuenta de Binance Futures mediante API Keys para que el algoritmo empiece a replicar las compras y ventas en tu exchange.
               </p>
               <button
                 onClick={() => setShowApiModal(true)}
-                className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs font-mono uppercase tracking-wider transition shadow-lg shadow-amber-500/20 active:scale-[0.98]"
+                className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/20 active:scale-[0.98]"
               >
                 ➕ Vincular mi Cuenta de Binance
               </button>
@@ -309,14 +309,14 @@ export default function UserBotPanel() {
         }`}>
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-black text-white font-mono uppercase tracking-wider flex items-center gap-2">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <span>⚡</span> Control de Sincronización
               </h3>
-              <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+              <span className="text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 font-medium">
                 Estrategia Administrador
               </span>
             </div>
-            <p className="text-xs text-slate-400 font-mono mb-4">
+            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
               {isBotRunning 
                 ? '🟢 Tu cuenta está recibiendo las señales del algoritmo institucional en tiempo real.'
                 : '⏸️ La replicación está en pausa. Actívala para sincronizar las operaciones del fondo.'}
@@ -326,7 +326,7 @@ export default function UserBotPanel() {
           <button
             onClick={handleToggleSync}
             disabled={actionLoading}
-            className={`w-full py-3.5 px-6 rounded-2xl font-mono font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
+            className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
               isBotRunning
                 ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
                 : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
@@ -345,13 +345,13 @@ export default function UserBotPanel() {
       </div>
 
       {/* Sección 3: Historial y Métricas de Operaciones Replicadas */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6 font-mono">
+      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
           <div>
-            <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
+            <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
               <span>📊</span> Historial de Operaciones Replicadas en tu Binance
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
               Compras y ventas ejecutadas exclusivamente sobre tu cuenta de Binance Futures por el bot maestro.
             </p>
           </div>
@@ -366,29 +366,29 @@ export default function UserBotPanel() {
         {/* Métricas Personales */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
-            <span className="text-[10px] text-slate-500 uppercase block tracking-wider">PnL Neto Generado</span>
-            <span className={`text-lg font-black ${(metricsData?.total_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {(metricsData?.total_pnl || 0) >= 0 ? '+' : ''}${(metricsData?.total_pnl || 0).toFixed(2)} USDT
+            <span className="text-[10px] text-slate-500 uppercase block tracking-wider font-semibold">PnL Neto Generado</span>
+            <span className={`text-lg font-black font-mono ${(metricsData?.total_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {(metricsData?.total_pnl || 0) >= 0 ? '+' : ''}${(metricsData?.total_pnl || 0).toFixed(2)} <span className="text-xs font-sans text-slate-400">USDT</span>
             </span>
           </div>
 
           <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
-            <span className="text-[10px] text-slate-500 uppercase block tracking-wider">Tasa de Acierto (Win Rate)</span>
-            <span className="text-lg font-black text-amber-400">
+            <span className="text-[10px] text-slate-500 uppercase block tracking-wider font-semibold">Tasa de Acierto (Win Rate)</span>
+            <span className="text-lg font-black font-mono text-amber-400">
               {(metricsData?.win_rate || 0).toFixed(1)}%
             </span>
           </div>
 
           <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
-            <span className="text-[10px] text-slate-500 uppercase block tracking-wider">Trades Replicados</span>
-            <span className="text-lg font-black text-white">
+            <span className="text-[10px] text-slate-500 uppercase block tracking-wider font-semibold">Trades Replicados</span>
+            <span className="text-lg font-black font-mono text-white">
               {metricsData?.total_trades || 0}
             </span>
           </div>
 
           <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
-            <span className="text-[10px] text-slate-500 uppercase block tracking-wider">Profit Factor</span>
-            <span className="text-lg font-black text-teal-400">
+            <span className="text-[10px] text-slate-500 uppercase block tracking-wider font-semibold">Profit Factor</span>
+            <span className="text-lg font-black font-mono text-teal-400">
               {(metricsData?.profit_factor || 1.0).toFixed(2)}
             </span>
           </div>
@@ -397,7 +397,7 @@ export default function UserBotPanel() {
         {/* Tabla de Operaciones Replicadas */}
         <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-900/90 text-slate-400 text-[10px] uppercase tracking-wider border-b border-slate-800">
+            <thead className="bg-slate-900/90 text-slate-400 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-800">
               <tr>
                 <th className="p-3">Símbolo</th>
                 <th className="p-3">Tipo</th>
@@ -408,14 +408,14 @@ export default function UserBotPanel() {
                 <th className="p-3">Fecha de Cierre</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 font-mono">
+            <tbody className="divide-y divide-slate-800/60">
               {tradesData.length > 0 ? (
                 tradesData.map((t) => {
                   const pnl = Number(t.pnl_usdt || 0);
                   const isWin = pnl >= 0;
                   return (
                     <tr key={t.id} className="hover:bg-slate-900/50 transition">
-                      <td className="p-3 font-bold text-white">{t.symbol}</td>
+                      <td className="p-3 font-bold font-mono text-white">{t.symbol}</td>
                       <td className="p-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           t.trade_type === 'LONG' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'
@@ -423,13 +423,13 @@ export default function UserBotPanel() {
                           {t.trade_type}
                         </span>
                       </td>
-                      <td className="p-3 text-slate-300">${Number(t.open_price).toFixed(2)}</td>
-                      <td className="p-3 text-slate-300">{t.close_price ? `$${Number(t.close_price).toFixed(2)}` : 'Abierta'}</td>
-                      <td className="p-3 text-slate-400">{t.quantity}</td>
-                      <td className={`p-3 font-bold ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <td className="p-3 font-mono text-slate-300">${Number(t.open_price).toFixed(2)}</td>
+                      <td className="p-3 font-mono text-slate-300">{t.close_price ? `$${Number(t.close_price).toFixed(2)}` : 'Abierta'}</td>
+                      <td className="p-3 font-mono text-slate-400">{t.quantity}</td>
+                      <td className={`p-3 font-bold font-mono ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {t.close_timestamp ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : 'En curso'}
                       </td>
-                      <td className="p-3 text-slate-500 text-[11px] whitespace-nowrap">
+                      <td className="p-3 text-slate-400 text-[11px] whitespace-nowrap">
                         {t.close_timestamp || t.open_timestamp}
                       </td>
                     </tr>
@@ -450,7 +450,7 @@ export default function UserBotPanel() {
       {/* Modal de Conexión de Claves API de Binance */}
       {showApiModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 font-mono relative">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 relative">
             <button
               onClick={() => setShowApiModal(false)}
               className="absolute top-5 right-5 text-slate-400 hover:text-white text-lg font-bold"
@@ -489,7 +489,7 @@ export default function UserBotPanel() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Pega aquí tu API Key de Binance..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:border-amber-400 focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:border-amber-400 focus:outline-none font-mono"
                 />
               </div>
 
@@ -512,7 +512,7 @@ export default function UserBotPanel() {
                   value={apiSecret}
                   onChange={(e) => setApiSecret(e.target.value)}
                   placeholder="Pega aquí tu Secret Key..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:border-amber-400 focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:border-amber-400 focus:outline-none font-mono"
                 />
               </div>
 
@@ -521,7 +521,7 @@ export default function UserBotPanel() {
                   <span className="text-xs text-slate-300 font-bold flex items-center gap-1.5">
                     <span>🌐</span> ¿Dónde creaste tu API Key?
                   </span>
-                  <span className="text-[10px] text-amber-400 font-mono font-bold">
+                  <span className="text-[10px] text-amber-400 font-bold tracking-wide">
                     {isTestnet ? 'MODO DEMO / TESTNET' : 'MODO FONDOS REALES'}
                   </span>
                 </div>
