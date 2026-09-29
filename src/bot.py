@@ -2346,6 +2346,10 @@ class SingleSideTradingBot:
                 parent.last_hedge_close_ts = time.time()
                 parent.last_hedge_timestamp = time.time() # Iniciar cooldown de re-entrada inmediatamente tras cierre
                 self.logger.warning(f"[{self.symbol}][{self.trade_side}] 🛡️ Notificado a coordinador: Cobertura {friendly}. Cooldown de re-entrada iniciado ({getattr(parent, 'hedge_reentry_cooldown_seconds', 60)}s).")
+            # Restaurar parámetros originales de Trailing Stop de la estrategia regular
+            self.enable_pnl_trailing_stop = str(self.params.get('enable_pnl_trailing_stop', 'True')).lower() == 'true' if isinstance(self.params.get('enable_pnl_trailing_stop'), str) else bool(self.params.get('enable_pnl_trailing_stop', True))
+            self.pnl_trailing_stop_activation_usdt = _safe_decimal(self.params.get('pnl_trailing_stop_activation_usdt'), '3.5')
+            self.pnl_trailing_stop_drop_usdt = _safe_decimal(self.params.get('pnl_trailing_stop_drop_usdt'), '1.5')
         self.is_hedge_position = False
         # --- Limpiar diagnóstico de posición activa ---
         self.position_diagnostics = {}

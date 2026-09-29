@@ -520,6 +520,48 @@ const tooltipTexts = {
   btcCrashShieldCooldownMinutes: {
     desc: "Minutos de suspensión de compras en altcoins tras detectarse un desplome en Bitcoin.",
     example: "30 minutos de congelación de entradas para esperar a que el precio de BTC se estabilice."
+  },
+
+  // Smart Hedge & Resguardo Dinámico
+  enableHedgeProtection: {
+    desc: "Abre automáticamente una posición de resguardo en la dirección opuesta (SHORT para proteger LONG, o LONG para proteger SHORT) cuando el mercado se mueve con fuerza en contra de tu entrada.",
+    example: "Si entraste en LONG y el precio se desploma, abre un SHORT para equilibrar pérdidas y capturar la caída."
+  },
+  hedgeTriggerType: {
+    desc: "Criterio de activación para el resguardo: por porcentaje (%) de movimiento en contra desde la entrada, o por pérdida flotante acumulada en dinero ($ USDT).",
+    example: "PERCENT evalúa el recorrido técnico del precio (ej: 1.5% de caída); USDT evalúa el daño monetario directo (ej: -2.00 USDT)."
+  },
+  hedgeTriggerValue: {
+    desc: "Valor umbral para disparar la cobertura automática. Si es PERCENT es el % de caída/subida en contra; si es USDT es el monto de pérdida acumulada.",
+    example: "Con 1.5 en modo PERCENT, si el precio cae 1.5% abre el SHORT. Con 2.0 en USDT, si la pérdida flotante toca -2.00 USDT se activa."
+  },
+  hedgeSizeMultiplier: {
+    desc: "Multiplicador de tamaño de la cobertura respecto a la posición original. 1.0x abre el mismo margen (cobertura neutral); >1.0x abre más volumen para buscar ganancias netas en la caída.",
+    example: "Con 1.0x, si tu LONG es de 50 USDT de margen, el SHORT defensivo será de 50 USDT. Con 1.5x, el SHORT defensivo será de 75 USDT."
+  },
+  enableHedgeTrailingStop: {
+    desc: "Trailing Stop independiente para la posición de cobertura. Asegura ganancias del resguardo cuando el movimiento en contra frena y empieza a rebotar.",
+    example: "Permite que la cobertura cierre en positivo y libere margen mientras la posición principal se recupera."
+  },
+  hedgeTrailingActivationUSDT: {
+    desc: "Ganancia flotante en USDT que debe acumular la cobertura para armar su Trailing Stop propio y empezar a seguir el pico.",
+    example: "Con 0.20 USDT, en cuanto el resguardo gana +0.20 USDT se activa el seguimiento dinámico de su ganancia máxima."
+  },
+  hedgeTrailingDropUSDT: {
+    desc: "Retroceso permitido en USDT desde el pico más alto alcanzado por la cobertura antes de cerrarla a mercado con beneficios asegurados.",
+    example: "Con 0.30 USDT, si la cobertura alcanzó un pico de +2.00 USDT y retrocede a +1.70 USDT, cierra de inmediato asegurando +1.70 USDT."
+  },
+  enableHedgeBasketExit: {
+    desc: "Cierre Sintético de Cesta (Net Basket Exit): evalúa el PnL combinado de la posición principal y la cobertura. Si la suma neta alcanza el objetivo, cierra ambas juntas en ganancia neta.",
+    example: "Si LONG pierde -3.00 USDT y SHORT gana +3.60 USDT (Neto = +0.60 USDT), cierra ambas de golpe eliminando todo el riesgo."
+  },
+  hedgeBasketTargetUSDT: {
+    desc: "Objetivo de ganancia neta combinada en USDT para cerrar la cesta completa (posición principal + cobertura).",
+    example: "Con 0.50 USDT, en cuanto el PnL neto de ambas posiciones sume +0.50 USDT o más, se liquidan ambas con ganancia global."
+  },
+  hedgeReentryCooldownSeconds: {
+    desc: "Tiempo de espera obligatorio en segundos tras el cierre de una cobertura antes de autorizar la apertura de una nueva.",
+    example: "Con 60s, si una cobertura cerró por Trailing Stop, el bot espera 1 minuto para dar espacio a un posible rebote antes de volver a entrar."
   }
 };
 
