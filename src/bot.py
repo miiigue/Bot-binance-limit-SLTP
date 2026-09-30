@@ -130,6 +130,9 @@ class SingleSideTradingBot:
         self.current_market_price = None # Precio actual de mercado en vivo
         self.last_known_liquidation_price = 0.0 # Precio de liquidación de Binance
         self.parent_coordinator = None # Referencia al coordinador TradingBot si existe
+        self.last_entry_failure_reason = None # Razón por la que una señal no ejecutó orden (ej: RiskManager, Timeout)
+        self.last_entry_failure_ts = 0.0 # Timestamp del último fallo/bloqueo de entrada
+        self.last_entry_status = None # Estado de la última orden de entrada (ej: colocada, esperando fill)
         s_init = trading_params.get('strategy_name') or trading_params.get('active_strategy_name')
         if not s_init or str(s_init).strip().lower() == 'global':
             try:
@@ -3355,16 +3358,37 @@ class SingleSideTradingBot:
             # ---------------------------------------------------------------------
 
             if entry_signal:
-                if self.risk_manager and not self.risk_manager.can_open_position(Decimal(str(self.position_size_usdt))):
-                    self.logger.warning(f"[{self.symbol}] SEÑAL DE ENTRADA ({self.entry_reason}) detectada pero BLOQUEADA por el Gestor de Riesgo (Exposición máxima alcanzada).")
-                    self._update_state(BotState.IDLE)
-                    return
+                if self.risk_manager:
+                    if hasattr(self.risk_manager, 'can_open_position_detailed'):
+                        allowed, block_detail = self.risk_manager.can_open_position_detailed(Decimal(str(self.position_size_usdt)))
+                    else:
+                        allowed = self.risk_manager.can_open_position(Decimal(str(self.position_size_usdt)))
+                        block_detail = "Exposición máxima alcanzada"
+
+                    if not allowed:
+                        fail_msg = f"Señal {self.trade_side} bloqueada por Gestor de Riesgo: {block_detail}"
+                        self.logger.warning(f"[{self.symbol}] {fail_msg}")
+                        self.last_entry_failure_reason = fail_msg
+                        self.last_entry_failure_ts = time.time()
+                        self.last_error_message = fail_msg
+                        if hasattr(self, 'entry_diagnostics') and isinstance(self.entry_diagnostics, dict):
+                            self.entry_diagnostics['blocked_reason'] = fail_msg
+                            self.entry_diagnostics['blocked_ts'] = time.time()
+                        self._update_state(BotState.IDLE)
+                        return
 
                 is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
                 entry_order_side = 'SELL' if is_short else 'BUY'
                 best_entry_price = self._get_best_entry_price(entry_order_side)
                 if not best_entry_price:
-                    self.logger.error(f"[{self.symbol}][{self.trade_side}] No se pudo obtener el mejor precio para la entrada ({entry_order_side}). No se colocará orden.")
+                    fail_msg = f"Señal {self.trade_side} detectada pero no se pudo obtener precio del libro para {entry_order_side}"
+                    self.logger.error(f"[{self.symbol}][{self.trade_side}] {fail_msg}")
+                    self.last_entry_failure_reason = fail_msg
+                    self.last_entry_failure_ts = time.time()
+                    self.last_error_message = fail_msg
+                    if hasattr(self, 'entry_diagnostics') and isinstance(self.entry_diagnostics, dict):
+                        self.entry_diagnostics['blocked_reason'] = fail_msg
+                        self.entry_diagnostics['blocked_ts'] = time.time()
                     self._update_state(BotState.IDLE)
                     return
                 
@@ -3374,7 +3398,14 @@ class SingleSideTradingBot:
                 
                 # CORRECCIÓN: La comprobación debe ser si es None
                 if quantity is None or quantity <= 0:
-                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] Cantidad calculada para la orden es inválida ({quantity}) después del ajuste. No se puede entrar.")
+                    fail_msg = f"Señal {self.trade_side} detectada pero cantidad ({quantity}) es menor al mínimo permitido por Binance"
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] {fail_msg}")
+                    self.last_entry_failure_reason = fail_msg
+                    self.last_entry_failure_ts = time.time()
+                    self.last_error_message = fail_msg
+                    if hasattr(self, 'entry_diagnostics') and isinstance(self.entry_diagnostics, dict):
+                        self.entry_diagnostics['blocked_reason'] = fail_msg
+                        self.entry_diagnostics['blocked_ts'] = time.time()
                     self._update_state(BotState.IDLE)
                     return
 
@@ -3398,15 +3429,26 @@ class SingleSideTradingBot:
 
                         if status_val == 'FILLED' and has_price and has_qty:
                             self.logger.info(f"[{self.symbol}][{self.trade_side}] Orden MARKET {entry_order_side} {order_result.get('orderId')} ejecutada y FILLED de inmediato.")
+                            self.last_entry_failure_reason = None
                             self._handle_filled_entry_order(order_result)
                         else:
                             self.pending_entry_order_id = order_result['orderId']
                             self.pending_order_timestamp = time.time()
-                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] Orden MARKET {entry_order_side} {self.pending_entry_order_id} colocada (Status={status_val}). Esperando confirmación...")
+                            self.last_entry_status = f"Orden MARKET {entry_order_side} #{self.pending_entry_order_id} colocada (Status={status_val}). Esperando confirmación..."
+                            self.logger.warning(f"[{self.symbol}][{self.trade_side}] {self.last_entry_status}")
                             self._update_state(BotState.WAITING_ENTRY_FILL)
                     else:
-                        self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden MARKET {entry_order_side}.")
-                        self.last_error_message = f"Failed to place market entry order ({entry_order_side})."
+                        err_detail = "Rechazada por Binance"
+                        if isinstance(order_result, dict) and order_result.get('msg'):
+                            err_detail = order_result.get('msg')
+                        fail_msg = f"Binance rechazó orden MARKET {entry_order_side}: {err_detail}"
+                        self.logger.error(f"[{self.symbol}][{self.trade_side}] {fail_msg}")
+                        self.last_error_message = fail_msg
+                        self.last_entry_failure_reason = fail_msg
+                        self.last_entry_failure_ts = time.time()
+                        if hasattr(self, 'entry_diagnostics') and isinstance(self.entry_diagnostics, dict):
+                            self.entry_diagnostics['blocked_reason'] = fail_msg
+                            self.entry_diagnostics['blocked_ts'] = time.time()
                         self._update_state(BotState.IDLE)
                 else:
                     self.logger.warning(f"[{self.symbol}][{self.trade_side}] SEÑAL DE ENTRADA ({self.entry_reason}). Intentando colocar orden LIMIT {entry_order_side} @ {limit_entry_price:.{price_precision_log}f}, Cantidad={quantity}")
@@ -3416,12 +3458,22 @@ class SingleSideTradingBot:
                     if order_result and order_result.get('orderId'):
                         self.pending_entry_order_id = order_result['orderId']
                         self.pending_order_timestamp = time.time()
-                        # NO guardamos rsi_at_entry aquí, sino cuando la orden se LLENA.
-                        self.logger.warning(f"[{self.symbol}][{self.trade_side}] Orden LIMIT {entry_order_side} {self.pending_entry_order_id} colocada @ {limit_entry_price:.{price_precision_log}f}. Esperando ejecución...")
+                        wait_msg = f"Orden LIMIT {entry_order_side} #{self.pending_entry_order_id} colocada @ {limit_entry_price:.{price_precision_log}f}. Esperando fill en libro..."
+                        self.last_entry_status = wait_msg
+                        self.logger.warning(f"[{self.symbol}][{self.trade_side}] {wait_msg}")
                         self._update_state(BotState.WAITING_ENTRY_FILL)
                     else:
-                        self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al colocar la orden LIMIT {entry_order_side}.")
-                        self.last_error_message = f"Failed to place entry order ({entry_order_side})."
+                        err_detail = "Rechazada por Binance"
+                        if isinstance(order_result, dict) and order_result.get('msg'):
+                            err_detail = order_result.get('msg')
+                        fail_msg = f"Binance rechazó orden LIMIT {entry_order_side}: {err_detail}"
+                        self.logger.error(f"[{self.symbol}][{self.trade_side}] {fail_msg}")
+                        self.last_error_message = fail_msg
+                        self.last_entry_failure_reason = fail_msg
+                        self.last_entry_failure_ts = time.time()
+                        if hasattr(self, 'entry_diagnostics') and isinstance(self.entry_diagnostics, dict):
+                            self.entry_diagnostics['blocked_reason'] = fail_msg
+                            self.entry_diagnostics['blocked_ts'] = time.time()
                         self._update_state(BotState.IDLE) 
             else:
                 # self.logger.debug(f"[{self.symbol}] No hay señal de entrada en este ciclo.") # Ya logueado arriba
@@ -3460,7 +3512,13 @@ class SingleSideTradingBot:
             return # Importante: Salir después de manejar la orden llena
 
         if status_val in ['CANCELED', 'REJECTED', 'EXPIRED', 'PENDING_CANCEL']:
-            self.logger.warning(f"[{self.symbol}] Orden de entrada {self.pending_entry_order_id} ya no está activa (estado: {status_val}). Reseteando y volviendo a IDLE.")
+            fail_msg = f"Orden LIMIT #{self.pending_entry_order_id} cancelada/expirada en Binance (estado: {status_val})"
+            self.logger.warning(f"[{self.symbol}][{self.trade_side}] {fail_msg}. Reseteando y volviendo a IDLE.")
+            self.last_entry_failure_reason = fail_msg
+            self.last_entry_failure_ts = time.time()
+            if hasattr(self, 'entry_diagnostics') and isinstance(self.entry_diagnostics, dict):
+                self.entry_diagnostics['blocked_reason'] = fail_msg
+                self.entry_diagnostics['blocked_ts'] = time.time()
             self._reset_pending_order_state() # Limpia pending_entry_order_id
             self._update_state(BotState.IDLE)
             return
@@ -3481,9 +3539,16 @@ class SingleSideTradingBot:
 
             if final_status_val == 'FILLED':
                 self.logger.info(f"[{self.symbol}] Orden {order_id_to_cancel} se llenó durante/después del intento de cancelación por timeout.")
+                self.last_entry_failure_reason = None
                 self._handle_filled_entry_order(current_status_after_cancel) # Procesar la orden llena
             elif final_status_val == 'CANCELED':
-                self.logger.warning(f"[{self.symbol}] Orden de entrada {order_id_to_cancel} cancelada exitosamente por timeout.")
+                timeout_msg = f"Orden LIMIT #{order_id_to_cancel} expiró tras {self.order_timeout_seconds}s sin ejecutarse en el libro"
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] {timeout_msg} (cancelada exitosamente).")
+                self.last_entry_failure_reason = timeout_msg
+                self.last_entry_failure_ts = time.time()
+                if hasattr(self, 'entry_diagnostics') and isinstance(self.entry_diagnostics, dict):
+                    self.entry_diagnostics['blocked_reason'] = timeout_msg
+                    self.entry_diagnostics['blocked_ts'] = time.time()
                 self._reset_pending_order_state() # Limpiar el ID de la orden cancelada
                 self._update_state(BotState.IDLE) # Volver a IDLE para reevaluar condiciones
             else:
@@ -3508,6 +3573,11 @@ class SingleSideTradingBot:
         self.logger.info(f"[{self.symbol}] Orden de ENTRADA {order_details.get('orderId')} COMPLETADA. Detalles: {order_details}")
         self.pending_entry_order_id = None
         self.pending_order_timestamp = None
+        self.last_entry_failure_reason = None
+        self.last_entry_status = None
+        if hasattr(self, 'entry_diagnostics') and isinstance(self.entry_diagnostics, dict):
+            self.entry_diagnostics.pop('blocked_reason', None)
+            self.entry_diagnostics.pop('blocked_ts', None)
         
         self.in_position = True 
         
@@ -4570,6 +4640,9 @@ class SingleSideTradingBot:
             "pending_tp_order_id": self.pending_tp_order_id,
             "pending_sl_order_id": self.pending_sl_order_id,
             "last_error": self.last_error_message,
+            "last_entry_failure_reason": getattr(self, "last_entry_failure_reason", None),
+            "last_entry_failure_ts": getattr(self, "last_entry_failure_ts", 0.0),
+            "last_entry_status": getattr(self, "last_entry_status", None),
             "entry_reason": self.entry_reason,
             "exit_reason": self.exit_reason,
             "entry_diagnostics": getattr(self, "entry_diagnostics", {}),
@@ -5391,6 +5464,29 @@ class TradingBot:
         pending_tp = (long_st and long_st.get('pending_tp_order_id')) or (short_st and short_st.get('pending_tp_order_id'))
         pending_sl = (long_st and long_st.get('pending_sl_order_id')) or (short_st and short_st.get('pending_sl_order_id'))
 
+        # Consolidar errores y razones de fallo de entrada
+        errors = []
+        if long_st and long_st.get('last_error'):
+            errors.append(f"LONG: {long_st['last_error']}")
+        if short_st and short_st.get('last_error'):
+            errors.append(f"SHORT: {short_st['last_error']}")
+        combined_error = " | ".join(errors) if errors else None
+
+        # Razón de fallo más reciente
+        long_fail_ts = (long_st and long_st.get('last_entry_failure_ts')) or 0.0
+        short_fail_ts = (short_st and short_st.get('last_entry_failure_ts')) or 0.0
+        if short_fail_ts > long_fail_ts:
+            combined_entry_failure_reason = short_st.get('last_entry_failure_reason')
+            combined_entry_failure_ts = short_fail_ts
+        elif long_fail_ts > 0:
+            combined_entry_failure_reason = long_st.get('last_entry_failure_reason')
+            combined_entry_failure_ts = long_fail_ts
+        else:
+            combined_entry_failure_reason = (long_st and long_st.get('last_entry_failure_reason')) or (short_st and short_st.get('last_entry_failure_reason'))
+            combined_entry_failure_ts = 0.0
+
+        last_entry_status = (short_st and short_st.get('last_entry_status')) or (long_st and long_st.get('last_entry_status'))
+
         curr_p = (long_st and long_st.get('current_price')) or (short_st and short_st.get('current_price'))
         active_positions = [p for p in positions if p.get('in_position')]
         unified_state = self.state.value if hasattr(self.state, 'value') else str(self.state)
@@ -5412,6 +5508,10 @@ class TradingBot:
             "is_paused": self.is_paused,
             "cooldown_remaining_seconds": max_cd,
             "pause_reason": combined_pause_reason,
+            "last_error": combined_error,
+            "last_entry_failure_reason": combined_entry_failure_reason,
+            "last_entry_failure_ts": combined_entry_failure_ts,
+            "last_entry_status": last_entry_status,
             "current_price": curr_p,
             "pending_entry_order_id": pending_entry,
             "pending_exit_order_id": pending_exit,

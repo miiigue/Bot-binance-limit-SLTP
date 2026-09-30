@@ -319,11 +319,40 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
   const diag = (isShort ? status.short_entry_diagnostics : status.long_entry_diagnostics)
     || subStatus?.entry_diagnostics;
 
+  const failureReason = diag?.blocked_reason 
+    || subStatus?.last_entry_failure_reason 
+    || (status.last_entry_failure_reason && (
+        status.trade_direction === side || 
+        status.last_entry_failure_reason.toUpperCase().includes(side)
+      ) ? status.last_entry_failure_reason : null);
+
+  const pendingEntryId = subStatus?.pending_entry_order_id || (status.pending_entry_order_id && status.trade_side === side ? status.pending_entry_order_id : null);
+  const pendingEntryStatus = subStatus?.last_entry_status || (status.trade_side === side ? status.last_entry_status : null);
+
   if (!diag || !Array.isArray(diag.conditions) || diag.conditions.length === 0) {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-slate-400 font-sans py-1">
-        <span className="animate-spin text-[11px]">🌀</span>
-        <span>Analizando mercado...</span>
+      <div className="flex flex-col gap-1 py-1">
+        <div className="flex items-center gap-1.5 text-xs text-slate-400 font-sans">
+          <span className="animate-spin text-[11px]">🌀</span>
+          <span>Analizando mercado...</span>
+        </div>
+        {pendingEntryId && (
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/70 border border-amber-500/50 text-[10px] text-amber-300 font-sans animate-pulse" title={pendingEntryStatus || `Orden #${pendingEntryId} esperando ejecución en libro...`}>
+            <span>⏳</span>
+            <span className="truncate max-w-[280px]">
+              {pendingEntryStatus || `Orden #${pendingEntryId} en libro...`}
+            </span>
+          </div>
+        )}
+        {failureReason && (
+          <div className="inline-flex items-start gap-1.5 px-2 py-1 rounded bg-rose-950/80 border border-rose-600/60 text-[9.5px] text-rose-200 font-sans shadow-sm" title={failureReason}>
+            <span className="text-[11px] shrink-0">⚠️</span>
+            <div className="flex flex-col min-w-0">
+              <span className="font-semibold text-rose-300">Entrada no ejecutada:</span>
+              <span className="text-rose-200/90 leading-tight break-words">{failureReason}</span>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -331,44 +360,65 @@ function SideDiagnosticsCell({ status, side = 'LONG' }) {
   const { conditions, all_met, ratio_text } = diag;
 
   return (
-    <div className="flex items-center gap-1 flex-wrap py-0.5 max-w-full">
-      {all_met && (
-        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold tracking-wide ${
-          isShort ? 'bg-rose-500 text-slate-950 border border-rose-400 shadow-rose-500/50' : 'bg-emerald-500 text-slate-950 border border-emerald-400 shadow-emerald-500/50'
-        } animate-pulse shadow-sm`}>
-          <span>⚡ SEÑAL ({ratio_text})</span>
-        </span>
-      )}
+    <div className="flex flex-col gap-1 py-0.5 max-w-full">
+      <div className="flex items-center gap-1 flex-wrap">
+        {all_met && (
+          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold tracking-wide ${
+            isShort ? 'bg-rose-500 text-slate-950 border border-rose-400 shadow-rose-500/50' : 'bg-emerald-500 text-slate-950 border border-emerald-400 shadow-emerald-500/50'
+          } animate-pulse shadow-sm`}>
+            <span>⚡ SEÑAL ({ratio_text})</span>
+          </span>
+        )}
 
-      {conditions.map((c) => {
-        if (!c.active) return null;
+        {conditions.map((c) => {
+          if (!c.active) return null;
 
-        if (c.passed) {
+          if (c.passed) {
+            return (
+              <span
+                key={c.id}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-950/70 text-emerald-300 border border-emerald-600/50 shadow-sm hover:bg-emerald-900/80 transition-colors cursor-help"
+                title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
+              >
+                <span className="text-[9px]">✅</span>
+                <span className="font-sans font-normal text-emerald-300/90">{c.short_name || c.name}:</span>
+                <span className="font-mono font-medium text-emerald-200">{c.value}</span>
+              </span>
+            );
+          }
+
           return (
             <span
               key={c.id}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-950/70 text-emerald-300 border border-emerald-600/50 shadow-sm hover:bg-emerald-900/80 transition-colors cursor-help"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-rose-950/50 text-rose-300/90 border border-rose-800/40 shadow-sm hover:bg-rose-950/80 transition-colors cursor-help"
               title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
             >
-              <span className="text-[9px]">✅</span>
-              <span className="font-sans font-normal text-emerald-300/90">{c.short_name || c.name}:</span>
-              <span className="font-mono font-medium text-emerald-200">{c.value}</span>
+              <span className="text-[9px]">❌</span>
+              <span className="font-sans font-normal text-rose-300/80">{c.short_name || c.name}:</span>
+              <span className="font-mono font-medium text-rose-200">{c.value}</span>
             </span>
           );
-        }
+        })}
+      </div>
 
-        return (
-          <span
-            key={c.id}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-rose-950/50 text-rose-300/90 border border-rose-800/40 shadow-sm hover:bg-rose-950/80 transition-colors cursor-help"
-            title={`${c.name}: ${c.detail} (Requerido: ${c.target})`}
-          >
-            <span className="text-[9px]">❌</span>
-            <span className="font-sans font-normal text-rose-300/80">{c.short_name || c.name}:</span>
-            <span className="font-mono font-medium text-rose-200">{c.value}</span>
+      {pendingEntryId && (
+        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/70 border border-amber-500/50 text-[10px] text-amber-300 font-sans animate-pulse" title={pendingEntryStatus || `Orden #${pendingEntryId} esperando ejecución en libro...`}>
+          <span>⏳</span>
+          <span className="truncate max-w-[280px]">
+            {pendingEntryStatus || `Orden #${pendingEntryId} en libro...`}
           </span>
-        );
-      })}
+        </div>
+      )}
+
+      {failureReason && (
+        <div className="inline-flex items-start gap-1.5 px-2 py-1 rounded bg-rose-950/80 border border-rose-600/60 text-[9.5px] text-rose-200 font-sans shadow-sm" title={failureReason}>
+          <span className="text-[11px] shrink-0">⚠️</span>
+          <div className="flex flex-col min-w-0">
+            <span className="font-semibold text-rose-300">Entrada no ejecutada:</span>
+            <span className="text-rose-200/90 leading-tight break-words">{failureReason}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1130,11 +1180,38 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                     <td className="px-3 py-3 whitespace-nowrap text-xs">
                       {(() => {
                         const activePositions = getActivePositions(status);
+                        const hasPendingEntry = status.pending_entry_order_id 
+                          || status.long_status?.pending_entry_order_id 
+                          || status.short_status?.pending_entry_order_id;
+                        const pendingEntryMsg = status.last_entry_status 
+                          || status.long_status?.last_entry_status 
+                          || status.short_status?.last_entry_status;
+                        const entryFailReason = status.last_entry_failure_reason 
+                          || status.short_status?.last_entry_failure_reason 
+                          || status.long_status?.last_entry_failure_reason 
+                          || status.short_entry_diagnostics?.blocked_reason 
+                          || status.long_entry_diagnostics?.blocked_reason 
+                          || status.entry_diagnostics?.blocked_reason;
+
                         if (activePositions.length === 0) {
                           return (
-                            <span className="text-slate-400 text-xs italic font-sans">
-                              Sin posición
-                            </span>
+                            <div className="flex flex-col gap-1 min-w-[170px]">
+                              <span className="text-slate-400 text-xs italic font-sans">
+                                Sin posición
+                              </span>
+                              {hasPendingEntry && (
+                                <div className="px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-500/50 text-[9.5px] text-amber-300 font-sans flex items-center gap-1 animate-pulse" title={pendingEntryMsg || `Orden #${hasPendingEntry} esperando ejecución en Binance`}>
+                                  <span>⏳</span>
+                                  <span className="truncate max-w-[210px]">{pendingEntryMsg || `Orden #${hasPendingEntry} en libro...`}</span>
+                                </div>
+                              )}
+                              {entryFailReason && (
+                                <div className="px-1.5 py-1 rounded bg-rose-950/70 border border-rose-500/50 text-[9px] text-rose-200 font-sans flex items-start gap-1 max-w-[240px]" title={entryFailReason}>
+                                  <span className="shrink-0 text-[10px]">⚠️</span>
+                                  <span className="leading-tight break-words">{entryFailReason}</span>
+                                </div>
+                              )}
+                            </div>
                           );
                         }
                         return (
@@ -1171,6 +1248,18 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                 </div>
                               );
                             })}
+                            {hasPendingEntry && activePositions.length < 2 && (
+                              <div className="px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-500/50 text-[9.5px] text-amber-300 font-sans flex items-center gap-1 animate-pulse" title={pendingEntryMsg || `Orden #${hasPendingEntry} esperando ejecución`}>
+                                <span>⏳</span>
+                                <span className="truncate max-w-[210px]">{pendingEntryMsg || `Orden #${hasPendingEntry} en libro...`}</span>
+                              </div>
+                            )}
+                            {entryFailReason && activePositions.length < 2 && (
+                              <div className="px-1.5 py-1 rounded bg-rose-950/60 border border-rose-500/40 text-[9px] text-rose-200 font-sans flex items-start gap-1 max-w-[240px]" title={entryFailReason}>
+                                <span className="shrink-0 text-[10px]">⚠️</span>
+                                <span className="leading-tight break-words">{entryFailReason}</span>
+                              </div>
+                            )}
                             {status.hedge_info?.is_hedged && status.hedge_info?.basket_net_pnl !== undefined && status.hedge_info?.basket_net_pnl !== null && (
                               <div className="mt-1 px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-500/40 flex items-center justify-between text-[10px]">
                                 <span className="text-cyan-300 font-sans font-medium flex items-center gap-1">
@@ -1413,6 +1502,14 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                         >
                           <span className="text-rose-400">⚠️</span>
                           <span className="truncate">{status.last_error}</span>
+                        </div>
+                      ) : status.last_entry_failure_reason ? (
+                        <div 
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/80 border border-amber-600/60 text-amber-200 font-medium text-[10px] cursor-help max-w-[200px]"
+                          title={`Último intento de entrada en ${status.symbol}: ${status.last_entry_failure_reason}`}
+                        >
+                          <span className="text-amber-400">⚠️</span>
+                          <span className="truncate">{status.last_entry_failure_reason}</span>
                         </div>
                       ) : (
                         <span className="text-slate-600 font-mono text-[11px]">—</span>

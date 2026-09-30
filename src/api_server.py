@@ -2687,14 +2687,19 @@ class RiskManager:
             self.logger.warning(f"Error calculando exposición actual en RiskManager: {e}")
         return total_exp
 
-    def can_open_position(self, position_size_usdt: Decimal) -> bool:
+    def can_open_position_detailed(self, position_size_usdt: Decimal) -> tuple[bool, str]:
         with self.lock:
             current_exp = self.get_current_exposure()
             if current_exp + position_size_usdt <= self.max_exposure:
-                return True
+                return True, ""
             else:
-                self.logger.warning(f"Apertura de posición rechazada. Exposición actual ({current_exp:.2f} USDT) + nueva ({position_size_usdt:.2f} USDT) excede el máximo permitido ({self.max_exposure:.2f} USDT).")
-                return False
+                msg = f"Exposición máx alcanzada: margen actual ({current_exp:.2f}$) + orden ({position_size_usdt:.2f}$) > tope permitido ({self.max_exposure:.2f}$ [Riesgo {self.risk_percentage:.0%}])"
+                self.logger.warning(f"Apertura de posición rechazada: {msg}")
+                return False, msg
+
+    def can_open_position(self, position_size_usdt: Decimal) -> bool:
+        allowed, _ = self.can_open_position_detailed(position_size_usdt)
+        return allowed
 
     def add_exposure(self, size_usdt: Decimal):
         pass # Se calcula dinámicamente en tiempo real para evitar desincronización y fugas de memoria
