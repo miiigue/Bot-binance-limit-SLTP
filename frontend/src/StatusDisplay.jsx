@@ -9,16 +9,23 @@ const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
   try {
     const raw = String(dateString).trim();
-    const isoString = (raw.includes('T') || raw.includes('Z') || raw.includes('+')) 
-      ? (raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z')
-      : raw.replace(' ', 'T') + 'Z';
-    const parsed = new Date(isoString);
+    let parsed = new Date(raw);
+    if (isNaN(parsed.getTime())) {
+      const isoString = (raw.includes('T') || raw.includes('Z') || raw.includes('+')) 
+        ? (raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z')
+        : raw.replace(' ', 'T') + 'Z';
+      parsed = new Date(isoString);
+    }
     if (isNaN(parsed.getTime())) return dateString;
+
     const day = String(parsed.getDate()).padStart(2, '0');
     const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const year = String(parsed.getFullYear()).slice(-2);
     const hours = String(parsed.getHours()).padStart(2, '0');
     const mins = String(parsed.getMinutes()).padStart(2, '0');
-    return `${day}/${month} ${hours}:${mins}`;
+    const secs = String(parsed.getSeconds()).padStart(2, '0');
+
+    return `${day}/${month}/${year} ${hours}:${mins}:${secs}`;
   } catch (e) {
     return dateString;
   }
@@ -1551,15 +1558,15 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                               <table className="min-w-full divide-y divide-slate-800 text-xs font-mono">
                                 <thead className="bg-slate-900 border-b border-slate-700">
                                   <tr>
-                                    <BinanceSortHeader label="PnL Neto" sortKey="pnl_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="left" tooltipInfo={{ title: "PnL Neto", desc: "Ganancia o pérdida real acreditada/debitada de tu billetera de Binance." }} />
+                                    <BinanceSortHeader label="ID" sortKey="id" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
                                     <BinanceSortHeader label="Fecha Cierre" sortKey="close_timestamp" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
                                     <BinanceSortHeader label="Lado" sortKey="trade_type" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
-                                    <BinanceSortHeader label="Motivo" sortKey="close_reason" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} className="max-w-[150px]" />
+                                    <BinanceSortHeader label="Motivo" sortKey="close_reason" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
+                                    <BinanceSortHeader label="PnL Neto" sortKey="pnl_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" tooltipInfo={{ title: "PnL Neto", desc: "Ganancia o pérdida real acreditada/debitada de tu billetera de Binance." }} />
                                     <BinanceSortHeader label="Entrada" sortKey="open_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
                                     <BinanceSortHeader label="Salida" sortKey="close_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
                                     <BinanceSortHeader label="Cantidad" sortKey="quantity" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
                                     <BinanceSortHeader label="Comisión" sortKey="commission_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" tooltipInfo={{ title: "Comisión Binance", desc: "Comisión oficial descontada por Binance Futures en este trade (entrada + salida)." }} />
-                                    <BinanceSortHeader label="ID" sortKey="id" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800">
@@ -1568,23 +1575,23 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                     const gross = getTradeGrossPnL(trade);
                                     return (
                                       <tr key={trade.id} className="hover:bg-slate-900/60">
-                                        <td className={`px-2 py-1 whitespace-nowrap font-bold text-left ${getPnlColorClass(trade.pnl_usdt)}`} title={`PnL Bruto de Mercado: ${gross >= 0 ? '+' : ''}${gross.toFixed(4)} USDT (Comisión: -${comm.toFixed(4)} USDT)`}>
-                                          {formatPnl(trade.pnl_usdt)}
-                                        </td>
-                                        <td className="px-2 py-1 whitespace-nowrap text-slate-300">{formatDate(trade.close_timestamp)}</td>
-                                        <td className="px-2 py-1 whitespace-nowrap">
+                                        <td className="px-1.5 py-1 whitespace-nowrap text-slate-400 font-bold">{trade.id}</td>
+                                        <td className="px-1.5 py-1 whitespace-nowrap text-slate-300">{formatDate(trade.close_timestamp)}</td>
+                                        <td className="px-1.5 py-1 whitespace-nowrap">
                                           <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${trade.trade_type === 'SHORT' ? 'bg-rose-950 text-rose-300 border border-rose-600/50' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'}`}>
                                             {trade.trade_type || 'LONG'}
                                           </span>
                                         </td>
-                                        <td className="px-2 py-1 max-w-[150px] truncate text-slate-300 overflow-hidden text-ellipsis" title={trade.close_reason || 'N/A'}>{trade.close_reason || 'N/A'}</td>
-                                        <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
-                                        <td className="px-2 py-1 text-right whitespace-nowrap text-white font-bold">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
-                                        <td className="px-2 py-1 text-right whitespace-nowrap text-slate-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
-                                        <td className="px-2 py-1 text-right whitespace-nowrap text-amber-400 font-mono font-medium" title="Comisión Binance (entrada + salida)">
+                                        <td className="px-1.5 py-1 whitespace-nowrap text-slate-300">{trade.close_reason || 'N/A'}</td>
+                                        <td className={`px-1.5 py-1 text-right whitespace-nowrap font-bold ${getPnlColorClass(trade.pnl_usdt)}`} title={`PnL Bruto de Mercado: ${gross >= 0 ? '+' : ''}${gross.toFixed(4)} USDT (Comisión: -${comm.toFixed(4)} USDT)`}>
+                                          {formatPnl(trade.pnl_usdt)}
+                                        </td>
+                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-white font-bold">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
+                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-white font-bold">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
+                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-slate-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
+                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-amber-400 font-mono font-medium" title="Comisión Binance (entrada + salida)">
                                           -{comm.toFixed(4)}
                                         </td>
-                                        <td className="px-2 py-1 whitespace-nowrap text-slate-400">{trade.id}</td>
                                       </tr>
                                     );
                                   })}
