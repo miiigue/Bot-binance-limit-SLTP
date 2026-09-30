@@ -1,5 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
+import ConfirmModal from './ConfirmModal';
+
+const formatShortDate = (dateStr) => {
+  if (!dateStr) return 'N/A';
+  try {
+    const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T'));
+    if (isNaN(d.getTime())) return dateStr;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    return `${day}/${month} ${hours}:${mins}`;
+  } catch (e) {
+    return dateStr;
+  }
+};
 
 export default function UserBotPanel({ activeStrategyName }) {
   const { authFetch, user } = useAuth();
@@ -18,6 +34,33 @@ export default function UserBotPanel({ activeStrategyName }) {
   const [isTestnet, setIsTestnet] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [showApiModal, setShowApiModal] = useState(false);
+
+  // Estado del Modal de Confirmación Generico
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirmar',
+    cancelText: 'Cancelar',
+    type: 'warning',
+    onConfirm: () => {}
+  });
+
+  const openConfirm = (opts) => {
+    setConfirmModal({
+      isOpen: true,
+      title: opts.title || '¿Confirmar Acción?',
+      message: opts.message || '¿Está seguro de realizar esta acción?',
+      confirmText: opts.confirmText || 'Sí, Confirmar',
+      cancelText: opts.cancelText || 'Cancelar',
+      type: opts.type || 'warning',
+      onConfirm: opts.onConfirm || (() => {})
+    });
+  };
+
+  const closeConfirm = () => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  };
 
   // Cargar estado del bot y balance del usuario
   const fetchUserBotStatus = useCallback(async () => {
@@ -122,60 +165,75 @@ export default function UserBotPanel({ activeStrategyName }) {
   };
 
   // Eliminar API Keys
-  const handleDeleteApiKeys = async () => {
-    if (!window.confirm("¿Estás seguro de que deseas desconectar tus claves API de Binance? La replicación de trades se detendrá.")) {
-      return;
-    }
-
-    setActionLoading(true);
-    try {
-      const resp = await authFetch('/api/user/keys', { method: 'DELETE' });
-      const resJson = await resp.json();
-      if (resp.ok) {
-        setFeedback({ type: 'info', text: 'Claves API desconectadas y eliminadas de forma segura.' });
-        fetchUserBotStatus();
-      } else {
-        throw new Error(resJson.message);
+  const handleDeleteApiKeys = () => {
+    openConfirm({
+      title: '¿Desconectar Claves API de Binance?',
+      message: 'Tus credenciales se eliminarán de forma segura. La replicación automática de órdenes se detendrá inmediatamente.',
+      confirmText: 'Sí, Desconectar',
+      type: 'danger',
+      onConfirm: async () => {
+        setActionLoading(true);
+        try {
+          const resp = await authFetch('/api/user/keys', { method: 'DELETE' });
+          const resJson = await resp.json();
+          if (resp.ok) {
+            setFeedback({ type: 'info', text: 'Claves API desconectadas y eliminadas de forma segura.' });
+            fetchUserBotStatus();
+          } else {
+            throw new Error(resJson.message);
+          }
+        } catch (err) {
+          setFeedback({ type: 'error', text: err.message });
+        } finally {
+          setActionLoading(false);
+        }
       }
-    } catch (err) {
-      setFeedback({ type: 'error', text: err.message });
-    } finally {
-      setActionLoading(false);
-    }
+    });
   };
 
   // Activar / Pausar Sincronización Automática
-  const handleToggleSync = async () => {
+  const handleToggleSync = () => {
     if (!botData?.has_valid_keys) {
       setFeedback({ type: 'error', text: 'Primero debes conectar tus claves API de Binance para activar la replicación de trades.' });
       setShowApiModal(true);
       return;
     }
 
-    setActionLoading(true);
-    setFeedback(null);
-    try {
-      const resp = await authFetch('/api/user/bot/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_running: !isBotRunning })
-      });
-      const resJson = await resp.json();
-      if (!resp.ok) throw new Error(resJson.message);
+    const nextState = !isBotRunning;
+    openConfirm({
+      title: nextState ? '¿Activar Replicación Automática?' : '¿Pausar Replicación de Trades?',
+      message: nextState 
+        ? 'El algoritmo cuantitativo comenzará a copiar en tiempo real cada orden de compra y venta en tu cuenta de Binance Futures.' 
+        : 'Se pausará el copiado de posiciones en tu cuenta. Las órdenes abiertas mantendrán sus Stop Loss en Binance.',
+      confirmText: nextState ? 'Sí, Activar Replicación' : 'Sí, Pausar Replicación',
+      type: nextState ? 'success' : 'warning',
+      onConfirm: async () => {
+        setActionLoading(true);
+        setFeedback(null);
+        try {
+          const resp = await authFetch('/api/user/bot/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_running: nextState })
+          });
+          const resJson = await resp.json();
+          if (!resp.ok) throw new Error(resJson.message);
 
-      setFeedback({ type: 'success', text: resJson.message });
-      if (resJson.bot_settings) {
-        setBotData(prev => ({
-          ...prev,
-          bot_settings: resJson.bot_settings
-        }));
+          setFeedback({ type: 'success', text: resJson.message });
+          if (resJson.bot_settings) {
+            setBotData(prev => ({
+              ...prev,
+              bot_settings: resJson.bot_settings
+            }));
+          }
+          fetchUserBotStatus();
+        } catch (err) {
+          setFeedback({ type: 'error', text: err.message });
+        } finally {
+          setActionLoading(false);
+        }
       }
-      fetchUserBotStatus();
-    } catch (err) {
-      setFeedback({ type: 'error', text: err.message });
-    } finally {
-      setActionLoading(false);
-    }
+    });
   };
 
   const isBotRunning = Boolean(botData?.bot_settings?.is_running);
@@ -193,6 +251,17 @@ export default function UserBotPanel({ activeStrategyName }) {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+      {/* Banner Explicativo de la Página */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
+        <span className="text-xl text-amber-400 font-bold">📌</span>
+        <div>
+          <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
+          <p className="mt-0.5 text-slate-300 leading-relaxed">
+            En <strong>Copy Trade Binance</strong> conectas tu cuenta personal de Binance mediante API Keys cifradas (sin permisos de retiro). Al activar la sincronización, el algoritmo institucional replicará automáticamente cada orden en tu cuenta. Supervisa tu saldo en tiempo real y el historial exclusivo de trades que afectan a tu cuenta.
+          </p>
+        </div>
+      </div>
 
       {/* Banner Superior de Estado Institucional */}
       <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl">
@@ -436,7 +505,8 @@ export default function UserBotPanel({ activeStrategyName }) {
                 <th className="p-3">Precio Salida</th>
                 <th className="p-3">Cantidad</th>
                 <th className="p-3">PnL Neto</th>
-                <th className="p-3">Fecha de Cierre</th>
+                <th className="p-3">Apertura</th>
+                <th className="p-3">Cierre</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -460,16 +530,19 @@ export default function UserBotPanel({ activeStrategyName }) {
                       <td className={`p-3 font-bold font-mono ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {t.close_timestamp ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : 'En curso'}
                       </td>
-                      <td className="p-3 text-slate-400 text-[11px] whitespace-nowrap">
-                        {t.close_timestamp || t.open_timestamp}
+                      <td className="p-3 text-slate-300 font-mono text-[11px] whitespace-nowrap">
+                        {t.open_time_short || formatShortDate(t.open_timestamp)}
+                      </td>
+                      <td className="p-3 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                        {t.close_time_short || (t.close_timestamp ? formatShortDate(t.close_timestamp) : 'En curso')}
                       </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500 text-xs">
-                    No hay operaciones cerradas aún. Cuando el algoritmo central abra y cierre posiciones, quedarán registradas aquí en tiempo real.
+                  <td colSpan={8} className="p-8 text-center text-slate-500 text-xs">
+                    No hay operaciones cerradas registradas para esta sesión de copytrading. Las nuevas posiciones de la estrategia cuantitativa activa quedarán registradas aquí.
                   </td>
                 </tr>
               )}
@@ -613,6 +686,18 @@ export default function UserBotPanel({ activeStrategyName }) {
           </div>
         </div>
       )}
+
+      {/* Modal de Confirmación Global de Acciones */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        type={confirmModal.type}
+        onConfirm={confirmModal.onConfirm}
+        onClose={closeConfirm}
+      />
 
     </div>
   );

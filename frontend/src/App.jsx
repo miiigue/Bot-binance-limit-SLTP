@@ -446,6 +446,7 @@ function MainDashboard() {
                 handleToggleSound={handleToggleSound}
                 deferredPrompt={deferredPrompt}
                 onTriggerInstall={() => setDeferredPrompt(null)}
+                onNavigateApiKeys={() => setActiveTab('my_bot')}
               />
             </div>
 
@@ -588,6 +589,7 @@ function MainDashboard() {
                 handleToggleSound={handleToggleSound}
                 deferredPrompt={deferredPrompt}
                 onTriggerInstall={() => setDeferredPrompt(null)}
+                onNavigateApiKeys={() => setActiveTab('my_bot')}
               />
             </div>
           </div>
@@ -732,18 +734,6 @@ function MainDashboard() {
 
                 <button
                   type="button"
-                  onClick={() => setActiveTab('performance')}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'performance'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                >
-                  <span>📈</span> Resumen del Fondo
-                </button>
-
-                <button
-                  type="button"
                   onClick={() => setActiveTab('chart')}
                   className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                     activeTab === 'chart'
@@ -809,7 +799,16 @@ function MainDashboard() {
 
             {/* PESTAÑA: Monitor en Vivo (Solo Admin) */}
             {activeTab === 'monitor' && isAdmin && (
-              <div className="block">
+              <div className="space-y-4">
+                <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
+                  <span className="text-xl text-amber-400 font-bold">📌</span>
+                  <div>
+                    <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
+                    <p className="mt-0.5 text-slate-300 leading-relaxed">
+                      En el <strong>Monitor en Vivo</strong> supervisas en tiempo real la ejecución del algoritmo maestro. Observa las posiciones activas en Binance (Long/Short), precio de entrada, Stop Loss dinámico y la fluctuación del PnL no realizado de la cartera.
+                    </p>
+                  </div>
+                </div>
                 <StatusDisplay 
                   config={config} 
                   onStatusUpdate={handleStatusUpdate}
@@ -823,50 +822,105 @@ function MainDashboard() {
 
             {/* PESTAÑA: Configuración de Parámetros (Solo Admin) */}
             {activeTab === 'config' && isAdmin && (
-              <ConfigForm 
-                initialConfig={config} 
-                onSave={handleSave} 
-                availableStrategies={availableStrategies}
-                isLoadingStrategies={isLoadingStrategies}
-                strategyError={strategyError}
-                onRefreshStrategies={fetchAvailableStrategies}
-                addToast={addToast}
-              />
+              <div className="space-y-4">
+                <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
+                  <span className="text-xl text-amber-400 font-bold">📌</span>
+                  <div>
+                    <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
+                    <p className="mt-0.5 text-slate-300 leading-relaxed">
+                      En <strong>Configuración</strong> ajustas los parámetros operacionales del bot cuantitativo (símbolos a operar, apalancamiento, temporalidad RSI, filtros de volumen y niveles de gestión de riesgo).
+                    </p>
+                  </div>
+                </div>
+                <ConfigForm 
+                  initialConfig={config} 
+                  onSave={handleSave} 
+                  availableStrategies={availableStrategies}
+                  isLoadingStrategies={isLoadingStrategies}
+                  strategyError={strategyError}
+                  onRefreshStrategies={fetchAvailableStrategies}
+                  addToast={addToast}
+                />
+              </div>
             )}
 
             {/* PESTAÑA: Gráficos de Velas (Admin & Inversionista) */}
             {activeTab === 'chart' && (
-              <TradingViewChart
-                selectedSymbol={chartSelectedSymbol}
-                symbolsList={config?.symbolsToTrade ? config.symbolsToTrade.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : []}
-                onSelectSymbol={(sym) => setChartSelectedSymbol(sym)}
-              />
+              <div className="space-y-4">
+                <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
+                  <span className="text-xl text-amber-400 font-bold">📌</span>
+                  <div>
+                    <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
+                    <p className="mt-0.5 text-slate-300 leading-relaxed">
+                      En <strong>Gráficos en Vivo</strong> realizas análisis técnico interactivo en tiempo real con velas de TradingView sobre cualquier par configurado en el bot.
+                    </p>
+                  </div>
+                </div>
+                <TradingViewChart
+                  selectedSymbol={chartSelectedSymbol}
+                  symbolsList={config?.symbolsToTrade ? config.symbolsToTrade.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : []}
+                  onSelectSymbol={(sym) => setChartSelectedSymbol(sym)}
+                />
+              </div>
             )}
 
             {/* PESTAÑA: Rendimiento (Admin = completo con edición de riesgo, Inversor = solo lectura) */}
             {activeTab === 'performance' && (
-              <PnLPerformanceChart
-                symbolsList={config?.symbolsToTrade ? config.symbolsToTrade.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : []}
-                readOnly={isInvestor}
-              />
+              <div className="space-y-4">
+                <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
+                  <span className="text-xl text-amber-400 font-bold">📌</span>
+                  <div>
+                    <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
+                    <p className="mt-0.5 text-slate-300 leading-relaxed">
+                      En <strong>Resumen del Fondo & Rendimiento</strong> visualizas la curva histórica de rentabilidad, win rate acumulado, desglose por par y métricas de desempeño cuantitativo.
+                    </p>
+                  </div>
+                </div>
+                <PnLPerformanceChart
+                  symbolsList={config?.symbolsToTrade ? config.symbolsToTrade.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : []}
+                  readOnly={isInvestor}
+                />
+              </div>
             )}
 
             {/* PESTAÑA: Radar y Escáner de Mercado (Solo Admin) */}
             {activeTab === 'radar' && isAdmin && (
-              <MarketExplorer
-                config={config}
-                onSaveConfig={handleSave}
-                onSelectSymbolForChart={handleSelectSymbolForChart}
-              />
+              <div className="space-y-4">
+                <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
+                  <span className="text-xl text-amber-400 font-bold">📌</span>
+                  <div>
+                    <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
+                    <p className="mt-0.5 text-slate-300 leading-relaxed">
+                      En <strong>Mercado & Radar</strong> escanéas en vivo decenas de criptomonedas en Binance Futures detectando picos de volumen, rupturas de RSI y oportunidades de entrada.
+                    </p>
+                  </div>
+                </div>
+                <MarketExplorer
+                  config={config}
+                  onSaveConfig={handleSave}
+                  onSelectSymbolForChart={handleSelectSymbolForChart}
+                />
+              </div>
             )}
 
             {/* PESTAÑA: Laboratorio de Backtesting (Solo Admin) */}
             {activeTab === 'backtest' && isAdmin && (
-              <BacktestLab
-                activeConfig={config}
-                addToast={addToast}
-                onApplyStrategyToConfig={handleApplyStrategyToConfig}
-              />
+              <div className="space-y-4">
+                <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
+                  <span className="text-xl text-amber-400 font-bold">📌</span>
+                  <div>
+                    <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
+                    <p className="mt-0.5 text-slate-300 leading-relaxed">
+                      En <strong>Backtesting</strong> ejecutas simulaciones históricas aceleradas sobre datos del mercado para poner a prueba y optimizar tus estrategias antes de desplegarlas en vivo.
+                    </p>
+                  </div>
+                </div>
+                <BacktestLab
+                  activeConfig={config}
+                  addToast={addToast}
+                  onApplyStrategyToConfig={handleApplyStrategyToConfig}
+                />
+              </div>
             )}
           </>
         )}

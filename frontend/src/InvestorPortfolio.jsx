@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
+import PnLPerformanceChart from './PnLPerformanceChart';
 
 export default function InvestorPortfolio() {
   const { authFetch, user } = useAuth();
@@ -7,6 +8,7 @@ export default function InvestorPortfolio() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedSliceIndex, setSelectedSliceIndex] = useState(null);
+  const [showFundSummaryModal, setShowFundSummaryModal] = useState(false);
 
   const fetchPortfolio = useCallback(async () => {
     try {
@@ -217,6 +219,42 @@ export default function InvestorPortfolio() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       
+      {/* Banner Explicativo de la Página */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
+        <span className="text-xl text-amber-400 font-bold">📌</span>
+        <div>
+          <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
+          <p className="mt-0.5 text-slate-300 leading-relaxed">
+            En <strong>Mi Inversión en el Fondo</strong> monitoreas la evolución en tiempo real de tu capital asignado en el pool cuantitativo administrado por WTN Solutions LLC. Visualiza la distribución anónima del pool, tu ROI acumulado y el historial oficial de movimientos de capital.
+          </p>
+        </div>
+      </div>
+
+      {/* Banner Persuasivo si el Inversionista aún no ha depositado capital (Cap <= 0) */}
+      {cap <= 0 && (
+        <div className="relative overflow-hidden bg-gradient-to-r from-amber-950/60 via-slate-900 to-amber-950/40 border border-amber-500/50 rounded-3xl p-6 shadow-2xl animate-pulse">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[10px] font-black uppercase tracking-wider">
+                💡 OPORTUNIDAD DE INVERSIÓN
+              </div>
+              <h3 className="text-lg font-black text-white">
+                ¡Aún no tienes capital activo generando rendimientos en el Fondo!
+              </h3>
+              <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                El fondo institucional opera 24/7 mediante algoritmos cuantitativos automatizados en Binance Futures. Al solicitar tu inclusión de capital, tu portafolio empezará a acumular rendimientos pasivos de forma 100% automatizada.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowFundSummaryModal(true)}
+              className="px-5 py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/25 whitespace-nowrap self-start sm:self-auto"
+            >
+              📈 Ver Rendimiento del Fondo
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Encabezado del Inversionista */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
@@ -237,24 +275,35 @@ export default function InvestorPortfolio() {
           </p>
         </div>
 
-        {/* Indicador de Estado Activo: GESTIONANDO */}
-        <div className="flex items-center gap-3 self-start md:self-auto bg-slate-950/90 border border-emerald-500/40 px-4 py-2.5 rounded-2xl shadow-xl shadow-emerald-500/10">
-          <div className="relative flex items-center justify-center w-3.5 h-3.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-          </div>
-          <div className="flex flex-col text-left">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono font-black text-emerald-400 tracking-wider">
-                GESTIONANDO
-              </span>
-              <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded text-[9px] font-black uppercase tracking-wider border border-emerald-500/30">
-                En Vivo 24/7
+        <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+          {/* Botón para abrir Modal de Resumen y Rendimiento del Fondo */}
+          <button
+            type="button"
+            onClick={() => setShowFundSummaryModal(true)}
+            className="px-4 py-2.5 bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 border border-amber-400/40 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+          >
+            <span>📈</span> Ver Resumen del Fondo
+          </button>
+
+          {/* Indicador de Estado Activo: GESTIONANDO */}
+          <div className="flex items-center gap-3 bg-slate-950/90 border border-emerald-500/40 px-4 py-2 rounded-2xl shadow-xl shadow-emerald-500/10">
+            <div className="relative flex items-center justify-center w-3.5 h-3.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </div>
+            <div className="flex flex-col text-left">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-black text-emerald-400 tracking-wider">
+                  GESTIONANDO
+                </span>
+                <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded text-[9px] font-black uppercase tracking-wider border border-emerald-500/30">
+                  En Vivo 24/7
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium">
+                Supervisión Cuantitativa Institucional
               </span>
             </div>
-            <span className="text-[10px] text-slate-400 font-medium">
-              Supervisión Cuantitativa Institucional
-            </span>
           </div>
         </div>
       </div>
@@ -664,6 +713,63 @@ export default function InvestorPortfolio() {
           <span>Refresco cada 10s</span>
         </div>
       </div>
+
+      {/* Modal de Resumen y Rendimiento Histórico del Fondo */}
+      {showFundSummaryModal && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-5xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 relative no-scrollbar">
+            
+            {/* Header del Modal */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl">📈</span>
+                <div>
+                  <h3 className="text-lg font-black text-white">
+                    Resumen & Rendimiento Histórico del Fondo
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Estadísticas cuantitativas consolidadas del algoritmo institucional.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFundSummaryModal(false)}
+                className="text-slate-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Mensaje Persuasivo para usuarios sin inversión activa */}
+            {cap <= 0 && (
+              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-200 text-xs leading-relaxed space-y-1">
+                <strong className="block font-bold text-amber-300">💡 Rendimiento Potencial que podrías estar ganando:</strong>
+                <p>
+                  El gráfico a continuación refleja la curva oficial de PnL y rentabilidad del bot cuantitativo. Si hubieses tenido capital asignado en el pool durante este período, tu saldo habría registrado el crecimiento proporcional de cada operacion ganadora. ¡Contacta al administrador para activar tu participación!
+                </p>
+              </div>
+            )}
+
+            {/* Componente de Gráficos de Rendimiento */}
+            <div className="bg-slate-950 p-2 sm:p-4 rounded-2xl border border-slate-800">
+              <PnLPerformanceChart readOnly={true} />
+            </div>
+
+            <div className="pt-2 text-right">
+              <button
+                type="button"
+                onClick={() => setShowFundSummaryModal(false)}
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition"
+              >
+                Cerrar Resumen
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

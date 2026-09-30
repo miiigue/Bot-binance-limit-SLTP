@@ -1037,14 +1037,37 @@ def user_keys_delete_endpoint():
 @app.route('/api/user/bot', methods=['GET'])
 @token_required
 def user_bot_status_endpoint():
-    """Retorna el estado operativo, parámetros de trading y métricas del bot del usuario."""
+    """Retorna el estado operativo, parámetros de trading y métricas del bot del usuario con balance en vivo de Binance."""
     try:
         user_id = request.current_user['user_id']
         settings = get_user_bot_settings(user_id=user_id)
-        keys = get_user_api_keys(user_id=user_id, decrypt=False)
+        keys = get_user_api_keys(user_id=user_id, decrypt=True)
         metrics = get_user_trading_metrics(user_id=user_id)
 
         live_balance = float(keys.get('balance_detected', 0.0)) if keys else 0.0
+
+        # Si el usuario tiene credenciales válidas, consultar balance en tiempo real en Binance
+        if keys and keys.get('is_valid') and keys.get('api_key') and keys.get('api_secret'):
+            try:
+                from src.binance_client import get_user_futures_client
+                u_client = get_user_futures_client(
+                    api_key=keys['api_key'],
+                    api_secret=keys['api_secret'],
+                    is_testnet=bool(keys.get('is_testnet', False)),
+                    base_url=keys.get('api_base_url')
+                )
+                balances = u_client.balance()
+                if isinstance(balances, list):
+                    for b in balances:
+                        if str(b.get('asset', '')).upper() == 'USDT':
+                            live_balance = round(float(b.get('balance', 0.0) or b.get('availableBalance', 0.0) or 0.0), 2)
+                            break
+                    # Sincronizar en DB de forma silenciosa
+                    from src.database import update_user_api_keys_balance
+                    update_user_api_keys_balance(user_id=user_id, balance_usdt=live_balance)
+            except Exception as e_live:
+                api_logger.debug(f"Aviso al consultar balance en vivo para usuario {user_id}: {e_live}")
+
         cfg_temp = load_config()
         active_strategy = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip() or 'v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_sinSL_3DCA0c8_ReDi5c5'
 

@@ -1,11 +1,39 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
+import ConfirmModal from './ConfirmModal';
 
 export default function AdminInvestors({ addToast }) {
   const { authFetch } = useAuth();
   const [data, setData] = useState({ investors: [], pending_users: [], pool_stats: {} });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Estado del Modal de Confirmación
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirmar',
+    cancelText: 'Cancelar',
+    type: 'warning',
+    onConfirm: () => {}
+  });
+
+  const openConfirm = (opts) => {
+    setConfirmModal({
+      isOpen: true,
+      title: opts.title || '¿Confirmar Acción?',
+      message: opts.message || '¿Está seguro de realizar esta acción?',
+      confirmText: opts.confirmText || 'Sí, Confirmar',
+      cancelText: opts.cancelText || 'Cancelar',
+      type: opts.type || 'warning',
+      onConfirm: opts.onConfirm || (() => {})
+    });
+  };
+
+  const closeConfirm = () => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  };
 
   // Estados de aprobación
   const [approvalInputs, setApprovalInputs] = useState({}); // { [userId]: capitalAmount }
@@ -71,94 +99,116 @@ export default function AdminInvestors({ addToast }) {
   };
 
   // Aprobar usuario
-  const handleApprove = async (userId) => {
+  const handleApprove = (userId) => {
     const capital = parseFloat(approvalInputs[userId] || 0);
-    setIsProcessingApproval(prev => ({ ...prev, [userId]: true }));
+    openConfirm({
+      title: '¿Aprobar Inversionista?',
+      message: `Se activará la cuenta del usuario y se registrará un capital inicial de $${capital.toFixed(2)} USDT en el pool.`,
+      confirmText: 'Sí, Aprobar Inversionista',
+      type: 'success',
+      onConfirm: async () => {
+        setIsProcessingApproval(prev => ({ ...prev, [userId]: true }));
+        try {
+          const resp = await authFetch('/api/admin/approve_user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, initial_capital: capital })
+          });
 
-    try {
-      const resp = await authFetch('/api/admin/approve_user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, initial_capital: capital })
-      });
+          const res = await resp.json();
+          if (!resp.ok) throw new Error(res.message || 'Error al aprobar usuario.');
 
-      const res = await resp.json();
-      if (!resp.ok) {
-        throw new Error(res.message || 'Error al aprobar usuario.');
+          if (addToast) addToast('✅ Inversionista Aprobado', `Cuenta aprobada con $${capital.toFixed(2)} USDT asignados.`, 'success');
+          fetchInvestorsData();
+        } catch (err) {
+          if (addToast) addToast('Error de Aprobación', err.message, 'error');
+          else alert(err.message);
+        } finally {
+          setIsProcessingApproval(prev => ({ ...prev, [userId]: false }));
+        }
       }
-
-      if (addToast) addToast('✅ Inversionista Aprobado', `Cuenta aprobada con $${capital.toFixed(2)} USDT asignados.`, 'success');
-      fetchInvestorsData();
-    } catch (err) {
-      if (addToast) addToast('Error de Aprobación', err.message, 'error');
-      else alert(err.message);
-    } finally {
-      setIsProcessingApproval(prev => ({ ...prev, [userId]: false }));
-    }
+    });
   };
 
   // Rechazar usuario
-  const handleReject = async (userId) => {
-    if (!window.confirm('¿Estás seguro de que deseas rechazar esta solicitud de registro?')) return;
-    setIsProcessingApproval(prev => ({ ...prev, [userId]: true }));
+  const handleReject = (userId) => {
+    openConfirm({
+      title: '¿Rechazar Solicitud de Registro?',
+      message: 'La solicitud del usuario será denegada y no se le concederá acceso al bot ni al pool.',
+      confirmText: 'Sí, Rechazar',
+      type: 'danger',
+      onConfirm: async () => {
+        setIsProcessingApproval(prev => ({ ...prev, [userId]: true }));
+        try {
+          const resp = await authFetch('/api/admin/reject_user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId })
+          });
 
-    try {
-      const resp = await authFetch('/api/admin/reject_user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId })
-      });
+          const res = await resp.json();
+          if (!resp.ok) throw new Error(res.message || 'Error al rechazar.');
 
-      const res = await resp.json();
-      if (!resp.ok) throw new Error(res.message || 'Error al rechazar.');
-
-      if (addToast) addToast('Solicitud Rechazada', 'El usuario ha sido rechazado.', 'info');
-      fetchInvestorsData();
-    } catch (err) {
-      if (addToast) addToast('Error', err.message, 'error');
-      else alert(err.message);
-    } finally {
-      setIsProcessingApproval(prev => ({ ...prev, [userId]: false }));
-    }
+          if (addToast) addToast('Solicitud Rechazada', 'El usuario ha sido rechazado.', 'info');
+          fetchInvestorsData();
+        } catch (err) {
+          if (addToast) addToast('Error', err.message, 'error');
+          else alert(err.message);
+        } finally {
+          setIsProcessingApproval(prev => ({ ...prev, [userId]: false }));
+        }
+      }
+    });
   };
 
   // Guardar movimiento de capital (Depósito o Retiro)
-  const handleSaveCapitalMovement = async (e) => {
+  const handleSaveCapitalMovement = (e) => {
     e.preventDefault();
     if (!selectedUserForCapital || !txAmount || parseFloat(txAmount) <= 0) {
       alert('Por favor ingresa un monto válido mayor que 0.');
       return;
     }
 
-    setIsSavingCapital(true);
-    try {
-      const resp = await authFetch('/api/admin/modify_capital', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: selectedUserForCapital.id,
-          amount: parseFloat(txAmount),
-          type: txType,
-          notes: txNotes.trim()
-        })
-      });
+    const actionText = txType === 'DEPOSIT' ? 'Depósito' : 'Retiro';
+    const amountVal = parseFloat(txAmount);
 
-      const res = await resp.json();
-      if (!resp.ok) throw new Error(res.message || 'Error al registrar movimiento.');
+    openConfirm({
+      title: `¿Confirmar ${actionText} de Capital?`,
+      message: `Se registrará un ${actionText.toLowerCase()} de $${amountVal.toFixed(2)} USDT para el usuario ${selectedUserForCapital.username}.`,
+      confirmText: `Sí, Registrar ${actionText}`,
+      type: txType === 'DEPOSIT' ? 'success' : 'warning',
+      onConfirm: async () => {
+        setIsSavingCapital(true);
+        try {
+          const resp = await authFetch('/api/admin/modify_capital', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: selectedUserForCapital.id,
+              amount: amountVal,
+              type: txType,
+              notes: txNotes.trim()
+            })
+          });
 
-      if (addToast) {
-        addToast('Movimiento Registrado', `${txType === 'DEPOSIT' ? 'Depósito' : 'Retiro'} de $${parseFloat(txAmount).toFixed(2)} USDT guardado.`, 'success');
+          const res = await resp.json();
+          if (!resp.ok) throw new Error(res.message || 'Error al registrar movimiento.');
+
+          if (addToast) {
+            addToast('Movimiento Registrado', `${actionText} de $${amountVal.toFixed(2)} USDT guardado.`, 'success');
+          }
+
+          setSelectedUserForCapital(null);
+          setTxAmount('');
+          setTxNotes('');
+          fetchInvestorsData();
+        } catch (err) {
+          alert(err.message);
+        } finally {
+          setIsSavingCapital(false);
+        }
       }
-
-      setSelectedUserForCapital(null);
-      setTxAmount('');
-      setTxNotes('');
-      fetchInvestorsData();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setIsSavingCapital(false);
-    }
+    });
   };
 
   // Descargar Copia de Seguridad (.db)
@@ -198,39 +248,43 @@ export default function AdminInvestors({ addToast }) {
   };
 
   // Bloquear / Suspender o Reactivar cuenta de un usuario
-  const handleToggleStatus = async (user) => {
+  const handleToggleStatus = (user) => {
     const newStatus = user.status === 'blocked' ? 'active' : 'blocked';
     const actionLabel = newStatus === 'blocked' ? 'BLOQUEAR y revocar el acceso a' : 'REACTIVAR la cuenta de';
-    
-    if (!window.confirm(`¿Estás seguro de que deseas ${actionLabel} ${user.username}? El cambio entrará en vigor inmediatamente.`)) {
-      return;
-    }
 
-    setIsTogglingStatus(prev => ({ ...prev, [user.id]: true }));
-    try {
-      const resp = await authFetch('/api/admin/toggle_user_status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id, status: newStatus })
-      });
+    openConfirm({
+      title: newStatus === 'blocked' ? '¿Bloquear Usuario?' : '¿Reactivar Usuario?',
+      message: `¿Estás seguro de que deseas ${actionLabel} ${user.username}? El cambio entrará en vigor inmediatamente.`,
+      confirmText: newStatus === 'blocked' ? 'Sí, Bloquear' : 'Sí, Reactivar',
+      type: newStatus === 'blocked' ? 'danger' : 'success',
+      onConfirm: async () => {
+        setIsTogglingStatus(prev => ({ ...prev, [user.id]: true }));
+        try {
+          const resp = await authFetch('/api/admin/toggle_user_status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: user.id, status: newStatus })
+          });
 
-      const res = await resp.json();
-      if (!resp.ok) throw new Error(res.message || 'Error al cambiar estado.');
+          const res = await resp.json();
+          if (!resp.ok) throw new Error(res.message || 'Error al cambiar estado.');
 
-      if (addToast) {
-        addToast(
-          newStatus === 'blocked' ? '🚫 Inversionista Bloqueado' : '✅ Inversionista Reactivado',
-          `La cuenta de ${user.username} ha sido ${newStatus === 'blocked' ? 'suspendida' : 'reactivada'} con éxito.`,
-          newStatus === 'blocked' ? 'warning' : 'success'
-        );
+          if (addToast) {
+            addToast(
+              newStatus === 'blocked' ? '🚫 Inversionista Bloqueado' : '✅ Inversionista Reactivado',
+              `La cuenta de ${user.username} ha sido ${newStatus === 'blocked' ? 'suspendida' : 'reactivada'} con éxito.`,
+              newStatus === 'blocked' ? 'warning' : 'success'
+            );
+          }
+          fetchInvestorsData();
+        } catch (err) {
+          if (addToast) addToast('Error', err.message, 'error');
+          else alert(err.message);
+        } finally {
+          setIsTogglingStatus(prev => ({ ...prev, [user.id]: false }));
+        }
       }
-      fetchInvestorsData();
-    } catch (err) {
-      if (addToast) addToast('Error', err.message, 'error');
-      else alert(err.message);
-    } finally {
-      setIsTogglingStatus(prev => ({ ...prev, [user.id]: false }));
-    }
+    });
   };
 
   // Abrir Ficha Técnica 360° de un inversionista
@@ -417,6 +471,17 @@ export default function AdminInvestors({ addToast }) {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       
+      {/* Banner Explicativo de la Página */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
+        <span className="text-xl text-amber-400 font-bold">📌</span>
+        <div>
+          <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
+          <p className="mt-0.5 text-slate-300 leading-relaxed">
+            En <strong>Gestión de Inversionistas & Pool</strong>, el Super Administrador aprueba solicitudes de nuevos usuarios, asigna capitales iniciales, registra depósitos y retiros, audita la ficha técnica 360° de cada inversionista, bloquea o reactiva cuentas y genera copias de seguridad (.db) del servidor central.
+          </p>
+        </div>
+      </div>
+
       {/* Encabezado Principal */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
@@ -1058,6 +1123,18 @@ export default function AdminInvestors({ addToast }) {
           </div>
         </div>
       )}
+
+      {/* Modal de Confirmación Global */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        type={confirmModal.type}
+        onConfirm={confirmModal.onConfirm}
+        onClose={closeConfirm}
+      />
     </div>
   );
 }

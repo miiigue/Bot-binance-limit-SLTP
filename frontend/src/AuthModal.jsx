@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from './AuthContext';
+import LegalModal from './LegalModal';
 
 export default function AuthModal() {
   const { needsInitialAdmin, login, register } = useAuth();
@@ -10,6 +11,8 @@ export default function AuthModal() {
   const [investmentAmount, setInvestmentAmount] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [showLegalModal, setShowLegalModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
@@ -56,6 +59,11 @@ export default function AuthModal() {
 
     if (password !== confirmPassword) {
       setErrorMessage('Las contraseñas no coinciden.');
+      return;
+    }
+
+    if (!acceptedTerms) {
+      setErrorMessage('Debes aceptar los Términos de Servicio y el Aviso de Riesgo de Acceso Privado para registrarte.');
       return;
     }
 
@@ -334,22 +342,32 @@ export default function AuthModal() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Confirmar Contraseña *</label>
-                  <input
-                    type="password"
-                    required
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Repite tu contraseña"
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
-                  />
+                <div className="pt-1">
+                  <label className="flex items-start gap-2.5 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={acceptedTerms}
+                      onChange={(e) => setAcceptedTerms(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-slate-700 bg-slate-950 text-amber-400 focus:ring-amber-400 accent-amber-400 cursor-pointer"
+                    />
+                    <span className="text-[11px] text-slate-300 leading-snug">
+                      Declaro que he sido invitado de forma privada y acepto los{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShowLegalModal(true)}
+                        className="text-amber-400 hover:underline font-bold"
+                      >
+                        Términos de Servicio y Descargo de Riesgo
+                      </button>
+                      .
+                    </span>
+                  </label>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="w-full mt-2 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-black text-sm rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  disabled={isSubmitting || !acceptedTerms}
+                  className="w-full mt-2 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-black text-sm rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
                     <>
@@ -366,6 +384,11 @@ export default function AuthModal() {
             )}
           </div>
         )}
+
+        <LegalModal
+          isOpen={showLegalModal}
+          onClose={() => setShowLegalModal(false)}
+        />
 
         {/* CASO 3: Aviso de Cuenta Pendiente de Aprobación */}
         {mode === 'pending_notice' && (

@@ -1686,6 +1686,28 @@ def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: 
         conn.close()
 
 
+def update_user_api_keys_balance(user_id: int, balance_usdt: float) -> bool:
+    """Actualiza el balance detectado en la base de datos para el usuario."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""
+            UPDATE user_api_keys
+            SET balance_detected = ?, last_verified_at = ?, updated_at = ?
+            WHERE user_id = ? AND exchange = 'binance'
+        """, (float(balance_usdt), now_str, now_str, user_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al actualizar balance de usuario {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+
 def get_user_api_keys(user_id: int, is_testnet: bool = None, decrypt: bool = True) -> dict:
     """
     Recupera las credenciales de API de un usuario.
@@ -1921,20 +1943,58 @@ def record_user_trade(user_id: int, symbol: str, trade_type: str, open_timestamp
         conn.close()
 
 
+def _format_short_datetime(dt_str: str) -> str:
+    """Convierte '2026-09-30 03:58:23' a formato corto '30/09 03:58'."""
+    if not dt_str:
+        return ""
+    try:
+        raw = str(dt_str).strip()
+        if 'T' in raw:
+            raw = raw.replace('T', ' ')
+        parts = raw.split(' ')
+        if len(parts) >= 2:
+            ymd = parts[0].split('-')
+            hms = parts[1].split(':')
+            if len(ymd) == 3 and len(hms) >= 2:
+                return f"{ymd[2]}/{ymd[1]} {hms[0]}:{hms[1]}"
+        return raw
+    except Exception:
+        return str(dt_str)
+
+
 def get_user_trades(user_id: int, limit: int = 50) -> list:
-    """Retorna el historial de operaciones de la cuenta personal del usuario."""
+    """Retorna el historial de operaciones de la cuenta personal del usuario ejecutadas durante su sesión activa."""
     conn = get_db_connection()
     if not conn:
         return []
     try:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM user_trades 
-            WHERE user_id = ? 
-            ORDER BY id DESC LIMIT ?
-        """, (user_id, limit))
+        # Consultar la fecha en que el usuario activó la replicación por última vez
+        cursor.execute("SELECT last_started_at FROM user_bot_settings WHERE user_id = ?", (user_id,))
+        settings_row = cursor.fetchone()
+        last_started_at = settings_row['last_started_at'] if settings_row and settings_row['last_started_at'] else None
+
+        if last_started_at:
+            cursor.execute("""
+                SELECT * FROM user_trades 
+                WHERE user_id = ? AND open_timestamp >= ? 
+                ORDER BY id DESC LIMIT ?
+            """, (user_id, last_started_at, limit))
+        else:
+            cursor.execute("""
+                SELECT * FROM user_trades 
+                WHERE user_id = ? 
+                ORDER BY id DESC LIMIT ?
+            """, (user_id, limit))
+
         rows = cursor.fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            trade_dict = dict(r)
+            trade_dict['open_time_short'] = _format_short_datetime(trade_dict.get('open_timestamp'))
+            trade_dict['close_time_short'] = _format_short_datetime(trade_dict.get('close_timestamp'))
+            result.append(trade_dict)
+        return result
     except Exception as e:
         get_logger().error(f"Error al obtener trades de usuario {user_id}: {e}")
         return []
@@ -1943,7 +2003,7 @@ def get_user_trades(user_id: int, limit: int = 50) -> list:
 
 
 def get_user_trading_metrics(user_id: int) -> dict:
-    """Calcula las métricas de rendimiento del bot personal del usuario."""
+    """Calcula las métricas de rendimiento del bot personal del usuario durante la sesión activa."""
     conn = get_db_connection()
     if not conn:
         return {
@@ -1953,18 +2013,37 @@ def get_user_trading_metrics(user_id: int) -> dict:
         }
     try:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT COUNT(*) as total,
-                   SUM(CASE WHEN pnl_usdt > 0 THEN 1 ELSE 0 END) as wins,
-                   SUM(CASE WHEN pnl_usdt < 0 THEN 1 ELSE 0 END) as losses,
-                   SUM(pnl_usdt) as net_pnl,
-                   SUM(gross_pnl_usdt) as gross_pnl,
-                   SUM(commission_usdt) as total_comm,
-                   SUM(CASE WHEN pnl_usdt > 0 THEN pnl_usdt ELSE 0 END) as gross_win,
-                   SUM(CASE WHEN pnl_usdt < 0 THEN abs(pnl_usdt) ELSE 0 END) as gross_loss
-            FROM user_trades 
-            WHERE user_id = ? AND close_timestamp IS NOT NULL
-        """, (user_id,))
+        cursor.execute("SELECT last_started_at FROM user_bot_settings WHERE user_id = ?", (user_id,))
+        settings_row = cursor.fetchone()
+        last_started_at = settings_row['last_started_at'] if settings_row and settings_row['last_started_at'] else None
+
+        if last_started_at:
+            cursor.execute("""
+                SELECT COUNT(*) as total,
+                       SUM(CASE WHEN pnl_usdt > 0 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl_usdt < 0 THEN 1 ELSE 0 END) as losses,
+                       SUM(pnl_usdt) as net_pnl,
+                       SUM(gross_pnl_usdt) as gross_pnl,
+                       SUM(commission_usdt) as total_comm,
+                       SUM(CASE WHEN pnl_usdt > 0 THEN pnl_usdt ELSE 0 END) as gross_win,
+                       SUM(CASE WHEN pnl_usdt < 0 THEN abs(pnl_usdt) ELSE 0 END) as gross_loss
+                FROM user_trades 
+                WHERE user_id = ? AND close_timestamp IS NOT NULL AND open_timestamp >= ?
+            """, (user_id, last_started_at))
+        else:
+            cursor.execute("""
+                SELECT COUNT(*) as total,
+                       SUM(CASE WHEN pnl_usdt > 0 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl_usdt < 0 THEN 1 ELSE 0 END) as losses,
+                       SUM(pnl_usdt) as net_pnl,
+                       SUM(gross_pnl_usdt) as gross_pnl,
+                       SUM(commission_usdt) as total_comm,
+                       SUM(CASE WHEN pnl_usdt > 0 THEN pnl_usdt ELSE 0 END) as gross_win,
+                       SUM(CASE WHEN pnl_usdt < 0 THEN abs(pnl_usdt) ELSE 0 END) as gross_loss
+                FROM user_trades 
+                WHERE user_id = ? AND close_timestamp IS NOT NULL
+            """, (user_id,))
+
         row = cursor.fetchone()
         if not row:
             return {}

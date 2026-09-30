@@ -10,7 +10,8 @@ export default function UserDropdown({
   soundOn,
   handleToggleSound,
   deferredPrompt,
-  onTriggerInstall
+  onTriggerInstall,
+  onNavigateApiKeys
 }) {
   const { authFetch } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
@@ -292,6 +293,33 @@ export default function UserDropdown({
           {/* Opciones Principales de Acción */}
           <div className="p-2 space-y-1">
             
+            {/* 0. Configuración de Claves API Binance */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                if (onNavigateApiKeys) onNavigateApiKeys();
+              }}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 transition group"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-105 transition-transform">
+                  🔑
+                </div>
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-100 group-hover:text-amber-300 transition-colors">
+                    Claves API Binance
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Vincular / Actualizar API Key y Secret
+                  </div>
+                </div>
+              </div>
+              <span className="text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
+                API
+              </span>
+            </button>
+
             {/* 1. Descargar Estado de Cuenta Oficial (PDF) */}
             <button
               type="button"
