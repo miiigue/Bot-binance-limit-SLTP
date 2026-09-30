@@ -506,13 +506,13 @@ export default function UserBotPanel({ activeStrategyName }) {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-900/90 text-slate-400 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-800">
               <tr>
+                <th className="p-3">PnL Neto</th>
                 <th className="p-3">ID Trade</th>
                 <th className="p-3">Símbolo</th>
                 <th className="p-3">Tipo</th>
                 <th className="p-3">Precio Entrada</th>
                 <th className="p-3">Precio Salida</th>
                 <th className="p-3">Cantidad</th>
-                <th className="p-3">PnL Neto</th>
                 <th className="p-3">Apertura</th>
                 <th className="p-3">Cierre</th>
               </tr>
@@ -525,6 +525,9 @@ export default function UserBotPanel({ activeStrategyName }) {
                   const tradeId = t.id || t.binance_trade_id || '-';
                   return (
                     <tr key={t.id || tradeId} className="hover:bg-slate-900/50 transition">
+                      <td className={`p-3 font-bold font-mono ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {t.close_timestamp ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : 'En curso'}
+                      </td>
                       <td className="p-3 font-bold font-mono text-amber-400">#{tradeId}</td>
                       <td className="p-3 font-bold font-mono text-white">{t.symbol}</td>
                       <td className="p-3">
@@ -537,9 +540,6 @@ export default function UserBotPanel({ activeStrategyName }) {
                       <td className="p-3 font-mono text-slate-300">${Number(t.open_price).toFixed(2)}</td>
                       <td className="p-3 font-mono text-slate-300">{t.close_price ? `$${Number(t.close_price).toFixed(2)}` : 'Abierta'}</td>
                       <td className="p-3 font-mono text-slate-400">{t.quantity}</td>
-                      <td className={`p-3 font-bold font-mono ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {t.close_timestamp ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : 'En curso'}
-                      </td>
                       <td className="p-3 text-slate-300 font-mono text-[11px] whitespace-nowrap">
                         {t.open_time_short || formatShortDate(t.open_timestamp)}
                       </td>
