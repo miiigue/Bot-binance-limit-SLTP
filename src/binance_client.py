@@ -312,10 +312,11 @@ def get_user_futures_client(api_key: str, api_secret: str, is_testnet: bool = Fa
     else:
         selected_url = MAINNET_BASE_URL
 
-    session = requests.Session()
-    session.mount(selected_url, HTTPAdapter(pool_connections=20, pool_maxsize=20))
     client = UMFutures(key=clean_key, secret=clean_secret, base_url=selected_url)
-    client.session = session
+    # IMPORTANTE: Montar el adapter sobre la sesión del propio cliente para preservar
+    # el header X-MBX-APIKEY que UMFutures configura internamente.
+    # NO reemplazar client.session = new_session (pierde el header y causa -2014).
+    client.session.mount(selected_url, HTTPAdapter(pool_connections=20, pool_maxsize=20))
     return client
 
 def verify_user_binance_credentials(api_key: str, api_secret: str, is_testnet: bool = False) -> dict:
