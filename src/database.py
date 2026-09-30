@@ -330,17 +330,41 @@ def init_db_schema():
             status TEXT NOT NULL DEFAULT 'pending',
             created_at DATETIME NOT NULL,
             last_login DATETIME,
-            requested_capital REAL DEFAULT 0.0
+            requested_capital REAL DEFAULT 0.0,
+            terms_accepted INTEGER DEFAULT 0,
+            terms_accepted_version TEXT,
+            terms_accepted_at DATETIME,
+            terms_accepted_ip TEXT
         )
         """)
         conn.commit()
 
-        # Migración automática si la tabla users ya existía sin la columna requested_capital
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN requested_capital REAL DEFAULT 0.0")
-            conn.commit()
-        except Exception:
-            pass
+        # Migración automática si la tabla users ya existía sin las nuevas columnas
+        for col_name, col_type in [
+            ("requested_capital", "REAL DEFAULT 0.0"),
+            ("terms_accepted", "INTEGER DEFAULT 0"),
+            ("terms_accepted_version", "TEXT"),
+            ("terms_accepted_at", "DATETIME"),
+            ("terms_accepted_ip", "TEXT")
+        ]:
+            try:
+                cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+                conn.commit()
+            except Exception:
+                pass
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_terms_acceptances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            terms_version TEXT NOT NULL,
+            accepted_at DATETIME NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """)
+        conn.commit()
 
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS investor_transactions (
@@ -1261,7 +1285,7 @@ def get_user_by_id(user_id: int) -> dict:
         return None
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, email, role, status, created_at, last_login, requested_capital FROM users WHERE id = ?", (user_id,))
+        cursor.execute("SELECT id, username, email, role, status, created_at, last_login, requested_capital, terms_accepted, terms_accepted_version, terms_accepted_at FROM users WHERE id = ?", (user_id,))
         row = cursor.fetchone()
         if not row:
             return None
@@ -1283,7 +1307,7 @@ def get_user_by_identifier(identifier: str) -> dict:
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, username, email, password_hash, role, status, created_at, last_login, requested_capital 
+            SELECT id, username, email, password_hash, role, status, created_at, last_login, requested_capital, terms_accepted, terms_accepted_version, terms_accepted_at 
             FROM users 
             WHERE LOWER(username) = LOWER(?) OR (email IS NOT NULL AND LOWER(email) = LOWER(?))
         """, (identifier.strip(), identifier.strip()))
@@ -1297,6 +1321,51 @@ def get_user_by_identifier(identifier: str) -> dict:
     except Exception as e:
         get_logger().error(f"Error al buscar usuario por identificador '{identifier}': {e}")
         return None
+    finally:
+        conn.close()
+
+def record_terms_acceptance(user_id: int, terms_version: str = 'v1.0-2026', ip_address: str = None, user_agent: str = None) -> bool:
+    """Registra la firma digital de aceptación de términos y disclaimer legal en la base de datos."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""
+            UPDATE users 
+            SET terms_accepted = 1, terms_accepted_version = ?, terms_accepted_at = ?, terms_accepted_ip = ?
+            WHERE id = ?
+        """, (terms_version, now_str, ip_address, user_id))
+        
+        cursor.execute("""
+            INSERT INTO user_terms_acceptances (user_id, terms_version, accepted_at, ip_address, user_agent)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, terms_version, now_str, ip_address or '0.0.0.0', user_agent or 'Antigravity UserAgent'))
+        
+        conn.commit()
+        get_logger().info(f"Términos {terms_version} aceptados con firma digital por usuario {user_id} ({ip_address}).")
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al registrar aceptación de términos para usuario {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def request_investor_capital(user_id: int, requested_capital: float) -> bool:
+    """Registra o actualiza la solicitud formal de inclusión / depósito de capital en el fondo."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET requested_capital = ? WHERE id = ?", (float(requested_capital), user_id))
+        conn.commit()
+        get_logger().info(f"Solicitud de aporte de ${requested_capital} USDT registrada para usuario {user_id}.")
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al solicitar capital para usuario {user_id}: {e}")
+        return False
     finally:
         conn.close()
 

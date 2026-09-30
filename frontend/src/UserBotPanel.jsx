@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import ConfirmModal from './ConfirmModal';
 
@@ -45,6 +45,33 @@ export default function UserBotPanel({ activeStrategyName }) {
     type: 'warning',
     onConfirm: () => {}
   });
+
+  // Curva de Capital Personal de la Cuenta Copy-Trading
+  const userEquityPoints = useMemo(() => {
+    if (!tradesData || tradesData.length === 0) return [];
+    const sorted = [...tradesData].sort((a, b) => {
+      const da = new Date(a.close_timestamp || a.open_timestamp || 0).getTime();
+      const db = new Date(b.close_timestamp || b.open_timestamp || 0).getTime();
+      return da - db;
+    });
+
+    let running = 0;
+    const pts = [{ idx: 0, pnl: 0, cumulative: 0, time: 'Inicio' }];
+    sorted.forEach((t, i) => {
+      const pnl = Number(t.pnl_usdt || 0);
+      running += pnl;
+      pts.push({
+        idx: i + 1,
+        id: t.id || t.binance_trade_id || (i + 1),
+        symbol: t.symbol,
+        type: t.trade_type,
+        pnl,
+        cumulative: running,
+        time: t.close_time_short || formatShortDate(t.close_timestamp)
+      });
+    });
+    return pts;
+  }, [tradesData]);
 
   const openConfirm = (opts) => {
     setConfirmModal({
@@ -424,11 +451,61 @@ export default function UserBotPanel({ activeStrategyName }) {
           </div>
         </div>
 
+        {/* Gráfico de Crecimiento de Capital Personal (Copy-Trading) */}
+        {userEquityPoints.length > 1 && (() => {
+          const minE = Math.min(0, ...userEquityPoints.map(p => p.cumulative));
+          const maxE = Math.max(0.1, ...userEquityPoints.map(p => p.cumulative));
+          const range = (maxE - minE) || 1;
+          const svgW = 650;
+          const svgH = 140;
+          const pad = { top: 15, right: 30, bottom: 25, left: 45 };
+
+          const getX = (i) => pad.left + (i / (userEquityPoints.length - 1)) * (svgW - pad.left - pad.right);
+          const getY = (val) => pad.top + (svgH - pad.top - pad.bottom) - ((val - minE) / range) * (svgH - pad.top - pad.bottom);
+          const zeroY = getY(0);
+
+          const lineD = userEquityPoints.reduce((acc, pt, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(pt.cumulative)}`, '');
+          const areaD = `${lineD} L ${getX(userEquityPoints.length - 1)} ${zeroY} L ${getX(0)} ${zeroY} Z`;
+          const lastPnl = userEquityPoints[userEquityPoints.length - 1].cumulative;
+
+          return (
+            <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-white flex items-center gap-1.5">
+                  <span>📈 Curva de Capital de tu Cuenta (Copy-Trading)</span>
+                </span>
+                <span className={`font-mono font-black ${lastPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {lastPnl >= 0 ? '+' : ''}${lastPnl.toFixed(4)} USDT Acumulados
+                </span>
+              </div>
+              <div className="w-full overflow-x-auto">
+                <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-auto max-h-40 select-none">
+                  <defs>
+                    <linearGradient id="userEquityGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
+                      <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                    </linearGradient>
+                  </defs>
+                  <line x1={pad.left} y1={zeroY} x2={svgW - pad.right} y2={zeroY} stroke="#334155" strokeDasharray="3 3" strokeWidth="1" />
+                  <path d={areaD} fill="url(#userEquityGrad)" />
+                  <path d={lineD} fill="none" stroke={lastPnl >= 0 ? "#10b981" : "#f43f5e"} strokeWidth="2" />
+                  {userEquityPoints.map((pt, i) => (
+                    <circle key={i} cx={getX(i)} cy={getY(pt.cumulative)} r={i === 0 ? 3 : 3.5} fill={i === 0 ? '#fbbf24' : (pt.pnl >= 0 ? '#10b981' : '#f43f5e')} stroke="#0f172a" strokeWidth="1">
+                      <title>{pt.idx === 0 ? 'Inicio 0.00' : `Trade #${pt.id} (${pt.symbol}): ${pt.pnl >= 0 ? '+' : ''}${pt.pnl.toFixed(4)} USDT`}</title>
+                    </circle>
+                  ))}
+                </svg>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Tabla de Operaciones Replicadas */}
         <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-900/90 text-slate-400 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-800">
               <tr>
+                <th className="p-3">ID Trade</th>
                 <th className="p-3">Símbolo</th>
                 <th className="p-3">Tipo</th>
                 <th className="p-3">Precio Entrada</th>
@@ -444,8 +521,10 @@ export default function UserBotPanel({ activeStrategyName }) {
                 tradesData.map((t) => {
                   const pnl = Number(t.pnl_usdt || 0);
                   const isWin = pnl >= 0;
+                  const tradeId = t.id || t.binance_trade_id || '-';
                   return (
-                    <tr key={t.id} className="hover:bg-slate-900/50 transition">
+                    <tr key={t.id || tradeId} className="hover:bg-slate-900/50 transition">
+                      <td className="p-3 font-bold font-mono text-amber-400">#{tradeId}</td>
                       <td className="p-3 font-bold font-mono text-white">{t.symbol}</td>
                       <td className="p-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${

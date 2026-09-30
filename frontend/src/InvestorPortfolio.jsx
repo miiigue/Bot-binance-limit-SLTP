@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import PnLPerformanceChart from './PnLPerformanceChart';
+import CapitalRequestModal from './CapitalRequestModal';
 
 export default function InvestorPortfolio({ onNavigatePerformance }) {
   const { authFetch, user } = useAuth();
@@ -8,6 +9,7 @@ export default function InvestorPortfolio({ onNavigatePerformance }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedSliceIndex, setSelectedSliceIndex] = useState(null);
+  const [showCapitalRequestModal, setShowCapitalRequestModal] = useState(false);
 
   const handleGoToPerformance = () => {
     if (onNavigatePerformance) {
@@ -241,12 +243,21 @@ export default function InvestorPortfolio({ onNavigatePerformance }) {
                 ✨ ¡Pon tu dinero a trabajar por ti y disfruta de los resultados! Tu inversión se integra a una estrategia inteligente que opera en Binance las 24 horas del día. Sin complicaciones técnicas ni necesidad de estar mirando la pantalla: tu saldo crece de forma automática, transparente y sin estrés.
               </p>
             </div>
-            <button
-              onClick={handleGoToPerformance}
-              className="px-5 py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/25 whitespace-nowrap self-start sm:self-auto"
-            >
-              📈 Ver Rendimiento del Fondo
-            </button>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowCapitalRequestModal(true)}
+                className="px-5 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/25 flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <span>💼</span> Solicitar Aporte / Inversión
+              </button>
+              <button
+                onClick={handleGoToPerformance}
+                className="px-5 py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/25 whitespace-nowrap self-start sm:self-auto"
+              >
+                📈 Ver Rendimiento del Fondo
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -269,9 +280,25 @@ export default function InvestorPortfolio({ onNavigatePerformance }) {
           <p className="text-xs text-slate-400">
             Inversionista: <strong className="text-white">{user?.username}</strong> {user?.email ? `(${user.email})` : ''} • Fondo gestionado por <strong className="text-slate-300">WTN Solutions LLC</strong> sincronizado en vivo con Binance Futures.
           </p>
+
+          {(Number(portfolio?.requested_capital) > 0 || Number(user?.requested_capital) > 0) && (
+            <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold font-mono">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+              ⏳ Solicitud de Aporte por ${(Number(portfolio?.requested_capital) || Number(user?.requested_capital)).toFixed(2)} USDT en revisión por la Administración.
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+          {/* Botón para solicitar inclusión/aporte */}
+          <button
+            type="button"
+            onClick={() => setShowCapitalRequestModal(true)}
+            className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/25 flex items-center gap-1.5"
+          >
+            <span>💼</span> Solicitar Aporte
+          </button>
+
           {/* Botón para abrir Pantalla de Resumen y Rendimiento del Fondo */}
           <button
             type="button"
@@ -709,6 +736,13 @@ export default function InvestorPortfolio({ onNavigatePerformance }) {
           <span>Refresco cada 10s</span>
         </div>
       </div>
+
+      {/* Modal de Solicitud de Aporte / Inclusión al Fondo */}
+      <CapitalRequestModal
+        isOpen={showCapitalRequestModal}
+        onClose={() => setShowCapitalRequestModal(false)}
+        onRequestSubmitted={fetchPortfolio}
+      />
 
     </div>
   );

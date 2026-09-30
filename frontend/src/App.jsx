@@ -15,6 +15,7 @@ import BacktestLab from './BacktestLab';
 import UserDropdown from './UserDropdown';
 import ApiUsageWidget from './ApiUsageWidget';
 import FloatingNotesModal from './FloatingNotesModal';
+import LegalTermsModal from './LegalTermsModal';
 import { isSoundEnabled, setSoundEnabled, playProfitSound, playEntrySound, playLossSound } from './soundEffects';
 import './index.css';
 
@@ -877,6 +878,11 @@ function MainDashboard() {
           </>
         )}
       </main>
+
+      {/* Modal Obligatorio de Términos Legales y Descargo de Responsabilidad */}
+      {isAuthenticated && user && user.terms_accepted_version !== 'v1.0-2026' && (
+        <LegalTermsModal user={user} onTermsAccepted={() => window.location.reload()} />
+      )}
 
       {/* Contenedor de Notificaciones Toast Flotantes */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />

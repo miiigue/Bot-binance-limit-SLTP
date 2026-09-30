@@ -892,6 +892,59 @@ def auth_me_endpoint():
     return jsonify({"status": "success", "user": user})
 
 
+@app.route('/api/user/accept_terms', methods=['POST'])
+@token_required
+def accept_terms_endpoint():
+    """Registra la firma digital de aceptación de términos y disclaimer legal."""
+    try:
+        user_id = request.current_user['user_id']
+        data = request.get_json() or {}
+        terms_version = data.get('version', 'v1.0-2026')
+        ip_address = request.remote_addr or request.headers.get('X-Forwarded-For') or '0.0.0.0'
+        user_agent = request.headers.get('User-Agent', '')
+
+        from .database import record_terms_acceptance
+        success = record_terms_acceptance(user_id, terms_version, ip_address, user_agent)
+        if success:
+            updated_user = get_user_by_id(user_id)
+            return jsonify({
+                "status": "success", 
+                "message": f"Términos {terms_version} aceptados con firma digital.",
+                "user": updated_user
+            })
+        else:
+            return jsonify({"status": "error", "message": "No se pudo registrar la aceptación de términos."}), 500
+    except Exception as e:
+        api_logger.error(f"Error en accept_terms_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/investor/request_capital', methods=['POST'])
+@token_required
+def request_capital_endpoint():
+    """Registra una solicitud formal de inclusión / depósito de capital en el fondo."""
+    try:
+        user_id = request.current_user['user_id']
+        data = request.get_json() or {}
+        amount = float(data.get('amount') or 0.0)
+
+        if amount <= 0:
+            return jsonify({"status": "error", "message": "El monto solicitado debe ser mayor a 0 USDT."}), 400
+
+        from .database import request_investor_capital
+        success = request_investor_capital(user_id, amount)
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": f"Solicitud de inclusión por ${amount:.2f} USDT enviada a revisión por la Administración."
+            })
+        else:
+            return jsonify({"status": "error", "message": "No se pudo registrar la solicitud."}), 500
+    except Exception as e:
+        api_logger.error(f"Error en request_capital_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # =====================================================================
 # --- ENDPOINTS EXCLUSIVOS PARA EL INVERSIONISTA (SOLO LECTURA / MI TORTA) ---
 # =====================================================================
