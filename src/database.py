@@ -1173,12 +1173,20 @@ def clear_trade_history() -> bool:
     conn = None
     try:
         conn = get_db_connection(timeout=10)
+        if not conn:
+            logger.error("No se pudo obtener conexión a la base de datos para limpiar el historial.")
+            return False
+
         cursor = conn.cursor()
         cursor.execute("DELETE FROM trades")
-        try:
-            cursor.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
-        except Exception:
-            pass
+
+        # Solo reiniciar secuencia en SQLite; en PostgreSQL sqlite_sequence abortaría la transacción
+        if not isinstance(conn, PGCompatConnection):
+            try:
+                cursor.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
+            except Exception:
+                pass
+
         try:
             from src.binance_client import get_server_time
             server_time_ms = get_server_time()
@@ -1193,22 +1201,44 @@ def clear_trade_history() -> bool:
                 now_ms = int(datetime.now(dt_timezone.utc).timestamp() * 1000) + 2000
             except Exception:
                 now_ms = int(datetime.now().timestamp() * 1000) + 2000
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS bot_settings (
                 key TEXT PRIMARY KEY,
                 value TEXT
             )
         """)
-        cursor.execute("INSERT INTO bot_settings (key, value) VALUES ('trades_sync_cutoff_time_ms', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (str(now_ms),))
+
+        if isinstance(conn, PGCompatConnection):
+            cursor.execute("""
+                INSERT INTO bot_settings (key, value)
+                VALUES ('trades_sync_cutoff_time_ms', %s)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """, (str(now_ms),))
+        else:
+            cursor.execute("""
+                INSERT INTO bot_settings (key, value)
+                VALUES ('trades_sync_cutoff_time_ms', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """, (str(now_ms),))
+
         conn.commit()
         logger.info(f"Historial de trades eliminado exitosamente de la base de datos. Nuevo corte de sincronización: {now_ms}")
         return True
-    except sqlite3.Error as e:
+    except Exception as e:
         logger.error(f"Error al limpiar historial de trades en DB: {e}", exc_info=True)
+        if conn and hasattr(conn, 'rollback'):
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return False
     finally:
         if conn:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 # =====================================================================
 # --- GESTIÓN DE USUARIOS, AUTENTICACIÓN Y CAPITAL DE INVERSIONISTAS ---
