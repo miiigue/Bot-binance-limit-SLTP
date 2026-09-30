@@ -331,12 +331,28 @@ def verify_user_binance_credentials(api_key: str, api_secret: str, is_testnet: b
     - Comprueba que la cuenta tenga acceso operativo.
     """
     import re
+    import unicodedata
     logger = get_logger()
     if not api_key or not api_secret:
         return {"valid": False, "error": "Debes proporcionar API Key y API Secret de Binance."}
 
-    clean_key = re.sub(r'[\s"\'\r\n\t]+', '', str(api_key or '')).strip()
-    clean_secret = re.sub(r'[\s"\'\r\n\t]+', '', str(api_secret or '')).strip()
+    def _deep_clean_key(raw):
+        """Elimina caracteres Unicode invisibles (ZWSP, BOM, NBSP) que Binance introduce al copiar."""
+        s = str(raw or '')
+        s = unicodedata.normalize('NFC', s)
+        # Eliminar BOM, Zero-Width Spaces, NBSP, y caracteres de formato Unicode
+        s = re.sub(r'[\u200b\u200c\u200d\u200e\u200f\ufeff\u00a0\u2028\u2029]+', '', s)
+        # Eliminar espacios, comillas, saltos de linea
+        s = re.sub(r'[\s"\'\r\n\t]+', '', s)
+        # Solo conservar caracteres alfanumericos validos para HMAC keys
+        s = re.sub(r'[^a-zA-Z0-9]', '', s)
+        return s.strip()
+
+    clean_key = _deep_clean_key(api_key)
+    clean_secret = _deep_clean_key(api_secret)
+    logger.info(f"[API-KEY-VERIFY] key_len_raw={len(str(api_key))}, key_len_clean={len(clean_key)}, "
+                f"secret_len_raw={len(str(api_secret))}, secret_len_clean={len(clean_secret)}, "
+                f"key_prefix={clean_key[:6]}..., is_testnet={is_testnet}")
 
     # Si el usuario seleccionó Testnet/Demo, priorizamos Demo Trading y luego Testnet
     if is_testnet:
@@ -357,8 +373,10 @@ def verify_user_binance_credentials(api_key: str, api_secret: str, is_testnet: b
 
     for cand_url, cand_name, cand_is_testnet in candidates:
         try:
+            logger.info(f"[API-KEY-VERIFY] Probando contra: {cand_name} ({cand_url})")
             cand_client = get_user_futures_client(clean_key, clean_secret, is_testnet=cand_is_testnet, base_url=cand_url)
             cand_client.time()
+            logger.info(f"[API-KEY-VERIFY] time() OK en {cand_name}, intentando balance()...")
             balances = cand_client.balance()
 
             if isinstance(balances, list):
@@ -402,9 +420,11 @@ def verify_user_binance_credentials(api_key: str, api_secret: str, is_testnet: b
                         "balance_usdt": round(usdt_bal, 2)
                     }
         except ClientError as e:
+            logger.warning(f"[API-KEY-VERIFY] FALLO en {cand_name}: code={e.error_code}, msg={e.error_message}")
             last_client_error = e
             all_errors.append((cand_name, e.error_code, e.error_message))
         except Exception as e:
+            logger.warning(f"[API-KEY-VERIFY] EXCEPCION en {cand_name}: {type(e).__name__}: {e}")
             all_errors.append((cand_name, -1, str(e)))
 
     # Si ninguna red aceptó las credenciales, analizamos el código de error

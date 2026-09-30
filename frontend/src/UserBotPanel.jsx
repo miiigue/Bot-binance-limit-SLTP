@@ -59,8 +59,10 @@ export default function UserBotPanel() {
   // Guardar / Conectar API Keys
   const handleSaveApiKeys = async (e) => {
     e.preventDefault();
-    const cleanKey = apiKey.replace(/\s+/g, '').replace(/['"]/g, '');
-    const cleanSecret = apiSecret.replace(/\s+/g, '').replace(/['"]/g, '');
+    // Sanitización agresiva: eliminar caracteres Unicode invisibles (ZWSP, BOM, NBSP), espacios, comillas
+    // y conservar solo alfanuméricos — Binance introduce chars invisibles al copiar desde su web
+    const cleanKey = apiKey.replace(/[\u200B\u200C\u200D\u200E\u200F\uFEFF\u00A0\u2028\u2029\s'"]+/g, '').replace(/[^a-zA-Z0-9]/g, '');
+    const cleanSecret = apiSecret.replace(/[\u200B\u200C\u200D\u200E\u200F\uFEFF\u00A0\u2028\u2029\s'"]+/g, '').replace(/[^a-zA-Z0-9]/g, '');
 
     if (!cleanKey || !cleanSecret) {
       setFeedback({ type: 'error', text: 'Por favor ingresa tanto tu API Key como tu API Secret de Binance.' });
