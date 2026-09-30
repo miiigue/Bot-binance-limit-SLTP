@@ -471,17 +471,6 @@ export default function AdminInvestors({ addToast }) {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       
-      {/* Banner Explicativo de la Página */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
-        <span className="text-xl text-amber-400 font-bold">📌</span>
-        <div>
-          <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
-          <p className="mt-0.5 text-slate-300 leading-relaxed">
-            En <strong>Gestión de Inversionistas & Pool</strong>, el Super Administrador aprueba solicitudes de nuevos usuarios, asigna capitales iniciales, registra depósitos y retiros, audita la ficha técnica 360° de cada inversionista, bloquea o reactiva cuentas y genera copias de seguridad (.db) del servidor central.
-          </p>
-        </div>
-      </div>
-
       {/* Encabezado Principal */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>

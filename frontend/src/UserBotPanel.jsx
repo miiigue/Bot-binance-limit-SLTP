@@ -96,7 +96,16 @@ export default function UserBotPanel({ activeStrategyName }) {
       fetchUserBotStatus();
       fetchUserTrades();
     }, 8000);
-    return () => clearInterval(interval);
+
+    const handleOpenApiModal = () => {
+      setShowApiModal(true);
+    };
+    window.addEventListener('open-api-modal', handleOpenApiModal);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('open-api-modal', handleOpenApiModal);
+    };
   }, [fetchUserBotStatus, fetchUserTrades]);
 
   // Guardar / Conectar API Keys
@@ -252,17 +261,6 @@ export default function UserBotPanel({ activeStrategyName }) {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
-      {/* Banner Explicativo de la Página */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
-        <span className="text-xl text-amber-400 font-bold">📌</span>
-        <div>
-          <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
-          <p className="mt-0.5 text-slate-300 leading-relaxed">
-            En <strong>Copy Trade Binance</strong> conectas tu cuenta personal de Binance mediante API Keys cifradas (sin permisos de retiro). Al activar la sincronización, el algoritmo institucional replicará automáticamente cada orden en tu cuenta. Supervisa tu saldo en tiempo real y el historial exclusivo de trades que afectan a tu cuenta.
-          </p>
-        </div>
-      </div>
-
       {/* Banner Superior de Estado Institucional */}
       <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl">
         <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -274,7 +272,7 @@ export default function UserBotPanel({ activeStrategyName }) {
               MODALIDAD: CUENTA PROPIA BINANCE (COPY-TRADING)
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Copy Trade Binance
+              Copy-Trading Binance
             </h1>
             <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
               Mantén el control y custodia total de tus fondos en tu propio Binance. Las compras y ventas del algoritmo institucional gestionado por el Administrador se replican automáticamente en tu cuenta.
@@ -312,136 +310,68 @@ export default function UserBotPanel({ activeStrategyName }) {
         )}
       </div>
 
-      {/* Grid: 1. Estado de Conexión API - 2. Control de Replicación */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* Tarjeta de Conexión de Claves */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="flex items-center justify-between">
+      {/* Tarjeta de Control de Replicación Automática */}
+      <div className={`border rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col justify-between transition-all duration-300 ${
+        isBotRunning 
+          ? 'bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/50 shadow-emerald-500/10' 
+          : 'bg-slate-900/90 border-slate-800'
+      }`}>
+        <div>
+          <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <span>🔑</span> Claves API de Binance
+              <span>⚡</span> Control de Sincronización
             </h3>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-              hasKeys 
-                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
-                : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-            }`}>
-              {hasKeys ? 'VINCULADO 🟢' : 'SIN VINCULAR ⚪'}
+            <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2.5 py-0.5 rounded-lg border border-amber-400/30 font-bold">
+              Estrategia Activa
             </span>
           </div>
 
-          {hasKeys ? (
-            <div className="space-y-3">
-              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-xs space-y-2">
-                <div className="flex justify-between text-slate-400">
-                  <span>API Key:</span>
-                  <span className="text-amber-400 font-mono font-bold">{botData?.api_key_masked}</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Entorno:</span>
-                  <span className="text-slate-200 font-medium">{botData?.is_testnet ? 'Testnet (Demo)' : 'Binance Real (Live)'}</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Seguridad:</span>
-                  <span className="text-emerald-400 font-bold">Cifrado AES-256 Activo 🛡️</span>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowApiModal(true)}
-                  className="flex-1 py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition"
-                >
-                  Actualizar Claves
-                </button>
-                <button
-                  onClick={handleDeleteApiKeys}
-                  disabled={actionLoading}
-                  className="py-2.5 px-3 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition"
-                >
-                  Desconectar
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Conecta tu cuenta de Binance Futures mediante API Keys para que el algoritmo empiece a replicar las compras y ventas en tu exchange.
-              </p>
-              <button
-                onClick={() => setShowApiModal(true)}
-                className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/20 active:scale-[0.98]"
-              >
-                ➕ Vincular mi Cuenta de Binance
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Tarjeta de Control de Replicación Automática */}
-        <div className={`border rounded-3xl p-6 shadow-xl flex flex-col justify-between transition-all duration-300 ${
-          isBotRunning 
-            ? 'bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/50 shadow-emerald-500/10' 
-            : 'bg-slate-900/90 border-slate-800'
-        }`}>
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <span>⚡</span> Control de Sincronización
-              </h3>
-              <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-lg border border-amber-400/30 font-bold">
-                Estrategia Activa
+          <div className="p-4 bg-slate-950/80 rounded-2xl border border-slate-800 mb-4 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400 font-medium">Estrategia que replica:</span>
+              <span className="font-bold text-amber-300 font-mono truncate max-w-[260px]" title={botData?.active_strategy || activeStrategyName}>
+                {botData?.active_strategy || activeStrategyName || 'v18_v17_RSI-SNIPER-MOMENTUM'}
               </span>
             </div>
-
-            <div className="p-3 bg-slate-950/80 rounded-2xl border border-slate-800 mb-4 space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400 font-medium">Estrategia que replica:</span>
-                <span className="font-bold text-amber-300 font-mono truncate max-w-[200px]" title={botData?.active_strategy || activeStrategyName}>
-                  {botData?.active_strategy || activeStrategyName || 'v18_v17_RSI-SNIPER-MOMENTUM'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400 font-medium">Estado de Replicación:</span>
-                <span className={`font-bold ${isBotRunning ? 'text-emerald-400 flex items-center gap-1.5' : 'text-slate-400'}`}>
-                  {isBotRunning ? (
-                    <>
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      COPIANDO TRADES EN VIVO
-                    </>
-                  ) : (
-                    '⏸️ PAUSADO'
-                  )}
-                </span>
-              </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400 font-medium">Estado de Replicación:</span>
+              <span className={`font-bold ${isBotRunning ? 'text-emerald-400 flex items-center gap-1.5' : 'text-slate-400'}`}>
+                {isBotRunning ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    COPIANDO TRADES EN VIVO
+                  </>
+                ) : (
+                  '⏸️ PAUSADO'
+                )}
+              </span>
             </div>
-
-            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-              {isBotRunning 
-                ? '🟢 Tu cuenta de Binance está vinculada y ejecutará cada orden de compra y venta del algoritmo institucional en tiempo real.'
-                : '⏸️ La replicación está en pausa. Presiona el botón verde para activar el copiado automático de trades.'}
-            </p>
           </div>
 
-          <button
-            onClick={handleToggleSync}
-            disabled={actionLoading}
-            className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
-              isBotRunning
-                ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
-                : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
-            }`}
-          >
-            {actionLoading ? (
-              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-            ) : isBotRunning ? (
-              <><span>⏸️</span> PAUSAR REPLICACIÓN DE TRADES</>
-            ) : (
-              <><span>⚡</span> ACTIVAR REPLICACIÓN AUTOMÁTICA</>
-            )}
-          </button>
+          <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+            {isBotRunning 
+              ? '🟢 Tu cuenta de Binance está vinculada y ejecutará cada orden de compra y venta del algoritmo institucional en tiempo real.'
+              : '⏸️ La replicación está en pausa. Presiona el botón verde para activar el copiado automático de trades.'}
+          </p>
         </div>
 
+        <button
+          onClick={handleToggleSync}
+          disabled={actionLoading}
+          className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
+            isBotRunning
+              ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
+              : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
+          }`}
+        >
+          {actionLoading ? (
+            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+          ) : isBotRunning ? (
+            <><span>⏸️</span> PAUSAR REPLICACIÓN DE TRADES</>
+          ) : (
+            <><span>⚡</span> ACTIVAR REPLICACIÓN AUTOMÁTICA</>
+          )}
+        </button>
       </div>
 
       {/* Sección 3: Historial y Métricas de Operaciones Replicadas */}

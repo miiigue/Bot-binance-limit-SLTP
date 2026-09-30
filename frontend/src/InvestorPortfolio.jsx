@@ -219,17 +219,6 @@ export default function InvestorPortfolio() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       
-      {/* Banner Explicativo de la Página */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-start gap-3 shadow-md text-xs text-slate-300">
-        <span className="text-xl text-amber-400 font-bold">📌</span>
-        <div>
-          <h4 className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">¿Qué encuentras en esta pantalla?</h4>
-          <p className="mt-0.5 text-slate-300 leading-relaxed">
-            En <strong>Mi Inversión en el Fondo</strong> monitoreas la evolución en tiempo real de tu capital asignado en el pool cuantitativo administrado por WTN Solutions LLC. Visualiza la distribución anónima del pool, tu ROI acumulado y el historial oficial de movimientos de capital.
-          </p>
-        </div>
-      </div>
-
       {/* Banner Persuasivo si el Inversionista aún no ha depositado capital (Cap <= 0) */}
       {cap <= 0 && (
         <div className="relative overflow-hidden bg-gradient-to-r from-amber-950/60 via-slate-900 to-amber-950/40 border border-amber-500/50 rounded-3xl p-6 shadow-2xl animate-pulse">
@@ -242,7 +231,7 @@ export default function InvestorPortfolio() {
                 ¡Aún no tienes capital activo generando rendimientos en el Fondo!
               </h3>
               <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-                El fondo institucional opera 24/7 mediante algoritmos cuantitativos automatizados en Binance Futures. Al solicitar tu inclusión de capital, tu portafolio empezará a acumular rendimientos pasivos de forma 100% automatizada.
+                ✨ ¡Pon tu dinero a trabajar por ti y disfruta de los resultados! Tu inversión se integra a una estrategia inteligente que opera en Binance las 24 horas del día. Sin complicaciones técnicas ni necesidad de estar mirando la pantalla: tu saldo crece de forma automática, transparente y sin estrés.
               </p>
             </div>
             <button
@@ -744,9 +733,9 @@ export default function InvestorPortfolio() {
             {/* Mensaje Persuasivo para usuarios sin inversión activa */}
             {cap <= 0 && (
               <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-200 text-xs leading-relaxed space-y-1">
-                <strong className="block font-bold text-amber-300">💡 Rendimiento Potencial que podrías estar ganando:</strong>
+                <strong className="block font-bold text-amber-300">💡 Rendimiento Potencial que podrías estar generando:</strong>
                 <p>
-                  El gráfico a continuación refleja la curva oficial de PnL y rentabilidad del bot cuantitativo. Si hubieses tenido capital asignado en el pool durante este período, tu saldo habría registrado el crecimiento proporcional de cada operacion ganadora. ¡Contacta al administrador para activar tu participación!
+                  📈 ¡Descubre lo que tu capital puede lograr! Aquí puedes observar en tiempo real el rendimiento histórico generado por la estrategia. Al formar parte del fondo, tu dinero se multiplica automáticamente con cada operación exitosa, sin que tengas que mover un solo dedo. ¡Haz que tu capital empiece a trabajar para ti hoy mismo!
                 </p>
               </div>
             )}
