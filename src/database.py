@@ -1770,21 +1770,25 @@ def get_user_bot_settings(user_id: int) -> dict:
         if row:
             return dict(row)
 
-        # Crear configuración predeterminada si es nuevo usuario
+        # Crear configuración predeterminada si es nuevo usuario (usar booleano nativo False)
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute("""
             INSERT INTO user_bot_settings (
                 user_id, is_running, allocated_usdt, leverage, margin_type,
                 symbols_to_trade, strategy_name, max_open_positions, updated_at
-            ) VALUES (?, 0, 100.0, 10, 'ISOLATED', 'BTCUSDT,ETHUSDT,SOLUSDT', 'WTN Scalper Pro', 3, ?)
-        """, (user_id, now_str))
+            ) VALUES (?, ?, 100.0, 10, 'ISOLATED', 'BTCUSDT,ETHUSDT,SOLUSDT', 'WTN Scalper Pro', 3, ?)
+        """, (user_id, False, now_str))
         conn.commit()
 
         cursor.execute("SELECT * FROM user_bot_settings WHERE user_id = ?", (user_id,))
         new_row = cursor.fetchone()
         return dict(new_row) if new_row else {}
     except Exception as e:
-        get_logger().error(f"Error al obtener configuración de bot de usuario {user_id}: {e}")
+        get_logger().error(f"Error al obtener configuración de bot de usuario {user_id}: {e}", exc_info=True)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return {}
     finally:
         conn.close()

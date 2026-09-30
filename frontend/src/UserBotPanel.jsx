@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 
-export default function UserBotPanel() {
+export default function UserBotPanel({ activeStrategyName }) {
   const { authFetch, user } = useAuth();
 
   // Estados de datos
@@ -164,6 +164,12 @@ export default function UserBotPanel() {
       if (!resp.ok) throw new Error(resJson.message);
 
       setFeedback({ type: 'success', text: resJson.message });
+      if (resJson.bot_settings) {
+        setBotData(prev => ({
+          ...prev,
+          bot_settings: resJson.bot_settings
+        }));
+      }
       fetchUserBotStatus();
     } catch (err) {
       setFeedback({ type: 'error', text: err.message });
@@ -199,7 +205,7 @@ export default function UserBotPanel() {
               MODALIDAD: CUENTA PROPIA BINANCE (COPY-TRADING)
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Mi Cuenta Binance (Fondos Propios)
+              Copy Trade Binance
             </h1>
             <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
               Mantén el control y custodia total de tus fondos en tu propio Binance. Las compras y ventas del algoritmo institucional gestionado por el Administrador se replican automáticamente en tu cuenta.
@@ -314,14 +320,37 @@ export default function UserBotPanel() {
               <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <span>⚡</span> Control de Sincronización
               </h3>
-              <span className="text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 font-medium">
-                Estrategia Administrador
+              <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-lg border border-amber-400/30 font-bold">
+                Estrategia Activa
               </span>
             </div>
+
+            <div className="p-3 bg-slate-950/80 rounded-2xl border border-slate-800 mb-4 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400 font-medium">Estrategia que replica:</span>
+                <span className="font-bold text-amber-300 font-mono truncate max-w-[200px]" title={botData?.active_strategy || activeStrategyName}>
+                  {botData?.active_strategy || activeStrategyName || 'v18_v17_RSI-SNIPER-MOMENTUM'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400 font-medium">Estado de Replicación:</span>
+                <span className={`font-bold ${isBotRunning ? 'text-emerald-400 flex items-center gap-1.5' : 'text-slate-400'}`}>
+                  {isBotRunning ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      COPIANDO TRADES EN VIVO
+                    </>
+                  ) : (
+                    '⏸️ PAUSADO'
+                  )}
+                </span>
+              </div>
+            </div>
+
             <p className="text-xs text-slate-400 mb-4 leading-relaxed">
               {isBotRunning 
-                ? '🟢 Tu cuenta está recibiendo las señales del algoritmo institucional en tiempo real.'
-                : '⏸️ La replicación está en pausa. Actívala para sincronizar las operaciones del fondo.'}
+                ? '🟢 Tu cuenta de Binance está vinculada y ejecutará cada orden de compra y venta del algoritmo institucional en tiempo real.'
+                : '⏸️ La replicación está en pausa. Presiona el botón verde para activar el copiado automático de trades.'}
             </p>
           </div>
 

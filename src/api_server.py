@@ -1045,6 +1045,9 @@ def user_bot_status_endpoint():
         metrics = get_user_trading_metrics(user_id=user_id)
 
         live_balance = float(keys.get('balance_detected', 0.0)) if keys else 0.0
+        cfg_temp = load_config()
+        active_strategy = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip() or 'v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_sinSL_3DCA0c8_ReDi5c5'
+
         return jsonify({
             "status": "success",
             "bot_settings": settings,
@@ -1052,6 +1055,7 @@ def user_bot_status_endpoint():
             "is_testnet": bool(keys.get('is_testnet', False)) if keys else False,
             "api_key_masked": keys.get('api_key_masked') if keys else None,
             "balance_usdt": live_balance,
+            "active_strategy": active_strategy,
             "metrics": metrics
         })
     except Exception as e:
@@ -1079,11 +1083,15 @@ def user_bot_toggle_endpoint():
 
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if target_state:
-            update_user_bot_settings(user_id=user_id, is_running=True, last_started_at=now_str, error_message=None)
+            ok = update_user_bot_settings(user_id=user_id, is_running=True, last_started_at=now_str, error_message=None)
+            if not ok:
+                return jsonify({"status": "error", "message": "No se pudo actualizar el estado del bot en la base de datos."}), 500
             api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) ENCENDIÓ su bot personal.")
             msg = "¡Bot personal activado! El algoritmo institucional operará en tu cuenta de Binance."
         else:
-            update_user_bot_settings(user_id=user_id, is_running=False, last_stopped_at=now_str)
+            ok = update_user_bot_settings(user_id=user_id, is_running=False, last_stopped_at=now_str)
+            if not ok:
+                return jsonify({"status": "error", "message": "No se pudo pausar el bot en la base de datos."}), 500
             api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) PAUSÓ su bot personal.")
             msg = "Bot personal pausado. No se abrirán nuevas operaciones."
 
@@ -1091,7 +1099,7 @@ def user_bot_toggle_endpoint():
         return jsonify({
             "status": "success",
             "message": msg,
-            "is_running": target_state,
+            "is_running": bool(new_settings.get('is_running', target_state)),
             "bot_settings": new_settings
         })
     except Exception as e:
