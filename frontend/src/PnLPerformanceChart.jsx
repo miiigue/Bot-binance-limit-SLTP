@@ -774,14 +774,14 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
     const maxAbs = Math.max(0.05, ...tradesList.map(t => Math.abs(getTradePnL(t))));
 
     // Geometría SVG
-    const barWidth = 24;
-    const colSpacing = 36;
-    const leftMargin = 50;
-    const rightMargin = 24;
-    const totalSvgWidth = Math.max(480, leftMargin + tradesList.length * colSpacing + rightMargin);
-    const svgHeight = 150;
-    const centerY = 75; // El centro exacto matemático donde se posa la línea base
-    const maxBarHeight = 32;
+    const barWidth = 12;
+    const colSpacing = 20;
+    const leftMargin = 45;
+    const rightMargin = 20;
+    const totalSvgWidth = Math.max(400, leftMargin + tradesList.length * colSpacing + rightMargin);
+    const svgHeight = 180;
+    const centerY = 90; // El centro exacto matemático donde se posa la línea base
+    const maxBarHeight = 65;
 
     const isThisCoinInspected = activeTradeInspector && activeTradeInspector.coin === symbolOrStrat;
 
@@ -810,19 +810,8 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
       <div className="mt-2.5 pt-2 border-t border-gray-200 dark:border-gray-800/80">
         
         {/* Leyenda superior y contador */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400 mb-1.5 px-1 font-mono">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-sm inline-block shadow-sm"></span>
-              <span className="text-emerald-500 dark:text-emerald-400 font-bold text-[10px]">▲ Ganancia (Win)</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 bg-rose-500 rounded-sm inline-block shadow-sm"></span>
-              <span className="text-rose-500 dark:text-rose-400 font-bold text-[10px]">▼ Pérdida (Loss)</span>
-            </span>
-          </div>
-
-          <span className="text-[10px] text-gray-400">
+        <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] text-gray-500 dark:text-gray-400 mb-1.5 px-1 font-mono">
+          <span className="text-[10px] text-slate-400 font-semibold">
             {tradesList.length} {tradesList.length === 1 ? 'trade cerrado' : 'trades cerrados'} (cronológico ➔)
           </span>
         </div>
@@ -1082,8 +1071,8 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
           {/* 1. Balance Total */}
           <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3 flex flex-col justify-between shadow-md">
             <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1">
-                <span>💰 Balance Total</span>
+              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1 min-w-0">
+                <span className="truncate">💰 Balance Total</span>
                 <Tooltip title="Balance Total de Cuenta" text="Capital total en USDT registrado en la billetera de futuros de Binance (saldo de billetera)." />
               </span>
               <span className="text-gray-500 font-mono text-[10px]">USDT</span>
@@ -1101,12 +1090,12 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
 
           {/* 2. Margen Ocupado / En Posiciones */}
           <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3 flex flex-col justify-between shadow-md">
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1">
-                <span>🔒 En Posiciones</span>
+            <div className="flex items-center justify-between gap-1 text-gray-400 text-xs mb-1">
+              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1 min-w-0">
+                <span className="truncate">🔒 En Posiciones</span>
                 <Tooltip title="Margen Comprometido en Posiciones" text="Monto de USDT actualmente retenido como garantía en las posiciones abiertas activas." />
               </span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold border ${stressBorder}`}>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border whitespace-nowrap shrink-0 ${stressBorder}`}>
                 {stressLabel}
               </span>
             </div>
@@ -1125,15 +1114,15 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
           <div className={`bg-gray-800/80 border rounded-xl p-3 flex flex-col justify-between shadow-md ${
             openOrdersMarginNum > 0 ? 'border-amber-500/50' : 'border-gray-700/80'
           }`}>
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1">
-                <span>⏳ Órdenes Límite</span>
+            <div className="flex items-center justify-between gap-1 text-gray-400 text-xs mb-1">
+              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1 min-w-0">
+                <span className="truncate">⏳ Órdenes Límite</span>
                 <Tooltip 
                   title="Margen Retenido en Órdenes Pendientes" 
                   text="Monto en USDT retenido por Binance como garantía para órdenes límite de entrada no ejecutadas. Si quedan órdenes pendientes huérfanas de ciclos anteriores, bloquean margen que impide abrir hedges o nuevos trades." 
                 />
               </span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold border ${
+              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border whitespace-nowrap shrink-0 ${
                 openOrdersMarginNum > 0 ? 'bg-amber-950/70 border-amber-600 text-amber-300' : 'bg-gray-900 border-gray-700 text-gray-400'
               }`}>
                 {openOrdersMarginNum > 0 ? 'RETENIDO' : 'LIBRE'}
@@ -1165,12 +1154,12 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
 
           {/* 4. Margen Libre / Disponible */}
           <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3 flex flex-col justify-between shadow-md">
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1">
-                <span>🟢 Margen Libre</span>
+            <div className="flex items-center justify-between gap-1 text-gray-400 text-xs mb-1">
+              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1 min-w-0">
+                <span className="truncate">🟢 Margen Libre</span>
                 <Tooltip title="Margen Disponible en Binance" text="Capital libre en USDT disponible inmediatamente en Binance Futures para abrir nuevas posiciones o coberturas Short/Long (Hedge). Calculado exactamente como Saldo Margen menos Margen en Posiciones menos Margen en Órdenes Pendientes." />
               </span>
-              <span className="text-emerald-400 text-[10px] font-bold">Disponible</span>
+              <span className="text-emerald-400 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border border-emerald-500/30 bg-emerald-950/40 whitespace-nowrap shrink-0">Disponible</span>
             </div>
             <div className="text-xl lg:text-2xl font-black font-mono text-emerald-400 tracking-tight">
               ${freeMarginNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1185,12 +1174,12 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
 
           {/* 5. Límite Máximo Autorizado */}
           <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3 flex flex-col justify-between shadow-md">
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1">
-                <span>🛡️ Límite Autorizado</span>
+            <div className="flex items-center justify-between gap-1 text-gray-400 text-xs mb-1">
+              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1 min-w-0">
+                <span className="truncate">🛡️ Límite Autorizado</span>
                 <Tooltip title="Límite Máximo de Exposición" text="Porcentaje máximo de tu cartera total que el bot tiene autorización de comprometer en margen simultáneamente." example="Si tienes $1,000 y fijas 50%, el bot nunca usará más de $500 en margen, protegiéndote de sobreexposición." />
               </span>
-              <span className="text-purple-300 text-[10px] font-mono font-bold">
+              <span className="text-purple-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider border border-purple-500/30 bg-purple-950/40 whitespace-nowrap shrink-0">
                 {riskData?.risk_percentage || `${riskPercentageInput}%`}
               </span>
             </div>
@@ -1210,13 +1199,13 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
           
           {/* Barra de Progreso */}
           <div className="flex-1 space-y-1.5">
-            <div className="flex items-center justify-between text-xs text-gray-300">
-              <span className="font-semibold flex items-center gap-1.5">
-                <span>Nivel de Utilización de Margen:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-gray-300">
+              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                <span className="font-semibold text-slate-300 text-[11px]">Nivel de Utilización de Margen:</span>
                 <Tooltip title="Nivel de Utilización" text="Porcentaje del límite de riesgo autorizado que está en uso en este momento. Verde = Seguro (<50%), Amarillo = Moderado (50-80%), Rojo = Alto Riesgo (>80%)." />
-                <span className="font-mono text-white font-bold">{stressRatio.toFixed(1)}% del límite</span>
-              </span>
-              <span className="text-gray-400 text-[11px] font-mono">
+                <span className="font-mono text-white font-bold bg-gray-900 px-2 py-0.5 rounded border border-gray-700 text-[11px]">{stressRatio.toFixed(1)}% del límite</span>
+              </div>
+              <span className="text-gray-400 text-[10px] sm:text-[11px] font-mono whitespace-nowrap">
                 ${currentExpNum.toFixed(2)} de ${maxExpNum.toFixed(2)} USDT max
               </span>
             </div>

@@ -2,13 +2,20 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import PnLPerformanceChart from './PnLPerformanceChart';
 
-export default function InvestorPortfolio() {
+export default function InvestorPortfolio({ onNavigatePerformance }) {
   const { authFetch, user } = useAuth();
   const [portfolio, setPortfolio] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedSliceIndex, setSelectedSliceIndex] = useState(null);
-  const [showFundSummaryModal, setShowFundSummaryModal] = useState(false);
+
+  const handleGoToPerformance = () => {
+    if (onNavigatePerformance) {
+      onNavigatePerformance();
+    } else {
+      window.dispatchEvent(new CustomEvent('open-performance-tab'));
+    }
+  };
 
   const fetchPortfolio = useCallback(async () => {
     try {
@@ -235,7 +242,7 @@ export default function InvestorPortfolio() {
               </p>
             </div>
             <button
-              onClick={() => setShowFundSummaryModal(true)}
+              onClick={handleGoToPerformance}
               className="px-5 py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/25 whitespace-nowrap self-start sm:self-auto"
             >
               📈 Ver Rendimiento del Fondo
@@ -265,10 +272,10 @@ export default function InvestorPortfolio() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
-          {/* Botón para abrir Modal de Resumen y Rendimiento del Fondo */}
+          {/* Botón para abrir Pantalla de Resumen y Rendimiento del Fondo */}
           <button
             type="button"
-            onClick={() => setShowFundSummaryModal(true)}
+            onClick={handleGoToPerformance}
             className="px-4 py-2.5 bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 border border-amber-400/40 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
           >
             <span>📈</span> Ver Resumen del Fondo
@@ -702,62 +709,6 @@ export default function InvestorPortfolio() {
           <span>Refresco cada 10s</span>
         </div>
       </div>
-
-      {/* Modal de Resumen y Rendimiento Histórico del Fondo */}
-      {showFundSummaryModal && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-5xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 relative no-scrollbar">
-            
-            {/* Header del Modal */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <span className="text-2xl">📈</span>
-                <div>
-                  <h3 className="text-lg font-black text-white">
-                    Resumen & Rendimiento Histórico del Fondo
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Estadísticas cuantitativas consolidadas del algoritmo institucional.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowFundSummaryModal(false)}
-                className="text-slate-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-slate-800 transition"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Mensaje Persuasivo para usuarios sin inversión activa */}
-            {cap <= 0 && (
-              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-200 text-xs leading-relaxed space-y-1">
-                <strong className="block font-bold text-amber-300">💡 Rendimiento Potencial que podrías estar generando:</strong>
-                <p>
-                  📈 ¡Descubre lo que tu capital puede lograr! Aquí puedes observar en tiempo real el rendimiento histórico generado por la estrategia. Al formar parte del fondo, tu dinero se multiplica automáticamente con cada operación exitosa, sin que tengas que mover un solo dedo. ¡Haz que tu capital empiece a trabajar para ti hoy mismo!
-                </p>
-              </div>
-            )}
-
-            {/* Componente de Gráficos de Rendimiento */}
-            <div className="bg-slate-950 p-2 sm:p-4 rounded-2xl border border-slate-800">
-              <PnLPerformanceChart readOnly={true} />
-            </div>
-
-            <div className="pt-2 text-right">
-              <button
-                type="button"
-                onClick={() => setShowFundSummaryModal(false)}
-                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition"
-              >
-                Cerrar Resumen
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
     </div>
   );

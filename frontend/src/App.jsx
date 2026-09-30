@@ -94,8 +94,13 @@ function MainDashboard() {
       }
     };
 
+    const handleOpenPerfTab = () => {
+      setActiveTab('performance');
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
     window.addEventListener('wtn-install-ready', handleReady);
+    window.addEventListener('open-performance-tab', handleOpenPerfTab);
 
     if (window.__wtn_install_prompt) {
       setDeferredPrompt(window.__wtn_install_prompt);
@@ -104,6 +109,7 @@ function MainDashboard() {
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       window.removeEventListener('wtn-install-ready', handleReady);
+      window.removeEventListener('open-performance-tab', handleOpenPerfTab);
     };
   }, []);
 
@@ -799,7 +805,7 @@ function MainDashboard() {
 
             {/* PESTAÑA: Mi Inversión (Inversionista) */}
             {activeTab === 'my_investment' && isInvestor && (
-              <InvestorPortfolio />
+              <InvestorPortfolio onNavigatePerformance={() => setActiveTab('performance')} />
             )}
 
             {/* PESTAÑA: Gestión de Inversionistas & Fondos (Super Admin) */}
