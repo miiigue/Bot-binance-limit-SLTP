@@ -6,6 +6,8 @@ import re
 from datetime import datetime
 import os
 from decimal import Decimal
+from dotenv import load_dotenv
+load_dotenv()
 import pandas as pd
 from typing import Union
 from .crypto_vault import encrypt_secret, decrypt_secret, mask_api_key
@@ -1630,6 +1632,7 @@ def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: 
     """
     Guarda o actualiza las credenciales de API de Binance de un usuario,
     cifrándolas con AES-256-GCM antes de persistir en la base de datos.
+    Totalmente compatible con SQLite y PostgreSQL.
     """
     logger = get_logger()
     conn = get_db_connection()
@@ -1642,8 +1645,18 @@ def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: 
         enc_secret = encrypt_secret(api_secret)
         masked_key = mask_api_key(api_key)
 
+        # Migración en caliente: asegurar que la columna api_base_url exista (PostgreSQL / SQLite)
+        try:
+            cursor.execute("ALTER TABLE user_api_keys ADD COLUMN api_base_url VARCHAR(255) DEFAULT NULL")
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
         # Verificar si ya existe registro para este usuario y exchange/red
-        cursor.execute("SELECT id FROM user_api_keys WHERE user_id = ? AND exchange = 'binance' AND is_testnet = ?", (user_id, int(is_testnet)))
+        cursor.execute("SELECT id FROM user_api_keys WHERE user_id = ? AND exchange = 'binance' AND is_testnet = ?", (user_id, bool(is_testnet)))
         row = cursor.fetchone()
 
         if row:
@@ -1652,18 +1665,22 @@ def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: 
                 SET api_key_encrypted = ?, api_secret_encrypted = ?, api_key_masked = ?,
                     is_valid = ?, last_verified_at = ?, balance_detected = ?, api_base_url = ?, updated_at = ?
                 WHERE id = ?
-            """, (enc_key, enc_secret, masked_key, int(is_valid), now_str, float(balance_detected), api_base_url, now_str, row['id'] if isinstance(row, dict) or hasattr(row, '__getitem__') else row[0]))
+            """, (enc_key, enc_secret, masked_key, bool(is_valid), now_str, float(balance_detected), api_base_url, now_str, row['id'] if isinstance(row, dict) or hasattr(row, '__getitem__') else row[0]))
         else:
             cursor.execute("""
                 INSERT INTO user_api_keys (user_id, exchange, api_key_encrypted, api_secret_encrypted, api_key_masked, is_testnet, is_valid, last_verified_at, balance_detected, api_base_url, created_at, updated_at)
                 VALUES (?, 'binance', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (user_id, enc_key, enc_secret, masked_key, int(is_testnet), int(is_valid), now_str, float(balance_detected), api_base_url, now_str, now_str))
+            """, (user_id, enc_key, enc_secret, masked_key, bool(is_testnet), bool(is_valid), now_str, float(balance_detected), api_base_url, now_str, now_str))
 
         conn.commit()
         logger.info(f"Claves API Binance guardadas con cifrado AES-256 para usuario ID={user_id} (Testnet: {is_testnet})")
         return True
     except Exception as e:
         logger.error(f"Error al guardar claves API de usuario {user_id}: {e}", exc_info=True)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return False
     finally:
         conn.close()
@@ -1685,7 +1702,7 @@ def get_user_api_keys(user_id: int, is_testnet: bool = None, decrypt: bool = Tru
             cursor.execute("""
                 SELECT * FROM user_api_keys 
                 WHERE user_id = ? AND exchange = 'binance' AND is_testnet = ?
-            """, (user_id, int(is_testnet)))
+            """, (user_id, bool(is_testnet)))
         else:
             cursor.execute("""
                 SELECT * FROM user_api_keys 
@@ -1722,13 +1739,17 @@ def delete_user_api_keys(user_id: int, is_testnet: bool = None) -> bool:
     try:
         cursor = conn.cursor()
         if is_testnet is not None:
-            cursor.execute("DELETE FROM user_api_keys WHERE user_id = ? AND is_testnet = ?", (user_id, int(is_testnet)))
+            cursor.execute("DELETE FROM user_api_keys WHERE user_id = ? AND is_testnet = ?", (user_id, bool(is_testnet)))
         else:
             cursor.execute("DELETE FROM user_api_keys WHERE user_id = ?", (user_id,))
         conn.commit()
         return True
     except Exception as e:
         get_logger().error(f"Error al eliminar claves API de usuario {user_id}: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return False
     finally:
         conn.close()
@@ -1793,7 +1814,7 @@ def update_user_bot_settings(user_id: int, **kwargs) -> bool:
             if k in allowed_fields:
                 updates.append(f"{k} = ?")
                 if isinstance(v, bool):
-                    values.append(int(v))
+                    values.append(bool(v))
                 else:
                     values.append(v)
 
@@ -1834,9 +1855,9 @@ def get_all_active_bot_users() -> list:
             FROM users u
             JOIN user_bot_settings b ON u.id = b.user_id
             JOIN user_api_keys k ON u.id = k.user_id
-            WHERE b.is_running = 1 
+            WHERE b.is_running = TRUE 
               AND u.status IN ('active', 'pending')
-              AND k.is_valid = 1
+              AND k.is_valid = TRUE
         """)
         rows = cursor.fetchall()
         active_list = []
@@ -1885,7 +1906,7 @@ def record_user_trade(user_id: int, symbol: str, trade_type: str, open_timestamp
             float(pnl_usdt) if pnl_usdt is not None else None,
             float(gross_pnl_usdt or 0.0), float(commission_usdt or 0.0),
             close_reason, str(binance_trade_id or '') if binance_trade_id else None,
-            strategy_name, int(is_testnet)
+            strategy_name, bool(is_testnet)
         ))
         conn.commit()
         return cursor.lastrowid

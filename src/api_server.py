@@ -31,7 +31,7 @@ from src.database import (
     get_admin_investor_dossier, DATABASE_FILE,
     save_user_api_keys, get_user_api_keys, delete_user_api_keys,
     get_user_bot_settings, update_user_bot_settings,
-    get_user_trades, get_user_trading_metrics, format_account_number
+    get_user_trades, get_user_trading_metrics, format_account_number, init_db_schema
 )
 from src.auth import (
     hash_password, verify_password, generate_jwt, decode_jwt,
@@ -201,7 +201,13 @@ session_manager = SessionStateManager(logger=api_logger) # Inicializar el gestor
 
 app = Flask(__name__) # Crear la aplicación Flask
 # Habilitar CORS para permitir peticiones desde el frontend (que corre en otro puerto)
-CORS(app) 
+CORS(app)
+
+# Garantizar que el esquema relacional e índices existan en la BD (PostgreSQL / SQLite)
+try:
+    init_db_schema()
+except Exception as _e_db_init:
+    api_logger.warning(f"Aviso al asegurar esquema de base de datos: {_e_db_init}") 
 
 def config_to_dict(config: configparser.ConfigParser) -> dict:
     """Convierte un objeto ConfigParser a un diccionario anidado."""

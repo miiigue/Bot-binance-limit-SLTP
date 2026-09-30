@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS user_api_keys (
     is_valid BOOLEAN DEFAULT FALSE,
     last_verified_at TIMESTAMP,
     balance_detected DOUBLE PRECISION DEFAULT 0.0,
+    api_base_url VARCHAR(255) DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, exchange, is_testnet)
@@ -174,6 +175,18 @@ def init_postgres_schema(pg_url: str):
         print("🚀 Aplicando esquema DDL en PostgreSQL...")
         cur.execute(POSTGRES_SCHEMA_SQL)
         conn.commit()
+        # Migraciones automáticas de columnas adicionales para compatibilidad retroactiva
+        migrations = [
+            "ALTER TABLE user_api_keys ADD COLUMN IF NOT EXISTS api_base_url VARCHAR(255) DEFAULT NULL;",
+            "ALTER TABLE user_trades ADD COLUMN IF NOT EXISTS is_testnet BOOLEAN DEFAULT FALSE;",
+            "ALTER TABLE user_bot_settings ADD COLUMN IF NOT EXISTS error_message TEXT;"
+        ]
+        for mig in migrations:
+            try:
+                cur.execute(mig)
+                conn.commit()
+            except Exception:
+                conn.rollback()
         print("✅ Esquema de tablas e índices aplicado con éxito en PostgreSQL.")
         cur.close()
         conn.close()

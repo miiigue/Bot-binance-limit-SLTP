@@ -1,9 +1,13 @@
-﻿import sys
+import sys
 import os
+from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+
+# Cargar variables de entorno (.env) de forma temprana
+load_dotenv(os.path.join(BASE_DIR, '.env'), override=True)
 
 from src.logger_setup import setup_logging
 from src.database import init_db_schema
