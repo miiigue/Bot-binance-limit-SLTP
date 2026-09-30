@@ -4866,6 +4866,53 @@ class SingleSideTradingBot:
                 target_reentry_price = entry_price * drop_factor
 
         if target_reentry_price and target_reentry_price > Decimal('0'):
+            # En modo MARKET, evaluamos si el precio de mercado ya tocó el objetivo para disparar orden MARKET directa sin retener margen con órdenes LIMIT en Binance
+            if getattr(self, 'entry_order_type', 'MARKET') == 'MARKET':
+                should_trigger_dca_market = False
+                if is_short and current_market_price >= target_reentry_price:
+                    should_trigger_dca_market = True
+                elif not is_short and current_market_price <= target_reentry_price:
+                    should_trigger_dca_market = True
+
+                if not should_trigger_dca_market:
+                    self.logger.debug(f"[{self.symbol}][{self.trade_side}] DCA Nivel Target: {target_reentry_price:.4f} (Precio Actual: {current_market_price:.4f}). En espera de disparo a Mercado...")
+                    return
+
+                # Calcular tamaño de la orden con el multiplicador de volumen
+                base_size = Decimal(str(self.position_size_usdt))
+                multiplier = Decimal(str(self.dca_volume_multiplier)) if Decimal(str(self.dca_volume_multiplier)) > Decimal('0') else Decimal('1.0')
+                order_margin_usdt = base_size * (multiplier ** Decimal(str(self.reentries_done + 1)))
+
+                if self.risk_manager and not self.risk_manager.can_open_position(order_margin_usdt):
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] Re-entrada DCA MARKET denegada por RiskManager (Margen requerido: {order_margin_usdt:.2f} USDT).")
+                    return
+
+                notional_order_usdt = order_margin_usdt * Decimal(str(self.leverage))
+                quantity = notional_order_usdt / current_market_price
+                adj_qty = self._adjust_quantity(quantity)
+
+                if adj_qty and adj_qty > Decimal('0'):
+                    self.logger.warning(f"[{self.symbol}][{self.trade_side}] 🚀 DISPARANDO RE-ENTRADA DCA MARKET #{self.reentries_done + 1} ({reentry_side}) @ {current_market_price} (Margen: {order_margin_usdt:.2f} USDT, Cantidad: {adj_qty}).")
+                    m_result = create_futures_market_order(self.symbol, reentry_side, adj_qty, position_side=self.trade_side)
+                    if m_result and m_result.get('orderId'):
+                        self.reentries_done += 1
+                        self.logger.info(f"[{self.symbol}][{self.trade_side}] 🛡️ Re-entrada DCA MARKET #{self.reentries_done} ejecutada exitosamente con ID {m_result.get('orderId')}.")
+                        try:
+                            if self.pending_tp_order_id:
+                                cancel_futures_order(self.symbol, self.pending_tp_order_id)
+                                self.pending_tp_order_id = None
+                            if self.pending_sl_order_id:
+                                cancel_futures_order(self.symbol, self.pending_sl_order_id)
+                                self.pending_sl_order_id = None
+                        except Exception as c_err:
+                            self.logger.warning(f"[{self.symbol}] Error cancelando TP/SL previos en DCA: {c_err}")
+                        self._place_tp_sl_orders()
+                    else:
+                        err_msg = m_result.get('msg') if isinstance(m_result, dict) else 'Rechazada por Binance'
+                        self.logger.error(f"[{self.symbol}][{self.trade_side}] Fallo al ejecutar re-entrada DCA MARKET: {err_msg}")
+                return
+
+            # --- MODO LIMIT: Colocación anticipada de orden LIMIT en libro ---
             if is_short:
                 # En SHORT, la orden LIMIT SELL de re-entrada debe estar por encima del precio de mercado actual
                 if target_reentry_price <= current_market_price:
