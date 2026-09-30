@@ -1892,6 +1892,8 @@ class SingleSideTradingBot:
                     self._evaluate_dca_reentry(klines_df)
                     # Evaluar condiciones de salida
                     self._check_exit_conditions(klines_df)
+                if self.last_error_message and "Unhandled exception" in str(self.last_error_message):
+                    self.last_error_message = None
                 return
 
             # 4. Si no hay posición ni orden pendiente, buscar nueva entrada
@@ -2323,11 +2325,12 @@ class SingleSideTradingBot:
         self.rsi_objetivo_alcanzado_en = None
         self.rsi_peak_since_target = None # Limpiar el pico de RSI para el trailing stop
 
-        # --- Limpiar también estado de trailing de precio ---
+        # --- Limpiar también estado de trailing de precio y PNL ---
         self.price_peak_since_entry = None
+        self.price_trough_since_entry = None
         self.price_trailing_stop_armed = False
-        # --- Limpiar también estado de trailing de PNL ---
         self.pnl_peak_since_activation = None
+        self.pnl_trailing_stop_armed = False
         # --- Limpiar estado de cobertura/resguardo y notificar al coordinador ---
         was_hedge = getattr(self, 'is_hedge_position', False) or getattr(self, 'is_hedge_only', False)
         reason_closed = getattr(self, 'current_exit_reason', '') or getattr(self, 'exit_reason', '') or ''
@@ -2505,9 +2508,13 @@ class SingleSideTradingBot:
         if trailing_activation_usdt is not None and trailing_activation_usdt > Decimal('0'):
             self.enable_pnl_trailing_stop = True
             self.pnl_trailing_stop_activation_usdt = trailing_activation_usdt
+            self.pnl_trailing_stop_armed = False
+            self.pnl_peak_since_activation = None
         if trailing_drop_usdt is not None and trailing_drop_usdt > Decimal('0'):
             self.enable_pnl_trailing_stop = True
             self.pnl_trailing_stop_drop_usdt = trailing_drop_usdt
+            self.pnl_trailing_stop_armed = False
+            self.pnl_peak_since_activation = None
 
         price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
 
@@ -3863,6 +3870,9 @@ class SingleSideTradingBot:
 
                     # Si está armado, actualizar el pico de PNL y verificar condición de salida
                     if self.pnl_trailing_stop_armed:
+                        if self.pnl_peak_since_activation is None:
+                            self.pnl_peak_since_activation = self.last_known_pnl
+
                         if self.last_known_pnl > self.pnl_peak_since_activation:
                             self.pnl_peak_since_activation = self.last_known_pnl
                             self.logger.info(f"[{self.symbol}][{self.trade_side}] Nuevo pico de PNL para Trailing Stop por PNL: {self.pnl_peak_since_activation:.4f}")
