@@ -46,12 +46,13 @@ export default function UserBotPanel({ activeStrategyName }) {
     onConfirm: () => {}
   });
 
-  // Curva de Capital Personal de la Cuenta Copy-Trading
+  // Curva de Capital Personal de la Cuenta Copy-Trading (Solo Operaciones Cerradas)
   const userEquityPoints = useMemo(() => {
-    if (!tradesData || tradesData.length === 0) return [];
-    const sorted = [...tradesData].sort((a, b) => {
-      const da = new Date(a.close_timestamp || a.open_timestamp || 0).getTime();
-      const db = new Date(b.close_timestamp || b.open_timestamp || 0).getTime();
+    const closedTrades = (tradesData || []).filter(t => Boolean(t.close_timestamp));
+    if (closedTrades.length === 0) return [];
+    const sorted = [...closedTrades].sort((a, b) => {
+      const da = new Date(a.close_timestamp || 0).getTime();
+      const db = new Date(b.close_timestamp || 0).getTime();
       return da - db;
     });
 

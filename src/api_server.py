@@ -26,7 +26,7 @@ from src.logger_setup import setup_logging, get_logger
 from src.database import (
     get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, clear_trade_history, get_all_recent_trades,
     count_users, create_user, get_user_by_id, get_user_by_identifier, update_last_login,
-    approve_user, reject_user, add_investor_transaction, get_all_investors_summary,
+    approve_user, reject_user, add_investor_transaction, get_all_investors_summary, clear_requested_capital,
     get_investor_portfolio, get_investor_transactions, toggle_user_status,
     get_admin_investor_dossier, DATABASE_FILE,
     save_user_api_keys, get_user_api_keys, delete_user_api_keys,
@@ -1325,11 +1325,31 @@ def admin_modify_capital_endpoint():
 
         success = add_investor_transaction(user_id=int(user_id), amount_usdt=amount, transaction_type=tx_type, notes=notes)
         if success:
+            clear_requested_capital(int(user_id))
             api_logger.info(f"Movimiento {tx_type} de ${amount} USDT registrado para usuario {user_id}")
             return jsonify({"status": "success", "message": f"Movimiento de {tx_type} registrado exitosamente."})
         return jsonify({"status": "error", "message": "Error al registrar el movimiento."}), 500
     except Exception as e:
         api_logger.error(f"Error en admin_modify_capital: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/clear_requested_capital', methods=['POST'])
+@admin_required
+def admin_clear_requested_capital_endpoint():
+    """Limpia o descarta la solicitud de aporte de capital de un usuario."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        user_id = data.get('user_id')
+        if not user_id:
+            return jsonify({"status": "error", "message": "El campo user_id es requerido."}), 400
+
+        success = clear_requested_capital(int(user_id))
+        if success:
+            return jsonify({"status": "success", "message": "Solicitud de capital despejada correctamente."})
+        return jsonify({"status": "error", "message": "No se pudo descartar la solicitud."}), 500
+    except Exception as e:
+        api_logger.error(f"Error en admin_clear_requested_capital: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

@@ -1377,6 +1377,23 @@ def request_investor_capital(user_id: int, requested_capital: float) -> bool:
     finally:
         conn.close()
 
+def clear_requested_capital(user_id: int) -> bool:
+    """Limpia la solicitud de aporte de capital de un usuario asignando requested_capital = 0.0."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET requested_capital = 0.0 WHERE id = ?", (user_id,))
+        conn.commit()
+        get_logger().info(f"Solicitud de aporte de capital despejada para usuario {user_id}.")
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al despejar requested_capital para usuario {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
 def update_last_login(user_id: int):
     """Actualiza la fecha y hora del último inicio de sesión."""
     conn = get_db_connection()
@@ -1399,7 +1416,7 @@ def approve_user(user_id: int, initial_capital: float = 0.0) -> bool:
         return False
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE users SET status = 'active' WHERE id = ?", (user_id,))
+        cursor.execute("UPDATE users SET status = 'active', requested_capital = 0.0 WHERE id = ?", (user_id,))
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if initial_capital > 0:
             cursor.execute("""

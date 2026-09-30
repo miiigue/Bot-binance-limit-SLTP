@@ -211,6 +211,63 @@ export default function AdminInvestors({ addToast }) {
     });
   };
 
+  // Descartar o Limpiar Solicitud de Aporte de Capital
+  const handleClearRequestedCapital = (userId) => {
+    openConfirm({
+      title: '¿Descartar Solicitud de Aporte?',
+      message: 'Se eliminará la solicitud de inclusión de capital enviada por el usuario.',
+      confirmText: 'Sí, Descartar',
+      type: 'warning',
+      onConfirm: async () => {
+        try {
+          const resp = await authFetch('/api/admin/clear_requested_capital', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId })
+          });
+          const res = await resp.json();
+          if (!resp.ok) throw new Error(res.message || 'Error al descartar solicitud.');
+          if (addToast) addToast('Solicitud Descartada', 'La solicitud de aporte ha sido despejada.', 'info');
+          fetchInvestorsData();
+        } catch (err) {
+          if (addToast) addToast('Error', err.message, 'error');
+          else alert(err.message);
+        }
+      }
+    });
+  };
+
+  // Aprobar Depósito Rápido para Inclusión de Capital de Usuario Activo
+  const handleQuickApproveDeposit = (userId, amount) => {
+    openConfirm({
+      title: '¿Aprobar Inclusión de Capital?',
+      message: `Se registrará un Depósito Adicional de $${Number(amount).toFixed(2)} USDT para la cuenta del usuario y se despejará la solicitud.`,
+      confirmText: 'Sí, Registrar Depósito',
+      type: 'success',
+      onConfirm: async () => {
+        try {
+          const resp = await authFetch('/api/admin/modify_capital', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: userId,
+              amount: parseFloat(amount),
+              type: 'DEPOSIT',
+              notes: 'Aprobación de Solicitud de Inclusión de Capital'
+            })
+          });
+          const res = await resp.json();
+          if (!resp.ok) throw new Error(res.message || 'Error al registrar depósito.');
+          if (addToast) addToast('Depósito Registrado', `Capital de $${Number(amount).toFixed(2)} USDT añadido.`, 'success');
+          fetchInvestorsData();
+        } catch (err) {
+          if (addToast) addToast('Error', err.message, 'error');
+          else alert(err.message);
+        }
+      }
+    });
+  };
+
   // Descargar Copia de Seguridad (.db)
   const handleDownloadBackup = async () => {
     setIsDownloadingBackup(true);
@@ -468,6 +525,11 @@ export default function AdminInvestors({ addToast }) {
   const pending = data.pending_users || [];
   const isProfit = (pool.total_pool_pnl || 0) >= 0;
 
+  const activeCapitalRequests = investors.filter(inv => {
+    const reqCap = inv.requested_capital || inv.user?.requested_capital || 0;
+    return Number(reqCap) > 0;
+  });
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       
@@ -655,6 +717,68 @@ export default function AdminInvestors({ addToast }) {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* BANDEJA DE SOLICITUDES DE APORTE DE CAPITAL DE INVERSIONISTAS ACTIVOS */}
+      {activeCapitalRequests.length > 0 && (
+        <div className="bg-emerald-950/20 border border-emerald-500/40 rounded-3xl p-5 sm:p-6 shadow-xl">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">💼</span>
+            <h3 className="text-base font-black text-emerald-300">
+              Solicitudes de Inclusión / Aporte de Capital ({activeCapitalRequests.length})
+            </h3>
+          </div>
+          <p className="text-xs text-slate-300 mb-4">
+            Inversionistas activos que han solicitado agregar más capital a su portafolio en el fondo. Puedes aprobar el depósito o descartar la solicitud.
+          </p>
+
+          <div className="space-y-3">
+            {activeCapitalRequests.map((inv) => {
+              const uId = inv.user_id || inv.user?.id || inv.id;
+              const uName = inv.user?.username || inv.username || 'Inversionista';
+              const uEmail = inv.user?.email || inv.email || '';
+              const reqCap = Number(inv.requested_capital || inv.user?.requested_capital || 0);
+
+              return (
+                <div key={uId} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="font-bold text-white text-sm flex items-center gap-2">
+                      <span>👤</span> {uName}
+                      <span className="text-[11px] text-slate-400 font-normal">({uEmail || 'Sin correo'})</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                        ACTIVO
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="text-[11px] font-semibold text-slate-400">Solicitud de Aporte:</span>
+                      <span className="px-2.5 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded-lg text-emerald-300 font-mono font-black text-xs shadow-sm flex items-center gap-1">
+                        <span>💰</span> ${reqCap.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickApproveDeposit(uId, reqCap)}
+                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow transition flex items-center gap-1"
+                    >
+                      ✓ Registrar Depósito (${reqCap.toFixed(2)} USDT)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleClearRequestedCapital(uId)}
+                      className="px-3 py-2 bg-slate-800 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-slate-700 hover:border-rose-500/40 font-bold text-xs rounded-xl transition"
+                    >
+                      ✗ Descartar Solicitud
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -753,10 +753,10 @@ def create_futures_limit_order(symbol: str, side: str, quantity: float, price: f
         return order
     except ClientError as e:
         logger.error(f"[{symbol}] Error de API al crear orden LIMIT {side} {adj_qty} @ {price_str}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
-        return None
+        return {'error': True, 'code': e.error_code, 'msg': f"[{e.error_code}] {e.error_message}"}
     except Exception as e:
         logger.error(f"[{symbol}] Error al crear orden LIMIT {side} @ {price_str}: {e}", exc_info=True)
-        return None
+        return {'error': True, 'code': -1, 'msg': str(e)}
 
 def create_futures_market_order(symbol: str, side: str, quantity: float, reduce_only: bool = False, position_side: str | None = None) -> dict | None:
     """
@@ -767,17 +767,17 @@ def create_futures_market_order(symbol: str, side: str, quantity: float, reduce_
     logger = get_logger()
     if not client:
         logger.error("Cliente Binance no disponible para create_futures_market_order.")
-        return None
+        return {'error': True, 'code': -1, 'msg': "Cliente Binance no disponible"}
 
     side = side.upper()
     if side not in ['BUY', 'SELL']:
         logger.error(f"Lado inválido '{side}' para crear orden MARKET.")
-        return None
+        return {'error': True, 'code': -1, 'msg': f"Lado inválido '{side}'"}
 
     adj_qty = adjust_quantity_for_symbol(symbol, quantity)
     if adj_qty is None or adj_qty <= 0:
         logger.error(f"[{symbol}] Cantidad inválida para orden MARKET ({quantity}) tras ajuste por lot size.")
-        return None
+        return {'error': True, 'code': -1013, 'msg': f"Cantidad ({quantity}) inválida tras ajuste por LOT_SIZE"}
 
     hedge = is_hedge_mode()
     if hedge:
@@ -805,10 +805,10 @@ def create_futures_market_order(symbol: str, side: str, quantity: float, reduce_
         return order
     except ClientError as e:
         logger.error(f"[{symbol}] Error de API al crear orden MARKET {side} {adj_qty}: Status={e.status_code}, Code={e.error_code}, Msg={e.error_message}")
-        return None
+        return {'error': True, 'code': e.error_code, 'msg': f"[{e.error_code}] {e.error_message}"}
     except Exception as e:
         logger.error(f"[{symbol}] Error al crear orden MARKET {side} para {symbol}: {e}", exc_info=True)
-        return None
+        return {'error': True, 'code': -1, 'msg': str(e)}
 
 def get_order_status(symbol: str, order_id: int) -> dict | None:
     """
