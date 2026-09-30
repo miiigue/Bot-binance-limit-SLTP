@@ -1285,13 +1285,18 @@ def get_user_by_id(user_id: int) -> dict:
         return None
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, email, role, status, created_at, last_login, requested_capital, terms_accepted, terms_accepted_version, terms_accepted_at FROM users WHERE id = ?", (user_id,))
+        cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
         row = cursor.fetchone()
         if not row:
             return None
         res = dict(row)
+        res.pop('password_hash', None)
         res['account_number'] = format_account_number(res['id'])
         res['requested_capital'] = float(res.get('requested_capital') or 0.0)
+        res.setdefault('terms_accepted', 0)
+        res.setdefault('terms_accepted_version', None)
+        res.setdefault('terms_accepted_at', None)
+        res.setdefault('terms_accepted_ip', None)
         return res
     except Exception as e:
         get_logger().error(f"Error al obtener usuario por ID {user_id}: {e}")
@@ -1307,8 +1312,7 @@ def get_user_by_identifier(identifier: str) -> dict:
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, username, email, password_hash, role, status, created_at, last_login, requested_capital, terms_accepted, terms_accepted_version, terms_accepted_at 
-            FROM users 
+            SELECT * FROM users 
             WHERE LOWER(username) = LOWER(?) OR (email IS NOT NULL AND LOWER(email) = LOWER(?))
         """, (identifier.strip(), identifier.strip()))
         row = cursor.fetchone()
@@ -1317,6 +1321,10 @@ def get_user_by_identifier(identifier: str) -> dict:
         res = dict(row)
         res['account_number'] = format_account_number(res['id'])
         res['requested_capital'] = float(res.get('requested_capital') or 0.0)
+        res.setdefault('terms_accepted', 0)
+        res.setdefault('terms_accepted_version', None)
+        res.setdefault('terms_accepted_at', None)
+        res.setdefault('terms_accepted_ip', None)
         return res
     except Exception as e:
         get_logger().error(f"Error al buscar usuario por identificador '{identifier}': {e}")

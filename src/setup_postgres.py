@@ -35,7 +35,21 @@ CREATE TABLE IF NOT EXISTS users (
     status VARCHAR(32) NOT NULL DEFAULT 'active',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP,
-    requested_capital DOUBLE PRECISION DEFAULT 0.0
+    requested_capital DOUBLE PRECISION DEFAULT 0.0,
+    terms_accepted INTEGER DEFAULT 0,
+    terms_accepted_version VARCHAR(64),
+    terms_accepted_at TIMESTAMP,
+    terms_accepted_ip VARCHAR(64)
+);
+
+-- Tabla de Auditoría de Términos Legales
+CREATE TABLE IF NOT EXISTS user_terms_acceptances (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    terms_version VARCHAR(64) NOT NULL,
+    accepted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ip_address VARCHAR(64),
+    user_agent TEXT
 );
 
 -- Tabla de Claves API de Binance Cifradas (AES-256)
@@ -177,6 +191,11 @@ def init_postgres_schema(pg_url: str):
         conn.commit()
         # Migraciones automáticas de columnas adicionales para compatibilidad retroactiva
         migrations = [
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS requested_capital DOUBLE PRECISION DEFAULT 0.0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_version VARCHAR(64);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_ip VARCHAR(64);",
             "ALTER TABLE user_api_keys ADD COLUMN IF NOT EXISTS api_base_url VARCHAR(255) DEFAULT NULL;",
             "ALTER TABLE user_trades ADD COLUMN IF NOT EXISTS is_testnet BOOLEAN DEFAULT FALSE;",
             "ALTER TABLE user_bot_settings ADD COLUMN IF NOT EXISTS error_message TEXT;"
