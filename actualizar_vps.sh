@@ -8,7 +8,9 @@ echo "=========================================================="
 cd /opt/bot-binance
 
 echo "1. Descargando últimos cambios desde GitHub..."
+git stash || true
 git pull origin main
+git stash pop || true
 
 echo "1.1. Actualizando librerías de Python..."
 if [ -d "venv" ]; then
