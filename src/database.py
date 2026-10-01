@@ -52,18 +52,21 @@ class PGCompatCursor:
         # 3. Soporte transparente para lastrowid en sentencias INSERT
         is_insert = q.upper().startswith("INSERT INTO")
         if is_insert and "RETURNING" not in q.upper():
-            q_with_ret = q.rstrip(';') + " RETURNING id;"
-            try:
-                if params:
-                    self._cur.execute(q_with_ret, params)
-                else:
-                    self._cur.execute(q_with_ret)
-                row = self._cur.fetchone()
-                if row:
-                    self.lastrowid = row['id'] if ('id' in row) else row[0]
-                return self
-            except Exception:
-                pass
+            table_match = re.search(r'INSERT\s+INTO\s+([a-zA-Z0-9_"]+)', q, re.IGNORECASE)
+            target_table = table_match.group(1).replace('"', '').lower() if table_match else ''
+            if target_table in ('users', 'trades', 'user_trades', 'investor_transactions', 'user_api_keys', 'user_terms_acceptances'):
+                q_with_ret = q.rstrip(';') + " RETURNING id;"
+                try:
+                    if params:
+                        self._cur.execute(q_with_ret, params)
+                    else:
+                        self._cur.execute(q_with_ret)
+                    row = self._cur.fetchone()
+                    if row:
+                        self.lastrowid = row['id'] if (isinstance(row, dict) and 'id' in row) else row[0]
+                    return self
+                except Exception:
+                    pass
 
         if params:
             self._cur.execute(q, params)
