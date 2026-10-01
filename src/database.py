@@ -322,15 +322,40 @@ def init_db_schema():
     pg_url = get_postgres_url()
     if pg_url and HAS_PSYCOPG2:
         try:
-            from .setup_postgres import ensure_postgres_database, init_postgres_schema, migrate_from_sqlite
+            from .setup_postgres import ensure_postgres_database, init_postgres_schema
             ensure_postgres_database(pg_url)
             init_postgres_schema(pg_url)
+
+            # Aislar y neutralizar permanentemente cualquier SQLite residual en disco
             if os.path.exists(DATABASE_FILE):
                 try:
-                    migrate_from_sqlite(DATABASE_FILE, pg_url)
-                except Exception as e_mig:
-                    logger.debug(f"Aviso al migrar datos residuales de SQLite a PostgreSQL: {e_mig}")
-            logger.info("Esquema relacional y migraciones PostgreSQL inicializadas exitosamente.")
+                    bak_file = f"{DATABASE_FILE}.disabled_migrated"
+                    if os.path.exists(bak_file):
+                        try:
+                            os.remove(bak_file)
+                        except Exception:
+                            pass
+                    os.rename(DATABASE_FILE, bak_file)
+                    logger.info(f"SQLite residual '{DATABASE_FILE}' deshabilitado y renombrado a '{bak_file}'.")
+                except Exception as e_bak:
+                    logger.debug(f"Aviso al renombrar SQLite residual: {e_bak}")
+
+            # Limpieza activa de operaciones obsoletas anteriores al punto de corte (post-reset)
+            try:
+                cutoff_dt = get_trades_cutoff_datetime()
+                if cutoff_dt:
+                    conn_clean = get_db_connection(timeout=10)
+                    cur_clean = conn_clean.cursor()
+                    cur_clean.execute("DELETE FROM trades WHERE close_timestamp < ?", (cutoff_dt,))
+                    deleted_count = cur_clean.rowcount
+                    conn_clean.commit()
+                    conn_clean.close()
+                    if deleted_count and deleted_count > 0:
+                        logger.info(f"Purga de inicio: {deleted_count} trades obsoletos anteriores al corte ({cutoff_dt}) eliminados de PostgreSQL.")
+            except Exception as e_clean:
+                logger.debug(f"Aviso en purga de trades obsoletos en inicio: {e_clean}")
+
+            logger.info("Esquema relacional PostgreSQL verificado exitosamente.")
             return True
         except Exception as e_pg:
             logger.critical(f"ERROR CRÍTICO al inicializar esquema PostgreSQL: {e_pg}", exc_info=True)
@@ -745,54 +770,69 @@ def record_trade(symbol: str, trade_type: str, open_timestamp: datetime,
         if conn:
             conn.close()
 
+# --- FUNCIONES DE CONTROL DE CORTE TRAS REINICIO DE HISTORIAL ---
+def get_trades_cutoff_timestamp_ms() -> int:
+    """Retorna el timestamp de corte en milisegundos tras el último reset de historial."""
+    cutoff_ms_str = get_bot_setting('trades_sync_cutoff_time_ms')
+    if cutoff_ms_str and str(cutoff_ms_str).strip().isdigit():
+        return int(str(cutoff_ms_str).strip())
+    return 0
+
+def get_trades_cutoff_datetime() -> datetime | None:
+    """
+    Retorna el datetime (UTC naive) de corte a partir del cual los trades son válidos.
+    Cualquier operación con close_timestamp anterior a este punto fue descartada en el reset.
+    """
+    ms = get_trades_cutoff_timestamp_ms()
+    if ms > 0:
+        from datetime import timezone as dt_timezone
+        return datetime.fromtimestamp(ms / 1000.0, tz=dt_timezone.utc).replace(tzinfo=None)
+    return None
+
 # --- NUEVA FUNCIÓN PARA PNL ACUMULADO ---
-def get_cumulative_pnl_by_symbol() -> dict: # Cambiado para devolver dict directamente
-    """Calcula el PnL acumulado para cada símbolo desde la tabla 'trades'."""
+def get_cumulative_pnl_by_symbol() -> dict:
+    """Calcula el PnL acumulado para cada símbolo desde la tabla 'trades', respetando el punto de corte."""
     logger = get_logger()
     try:
         purge_duplicate_trades()
     except Exception:
         pass
     conn = None
-    cumulative_pnl = {} # Diccionario para guardar {symbol: total_pnl}
+    cumulative_pnl = {}
 
     try:
         conn = get_db_connection()
         if conn is None:
-            logger.error("No se pudo obtener conexión a SQLite DB para calcular PnL acumulado.")
-            return cumulative_pnl # Devuelve vacío si no hay conexión
+            logger.error("No se pudo obtener conexión a la base de datos para calcular PnL acumulado.")
+            return cumulative_pnl
 
-        # Usar 'with conn:' para manejo automático de la transacción y cierre
         with conn:
             cursor = conn.cursor()
-            # Consulta para sumar pnl_usdt agrupado por symbol.
-            # Nos aseguramos de que pnl_usdt no sea NULL para la suma.
-            sql = "SELECT symbol, SUM(IFNULL(pnl_usdt, 0)) FROM trades GROUP BY symbol"
-            cursor.execute(sql)
+            cutoff_dt = get_trades_cutoff_datetime()
+            where_sql = "WHERE close_timestamp >= ?" if cutoff_dt else ""
+            params = (cutoff_dt,) if cutoff_dt else ()
+            sql = f"SELECT symbol, SUM(COALESCE(pnl_usdt, 0)) FROM trades {where_sql} GROUP BY symbol"
+            cursor.execute(sql, params)
             rows = cursor.fetchall()
 
             for row in rows:
                 symbol, total_pnl = row
                 if symbol and total_pnl is not None:
-                    cumulative_pnl[symbol] = float(total_pnl) # Convertir a float
+                    cumulative_pnl[symbol] = float(total_pnl)
             
-            logger.debug(f"PnL acumulado por símbolo obtenido: {cumulative_pnl}")
+            logger.debug(f"PnL acumulado por símbolo obtenido (post-corte): {cumulative_pnl}")
             
-    except sqlite3.Error as e:
-        logger.error(f"Error SQLite al calcular PnL acumulado: {e}", exc_info=True)
     except Exception as e:
-        logger.error(f"Error inesperado al calcular PnL acumulado: {e}", exc_info=True)
+        logger.error(f"Error al calcular PnL acumulado: {e}", exc_info=True)
     finally:
-        # 'with conn:' debería cerrar la conexión, pero por si acaso.
         if conn:
             conn.close()
-            logger.debug("Conexión SQLite cerrada después de calcular PnL acumulado.")
             
     return cumulative_pnl
 # ----------------------------------------
 
 def get_total_database_metrics() -> dict:
-    """Calcula las métricas financieras globales consolidadas directamente desde SQLite."""
+    """Calcula las métricas financieras globales consolidadas directamente desde PostgreSQL respetando el punto de corte."""
     try:
         purge_duplicate_trades()
     except Exception:
@@ -818,22 +858,27 @@ def get_total_database_metrics() -> dict:
         "strategies_breakdown": []
     }
     try:
+        cutoff_dt = get_trades_cutoff_datetime()
         conn = get_db_connection(timeout=10)
         cur = conn.cursor()
         
+        where_clause = "WHERE close_timestamp >= ?" if cutoff_dt else ""
+        params = (cutoff_dt,) if cutoff_dt else ()
+
         # 1. Agregado general
-        cur.execute("""
+        cur.execute(f"""
             SELECT 
                 COUNT(*) as total_trades,
-                SUM(IFNULL(pnl_usdt, 0)) as total_pnl,
-                SUM(IFNULL(commission_usdt, 0)) as total_commission_usdt,
-                SUM(IFNULL(gross_pnl_usdt, IFNULL(pnl_usdt, 0))) as total_gross_pnl,
+                SUM(COALESCE(pnl_usdt, 0)) as total_pnl,
+                SUM(COALESCE(commission_usdt, 0)) as total_commission_usdt,
+                SUM(COALESCE(gross_pnl_usdt, COALESCE(pnl_usdt, 0))) as total_gross_pnl,
                 SUM(CASE WHEN pnl_usdt > 0.00001 THEN 1 ELSE 0 END) as wins,
                 SUM(CASE WHEN pnl_usdt < -0.00001 THEN 1 ELSE 0 END) as losses,
                 SUM(CASE WHEN pnl_usdt > 0.00001 THEN pnl_usdt ELSE 0 END) as gross_profit,
                 SUM(CASE WHEN pnl_usdt < -0.00001 THEN ABS(pnl_usdt) ELSE 0 END) as gross_loss
             FROM trades
-        """)
+            {where_clause}
+        """, params)
         row = cur.fetchone()
         if row and row['total_trades'] and int(row['total_trades']) > 0:
             tot = int(row['total_trades'] or 0)
@@ -860,17 +905,18 @@ def get_total_database_metrics() -> dict:
             })
             
         # 2. Desglose por estrategia para el resumen del torneo
-        cur.execute("""
+        cur.execute(f"""
             SELECT 
                 strategy_name as strat,
                 COUNT(*) as count,
-                SUM(IFNULL(pnl_usdt, 0)) as strat_pnl,
+                SUM(COALESCE(pnl_usdt, 0)) as strat_pnl,
                 SUM(CASE WHEN pnl_usdt > 0.00001 THEN 1 ELSE 0 END) as wins,
                 SUM(CASE WHEN pnl_usdt < -0.00001 THEN 1 ELSE 0 END) as losses
             FROM trades
+            {where_clause}
             GROUP BY strat
             ORDER BY strat_pnl DESC
-        """)
+        """, params)
         strat_rows = cur.fetchall()
         pos_strat_pnl = 0.0
         neg_strat_pnl = 0.0
@@ -947,6 +993,7 @@ def _enrich_trade_commission_fields(t: dict) -> dict:
 def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
     """
     Recupera los últimos N trades cerrados para un símbolo específico desde la base de datos.
+    Filtra estrictamente por el punto de corte (Reset PnL) para descartar operaciones históricas.
     """
     logger = get_logger()
     try:
@@ -956,19 +1003,32 @@ def get_last_n_trades_for_symbol(symbol: str, n: int = 10) -> list[dict]:
     conn = None
     trades = []
     try:
+        cutoff_dt = get_trades_cutoff_datetime()
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        query = """
-        SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
-               open_price, close_price, quantity, position_size_usdt,
-               pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason, parameters, strategy_name
-        FROM trades
-        WHERE symbol = ?
-        ORDER BY close_timestamp DESC
-        LIMIT ?
-        """
-        cursor.execute(query, (symbol.upper(), n))
+        if cutoff_dt:
+            query = """
+            SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
+                   open_price, close_price, quantity, position_size_usdt,
+                   pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason, parameters, strategy_name
+            FROM trades
+            WHERE symbol = ? AND close_timestamp >= ?
+            ORDER BY close_timestamp DESC
+            LIMIT ?
+            """
+            cursor.execute(query, (symbol.upper(), cutoff_dt, n))
+        else:
+            query = """
+            SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
+                   open_price, close_price, quantity, position_size_usdt,
+                   pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason, parameters, strategy_name
+            FROM trades
+            WHERE symbol = ?
+            ORDER BY close_timestamp DESC
+            LIMIT ?
+            """
+            cursor.execute(query, (symbol.upper(), n))
         rows = cursor.fetchall()
         trades = [_enrich_trade_commission_fields(dict(row)) for row in rows]
     except Exception as e:
@@ -984,6 +1044,8 @@ def get_all_recent_trades(limit: int = 2000) -> list[dict]:
     """
     Recupera los últimos N trades cerrados en orden cronológico ascendente (del más antiguo al más reciente)
     para alimentar gráficos de rendimiento y curvas de capital (Equity Curve).
+    Filtra estrictamente por el punto de corte para garantizar que solo se muestren operaciones
+    posteriores al último reinicio del historial (Reset PnL).
     """
     logger = get_logger()
     try:
@@ -993,24 +1055,40 @@ def get_all_recent_trades(limit: int = 2000) -> list[dict]:
     conn = None
     trades = []
     try:
+        cutoff_dt = get_trades_cutoff_datetime()
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        query = """
-        SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
-               open_price, close_price, quantity, position_size_usdt,
-               pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason, parameters, strategy_name
-        FROM (
-            SELECT * FROM trades
-            ORDER BY id DESC
-            LIMIT ?
-        ) AS subq
-        ORDER BY id ASC
-        """
-        cursor.execute(query, (limit,))
+        if cutoff_dt:
+            query = """
+            SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
+                   open_price, close_price, quantity, position_size_usdt,
+                   pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason, parameters, strategy_name
+            FROM (
+                SELECT * FROM trades
+                WHERE close_timestamp >= ?
+                ORDER BY id DESC
+                LIMIT ?
+            ) AS subq
+            ORDER BY id ASC
+            """
+            cursor.execute(query, (cutoff_dt, limit))
+        else:
+            query = """
+            SELECT id, symbol, trade_type, open_timestamp, close_timestamp,
+                   open_price, close_price, quantity, position_size_usdt,
+                   pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason, parameters, strategy_name
+            FROM (
+                SELECT * FROM trades
+                ORDER BY id DESC
+                LIMIT ?
+            ) AS subq
+            ORDER BY id ASC
+            """
+            cursor.execute(query, (limit,))
         rows = cursor.fetchall()
         trades = [_enrich_trade_commission_fields(dict(row)) for row in rows]
-    except sqlite3.Error as e:
+    except Exception as e:
         logger.error(f"Error al obtener todos los trades recientes en DB: {e}", exc_info=True)
     finally:
         if conn:
@@ -1261,6 +1339,16 @@ def clear_trade_history() -> bool:
                 pass
 
         try:
+            cursor.execute("DELETE FROM user_trades")
+            if isinstance(conn, PGCompatConnection):
+                try:
+                    cursor.execute("ALTER SEQUENCE user_trades_id_seq RESTART WITH 1;")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        try:
             from src.binance_client import get_server_time
             server_time_ms = get_server_time()
             if server_time_ms and server_time_ms > 0:
@@ -1282,21 +1370,50 @@ def clear_trade_history() -> bool:
             )
         """)
 
-        if isinstance(conn, PGCompatConnection):
-            cursor.execute("""
-                INSERT INTO bot_settings (key, value)
-                VALUES ('trades_sync_cutoff_time_ms', %s)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            """, (str(now_ms),))
-        else:
-            cursor.execute("""
-                INSERT INTO bot_settings (key, value)
-                VALUES ('trades_sync_cutoff_time_ms', ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            """, (str(now_ms),))
+        cursor.execute("""
+            INSERT INTO bot_settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT (key) DO UPDATE SET value = excluded.value
+        """, ('trades_sync_cutoff_time_ms', str(now_ms)))
+
+        try:
+            from datetime import timezone as dt_timezone
+            iso_str = datetime.now(dt_timezone.utc).isoformat()
+        except Exception:
+            iso_str = datetime.now().isoformat()
+
+        cursor.execute("""
+            INSERT INTO bot_settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT (key) DO UPDATE SET value = excluded.value
+        """, ('trades_reset_cutoff_iso', iso_str))
 
         conn.commit()
-        logger.info(f"Historial de trades eliminado exitosamente de la base de datos. Nuevo corte de sincronización: {now_ms}")
+
+        # Aislar y neutralizar permanentemente cualquier SQLite residual en disco
+        if os.path.exists(DATABASE_FILE):
+            try:
+                s_conn = sqlite3.connect(DATABASE_FILE, timeout=5)
+                s_cur = s_conn.cursor()
+                s_cur.execute("DELETE FROM trades")
+                try:
+                    s_cur.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
+                except Exception:
+                    pass
+                s_conn.commit()
+                s_conn.close()
+                bak_f = f"{DATABASE_FILE}.disabled_migrated"
+                if os.path.exists(bak_f):
+                    try:
+                        os.remove(bak_f)
+                    except Exception:
+                        pass
+                os.rename(DATABASE_FILE, bak_f)
+                logger.info(f"SQLite residual '{DATABASE_FILE}' vaciado y neutralizado.")
+            except Exception as e_s:
+                logger.debug(f"Aviso al neutralizar SQLite residual: {e_s}")
+
+        logger.info(f"Historial de trades eliminado exitosamente de PostgreSQL. Nuevo corte de sincronización: {now_ms} ({iso_str})")
         return True
     except Exception as e:
         logger.error(f"Error al limpiar historial de trades en DB: {e}", exc_info=True)
