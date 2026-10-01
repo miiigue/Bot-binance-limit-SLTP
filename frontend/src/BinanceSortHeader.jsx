@@ -13,7 +13,8 @@ export const BinanceSortHeader = ({
   align = 'left',
   className = '',
   title,
-  tooltipInfo
+  tooltipInfo,
+  theme = 'dark'
 }) => {
   const isActive = currentSort?.key === sortKey;
   const isAsc = isActive && currentSort?.direction === 'asc';
@@ -31,16 +32,20 @@ export const BinanceSortHeader = ({
 
   const defaultTitle = !tooltipInfo ? (title || `Ordenar por ${label} (${isActive ? (isDesc ? 'Mayor a menor ▼' : 'Menor a mayor ▲') : 'Clic para ordenar'})`) : undefined;
 
+  const isLight = theme === 'light';
+
   return (
     <th
       scope="col"
       onClick={() => onSort(sortKey)}
-      className={`px-3 py-2.5 cursor-pointer select-none group transition-colors hover:bg-slate-800/80 ${textAlignment} ${className}`}
+      className={`px-3 py-2.5 cursor-pointer select-none group transition-colors ${isLight ? 'hover:bg-slate-200/80' : 'hover:bg-slate-800/80'} ${textAlignment} ${className}`}
       title={defaultTitle}
     >
       <div className={`inline-flex items-center gap-1.5 ${justifyClass} w-full`}>
         <span className={`font-extrabold text-[11px] uppercase tracking-wider transition-colors ${
-          isActive ? 'text-amber-400' : 'text-slate-200 group-hover:text-white'
+          isActive 
+            ? (isLight ? 'text-amber-700' : 'text-amber-400')
+            : (isLight ? 'text-slate-700 group-hover:text-slate-900' : 'text-slate-200 group-hover:text-white')
         }`}>
           {label}
         </span>

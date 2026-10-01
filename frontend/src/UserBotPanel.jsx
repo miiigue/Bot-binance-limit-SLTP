@@ -502,9 +502,9 @@ export default function UserBotPanel({ activeStrategyName }) {
         })()}
 
         {/* Tabla de Operaciones Replicadas */}
-        <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-900/90 text-slate-400 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-800">
+        <div className="overflow-x-auto rounded-2xl border border-slate-300 bg-white text-slate-900 shadow-md">
+          <table className="w-full text-left text-xs bg-white">
+            <thead className="bg-slate-100 text-slate-800 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-300">
               <tr>
                 <th className="p-3">PnL Neto</th>
                 <th className="p-3">ID Trade</th>
@@ -517,33 +517,33 @@ export default function UserBotPanel({ activeStrategyName }) {
                 <th className="p-3">Cierre</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-200">
               {tradesData.length > 0 ? (
                 tradesData.map((t) => {
                   const pnl = Number(t.pnl_usdt || 0);
                   const isWin = pnl >= 0;
                   const tradeId = t.id || t.binance_trade_id || '-';
                   return (
-                    <tr key={t.id || tradeId} className="hover:bg-slate-900/50 transition">
-                      <td className={`p-3 font-bold font-mono ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <tr key={t.id || tradeId} className="hover:bg-slate-100/80 transition border-b border-slate-200">
+                      <td className={`p-3 font-bold font-mono ${isWin ? 'text-emerald-700' : 'text-rose-700'}`}>
                         {t.close_timestamp ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : 'En curso'}
                       </td>
-                      <td className="p-3 font-bold font-mono text-amber-400">#{tradeId}</td>
-                      <td className="p-3 font-bold font-mono text-white">{t.symbol}</td>
+                      <td className="p-3 font-bold font-mono text-amber-700">#{tradeId}</td>
+                      <td className="p-3 font-bold font-mono text-slate-900">{t.symbol}</td>
                       <td className="p-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          t.trade_type === 'LONG' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'
+                          t.trade_type === 'LONG' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                         }`}>
                           {t.trade_type}
                         </span>
                       </td>
-                      <td className="p-3 font-mono text-slate-300">${Number(t.open_price).toFixed(2)}</td>
-                      <td className="p-3 font-mono text-slate-300">{t.close_price ? `$${Number(t.close_price).toFixed(2)}` : 'Abierta'}</td>
-                      <td className="p-3 font-mono text-slate-400">{t.quantity}</td>
-                      <td className="p-3 text-slate-300 font-mono text-[11px] whitespace-nowrap">
+                      <td className="p-3 font-mono text-slate-800">${Number(t.open_price).toFixed(2)}</td>
+                      <td className="p-3 font-mono text-slate-800">{t.close_price ? `$${Number(t.close_price).toFixed(2)}` : 'Abierta'}</td>
+                      <td className="p-3 font-mono text-slate-700">{t.quantity}</td>
+                      <td className="p-3 text-slate-800 font-mono text-[11px] whitespace-nowrap">
                         {t.open_time_short || formatShortDate(t.open_timestamp)}
                       </td>
-                      <td className="p-3 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                      <td className="p-3 text-slate-700 font-mono text-[11px] whitespace-nowrap">
                         {t.close_time_short || (t.close_timestamp ? formatShortDate(t.close_timestamp) : 'En curso')}
                       </td>
                     </tr>
@@ -551,7 +551,7 @@ export default function UserBotPanel({ activeStrategyName }) {
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-slate-500 text-xs">
+                  <td colSpan={9} className="p-8 text-center text-slate-600 text-xs">
                     No hay operaciones cerradas registradas para esta sesión de copytrading. Las nuevas posiciones de la estrategia cuantitativa activa quedarán registradas aquí.
                   </td>
                 </tr>
