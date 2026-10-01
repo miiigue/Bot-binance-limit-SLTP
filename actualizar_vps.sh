@@ -36,6 +36,13 @@ if [ -f ".env" ]; then
     fi
 fi
 
+# Asegurar que el servicio systemd lea .env
+if [ -f "/etc/systemd/system/binance-bot.service" ]; then
+    if ! grep -q "EnvironmentFile" /etc/systemd/system/binance-bot.service; then
+        sed -i '/Environment=PYTHONUNBUFFERED=1/a EnvironmentFile=/opt/bot-binance/.env' /etc/systemd/system/binance-bot.service
+    fi
+fi
+
 echo "1.3. Aplicando esquemas y migrando datos de SQLite a PostgreSQL..."
 if [ -d "venv" ]; then
     venv/bin/python3 src/setup_postgres.py

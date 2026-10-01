@@ -128,9 +128,9 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
 
   const handleResetTradesClick = () => {
     openConfirm({
-      title: '🔄 ¿Reiniciar Historial de Operaciones y PnL?',
-      message: 'Esta acción restablecerá el PnL acumulado de la sesión a $0.00 USDT y archivará los registros antiguos para iniciar una nueva etapa de análisis desde cero.',
-      confirmText: 'Sí, Reiniciar PnL',
+      title: '🔄 ¿Vaciar Historial de Trades y Reiniciar PnL?',
+      message: 'Esta acción eliminará todos los trades cerrados de la base de datos PostgreSQL, restablecerá el PnL acumulado de la sesión a $0.00 USDT y fijará el corte de sincronización para operar limpio desde cero.',
+      confirmText: 'Sí, Vaciar Historial & PnL',
       type: 'danger',
       onConfirm: async () => {
         setIsActionPending(true);
@@ -211,10 +211,10 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
           onClick={handleResetTradesClick}
           disabled={isActionPending}
           className="px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Reinicia el registro histórico de operaciones y PnL acumulado a cero"
+          title="Elimina todos los trades de PostgreSQL, restablece el ID desde #1 y reinicia el PnL a $0.00"
         >
           <span className="text-xs">🔄</span>
-          <span className="hidden xl:inline">Reset PnL</span>
+          <span className="hidden xl:inline">Vaciar Historial & PnL</span>
         </button>
       </div>
 

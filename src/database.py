@@ -5,9 +5,18 @@ import json
 import re
 from datetime import datetime
 import os
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 from decimal import Decimal
 from dotenv import load_dotenv
-load_dotenv()
+
+# Cargar .env de forma explícita desde la raíz del proyecto
+env_file_path = os.path.join(BASE_DIR, '.env')
+if os.path.exists(env_file_path):
+    load_dotenv(dotenv_path=env_file_path, override=True)
+else:
+    load_dotenv(override=True)
+
 import pandas as pd
 from typing import Union
 from .crypto_vault import encrypt_secret, decrypt_secret, mask_api_key
@@ -21,8 +30,55 @@ except ImportError:
 
 from .logger_setup import get_logger
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATABASE_FILE = os.path.join(BASE_DIR, 'trades_limit.db')
+
+
+def get_postgres_url() -> str:
+    """
+    Retorna la URL de conexión a PostgreSQL priorizando:
+    1. Variable de entorno DATABASE_URL
+    2. Archivo .env en la raíz del proyecto
+    3. Archivo config.ini en sección [DATABASE]
+    4. Credenciales institucionales por defecto del servidor VPS Hetzner
+    """
+    url = os.environ.get('DATABASE_URL')
+    if url and url.strip():
+        return url.strip()
+
+    # Intentar leer desde .env explícito
+    try:
+        env_f = os.path.join(BASE_DIR, '.env')
+        if os.path.exists(env_f):
+            with open(env_f, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith('DATABASE_URL='):
+                        val = line.split('=', 1)[1].strip().strip('"').strip("'")
+                        if val:
+                            os.environ['DATABASE_URL'] = val
+                            return val
+    except Exception:
+        pass
+
+    # Intentar leer desde config.ini
+    try:
+        import configparser
+        config_path = os.path.join(BASE_DIR, 'config.ini')
+        if os.path.exists(config_path):
+            cp = configparser.ConfigParser()
+            cp.read(config_path, encoding='utf-8')
+            if cp.has_section('DATABASE') and cp.has_option('DATABASE', 'url'):
+                val = cp.get('DATABASE', 'url').strip()
+                if val:
+                    os.environ['DATABASE_URL'] = val
+                    return val
+    except Exception:
+        pass
+
+    # URL institucional estándar en servidor de producción VPS (localhost)
+    default_url = 'postgresql://bot_user:bot_secure_password_2026@localhost:5432/bot_database'
+    os.environ['DATABASE_URL'] = default_url
+    return default_url
 
 
 class PGCompatCursor:
@@ -155,31 +211,32 @@ class PGCompatConnection:
 
 def get_db_connection(timeout=10):
     """
-    Retorna una conexión a la base de datos:
-    - Si DATABASE_URL está configurada y psycopg2 está disponible, conecta a PostgreSQL con compatibilidad transparente.
-    - Si no, conecta a SQLite con modo WAL y timeout configurado.
+    Retorna una conexión activa a la base de datos PostgreSQL institucional.
+    SQLite ha sido completamente aislado y descontinuado de producción.
     """
     logger = get_logger()
-    pg_url = os.environ.get('DATABASE_URL')
-    if pg_url and HAS_PSYCOPG2:
+    pg_url = get_postgres_url()
+
+    if HAS_PSYCOPG2 and pg_url:
         try:
             pg_conn = psycopg2.connect(pg_url)
             return PGCompatConnection(pg_conn)
         except Exception as e:
-            logger.warning(f"Aviso al conectar con PostgreSQL ({pg_url.split('@')[-1] if '@' in pg_url else pg_url}): {e}. Usando SQLite de respaldo.")
+            logger.critical(f"ERROR CRÍTICO al conectar con PostgreSQL ({pg_url.split('@')[-1] if '@' in pg_url else pg_url}): {e}")
+            if os.environ.get('FORCE_SQLITE') == '1':
+                logger.warning("MODO PRUEBA UNITARIA: Usando SQLite temporal debido a FORCE_SQLITE=1.")
+                conn = sqlite3.connect(DATABASE_FILE, timeout=timeout)
+                conn.row_factory = sqlite3.Row
+                return conn
+            raise RuntimeError(f"Base de datos PostgreSQL no accesible: {e}")
 
-    try:
+    if os.environ.get('FORCE_SQLITE') == '1':
         conn = sqlite3.connect(DATABASE_FILE, timeout=timeout)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA foreign_keys=ON;")
         return conn
-    except sqlite3.Error as e:
-        logger.critical(f"Error CRÍTICO al conectar/crear SQLite DB '{DATABASE_FILE}': {e}")
-        return None
-    except Exception as e:
-        logger.critical(f"Error inesperado al conectar con SQLite: {e}")
-        return None
+
+    logger.critical("ERROR CRÍTICO: psycopg2 no disponible o PostgreSQL inaccesible. SQLite ha sido descontinuado.")
+    raise RuntimeError("Base de datos PostgreSQL requerida para operar el bot.")
 
 def purge_duplicate_trades() -> int:
     """
@@ -260,19 +317,26 @@ def purge_duplicate_trades() -> int:
             conn.close()
 
 def init_db_schema():
-    """Inicializa el esquema de la base de datos (PostgreSQL si DATABASE_URL existe, o SQLite)."""
+    """Inicializa el esquema relacional exclusivo en PostgreSQL."""
     logger = get_logger()
-    pg_url = os.environ.get('DATABASE_URL')
+    pg_url = get_postgres_url()
     if pg_url and HAS_PSYCOPG2:
         try:
             from .setup_postgres import ensure_postgres_database, init_postgres_schema, migrate_from_sqlite
             ensure_postgres_database(pg_url)
             init_postgres_schema(pg_url)
-            migrate_from_sqlite(DATABASE_FILE, pg_url)
+            if os.path.exists(DATABASE_FILE):
+                try:
+                    migrate_from_sqlite(DATABASE_FILE, pg_url)
+                except Exception as e_mig:
+                    logger.debug(f"Aviso al migrar datos residuales de SQLite a PostgreSQL: {e_mig}")
             logger.info("Esquema relacional y migraciones PostgreSQL inicializadas exitosamente.")
             return True
         except Exception as e_pg:
-            logger.error(f"Fallo al inicializar esquema PostgreSQL: {e_pg}. Continuando con inicialización SQLite de respaldo...", exc_info=True)
+            logger.critical(f"ERROR CRÍTICO al inicializar esquema PostgreSQL: {e_pg}", exc_info=True)
+            if os.environ.get('FORCE_SQLITE') != '1':
+                raise RuntimeError(f"Fallo al inicializar PostgreSQL: {e_pg}")
+            logger.warning("MODO PRUEBA UNITARIA: Continuando con inicialización SQLite de respaldo...")
 
     conn = None
     try:
@@ -1183,8 +1247,14 @@ def clear_trade_history() -> bool:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM trades")
 
-        # Solo reiniciar secuencia en SQLite; en PostgreSQL sqlite_sequence abortaría la transacción
-        if not isinstance(conn, PGCompatConnection):
+        # Reiniciar secuencia para que los nuevos trades arranquen de nuevo desde ID #1
+        if isinstance(conn, PGCompatConnection):
+            try:
+                cursor.execute("ALTER SEQUENCE trades_id_seq RESTART WITH 1;")
+                logger.info("Secuencia trades_id_seq reiniciada a 1 en PostgreSQL.")
+            except Exception as e_seq:
+                logger.debug(f"Aviso al reiniciar secuencia trades_id_seq: {e_seq}")
+        else:
             try:
                 cursor.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
             except Exception:
@@ -2265,19 +2335,7 @@ if __name__ == '__main__':
         else:
             main_logger.error("Fallo al inicializar el esquema de la base de datos SQLite.")
 
-    # Diagnóstico: imprimir los primeros 5 registros y el esquema de la tabla 'trades'
-    import sqlite3
-    print('--- Esquema de la tabla trades ---')
-    conn = sqlite3.connect(DATABASE_FILE)
-    cur = conn.cursor()
-    cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='trades'")
-    print(cur.fetchone()[0])
-    print('\n--- Primeros 5 registros de trades ---')
-    cur.execute("SELECT * FROM trades LIMIT 5")
-    rows = cur.fetchall()
-    for row in rows:
-        print(row)
-    conn.close()
+    # Verificación finalizada con PostgreSQL.
 
 # --- FIN DE MODIFICACIONES ---
 # El código original de PostgreSQL ha sido completamente reemplazado. 

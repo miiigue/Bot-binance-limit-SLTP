@@ -862,7 +862,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
 
   // --- MANEJADOR PARA VACIAR HISTORIAL Y PNL ---
   const handleResetTradesClick = async () => {
-    if (!window.confirm("⚠️ ¿Deseas reiniciar el historial de trades y poner el PnL a 0.00 USDT?")) return;
+    if (!window.confirm("⚠️ ¿Deseas vaciar completamente el historial de trades en PostgreSQL y reiniciar el PnL a $0.00 USDT?")) return;
     try {
       const res = await fetch('/api/trades/reset', { method: 'POST' });
       if (res.ok) {
@@ -939,11 +939,11 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={handleResetTradesClick}
-            className="text-xs font-bold px-3 py-1.5 rounded-xl bg-red-950/70 hover:bg-red-900 text-red-200 border border-red-700/60 transition-colors flex items-center gap-1.5 shadow-sm"
-            title="Borra el registro de trades pasados de la base de datos y reinicia el PnL a 0.00"
+            className="text-xs font-bold px-3 py-1.5 rounded-xl bg-red-950/70 hover:bg-red-900 text-red-200 border border-red-700/60 transition-colors flex items-center gap-1.5 shadow-sm active:scale-95"
+            title="Borra todos los trades de PostgreSQL, restablece el ID desde #1 y reinicia el PnL a $0.00"
           >
             <span>🗑️</span>
-            <span>Vaciar Historial de Trades & PnL</span>
+            <span>Vaciar Historial & Reset PnL</span>
           </button>
         </div>
       </div>

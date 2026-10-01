@@ -1356,21 +1356,46 @@ def admin_clear_requested_capital_endpoint():
 @app.route('/api/admin/backup_db', methods=['GET'])
 @admin_required
 def admin_backup_db_endpoint():
-    """Descarga directa de la base de datos SQLite (.db) como archivo adjunto."""
+    """Descarga directa de backup institucional en formato JSON desde PostgreSQL."""
     try:
-        if not os.path.exists(DATABASE_FILE):
-            return jsonify({"status": "error", "message": "El archivo de base de datos no existe."}), 404
+        from src.database import get_db_connection
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"status": "error", "message": "No se pudo conectar a la base de datos PostgreSQL."}), 500
+
+        cursor = conn.cursor()
+        backup_data = {
+            "timestamp": datetime.now().isoformat(),
+            "engine": "PostgreSQL",
+            "trades": [],
+            "bot_settings": {}
+        }
+
+        try:
+            cursor.execute("SELECT * FROM trades ORDER BY id ASC")
+            rows = cursor.fetchall()
+            backup_data["trades"] = [dict(r) for r in rows]
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("SELECT key, value FROM bot_settings")
+            for r in cursor.fetchall():
+                k = r['key'] if (isinstance(r, dict) or hasattr(r, '__getitem__')) else r[0]
+                v = r['value'] if (isinstance(r, dict) or hasattr(r, '__getitem__')) else r[1]
+                backup_data["bot_settings"][k] = v
+        except Exception:
+            pass
+
+        conn.close()
 
         timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-        download_filename = f"backup_binance_bot_{timestamp_str}.db"
+        download_filename = f"backup_postgres_{timestamp_str}.json"
 
-        api_logger.info(f"Generando descarga de backup de base de datos: {download_filename}")
-        return send_file(
-            DATABASE_FILE,
-            as_attachment=True,
-            download_name=download_filename,
-            mimetype='application/x-sqlite3'
-        )
+        response = make_response(json.dumps(backup_data, indent=2, default=str))
+        response.headers['Content-Disposition'] = f'attachment; filename={download_filename}'
+        response.mimetype = 'application/json'
+        return response
     except Exception as e:
         api_logger.error(f"Error al generar backup de DB: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500

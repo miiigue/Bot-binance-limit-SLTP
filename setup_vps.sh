@@ -105,6 +105,7 @@ ExecStart=/opt/bot-binance/venv/bin/python /opt/bot-binance/run_server.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/bot-binance/.env
 
 [Install]
 WantedBy=multi-user.target
