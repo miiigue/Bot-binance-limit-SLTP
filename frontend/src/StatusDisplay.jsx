@@ -1529,18 +1529,18 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                   {/* --- FILA DESPLEGABLE CONDICIONAL --- */}
                   {expandedRows[status.symbol] && (
                     <tr id={`history-${status.symbol}`}>
-                      <td colSpan="9" className="px-3 py-3 bg-slate-100 border-t border-b border-slate-300 shadow-inner">
+                      <td colSpan="9" className="px-3 py-3 bg-slate-950 border-t border-b border-slate-800">
                         {loadingHistories[status.symbol] && (
-                          <p className="text-xs text-center text-slate-700 font-mono">Cargando historial...</p>
+                          <p className="text-xs text-center text-slate-300 font-mono">Cargando historial...</p>
                         )}
                         {historyErrors[status.symbol] && (
-                          <p className="text-xs text-center text-rose-600 font-semibold">{historyErrors[status.symbol]}</p>
+                          <p className="text-xs text-center text-rose-400">{historyErrors[status.symbol]}</p>
                         )}
                         {!loadingHistories[status.symbol] && !historyErrors[status.symbol] && (
                           tradeHistories[status.symbol]?.length > 0 ? (
                             <div className="overflow-x-auto">
-                              <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-300">
-                                <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                              <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-800">
+                                <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
                                   <span>Últimos</span>
                                   <input
                                     type="number"
@@ -1550,55 +1550,55 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                     onChange={(e) => handleCoinTradeLimitChange(status.symbol, e.target.value)}
                                     onBlur={() => handleCoinTradeLimitBlur(status.symbol)}
                                     onClick={(e) => e.stopPropagation()}
-                                    className="w-16 px-2 py-0.5 text-center font-mono font-bold text-xs bg-white border border-slate-300 rounded text-amber-700 focus:outline-none focus:border-amber-600 shadow-sm"
+                                    className="w-16 px-2 py-0.5 text-center font-mono font-bold text-xs bg-slate-900 border border-slate-600 rounded text-amber-400 focus:outline-none focus:border-amber-400"
                                     title="Ingresa la cantidad de trades que deseas ver para esta moneda"
                                   />
-                                  <span>trades cerrados para <span className="text-slate-900 font-extrabold">{status.symbol}</span>:</span>
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-indigo-50 text-indigo-900 border border-indigo-200 shadow-sm ml-1" title="Estrategia completa asignada a esta moneda">
-                                    <span className="text-indigo-700 font-medium">Estrategia:</span>
+                                  <span>trades cerrados para <span className="text-white font-extrabold">{status.symbol}</span>:</span>
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-indigo-950/90 text-indigo-200 border border-indigo-700/70 shadow-sm ml-1" title="Estrategia completa asignada a esta moneda">
+                                    <span className="text-indigo-400 font-medium">Estrategia:</span>
                                     <span>{status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3'}</span>
                                   </span>
                                 </div>
-                                <div className="text-[11px] text-slate-600 font-mono flex items-center gap-1.5">
-                                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Auto-actualización en vivo activa"></span>
+                                <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5">
+                                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Auto-actualización en vivo activa"></span>
                                   <span>{tradeHistories[status.symbol]?.length || 0} trades mostrados • Auto-actualizado</span>
                                 </div>
                               </div>
-                              <table className="min-w-full divide-y divide-slate-300 text-xs font-mono bg-white text-slate-900 rounded-lg border border-slate-300 shadow-sm overflow-hidden">
-                                <thead className="bg-slate-100 border-b border-slate-300">
+                              <table className="min-w-full divide-y divide-slate-800 text-xs font-mono">
+                                <thead className="bg-slate-900 border-b border-slate-700">
                                   <tr>
-                                    <BinanceSortHeader theme="light" label="ID" sortKey="id" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
-                                    <BinanceSortHeader theme="light" label="Fecha Cierre" sortKey="close_timestamp" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
-                                    <BinanceSortHeader theme="light" label="Lado" sortKey="trade_type" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
-                                    <BinanceSortHeader theme="light" label="Motivo" sortKey="close_reason" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
-                                    <BinanceSortHeader theme="light" label="PnL Neto" sortKey="pnl_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" tooltipInfo={{ title: "PnL Neto", desc: "Ganancia o pérdida real acreditada/debitada de tu billetera de Binance." }} />
-                                    <BinanceSortHeader theme="light" label="Entrada" sortKey="open_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
-                                    <BinanceSortHeader theme="light" label="Salida" sortKey="close_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
-                                    <BinanceSortHeader theme="light" label="Cantidad" sortKey="quantity" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
-                                    <BinanceSortHeader theme="light" label="Comisión" sortKey="commission_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" tooltipInfo={{ title: "Comisión Binance", desc: "Comisión oficial descontada por Binance Futures en este trade (entrada + salida)." }} />
+                                    <BinanceSortHeader label="ID" sortKey="id" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
+                                    <BinanceSortHeader label="Fecha Cierre" sortKey="close_timestamp" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
+                                    <BinanceSortHeader label="Lado" sortKey="trade_type" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
+                                    <BinanceSortHeader label="Motivo" sortKey="close_reason" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} />
+                                    <BinanceSortHeader label="PnL Neto" sortKey="pnl_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" tooltipInfo={{ title: "PnL Neto", desc: "Ganancia o pérdida real acreditada/debitada de tu billetera de Binance." }} />
+                                    <BinanceSortHeader label="Entrada" sortKey="open_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
+                                    <BinanceSortHeader label="Salida" sortKey="close_price" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
+                                    <BinanceSortHeader label="Cantidad" sortKey="quantity" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" />
+                                    <BinanceSortHeader label="Comisión" sortKey="commission_usdt" currentSort={subTradeSorts[status.symbol] || { key: 'close_timestamp', direction: 'desc' }} onSort={(k) => handleSubTradeSort(status.symbol, k)} align="right" tooltipInfo={{ title: "Comisión Binance", desc: "Comisión oficial descontada por Binance Futures en este trade (entrada + salida)." }} />
                                   </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-200">
+                                <tbody className="divide-y divide-slate-800">
                                   {(sortedSubTrades[status.symbol] || tradeHistories[status.symbol]).map(trade => {
                                     const comm = getTradeCommission(trade);
                                     const gross = getTradeGrossPnL(trade);
                                     return (
-                                      <tr key={trade.id} className="hover:bg-slate-100/80 transition-colors">
-                                        <td className="px-1.5 py-1 whitespace-nowrap text-slate-700 font-bold">{trade.id}</td>
-                                        <td className="px-1.5 py-1 whitespace-nowrap text-slate-800">{formatDate(trade.close_timestamp)}</td>
+                                      <tr key={trade.id} className="hover:bg-slate-900/60">
+                                        <td className="px-1.5 py-1 whitespace-nowrap text-slate-400 font-bold">{trade.id}</td>
+                                        <td className="px-1.5 py-1 whitespace-nowrap text-slate-300">{formatDate(trade.close_timestamp)}</td>
                                         <td className="px-1.5 py-1 whitespace-nowrap">
-                                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${trade.trade_type === 'SHORT' ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'}`}>
+                                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${trade.trade_type === 'SHORT' ? 'bg-rose-950 text-rose-300 border border-rose-600/50' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'}`}>
                                             {trade.trade_type || 'LONG'}
                                           </span>
                                         </td>
-                                        <td className="px-1.5 py-1 whitespace-nowrap text-slate-800">{trade.close_reason || 'N/A'}</td>
-                                        <td className={`px-1.5 py-1 text-right whitespace-nowrap font-bold ${getPnlColorClassLight(trade.pnl_usdt)}`} title={`PnL Bruto de Mercado: ${gross >= 0 ? '+' : ''}${gross.toFixed(4)} USDT (Comisión: -${comm.toFixed(4)} USDT)`}>
+                                        <td className="px-1.5 py-1 whitespace-nowrap text-slate-300">{trade.close_reason || 'N/A'}</td>
+                                        <td className={`px-1.5 py-1 text-right whitespace-nowrap font-bold ${getPnlColorClass(trade.pnl_usdt)}`} title={`PnL Bruto de Mercado: ${gross >= 0 ? '+' : ''}${gross.toFixed(4)} USDT (Comisión: -${comm.toFixed(4)} USDT)`}>
                                           {formatPnl(trade.pnl_usdt)}
                                         </td>
-                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-slate-900 font-bold">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
-                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-slate-900 font-bold">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
-                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-slate-800">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
-                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-amber-700 font-mono font-medium" title="Comisión Binance (entrada + salida)">
+                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-white font-bold">{trade.open_price?.toFixed(4) ?? 'N/A'}</td>
+                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-white font-bold">{trade.close_price?.toFixed(4) ?? 'N/A'}</td>
+                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-slate-300">{trade.quantity?.toFixed(4) ?? 'N/A'}</td>
+                                        <td className="px-1.5 py-1 text-right whitespace-nowrap text-amber-400 font-mono font-medium" title="Comisión Binance (entrada + salida)">
                                           -{comm.toFixed(4)}
                                         </td>
                                       </tr>
@@ -1621,15 +1621,15 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                  });
                                  return (
                                    <div className="mt-2 flex flex-wrap items-center justify-end gap-3 text-xs pr-4 font-mono">
-                                     <span className="text-slate-600">
-                                       Comisiones: <span className="text-amber-700 font-bold">-${totalComm.toFixed(4)} USDT</span>
+                                     <span className="text-slate-400">
+                                       Comisiones: <span className="text-amber-400 font-bold">-${totalComm.toFixed(4)} USDT</span>
                                      </span>
-                                     <span className="text-slate-600">
-                                       PnL Bruto: <span className="text-slate-900 font-bold">{totalGross >= 0 ? `+${totalGross.toFixed(4)}` : totalGross.toFixed(4)} USDT</span>
+                                     <span className="text-slate-400">
+                                       PnL Bruto: <span className="text-slate-200 font-bold">{totalGross >= 0 ? `+${totalGross.toFixed(4)}` : totalGross.toFixed(4)} USDT</span>
                                      </span>
-                                     <span className="font-bold text-slate-800">
+                                     <span className="font-bold text-slate-200">
                                        Total PnL Neto: 
-                                       <span className={`ml-1.5 font-bold ${getPnlColorClassLight(totalNet)}`}>
+                                       <span className={`ml-1.5 font-bold ${getPnlColorClass(totalNet)}`}>
                                          {formatPnl(totalNet)}
                                        </span>
                                      </span>
@@ -1639,7 +1639,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                             </div>
                           ) : (
                             <div className="py-3 text-center">
-                              <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-800 mb-2">
+                              <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-200 mb-2">
                                 <span>Últimos</span>
                                 <input
                                   type="number"
@@ -1649,16 +1649,16 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                   onChange={(e) => handleCoinTradeLimitChange(status.symbol, e.target.value)}
                                   onBlur={() => handleCoinTradeLimitBlur(status.symbol)}
                                   onClick={(e) => e.stopPropagation()}
-                                  className="w-16 px-2 py-0.5 text-center font-mono font-bold text-xs bg-white border border-slate-300 rounded text-amber-700 focus:outline-none focus:border-amber-600"
+                                  className="w-16 px-2 py-0.5 text-center font-mono font-bold text-xs bg-slate-900 border border-slate-600 rounded text-amber-400 focus:outline-none focus:border-amber-400"
                                   title="Ingresa la cantidad de trades que deseas ver para esta moneda"
                                 />
-                                <span>trades cerrados para <span className="text-slate-900 font-extrabold">{status.symbol}</span>:</span>
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-indigo-50 text-indigo-900 border border-indigo-200 shadow-sm ml-1" title="Estrategia completa asignada a esta moneda">
-                                  <span className="text-indigo-700 font-medium">Estrategia:</span>
+                                <span>trades cerrados para <span className="text-white font-extrabold">{status.symbol}</span>:</span>
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-indigo-950/90 text-indigo-200 border border-indigo-700/70 shadow-sm ml-1" title="Estrategia completa asignada a esta moneda">
+                                  <span className="text-indigo-400 font-medium">Estrategia:</span>
                                   <span>{status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3'}</span>
                                 </span>
                               </div>
-                              <p className="text-xs text-slate-600">No hay trades cerrados para {status.symbol}.</p>
+                              <p className="text-xs text-slate-400">No hay trades cerrados para {status.symbol}.</p>
                             </div>
                           )
                         )}

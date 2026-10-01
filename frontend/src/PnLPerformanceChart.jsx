@@ -1,5 +1,33 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import Tooltip from './Tooltip';
+import BinanceSortHeader, { sortTableData } from './BinanceSortHeader';
+
+// Helper para formato de fecha corto DD/MM/YY HH:mm:ss
+const formatShortDate = (dateVal) => {
+  if (!dateVal) return 'N/A';
+  try {
+    const raw = String(dateVal).trim();
+    let parsed = new Date(raw);
+    if (isNaN(parsed.getTime())) {
+      const isoString = (raw.includes('T') || raw.includes('Z') || raw.includes('+')) 
+        ? (raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z')
+        : raw.replace(' ', 'T') + 'Z';
+      parsed = new Date(isoString);
+    }
+    if (isNaN(parsed.getTime())) return String(dateVal);
+
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const year = String(parsed.getFullYear()).slice(-2);
+    const hours = String(parsed.getHours()).padStart(2, '0');
+    const mins = String(parsed.getMinutes()).padStart(2, '0');
+    const secs = String(parsed.getSeconds()).padStart(2, '0');
+
+    return `${day}/${month}/${year} ${hours}:${mins}:${secs}`;
+  } catch (e) {
+    return String(dateVal);
+  }
+};
 
 // Helper robusto para parsear fechas de diversas fuentes y formatos (ISO, timestamp numérico, SQLite)
 const parseDate = (val) => {
@@ -83,6 +111,20 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
   const [activeTradeInspector, setActiveTradeInspector] = useState(null);
   // Estado para la inspección interactiva de los puntos en la curva de capital (Punto Cero y cierres)
   const [selectedEquityIndex, setSelectedEquityIndex] = useState(null);
+
+  // Estado para la tabla de historial de trades cerrados en general
+  const [showAllClosedTrades, setShowAllClosedTrades] = useState(true);
+  const [globalTradeLimit, setGlobalTradeLimit] = useState(50);
+  const [globalTradeSort, setGlobalTradeSort] = useState({ key: 'close_timestamp', direction: 'desc' });
+
+  const handleGlobalSort = (key) => {
+    setGlobalTradeSort(prev => {
+      if (prev?.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'desc' };
+    });
+  };
 
   // Cargar datos financieros y de billetera
   const fetchAllData = async () => {
@@ -291,6 +333,29 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
       return true;
     });
   }, [validTrades, filterSymbol, filterStrategy]);
+
+  // Ordenar historial de trades cerrados en general
+  const sortedGlobalTrades = useMemo(() => {
+    if (!filteredTrades || filteredTrades.length === 0) return [];
+    return sortTableData(filteredTrades, globalTradeSort, {
+      id: (t) => t.id || t.binance_trade_id || 0,
+      close_timestamp: (t) => Date.parse(t.close_timestamp) || 0,
+      symbol: (t) => t.symbol || '',
+      trade_type: (t) => t.trade_type || 'LONG',
+      close_reason: (t) => t.close_reason || '',
+      pnl_usdt: (t) => getTradePnL(t),
+      open_price: (t) => parseFloat(t.open_price) || 0,
+      close_price: (t) => parseFloat(t.close_price) || 0,
+      quantity: (t) => parseFloat(t.quantity) || 0,
+      commission_usdt: (t) => getTradeCommission(t)
+    });
+  }, [filteredTrades, globalTradeSort]);
+
+  const visibleGlobalTrades = useMemo(() => {
+    if (globalTradeLimit === 'ALL') return sortedGlobalTrades;
+    const limitNum = Number(globalTradeLimit) || 50;
+    return sortedGlobalTrades.slice(0, limitNum);
+  }, [sortedGlobalTrades, globalTradeLimit]);
 
   // Métricas financieras calculadas
   const totalTrades = filteredTrades.length;
@@ -2222,6 +2287,158 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* --- SECCIÓN HISTORIAL GENERAL DE TRADES CERRADOS (TODOS LOS PARES) --- */}
+      <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <button
+            onClick={() => setShowAllClosedTrades(!showAllClosedTrades)}
+            className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-100 font-extrabold text-xs border border-slate-700/80 shadow-lg transition-all duration-200 cursor-pointer"
+          >
+            <span className="text-base">{showAllClosedTrades ? '📂' : '📜'}</span>
+            <span>{showAllClosedTrades ? 'Ocultar Historial General de Trades' : 'Ver ÚLTIMOS TRADES CERRADOS EN GENERAL (Todos los pares)'}</span>
+            <span className="ml-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono text-[11px] border border-amber-500/30">
+              {sortedGlobalTrades.length} trades
+            </span>
+            <span className="text-slate-400 text-xs ml-1">{showAllClosedTrades ? '▲' : '▼'}</span>
+          </button>
+
+          {showAllClosedTrades && (
+            <div className="flex items-center gap-3 text-xs font-mono">
+              <div className="flex items-center gap-1.5 text-slate-300">
+                <span>Mostrar:</span>
+                <select
+                  value={globalTradeLimit}
+                  onChange={(e) => setGlobalTradeLimit(e.target.value)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-amber-400 font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
+                >
+                  <option value={20}>20 trades</option>
+                  <option value={50}>50 trades</option>
+                  <option value={100}>100 trades</option>
+                  <option value={500}>500 trades</option>
+                  <option value="ALL">Todos ({sortedGlobalTrades.length})</option>
+                </select>
+              </div>
+              <span className="text-slate-400 hidden sm:inline">•</span>
+              <span className="text-slate-400 text-[11px] hidden sm:inline">Auto-actualizado en vivo</span>
+            </div>
+          )}
+        </div>
+
+        {showAllClosedTrades && (
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                <span>📊</span>
+                <span>HISTORIAL GENERAL DE TRADES CERRADOS</span>
+                <span className="text-slate-400 font-normal">
+                  (Filtro actual: {filterSymbol === 'ALL' ? 'Todos los pares' : filterSymbol} • Estrategia: {filterStrategy})
+                </span>
+              </div>
+              <span className="text-xs text-amber-400 font-mono font-bold">
+                {visibleGlobalTrades.length} / {sortedGlobalTrades.length} mostrados
+              </span>
+            </div>
+
+            {sortedGlobalTrades.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-800 text-xs font-mono">
+                  <thead className="bg-slate-900 border-b border-slate-700">
+                    <tr>
+                      <BinanceSortHeader label="ID" sortKey="id" currentSort={globalTradeSort} onSort={(k) => handleGlobalSort(k)} />
+                      <BinanceSortHeader label="Fecha Cierre" sortKey="close_timestamp" currentSort={globalTradeSort} onSort={(k) => handleGlobalSort(k)} />
+                      <BinanceSortHeader label="Símbolo" sortKey="symbol" currentSort={globalTradeSort} onSort={(k) => handleGlobalSort(k)} />
+                      <BinanceSortHeader label="Lado" sortKey="trade_type" currentSort={globalTradeSort} onSort={(k) => handleGlobalSort(k)} />
+                      <BinanceSortHeader label="Motivo" sortKey="close_reason" currentSort={globalTradeSort} onSort={(k) => handleGlobalSort(k)} />
+                      <BinanceSortHeader label="PnL Neto" sortKey="pnl_usdt" currentSort={globalTradeSort} onSort={(k) => handleGlobalSort(k)} align="right" tooltipInfo={{ title: "PnL Neto", desc: "Ganancia o pérdida real acreditada/debitada de tu billetera de Binance." }} />
+                      <BinanceSortHeader label="Entrada" sortKey="open_price" currentSort={globalTradeSort} onSort={(k) => handleGlobalSort(k)} align="right" />
+                      <BinanceSortHeader label="Salida" sortKey="close_price" currentSort={globalTradeSort} onSort={(k) => handleGlobalSort(k)} align="right" />
+                      <BinanceSortHeader label="Cantidad" sortKey="quantity" currentSort={globalTradeSort} onSort={(k) => handleGlobalSort(k)} align="right" />
+                      <BinanceSortHeader label="Comisión" sortKey="commission_usdt" currentSort={globalTradeSort} onSort={(k) => handleGlobalSort(k)} align="right" tooltipInfo={{ title: "Comisión Binance", desc: "Comisión oficial descontada por Binance Futures en este trade (entrada + salida)." }} />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {visibleGlobalTrades.map((trade) => {
+                      const comm = getTradeCommission(trade);
+                      const gross = getTradeGrossPnL(trade);
+                      const pnlNet = getTradePnL(trade);
+                      const pnlClass = pnlNet > 0 ? 'text-emerald-400 font-bold' : pnlNet < 0 ? 'text-rose-400 font-bold' : 'text-slate-300 font-bold';
+                      const tradeId = trade.id || trade.binance_trade_id || '-';
+
+                      return (
+                        <tr key={trade.id || `${trade.symbol}-${trade.close_timestamp}`} className="hover:bg-slate-900/70 transition-colors">
+                          <td className="px-2 py-1.5 whitespace-nowrap text-slate-400 font-bold">#{tradeId}</td>
+                          <td className="px-2 py-1.5 whitespace-nowrap text-slate-300">{formatShortDate(trade.close_timestamp)}</td>
+                          <td className="px-2 py-1.5 whitespace-nowrap font-bold text-white">{trade.symbol}</td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${trade.trade_type === 'SHORT' ? 'bg-rose-950 text-rose-300 border border-rose-600/50' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'}`}>
+                              {trade.trade_type || 'LONG'}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 whitespace-nowrap text-slate-300 max-w-[260px] truncate" title={trade.close_reason || 'N/A'}>
+                            {trade.close_reason || 'N/A'}
+                          </td>
+                          <td className={`px-2 py-1.5 text-right whitespace-nowrap font-bold ${pnlClass}`} title={`PnL Bruto: ${gross >= 0 ? '+' : ''}${gross.toFixed(4)} USDT (Comisión: -${comm.toFixed(4)} USDT)`}>
+                            {pnlNet >= 0 ? `+${pnlNet.toFixed(4)}` : pnlNet.toFixed(4)} USDT
+                          </td>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap text-white font-bold">{parseFloat(trade.open_price)?.toFixed(4) ?? 'N/A'}</td>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap text-white font-bold">{parseFloat(trade.close_price)?.toFixed(4) ?? 'N/A'}</td>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap text-slate-300">{parseFloat(trade.quantity)?.toFixed(4) ?? 'N/A'}</td>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap text-amber-400 font-mono font-medium" title="Comisión Binance (entrada + salida)">
+                            -{comm.toFixed(4)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                {/* Totales Consolidados al pie de la tabla general */}
+                {(() => {
+                  let totalNet = 0;
+                  let totalComm = 0;
+                  let totalGross = 0;
+                  sortedGlobalTrades.forEach(t => {
+                    const net = getTradePnL(t);
+                    const c = getTradeCommission(t);
+                    const g = getTradeGrossPnL(t);
+                    totalNet += net;
+                    totalComm += c;
+                    totalGross += g;
+                  });
+                  const totalPnlClass = totalNet > 0 ? 'text-emerald-400 font-bold' : totalNet < 0 ? 'text-rose-400 font-bold' : 'text-slate-300 font-bold';
+
+                  return (
+                    <div className="mt-3 pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs px-2 font-mono">
+                      <span className="text-slate-400">
+                        Mostrando <span className="text-white font-bold">{visibleGlobalTrades.length}</span> de <span className="text-white font-bold">{sortedGlobalTrades.length}</span> trades cerrados
+                      </span>
+                      <div className="flex flex-wrap items-center gap-4 text-xs">
+                        <span className="text-slate-400">
+                          Comisiones Totales: <span className="text-amber-400 font-bold">-${totalComm.toFixed(4)} USDT</span>
+                        </span>
+                        <span className="text-slate-400">
+                          PnL Bruto Total: <span className="text-slate-200 font-bold">{totalGross >= 0 ? `+${totalGross.toFixed(4)}` : totalGross.toFixed(4)} USDT</span>
+                        </span>
+                        <span className="font-bold text-slate-200">
+                          Total PnL Neto Acumulado: 
+                          <span className={`ml-1.5 font-bold ${totalPnlClass}`}>
+                            {totalNet >= 0 ? `+${totalNet.toFixed(4)}` : totalNet.toFixed(4)} USDT
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-slate-400 text-xs font-mono">
+                No hay operaciones cerradas registradas en el historial general.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
     </div>
