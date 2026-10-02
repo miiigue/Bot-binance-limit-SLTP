@@ -199,6 +199,11 @@ const defaultConfigValues = {
   enableHedgeBasketExit: true,
   hedgeBasketTargetUSDT: 0.50,
   hedgeReentryCooldownSeconds: 60,
+  enableHedgeRecoveryProtection: true,
+  hedgeMaxBouncePercent: 0.35,
+  hedgeRecoveryCandlesWindow: 4,
+  hedgeRecoveryCandlesThreshold: 3,
+  enableHedgeBreakoutRequirement: true,
 };
 
 // --- Diccionario profesional con Explicación y Ejemplo Práctico para cada Parámetro ---
@@ -567,6 +572,26 @@ const tooltipTexts = {
   hedgeReentryCooldownSeconds: {
     desc: "Tiempo de espera obligatorio en segundos tras el cierre de una cobertura antes de autorizar la apertura de una nueva.",
     example: "Con 60s, si una cobertura cerró por Trailing Stop, el bot espera 1 minuto para dar espacio a un posible rebote antes de volver a entrar."
+  },
+  enableHedgeRecoveryProtection: {
+    desc: "Activa los 3 filtros anti-rebote para impedir abrir coberturas si la posición principal está en proceso de recuperación.",
+    example: "Evita vender en el suelo si un LONG ya empezó a rebotar al alza."
+  },
+  hedgeMaxBouncePercent: {
+    desc: "Porcentaje máximo de rebote permitido desde el suelo/techo extremo. Si el precio rebotó más de este valor, la cobertura se bloquea.",
+    example: "Con 0.35%, si un LONG cayó a $1.000 y sube a $1.004 (+0.4%), se bloquea la cobertura SHORT."
+  },
+  hedgeRecoveryCandlesWindow: {
+    desc: "Cantidad de velas recientes a inspeccionar para evaluar si hay un rebote activo en formación.",
+    example: "Con 4, analiza el color y dirección de las últimas 4 velas."
+  },
+  hedgeRecoveryCandlesThreshold: {
+    desc: "Número de velas de recuperación requeridas dentro de la ventana para bloquear la cobertura.",
+    example: "Con 3 (de 4), si 3 de las últimas 4 velas son verdes, se frena la apertura de SHORT."
+  },
+  enableHedgeBreakoutRequirement: {
+    desc: "Si un intento de cobertura no se pudo ejecutar (falta de margen o error), exige que el precio rompa un nuevo mínimo/máximo antes de reintentar.",
+    example: "Garantiza que al liberarse margen no se entre en un rebote viejo sino en la continuación real de la caída."
   }
 };
 
@@ -769,6 +794,23 @@ function ConfigForm({
       }
       if (propInitialConfig.hedgeReentryCooldownSeconds !== undefined || propInitialConfig.hedge_reentry_cooldown_seconds !== undefined) {
         newFormData.hedgeReentryCooldownSeconds = propInitialConfig.hedgeReentryCooldownSeconds ?? propInitialConfig.hedge_reentry_cooldown_seconds;
+      }
+      if (propInitialConfig.enableHedgeRecoveryProtection !== undefined || propInitialConfig.enable_hedge_recovery_protection !== undefined) {
+        const v = propInitialConfig.enableHedgeRecoveryProtection ?? propInitialConfig.enable_hedge_recovery_protection;
+        newFormData.enableHedgeRecoveryProtection = Boolean(v === true || v === 'true');
+      }
+      if (propInitialConfig.hedgeMaxBouncePercent !== undefined || propInitialConfig.hedge_max_bounce_percent !== undefined) {
+        newFormData.hedgeMaxBouncePercent = Number(propInitialConfig.hedgeMaxBouncePercent ?? propInitialConfig.hedge_max_bounce_percent);
+      }
+      if (propInitialConfig.hedgeRecoveryCandlesWindow !== undefined || propInitialConfig.hedge_recovery_candles_window !== undefined) {
+        newFormData.hedgeRecoveryCandlesWindow = Number(propInitialConfig.hedgeRecoveryCandlesWindow ?? propInitialConfig.hedge_recovery_candles_window);
+      }
+      if (propInitialConfig.hedgeRecoveryCandlesThreshold !== undefined || propInitialConfig.hedge_recovery_candles_threshold !== undefined) {
+        newFormData.hedgeRecoveryCandlesThreshold = Number(propInitialConfig.hedgeRecoveryCandlesThreshold ?? propInitialConfig.hedge_recovery_candles_threshold);
+      }
+      if (propInitialConfig.enableHedgeBreakoutRequirement !== undefined || propInitialConfig.enable_hedge_breakout_requirement !== undefined) {
+        const v = propInitialConfig.enableHedgeBreakoutRequirement ?? propInitialConfig.enable_hedge_breakout_requirement;
+        newFormData.enableHedgeBreakoutRequirement = Boolean(v === true || v === 'true');
       }
 
       // Sincronizar Tipo de Orden (LIMIT vs MARKET) de forma estricta
@@ -1064,6 +1106,26 @@ function ConfigForm({
       if (dataToSend.hedgeReentryCooldownSeconds !== undefined) {
         dataToSend.hedge_reentry_cooldown_seconds = sanitizeNum(dataToSend.hedgeReentryCooldownSeconds);
         dataToSend.hedgeReentryCooldownSeconds = dataToSend.hedge_reentry_cooldown_seconds;
+      }
+      if (dataToSend.enableHedgeRecoveryProtection !== undefined) {
+        dataToSend.enableHedgeRecoveryProtection = Boolean(dataToSend.enableHedgeRecoveryProtection === true || dataToSend.enableHedgeRecoveryProtection === 'true');
+        dataToSend.enable_hedge_recovery_protection = dataToSend.enableHedgeRecoveryProtection;
+      }
+      if (dataToSend.hedgeMaxBouncePercent !== undefined) {
+        dataToSend.hedge_max_bounce_percent = sanitizeNum(dataToSend.hedgeMaxBouncePercent);
+        dataToSend.hedgeMaxBouncePercent = dataToSend.hedge_max_bounce_percent;
+      }
+      if (dataToSend.hedgeRecoveryCandlesWindow !== undefined) {
+        dataToSend.hedge_recovery_candles_window = sanitizeNum(dataToSend.hedgeRecoveryCandlesWindow);
+        dataToSend.hedgeRecoveryCandlesWindow = dataToSend.hedge_recovery_candles_window;
+      }
+      if (dataToSend.hedgeRecoveryCandlesThreshold !== undefined) {
+        dataToSend.hedge_recovery_candles_threshold = sanitizeNum(dataToSend.hedgeRecoveryCandlesThreshold);
+        dataToSend.hedgeRecoveryCandlesThreshold = dataToSend.hedge_recovery_candles_threshold;
+      }
+      if (dataToSend.enableHedgeBreakoutRequirement !== undefined) {
+        dataToSend.enableHedgeBreakoutRequirement = Boolean(dataToSend.enableHedgeBreakoutRequirement === true || dataToSend.enableHedgeBreakoutRequirement === 'true');
+        dataToSend.enable_hedge_breakout_requirement = dataToSend.enableHedgeBreakoutRequirement;
       }
 
       const result = await onSave(dataToSend);
@@ -3244,6 +3306,96 @@ function ConfigForm({
                         Espera mínima antes de volver a abrir otra cobertura si la primera cerró
                       </span>
                     </ConfigItem>
+                  </div>
+                )}
+              </div>
+
+              {/* Fila 4: Filtros Anti-Rebote y Protección de Recuperación */}
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-cyan-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🛡️</span>
+                    <div>
+                      <h5 className="text-xs font-bold text-cyan-300">Filtros Anti-Rebote y Protección de Recuperación</h5>
+                      <p className="text-[11px] text-slate-400">Impide abrir coberturas si la posición ya empezó a recuperarse o rebotar.</p>
+                    </div>
+                  </div>
+                  <Switch
+                    name="enableHedgeRecoveryProtection"
+                    checked={formData.enableHedgeRecoveryProtection}
+                    onChange={handleChange}
+                  />
+                </div>
+
+                {formData.enableHedgeRecoveryProtection && (
+                  <div className="space-y-4 pt-2 border-t border-slate-800">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <ConfigItem 
+                        labelText="Máx Rebote Tolerado desde Suelo/Techo (%)" 
+                        htmlFor="hedgeMaxBouncePercent"
+                        tooltipKey="hedgeMaxBouncePercent"
+                      >
+                        <NumberInput
+                          id="hedgeMaxBouncePercent"
+                          name="hedgeMaxBouncePercent"
+                          value={formData.hedgeMaxBouncePercent}
+                          onChange={handleChange}
+                          step={0.05}
+                          min={0.05}
+                        />
+                        <span className="text-[10px] text-cyan-400 mt-1 block">
+                          Bloquea cobertura si el precio rebotó &gt; {formData.hedgeMaxBouncePercent || 0.35}% del extremo
+                        </span>
+                      </ConfigItem>
+
+                      <ConfigItem 
+                        labelText="Ventana de Velas de Rebote" 
+                        htmlFor="hedgeRecoveryCandlesWindow"
+                        tooltipKey="hedgeRecoveryCandlesWindow"
+                      >
+                        <NumberInput
+                          id="hedgeRecoveryCandlesWindow"
+                          name="hedgeRecoveryCandlesWindow"
+                          value={formData.hedgeRecoveryCandlesWindow}
+                          onChange={handleChange}
+                          min={2}
+                          max={20}
+                        />
+                        <span className="text-[10px] text-slate-400 mt-1 block">
+                          Evalúa las últimas {formData.hedgeRecoveryCandlesWindow || 4} velas
+                        </span>
+                      </ConfigItem>
+
+                      <ConfigItem 
+                        labelText="Velas de Rebote para Bloquear" 
+                        htmlFor="hedgeRecoveryCandlesThreshold"
+                        tooltipKey="hedgeRecoveryCandlesThreshold"
+                      >
+                        <NumberInput
+                          id="hedgeRecoveryCandlesThreshold"
+                          name="hedgeRecoveryCandlesThreshold"
+                          value={formData.hedgeRecoveryCandlesThreshold}
+                          onChange={handleChange}
+                          min={1}
+                          max={formData.hedgeRecoveryCandlesWindow || 10}
+                        />
+                        <span className="text-[10px] text-amber-400 mt-1 block">
+                          Bloquea si hay {formData.hedgeRecoveryCandlesThreshold || 3} de {formData.hedgeRecoveryCandlesWindow || 4} velas a favor de recuperación
+                        </span>
+                      </ConfigItem>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
+                      <div>
+                        <div className="text-xs font-semibold text-slate-200">Requerir Rompimiento de Nuevo Mínimo tras Fallo Previo</div>
+                        <div className="text-[11px] text-slate-400">Si un intento falló por margen libre $0, exige que el precio perfore un nuevo mínimo antes de reintentar.</div>
+                      </div>
+                      <Switch
+                        name="enableHedgeBreakoutRequirement"
+                        checked={formData.enableHedgeBreakoutRequirement}
+                        onChange={handleChange}
+                      />
+                    </div>
                   </div>
                 )}
               </div>

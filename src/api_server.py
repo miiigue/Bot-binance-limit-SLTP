@@ -376,6 +376,11 @@ def map_frontend_trading_binance(frontend_data: dict) -> dict:
             'enable_hedge_basket_exit': str(frontend_data.get('enableHedgeBasketExit', True)).lower(),
             'hedge_basket_target_usdt': _val('hedgeBasketTargetUSDT', 0.50),
             'hedge_reentry_cooldown_seconds': _val('hedgeReentryCooldownSeconds', 60),
+            'enable_hedge_recovery_protection': str(frontend_data.get('enableHedgeRecoveryProtection', True)).lower(),
+            'hedge_max_bounce_percent': _val('hedgeMaxBouncePercent', 0.35),
+            'hedge_recovery_candles_window': _val('hedgeRecoveryCandlesWindow', 4),
+            'hedge_recovery_candles_threshold': _val('hedgeRecoveryCandlesThreshold', 3),
+            'enable_hedge_breakout_requirement': str(frontend_data.get('enableHedgeBreakoutRequirement', True)).lower(),
         },
         'SYMBOLS': {
             'symbols_to_trade': ",".join([s.strip().upper() for s in frontend_data.get('symbolsToTrade', '').split(',') if s.strip()])
@@ -663,6 +668,11 @@ def _build_frontend_config_dict():
             ('enable_hedge_basket_exit', 'enableHedgeBasketExit'),
             ('hedge_basket_target_usdt', 'hedgeBasketTargetUSDT'),
             ('hedge_reentry_cooldown_seconds', 'hedgeReentryCooldownSeconds'),
+            ('enable_hedge_recovery_protection', 'enableHedgeRecoveryProtection'),
+            ('hedge_max_bounce_percent', 'hedgeMaxBouncePercent'),
+            ('hedge_recovery_candles_window', 'hedgeRecoveryCandlesWindow'),
+            ('hedge_recovery_candles_threshold', 'hedgeRecoveryCandlesThreshold'),
+            ('enable_hedge_breakout_requirement', 'enableHedgeBreakoutRequirement'),
         ]:
             if key_ini in config_dict['TRADING']:
                 raw_v = config_dict['TRADING'][key_ini]
@@ -2119,7 +2129,7 @@ def load_initial_config():
                          'enable_max_loss_per_symbol', 'enable_consecutive_losses_cooldown',
                          'enable_rolling_performance_filter', 'enable_btc_crash_shield', 'enable_market_regime_filter',
                          'enable_emergency_crash_exit', 'enable_crash_rsi_drop', 'enable_crash_price_drop', 'enable_crash_pnl_drop',
-                         'enable_hedge_protection', 'enable_hedge_trailing_stop', 'enable_hedge_basket_exit']:
+                         'enable_hedge_protection', 'enable_hedge_trailing_stop', 'enable_hedge_basket_exit', 'enable_hedge_recovery_protection', 'enable_hedge_breakout_requirement']:
                 loaded_trading_params[key] = clean_str.lower() == 'true'
             else:
                 loaded_trading_params[key] = clean_str if clean_str != '' else value_str

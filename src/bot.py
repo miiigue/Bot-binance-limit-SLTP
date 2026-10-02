@@ -235,6 +235,7 @@ class SingleSideTradingBot:
         self.pending_reentry_order_id = None
         self.pending_reentry_price = None
         self.pending_reentry_qty = None
+        self.last_klines_df = None
         # --- FIN PARÁMETROS DCA ---
         
         # --- NUEVO: ESTADO PARA ÓRDENES DE SOPORTE ---
@@ -402,6 +403,37 @@ class SingleSideTradingBot:
         except Exception as e_diag_init:
             self.logger.debug(f"[{self.symbol}] Aviso construyendo entry_diagnostics iniciales: {e_diag_init}")
         self.logger.info(f"[{self.symbol}] Worker inicializado exitosamente (Tipo Orden: {self.entry_order_type}, Timeout Órdenes: {self.order_timeout_seconds}s).")
+
+    def _check_hedge_recovery_candles(self, klines_df, side_to_protect: str) -> tuple[bool, int, int]:
+        """
+        Evalúa si las velas recientes muestran un rebote o recuperación en contra de la cobertura.
+        - side_to_protect == 'LONG': La cobertura abriría SHORT. Se verifica si hay velas verdes (rebote alcista).
+        - side_to_protect == 'SHORT': La cobertura abriría LONG. Se verifica si hay velas rojas (retroceso bajista).
+        Retorna: (is_recovering, recovery_count, window)
+        """
+        window = _safe_int(getattr(self, 'hedge_recovery_candles_window', 4), 4)
+        threshold = _safe_int(getattr(self, 'hedge_recovery_candles_threshold', 3), 3)
+
+        if klines_df is None or getattr(klines_df, 'empty', True) or len(klines_df) < window:
+            return False, 0, window
+
+        recent = klines_df.tail(window)
+        recovery_count = 0
+
+        for _, row in recent.iterrows():
+            o = float(row.get('open', 0) or 0)
+            c = float(row.get('close', 0) or 0)
+            if side_to_protect == 'LONG':
+                # Si estamos protegiendo un LONG, las velas verdes (c >= o) son de rebote alcista
+                if c >= o:
+                    recovery_count += 1
+            else:
+                # Si estamos protegiendo un SHORT, las velas rojas (c <= o) son de retroceso bajista
+                if c <= o:
+                    recovery_count += 1
+
+        is_recovering = (recovery_count >= threshold)
+        return is_recovering, recovery_count, window
 
     def update_trading_params(self, new_params: dict):
         """Actualiza los parámetros de trading en caliente para el bot en ejecución."""
@@ -1884,6 +1916,7 @@ class SingleSideTradingBot:
                 # 3d. Obtener velas para evaluar Trailing Stop o condiciones de salida técnicas
                 klines_df = self._get_market_data()
                 if klines_df is not None and not klines_df.empty:
+                    self.last_klines_df = klines_df
                     c_price = float(klines_df.iloc[-1]['close'])
                     self.current_market_price = c_price
                     if self.price_peak_since_entry is None or c_price > float(self.price_peak_since_entry):
@@ -1954,6 +1987,7 @@ class SingleSideTradingBot:
                 klines_df = self._get_market_data()
                 if klines_df is None or klines_df.empty:
                     return
+                self.last_klines_df = klines_df
                 self.current_market_price = float(klines_df.iloc[-1]['close'])
 
                 if self.evaluate_support_strategy:
@@ -5035,6 +5069,13 @@ class TradingBot:
         self.last_hedge_close_reason = ""  # Por qué se cerró la última cobertura (ej: "trailing_stop")
         self.last_hedge_close_ts = 0.0     # Timestamp del último cierre de cobertura
         self.hedge_no_open_reason = ""     # Por qué NO se abrió cobertura en la última evaluación
+        # --- FILTROS ANTI-REBOTE Y PROTECCIÓN DE RECUPERACIÓN PARA COBERTURA ---
+        self.enable_hedge_recovery_protection = str(self.params.get('enable_hedge_recovery_protection', 'true')).lower() == 'true'
+        self.hedge_max_bounce_percent = _safe_float(self.params.get('hedge_max_bounce_percent'), 0.35)
+        self.hedge_recovery_candles_window = _safe_int(self.params.get('hedge_recovery_candles_window'), 4)
+        self.hedge_recovery_candles_threshold = _safe_int(self.params.get('hedge_recovery_candles_threshold'), 3)
+        self.enable_hedge_breakout_requirement = str(self.params.get('enable_hedge_breakout_requirement', 'true')).lower() == 'true'
+        self.hedge_failed_attempt_price = None  # Precio donde falló el último intento de cobertura
 
         self.long_bot: SingleSideTradingBot | None = None
         self.short_bot: SingleSideTradingBot | None = None
@@ -5205,9 +5246,10 @@ class TradingBot:
                 self.hedge_executions_count = 0
                 return
 
-        # Si ninguna está en posición, resetear contador de coberturas
+        # Si ninguna está en posición, resetear contador de coberturas y estado de fallo
         if not long_in_pos and not short_in_pos:
             self.hedge_executions_count = 0
+            self.hedge_failed_attempt_price = None
             return
 
         # Respetar cooldown entre aperturas de resguardo
@@ -5259,6 +5301,52 @@ class TradingBot:
                     trigger_msg = f"Pérdida LONG = {long_pnl:.2f} USDT <= -{trigger_val:.2f} USDT"
 
                 if should_hedge:
+                    # Validar Filtros Anti-Rebote y Protección de Recuperación
+                    if getattr(self, 'enable_hedge_recovery_protection', True):
+                        # Filtro 1: Rebote desde el Suelo
+                        price_trough = float(getattr(self.long_bot, 'price_trough_since_entry', 0.0) or 0.0)
+                        if price_trough > 0.0 and curr_price > price_trough:
+                            bounce_pct = ((curr_price - price_trough) / price_trough) * 100.0
+                            max_bounce = _safe_float(getattr(self, 'hedge_max_bounce_percent', 0.35), 0.35)
+                            if bounce_pct > max_bounce:
+                                self.hedge_no_open_reason = (
+                                    f"🛡️ Cobertura bloqueada: LONG recuperando (+{bounce_pct:.2f}% desde suelo {price_trough:.4f}, "
+                                    f"máx tol: {max_bounce:.2f}%). Entrada SHORT cancelada para no vender en rebote."
+                                )
+                                self.logger.info(f"[{self.symbol}][HEDGE] {self.hedge_no_open_reason}")
+                                return
+
+                        # Filtro 2: Ventana y Velas de Rebote
+                        k_df = getattr(self.long_bot, 'last_klines_df', None)
+                        if k_df is None or k_df.empty:
+                            try:
+                                k_df = self.long_bot._get_market_data()
+                            except Exception:
+                                k_df = None
+                        if k_df is not None and not k_df.empty:
+                            is_rec, rec_count, win = self._check_hedge_recovery_candles(k_df, side_to_protect='LONG')
+                            if is_rec:
+                                self.hedge_no_open_reason = (
+                                    f"🛡️ Cobertura bloqueada: Rebote alcista detectado ({rec_count}/{win} velas verdes recientes). "
+                                    f"Esperando que frene el impulso."
+                                )
+                                self.logger.info(f"[{self.symbol}][HEDGE] {self.hedge_no_open_reason}")
+                                return
+
+                        # Filtro 3: Rompimiento de nuevo mínimo tras fallo previo
+                        if getattr(self, 'enable_hedge_breakout_requirement', True):
+                            failed_ref = getattr(self, 'hedge_failed_attempt_price', None)
+                            if failed_ref is not None and failed_ref > 0.0:
+                                if curr_price >= failed_ref:
+                                    self.hedge_no_open_reason = (
+                                        f"🛡️ Cobertura en espera: Requiere nuevo mínimo < {failed_ref:.4f} tras fallo previo "
+                                        f"(Actual: {curr_price:.4f})."
+                                    )
+                                    self.logger.info(f"[{self.symbol}][HEDGE] {self.hedge_no_open_reason}")
+                                    return
+                                else:
+                                    self.hedge_failed_attempt_price = None
+
                     long_margin = Decimal(str(long_st.get('margin_usdt') or getattr(self.long_bot, 'position_size_usdt', 50) or 50))
                     hedge_margin = round(long_margin * Decimal(str(multiplier)), 2)
                     self.logger.warning(
@@ -5274,7 +5362,11 @@ class TradingBot:
                     if success:
                         self.last_hedge_timestamp = now
                         self.hedge_executions_count += 1
+                        self.hedge_failed_attempt_price = None
                         self.hedge_no_open_reason = ""  # Cobertura abierta, limpiar mensaje
+                    else:
+                        self.hedge_failed_attempt_price = curr_price
+                        self.hedge_no_open_reason = f"⚠️ Fallo al abrir cobertura SHORT @ {curr_price:.4f} (margen insuficiente o API). Requiere nuevo mínimo."
                     return
                 else:
                     # Trigger no alcanzado — reportar progreso
@@ -5311,6 +5403,52 @@ class TradingBot:
                     trigger_msg = f"Pérdida SHORT = {short_pnl:.2f} USDT <= -{trigger_val:.2f} USDT"
 
                 if should_hedge:
+                    # Validar Filtros Anti-Rebote y Protección de Recuperación
+                    if getattr(self, 'enable_hedge_recovery_protection', True):
+                        # Filtro 1: Retroceso desde el Techo
+                        price_peak = float(getattr(self.short_bot, 'price_peak_since_entry', 0.0) or 0.0)
+                        if price_peak > 0.0 and curr_price < price_peak:
+                            pullback_pct = ((price_peak - curr_price) / price_peak) * 100.0
+                            max_bounce = _safe_float(getattr(self, 'hedge_max_bounce_percent', 0.35), 0.35)
+                            if pullback_pct > max_bounce:
+                                self.hedge_no_open_reason = (
+                                    f"🛡️ Cobertura bloqueada: SHORT recuperando (-{pullback_pct:.2f}% desde techo {price_peak:.4f}, "
+                                    f"máx tol: {max_bounce:.2f}%). Entrada LONG cancelada para no comprar en caída."
+                                )
+                                self.logger.info(f"[{self.symbol}][HEDGE] {self.hedge_no_open_reason}")
+                                return
+
+                        # Filtro 2: Ventana y Velas de Rebote
+                        k_df = getattr(self.short_bot, 'last_klines_df', None)
+                        if k_df is None or k_df.empty:
+                            try:
+                                k_df = self.short_bot._get_market_data()
+                            except Exception:
+                                k_df = None
+                        if k_df is not None and not k_df.empty:
+                            is_rec, rec_count, win = self._check_hedge_recovery_candles(k_df, side_to_protect='SHORT')
+                            if is_rec:
+                                self.hedge_no_open_reason = (
+                                    f"🛡️ Cobertura bloqueada: Retroceso bajista detectado ({rec_count}/{win} velas rojas recientes). "
+                                    f"Esperando que frene el impulso."
+                                )
+                                self.logger.info(f"[{self.symbol}][HEDGE] {self.hedge_no_open_reason}")
+                                return
+
+                        # Filtro 3: Rompimiento de nuevo máximo tras fallo previo
+                        if getattr(self, 'enable_hedge_breakout_requirement', True):
+                            failed_ref = getattr(self, 'hedge_failed_attempt_price', None)
+                            if failed_ref is not None and failed_ref > 0.0:
+                                if curr_price <= failed_ref:
+                                    self.hedge_no_open_reason = (
+                                        f"🛡️ Cobertura en espera: Requiere nuevo máximo > {failed_ref:.4f} tras fallo previo "
+                                        f"(Actual: {curr_price:.4f})."
+                                    )
+                                    self.logger.info(f"[{self.symbol}][HEDGE] {self.hedge_no_open_reason}")
+                                    return
+                                else:
+                                    self.hedge_failed_attempt_price = None
+
                     short_margin = Decimal(str(short_st.get('margin_usdt') or getattr(self.short_bot, 'position_size_usdt', 50) or 50))
                     hedge_margin = round(short_margin * Decimal(str(multiplier)), 2)
                     self.logger.warning(
@@ -5326,7 +5464,11 @@ class TradingBot:
                     if success:
                         self.last_hedge_timestamp = now
                         self.hedge_executions_count += 1
+                        self.hedge_failed_attempt_price = None
                         self.hedge_no_open_reason = ""  # Cobertura abierta, limpiar mensaje
+                    else:
+                        self.hedge_failed_attempt_price = curr_price
+                        self.hedge_no_open_reason = f"⚠️ Fallo al abrir cobertura LONG @ {curr_price:.4f} (margen insuficiente o API). Requiere nuevo máximo."
                     return
                 else:
                     # Trigger no alcanzado — reportar progreso
@@ -5371,6 +5513,16 @@ class TradingBot:
             self.hedge_basket_target_usdt = _safe_float(new_params['hedge_basket_target_usdt'], getattr(self, 'hedge_basket_target_usdt', 0.50))
         if 'hedge_reentry_cooldown_seconds' in new_params:
             self.hedge_reentry_cooldown_seconds = _safe_int(new_params['hedge_reentry_cooldown_seconds'], getattr(self, 'hedge_reentry_cooldown_seconds', 60))
+        if 'enable_hedge_recovery_protection' in new_params:
+            self.enable_hedge_recovery_protection = str(new_params['enable_hedge_recovery_protection']).lower() == 'true'
+        if 'hedge_max_bounce_percent' in new_params:
+            self.hedge_max_bounce_percent = _safe_float(new_params['hedge_max_bounce_percent'], getattr(self, 'hedge_max_bounce_percent', 0.35))
+        if 'hedge_recovery_candles_window' in new_params:
+            self.hedge_recovery_candles_window = _safe_int(new_params['hedge_recovery_candles_window'], getattr(self, 'hedge_recovery_candles_window', 4))
+        if 'hedge_recovery_candles_threshold' in new_params:
+            self.hedge_recovery_candles_threshold = _safe_int(new_params['hedge_recovery_candles_threshold'], getattr(self, 'hedge_recovery_candles_threshold', 3))
+        if 'enable_hedge_breakout_requirement' in new_params:
+            self.enable_hedge_breakout_requirement = str(new_params['enable_hedge_breakout_requirement']).lower() == 'true'
 
         if self.trade_direction in ('LONG', 'BIDIRECTIONAL'):
             if self.long_bot is None:
@@ -5639,6 +5791,11 @@ class TradingBot:
                 "last_close_reason": getattr(self, 'last_hedge_close_reason', ''),
                 "cooldown_seconds": _safe_int(getattr(self, 'hedge_reentry_cooldown_seconds', 60), 60),
                 "cooldown_remaining": max(0, int(_safe_int(getattr(self, 'hedge_reentry_cooldown_seconds', 60), 60) - (time.time() - getattr(self, 'last_hedge_timestamp', 0.0)))),
+                "recovery_protection_enabled": getattr(self, 'enable_hedge_recovery_protection', True),
+                "max_bounce_percent": getattr(self, 'hedge_max_bounce_percent', 0.35),
+                "recovery_candles_window": getattr(self, 'hedge_recovery_candles_window', 4),
+                "recovery_candles_threshold": getattr(self, 'hedge_recovery_candles_threshold', 3),
+                "breakout_requirement_enabled": getattr(self, 'enable_hedge_breakout_requirement', True),
             },
         })
         if len(active_positions) == 1:
