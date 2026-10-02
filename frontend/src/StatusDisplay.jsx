@@ -977,7 +977,6 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
         <table className="min-w-full divide-y divide-slate-700">
           <thead className="bg-slate-950 border-b-2 border-slate-700">
             <tr>
-              <th scope="col" className="px-2 py-3 text-left text-xs font-extrabold text-slate-100 uppercase tracking-wider w-10"></th>
               <BinanceSortHeader label="Symbol" sortKey="symbol" currentSort={statusSort} onSort={handleStatusSort} />
               <BinanceSortHeader label="Estrategia & Estado" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[170px]" tooltipInfo={{ title: "Estrategia & Estado", desc: "Estrategia asignada arriba y control de pausa/estado del bot con órdenes pendientes abajo." }} />
               <BinanceSortHeader label="PnL (Flotante / Hist.)" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[150px]" tooltipInfo={{ title: "PnL Consolidado", desc: "Flotante actual (no realizado) arriba / Histórico acumulado de trades cerrados abajo." }} />
@@ -1016,16 +1015,6 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       className={`transition-colors duration-150 cursor-pointer ${rowBgClass}`}
                       onClick={() => toggleRow(status.symbol)}
                     >
-                    {/* --- CELDA CON BOTÓN DE EXPANDIR --- */}
-                    <td className="px-2 py-3 whitespace-nowrap text-sm text-slate-300">
-                      <button 
-                        className="p-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 focus:outline-none"
-                        aria-expanded={!!expandedRows[status.symbol]}
-                        aria-controls={`history-${status.symbol}`}
-                      >
-                        {expandedRows[status.symbol] ? '▼' : '▶'}
-                      </button>
-                    </td>
                     {/* --- Símbolo y badges de dirección --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-sm font-bold text-white">
                       <div className="flex items-center space-x-2">
@@ -1225,12 +1214,6 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                                   <span className="truncate max-w-[210px]">{pendingEntryMsg || `Orden #${hasPendingEntry} en libro...`}</span>
                                 </div>
                               )}
-                              {entryFailReason && (
-                                <div className="px-1.5 py-1 rounded bg-rose-950/70 border border-rose-500/50 text-[9px] text-rose-200 font-sans flex items-start gap-1 max-w-[240px]" title={entryFailReason}>
-                                  <span className="shrink-0 text-[10px]">⚠️</span>
-                                  <span className="leading-tight break-words">{entryFailReason}</span>
-                                </div>
-                              )}
                             </div>
                           );
                         }
@@ -1272,12 +1255,6 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                               <div className="px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-500/50 text-[9.5px] text-amber-300 font-sans flex items-center gap-1 animate-pulse" title={pendingEntryMsg || `Orden #${hasPendingEntry} esperando ejecución`}>
                                 <span>⏳</span>
                                 <span className="truncate max-w-[210px]">{pendingEntryMsg || `Orden #${hasPendingEntry} en libro...`}</span>
-                              </div>
-                            )}
-                            {entryFailReason && activePositions.length < 2 && (
-                              <div className="px-1.5 py-1 rounded bg-rose-950/60 border border-rose-500/40 text-[9px] text-rose-200 font-sans flex items-start gap-1 max-w-[240px]" title={entryFailReason}>
-                                <span className="shrink-0 text-[10px]">⚠️</span>
-                                <span className="leading-tight break-words">{entryFailReason}</span>
                               </div>
                             )}
                             {status.hedge_info?.is_hedged && status.hedge_info?.basket_net_pnl !== undefined && status.hedge_info?.basket_net_pnl !== null && (
@@ -1689,8 +1666,8 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
           {sortedStatuses.length > 0 && (
             <tfoot className="bg-slate-950 border-t-2 border-slate-700 font-mono text-xs">
               <tr className="divide-x divide-slate-800">
-                {/* 1 al 3: Expandir, Símbolo, Estrategia & Estado */}
-                <td colSpan="3" className="px-3 py-3 text-left font-sans font-bold text-slate-200">
+                {/* 1 al 2: Símbolo, Estrategia & Estado */}
+                <td colSpan="2" className="px-3 py-3 text-left font-sans font-bold text-slate-200">
                   <div className="flex items-center gap-2">
                     <span className="text-base">📊</span>
                     <span>TOTALES CONSOLIDADOS ({sortedStatuses.length} pares)</span>
