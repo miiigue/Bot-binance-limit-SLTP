@@ -47,7 +47,7 @@ const Tooltip = ({ text, example, title, position = 'top', align = 'center' }) =
         ?
       </span>
       {/* Contenedor flotante del Tooltip */}
-      <div className={`absolute ${posClasses} ${alignClasses} w-72 sm:w-84 bg-gray-900/95 backdrop-blur-sm text-gray-100 text-xs rounded-lg p-3.5 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-50 shadow-2xl border border-gray-700 text-left font-normal normal-case`}>
+      <div className={`absolute ${posClasses} ${alignClasses} w-80 sm:w-96 bg-gray-900/95 backdrop-blur-sm text-gray-100 text-xs rounded-lg p-3.5 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-50 shadow-2xl border border-gray-700 text-left font-normal normal-case`}>
         {displayTitle && (
           <div className="font-bold text-blue-300 mb-1 border-b border-gray-700/80 pb-1 text-xs tracking-wide uppercase">
             {displayTitle}

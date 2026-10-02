@@ -161,6 +161,7 @@ export default function WalletMarginHealth({ readOnly = false }) {
               <Tooltip 
                 title="Auditoría Contable de Margen" 
                 text="Desglose matemático transparente de cada centavo de tu cuenta de Binance Futures: [En Posiciones] + [Retenido por Flotante] + [Órdenes Límite] + [Margen Libre] = [Límite Autorizado]." 
+                example="Balance de Billetera: $5,310.14 USDT | Margen en Posiciones: $4,269.57 USDT | Margen sin asignar: $5,310.14 - $4,269.57 = $1,040.57 USDT | Pérdida Flotante Actual: -$1,053.86 USDT. Como la pérdida flotante (-$1,053.86) superó los $1,040.57 que quedaban libres en la cuenta, Binance retuvo y consumió el 100% de ese excedente como colchón de garantía, reduciendo el margen libre disponible exactamente a $0.00."
               />
               <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -227,7 +228,8 @@ export default function WalletMarginHealth({ readOnly = false }) {
                 <span>[2] 🔻 Retenido Flotante</span>
                 <Tooltip 
                   title="Margen Retenido por Pérdida Flotante" 
-                  text="En Binance Futures Cross Margin, las pérdidas flotantes no realizadas restan directamente del margen disponible. Este monto representa el capital bloqueado por el drawdown actual que Binance retiene como respaldo." 
+                  text="En Binance Futures Cross Margin, las pérdidas flotantes no realizadas restan directamente del margen disponible para evitar liquidaciones. Este monto representa el capital bloqueado por el drawdown actual que Binance retiene como respaldo obligatorio." 
+                  example="Balance de Billetera: $5,310.14 USDT | Margen en Posiciones: $4,269.57 USDT | Margen sin asignar: $5,310.14 - $4,269.57 = $1,040.57 USDT | Pérdida Flotante Actual: -$1,053.86 USDT. Como la pérdida flotante (-$1,053.86) superó los $1,040.57 que quedaban libres en la cuenta, Binance retuvo y consumió el 100% de ese excedente como colchón de garantía, reduciendo el margen libre disponible exactamente a $0.00."
                 />
               </span>
               <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border whitespace-nowrap ${
@@ -299,8 +301,9 @@ export default function WalletMarginHealth({ readOnly = false }) {
               <span className="font-bold uppercase tracking-wider text-[11px] flex items-center gap-1 text-slate-300">
                 <span>[4] 🟢 Margen Libre Real</span>
                 <Tooltip 
-                  title="Margen Disponible para Operar" 
-                  text="Monto en USDT 100% libre e inmediatamente disponible en Binance para abrir nuevas posiciones, coberturas (Hedge) o recompras. Es el saldo restante tras descontar Posiciones, Pérdida Flotante y Órdenes." 
+                  title="¿Por qué el Margen Libre puede marcar $0.00?" 
+                  text="El Margen Libre es el capital 100% disponible para abrir nuevas órdenes o coberturas (Hedge). Se calcula restando Posiciones, Flotante Negativo y Órdenes Límite del Balance Total. Si marca $0.00 teniendo solo una parte en posiciones, es porque la pérdida flotante absorbió todo el margen restante." 
+                  example="Balance de Billetera: $5,310.14 USDT | Margen en Posiciones: $4,269.57 USDT | Margen sin asignar: $5,310.14 - $4,269.57 = $1,040.57 USDT | Pérdida Flotante Actual: -$1,053.86 USDT. Como la pérdida flotante (-$1,053.86) superó los $1,040.57 libres, Binance retuvo y consumió el 100% de ese excedente como colchón de garantía, reduciendo el margen libre disponible exactamente a $0.00."
                 />
               </span>
               <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border whitespace-nowrap ${
@@ -331,7 +334,8 @@ export default function WalletMarginHealth({ readOnly = false }) {
                 <span>[5] 🛡️ (=) Límite Autorizado</span>
                 <Tooltip 
                   title="Límite Máximo Autorizado" 
-                  text="Tope máximo de capital en USDT que el bot tiene autorizado comprometer simultáneamente. Es el resultado exacto de la suma de las 4 tarjetas anteriores: [En Posiciones] + [Retenido Flotante] + [Órdenes Límite] + [Margen Libre] = Límite Autorizado." 
+                  text="Tope máximo de capital en USDT que el bot tiene autorizado comprometer simultáneamente. Es el resultado exacto de la suma contable de las 4 tarjetas anteriores: [En Posiciones] + [Retenido Flotante] + [Órdenes Límite] + [Margen Libre] = Límite Autorizado." 
+                  example="$4,269.57 (En Posiciones) + $1,040.57 (Retenido Flotante) + $0.00 (Órdenes Límite) + $0.00 (Margen Libre) = $5,310.14 USDT (100% del Límite Autorizado verificado)."
                 />
               </span>
               <span className="text-purple-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider border border-purple-500/40 bg-purple-950/70 whitespace-nowrap">
