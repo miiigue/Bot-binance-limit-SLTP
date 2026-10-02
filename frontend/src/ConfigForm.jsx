@@ -158,6 +158,7 @@ const defaultConfigValues = {
   enableDcaReentry: false,
   dcaReentryMode: 'fixed_percent',
   dcaPriceDropPercent: 1.5,
+  dcaTriggerLossUsdt: 15.0,
   dcaMaxReentries: 2,
   dcaVolumeMultiplier: 1.0,
   riskPercentage: 50,
@@ -374,8 +375,12 @@ const tooltipTexts = {
     example: "Si compraste a $100 y cae a $98.5, coloca una orden adicional para bajar tu precio de entrada promedio a $99.25."
   },
   dcaReentryMode: {
-    desc: "Método para determinar el precio de la siguiente compra: por porcentaje fijo de caída o por el siguiente soporte inferior confirmado.",
-    example: "'Porcentaje Fijo' compra a -1.5% de caída; 'Siguiente Soporte' compra en el siguiente suelo institucional detectado."
+    desc: "Método para disparar la siguiente orden de compra: por porcentaje fijo de caída, por pérdida flotante en USDT, o por el siguiente soporte técnico inferior.",
+    example: "'Porcentaje Fijo' compra a -1.5% de caída; 'Por Pérdida' compra al acumular -$15 USDT flotantes; 'Siguiente Soporte' compra en el piso técnico."
+  },
+  dcaTriggerLossUsdt: {
+    desc: "Pérdida flotante acumulada en USDT requerida en la posición para disparar la siguiente re-entrada de seguridad (DCA).",
+    example: "Con 15.0 USDT, si la pérdida flotante de la posición llega a -$15.00 USDT, el bot ejecuta la siguiente compra para promediar a la baja."
   },
   dcaPriceDropPercent: {
     desc: "Porcentaje de caída desde el precio de entrada requerido para activar y colocar la siguiente orden de re-entrada.",
@@ -721,6 +726,9 @@ function ConfigForm({
       if (propInitialConfig.crash_pnl_drop_threshold_usdt !== undefined) {
         newFormData.crashPnlDropThresholdUSDT = Number(propInitialConfig.crash_pnl_drop_threshold_usdt);
       }
+      if (propInitialConfig.dca_trigger_loss_usdt !== undefined || propInitialConfig.dcaTriggerLossUsdt !== undefined) {
+        newFormData.dcaTriggerLossUsdt = Number(propInitialConfig.dcaTriggerLossUsdt ?? propInitialConfig.dca_trigger_loss_usdt);
+      }
       if (propInitialConfig.riskPercentage !== undefined || propInitialConfig.risk_percentage !== undefined) {
         const rp = Number(propInitialConfig.riskPercentage ?? propInitialConfig.risk_percentage);
         setRiskPercentage(rp);
@@ -976,6 +984,7 @@ function ConfigForm({
       if (dataToSend.enableDcaReentry !== undefined) dataToSend.enable_dca_reentry = dataToSend.enableDcaReentry;
       if (dataToSend.dcaReentryMode !== undefined) dataToSend.dca_reentry_mode = dataToSend.dcaReentryMode;
       if (dataToSend.dcaPriceDropPercent !== undefined) dataToSend.dca_price_drop_percent = dataToSend.dcaPriceDropPercent;
+      if (dataToSend.dcaTriggerLossUsdt !== undefined) dataToSend.dca_trigger_loss_usdt = dataToSend.dcaTriggerLossUsdt;
       if (dataToSend.dcaMaxReentries !== undefined) dataToSend.dca_max_reentries = dataToSend.dcaMaxReentries;
       if (dataToSend.dcaVolumeMultiplier !== undefined) dataToSend.dca_volume_multiplier = dataToSend.dcaVolumeMultiplier;
       if (dataToSend.enableEmergencyCrashExit !== undefined) dataToSend.enable_emergency_crash_exit = dataToSend.enableEmergencyCrashExit;
@@ -2434,11 +2443,12 @@ function ConfigForm({
                   className="block w-full py-2 px-3 border border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-semibold text-gray-900 dark:text-gray-100"
                 >
                   <option value="fixed_percent">📉 % de Caída Fijo</option>
+                  <option value="loss_usdt">💸 Por Pérdida en USDT</option>
                   <option value="next_support">🏛️ Siguiente Soporte Confirmado</option>
                 </select>
               </ConfigItem>
 
-              {formData.dcaReentryMode !== 'next_support' && (
+              {formData.dcaReentryMode === 'fixed_percent' && (
                 <ConfigItem labelText="% de Caída para Re-entrada" htmlFor="dcaPriceDropPercent" tooltipKey="dcaPriceDropPercent">
                   <NumberInput
                     id="dcaPriceDropPercent"
@@ -2446,6 +2456,19 @@ function ConfigForm({
                     value={formData.dcaPriceDropPercent}
                     onChange={handleChange}
                     step={0.1}
+                    min={0.1}
+                  />
+                </ConfigItem>
+              )}
+
+              {formData.dcaReentryMode === 'loss_usdt' && (
+                <ConfigItem labelText="Pérdida en USDT para Re-entrada" htmlFor="dcaTriggerLossUsdt" tooltipKey="dcaTriggerLossUsdt">
+                  <NumberInput
+                    id="dcaTriggerLossUsdt"
+                    name="dcaTriggerLossUsdt"
+                    value={formData.dcaTriggerLossUsdt}
+                    onChange={handleChange}
+                    step={0.5}
                     min={0.1}
                   />
                 </ConfigItem>
@@ -3408,7 +3431,7 @@ function ConfigForm({
                                  {/* Re-entradas DCA */}
                                  {cfg.enableDcaReentry && (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/60" title="Re-entradas y Órdenes de Seguridad (DCA)">
-                                    🔄 DCA: {cfg.dcaMaxReentries || 2}x {cfg.dcaReentryMode === 'next_support' ? 'Soportes' : `@ ${cfg.dcaPriceDropPercent || 1.5}%`} ({cfg.dcaVolumeMultiplier || 1}x)
+                                    🔄 DCA: {cfg.dcaMaxReentries || 2}x {cfg.dcaReentryMode === 'next_support' ? 'Soportes' : cfg.dcaReentryMode === 'loss_usdt' ? `-$${cfg.dcaTriggerLossUsdt || 15} USDT` : `@ ${cfg.dcaPriceDropPercent || 1.5}%`} ({cfg.dcaVolumeMultiplier || 1}x)
                                   </span>
                                 )}
 

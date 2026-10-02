@@ -227,6 +227,7 @@ class SingleSideTradingBot:
         self.enable_dca_reentry = str(trading_params.get('enable_dca_reentry', 'False')).lower() == 'true'
         self.dca_reentry_mode = str(trading_params.get('dca_reentry_mode', 'fixed_percent')).lower()
         self.dca_price_drop_percent = _safe_float(trading_params.get('dca_price_drop_percent'), 1.5)
+        self.dca_trigger_loss_usdt = _safe_float(trading_params.get('dca_trigger_loss_usdt'), 15.0)
         self.dca_max_reentries = _safe_int(trading_params.get('dca_max_reentries'), 2)
         self.dca_volume_multiplier = _safe_float(trading_params.get('dca_volume_multiplier'), 1.0)
         
@@ -448,6 +449,7 @@ class SingleSideTradingBot:
         self.enable_dca_reentry = str(new_params.get('enable_dca_reentry', self.enable_dca_reentry)).lower() == 'true'
         self.dca_reentry_mode = str(new_params.get('dca_reentry_mode', self.dca_reentry_mode)).lower()
         self.dca_price_drop_percent = _safe_float(new_params.get('dca_price_drop_percent'), self.dca_price_drop_percent)
+        self.dca_trigger_loss_usdt = _safe_float(new_params.get('dca_trigger_loss_usdt'), getattr(self, 'dca_trigger_loss_usdt', 15.0))
         self.dca_max_reentries = _safe_int(new_params.get('dca_max_reentries'), self.dca_max_reentries)
         self.dca_volume_multiplier = _safe_float(new_params.get('dca_volume_multiplier'), self.dca_volume_multiplier)
 
@@ -4856,6 +4858,20 @@ class SingleSideTradingBot:
             if lower_supports:
                 target_reentry_price = max(lower_supports)
                 self.logger.info(f"[{self.symbol}][{self.trade_side}] Re-entrada DCA por Soporte: detectado soporte en {target_reentry_price}")
+        elif self.dca_reentry_mode == 'loss_usdt':
+            # Modo: Por Pérdida en USDT (Pérdida flotante acumulada)
+            trigger_loss = Decimal(str(getattr(self, 'dca_trigger_loss_usdt', 15.0)))
+            pos_qty = Decimal(str(self.current_position.get('quantity', 0)))
+            if pos_qty <= Decimal('0'):
+                pos_qty = Decimal(str(getattr(self, 'last_known_position_size', 0)))
+
+            if pos_qty > Decimal('0') and trigger_loss > Decimal('0'):
+                loss_dist_per_unit = trigger_loss / pos_qty
+                if is_short:
+                    target_reentry_price = entry_price + loss_dist_per_unit
+                else:
+                    target_reentry_price = entry_price - loss_dist_per_unit
+                self.logger.debug(f"[{self.symbol}][{self.trade_side}] DCA por Pérdida ({trigger_loss} USDT): Entrada={entry_price}, Cant={pos_qty}, Target Price={target_reentry_price:.6f}")
         else:
             # Modo: Porcentaje Fijo (Caída para LONG, Subida para SHORT)
             if is_short:
@@ -4869,13 +4885,27 @@ class SingleSideTradingBot:
             # En modo MARKET, evaluamos si el precio de mercado ya tocó el objetivo para disparar orden MARKET directa sin retener margen con órdenes LIMIT en Binance
             if getattr(self, 'entry_order_type', 'MARKET') == 'MARKET':
                 should_trigger_dca_market = False
-                if is_short and current_market_price >= target_reentry_price:
-                    should_trigger_dca_market = True
-                elif not is_short and current_market_price <= target_reentry_price:
-                    should_trigger_dca_market = True
+                if self.dca_reentry_mode == 'loss_usdt':
+                    trigger_loss = Decimal(str(getattr(self, 'dca_trigger_loss_usdt', 15.0)))
+                    curr_pnl = getattr(self, 'last_known_pnl', Decimal('0'))
+                    if curr_pnl <= -trigger_loss:
+                        should_trigger_dca_market = True
+                    elif is_short and current_market_price >= target_reentry_price:
+                        should_trigger_dca_market = True
+                    elif not is_short and current_market_price <= target_reentry_price:
+                        should_trigger_dca_market = True
+                else:
+                    if is_short and current_market_price >= target_reentry_price:
+                        should_trigger_dca_market = True
+                    elif not is_short and current_market_price <= target_reentry_price:
+                        should_trigger_dca_market = True
 
                 if not should_trigger_dca_market:
-                    self.logger.debug(f"[{self.symbol}][{self.trade_side}] DCA Nivel Target: {target_reentry_price:.4f} (Precio Actual: {current_market_price:.4f}). En espera de disparo a Mercado...")
+                    if self.dca_reentry_mode == 'loss_usdt':
+                        curr_pnl = getattr(self, 'last_known_pnl', Decimal('0'))
+                        self.logger.debug(f"[{self.symbol}][{self.trade_side}] DCA por Pérdida: PnL actual={curr_pnl:.2f} USDT (Umbral: -{getattr(self, 'dca_trigger_loss_usdt', 15.0)} USDT), Target Price: {target_reentry_price:.4f} (Actual: {current_market_price:.4f}). En espera...")
+                    else:
+                        self.logger.debug(f"[{self.symbol}][{self.trade_side}] DCA Nivel Target: {target_reentry_price:.4f} (Precio Actual: {current_market_price:.4f}). En espera de disparo a Mercado...")
                     return
 
                 # Calcular tamaño de la orden con el multiplicador de volumen
@@ -4897,6 +4927,22 @@ class SingleSideTradingBot:
                     if m_result and m_result.get('orderId'):
                         self.reentries_done += 1
                         self.logger.info(f"[{self.symbol}][{self.trade_side}] 🛡️ Re-entrada DCA MARKET #{self.reentries_done} ejecutada exitosamente con ID {m_result.get('orderId')}.")
+                        try:
+                            import time as _t
+                            _t.sleep(0.3)
+                            pos_data = get_futures_position(self.symbol, position_side=self.trade_side)
+                            if pos_data and self.current_position:
+                                pos_amt = Decimal(str(pos_data.get('positionAmt', '0')))
+                                entry_p = Decimal(str(pos_data.get('entryPrice', '0')))
+                                if abs(pos_amt) > Decimal('1e-9'):
+                                    self.current_position['entry_price'] = entry_p
+                                    self.current_position['quantity'] = abs(pos_amt)
+                                    self.current_position['position_size_usdt'] = abs(entry_p * pos_amt)
+                                    self.last_known_entry_price = entry_p
+                                    self.last_known_position_size = abs(pos_amt)
+                                    self.logger.info(f"[{self.symbol}][{self.trade_side}] Posición promediada tras DCA MARKET: Entrada={entry_p}, Cantidad={abs(pos_amt)}")
+                        except Exception as sync_e:
+                            self.logger.debug(f"[{self.symbol}] Aviso sincronizando pos tras DCA MARKET: {sync_e}")
                         try:
                             if self.pending_tp_order_id:
                                 cancel_futures_order(self.symbol, self.pending_tp_order_id)
