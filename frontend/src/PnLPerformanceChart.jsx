@@ -1100,250 +1100,7 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
     <div className="space-y-6">
 
       {/* ======================================================== */}
-      {/* 1. MONITOR DE BILLETERA & GESTIÓN DE RIESGO BINANCE (MOVIDO Y MEJORADO) */}
-      {/* ======================================================== */}
-      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-slate-900 border border-indigo-900/50 rounded-2xl shadow-2xl p-5 relative overflow-hidden">
-        {/* Glow de fondo decorativo */}
-        <div className="absolute -top-24 -right-24 w-72 h-72 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-gray-800 relative z-10">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-white tracking-wide">
-                Billetera Binance & Salud de Margen
-              </h2>
-              <Tooltip title="Margen y Billetera" text="Monitorea en vivo el balance total, margen retenido en trades activos y margen libre disponible en tu cuenta de Binance Futures." />
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                Futures Testnet Live
-              </span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setShowAllClosedTrades(true);
-              setTimeout(() => {
-                const el = document.getElementById('historial-trades-general');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }, 60);
-            }}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 hover:border-amber-500/50 text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
-            title="Ir directamente al historial general de trades cerrados al final de la página"
-          >
-            <span>📜</span>
-            <span>Historial de Trades ↓</span>
-          </button>
-        </div>
-
-        {/* 5 Tarjetas Financieras Principales: Billetera, Posiciones, Órdenes Límite, Margen Libre y Límite */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 my-4 relative z-10">
-          
-          {/* 1. Balance Total */}
-          <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3 flex flex-col justify-between shadow-md">
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1 min-w-0">
-                <span className="truncate">💰 Balance Total</span>
-                <Tooltip title="Balance Total de Cuenta" text="Capital total en USDT registrado en la billetera de futuros de Binance (saldo de billetera)." />
-              </span>
-              <span className="text-gray-500 font-mono text-[10px]">USDT</span>
-            </div>
-            <div className="text-xl lg:text-2xl font-black font-mono text-white tracking-tight">
-              ${totalBalanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between border-t border-gray-700/50 pt-1">
-              <span>Saldo Margen:</span>
-              <span className="font-mono text-indigo-300 font-semibold" title="Saldo Margen = Balance + PnL Flotante">
-                ${marginBalanceNum.toFixed(2)}
-              </span>
-            </div>
-          </div>
-
-          {/* 2. Margen Ocupado / En Posiciones */}
-          <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3 flex flex-col justify-between shadow-md">
-            <div className="flex items-center justify-between gap-1 text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1 min-w-0">
-                <span className="truncate">🔒 En Posiciones</span>
-                <Tooltip title="Margen Comprometido en Posiciones" text="Monto de USDT actualmente retenido como garantía en las posiciones abiertas activas." />
-              </span>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border whitespace-nowrap shrink-0 ${stressBorder}`}>
-                {stressLabel}
-              </span>
-            </div>
-            <div className="text-xl lg:text-2xl font-black font-mono text-amber-400 tracking-tight">
-              ${currentExpNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between border-t border-gray-700/50 pt-1">
-              <span>Flotante:</span>
-              <span className={`font-semibold font-mono ${unrealizedPnLNum >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {unrealizedPnLNum >= 0 ? `+${unrealizedPnLNum.toFixed(2)}` : unrealizedPnLNum.toFixed(2)} USDT
-              </span>
-            </div>
-          </div>
-
-          {/* 3. Margen Retenido en Órdenes Límite */}
-          <div className={`bg-gray-800/80 border rounded-xl p-3 flex flex-col justify-between shadow-md ${
-            openOrdersMarginNum > 0 ? 'border-amber-500/50' : 'border-gray-700/80'
-          }`}>
-            <div className="flex items-center justify-between gap-1 text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1 min-w-0">
-                <span className="truncate">⏳ Órdenes Límite</span>
-                <Tooltip 
-                  title="Margen Retenido en Órdenes Pendientes" 
-                  text="Monto en USDT retenido por Binance como garantía para órdenes límite de entrada no ejecutadas. Si quedan órdenes pendientes huérfanas de ciclos anteriores, bloquean margen que impide abrir hedges o nuevos trades." 
-                />
-              </span>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border whitespace-nowrap shrink-0 ${
-                openOrdersMarginNum > 0 ? 'bg-amber-950/70 border-amber-600 text-amber-300' : 'bg-gray-900 border-gray-700 text-gray-400'
-              }`}>
-                {openOrdersMarginNum > 0 ? 'RETENIDO' : 'LIBRE'}
-              </span>
-            </div>
-            <div className={`text-xl lg:text-2xl font-black font-mono tracking-tight ${
-              openOrdersMarginNum > 0 ? 'text-amber-400' : 'text-gray-300'
-            }`}>
-              ${openOrdersMarginNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <div className="text-[10px] text-gray-400 mt-1 border-t border-gray-700/50 pt-1">
-              {!readOnly && openOrdersMarginNum > 0 ? (
-                <button
-                  type="button"
-                  onClick={handleCancelStaleOrders}
-                  disabled={isCancellingOrders}
-                  className="w-full px-2 py-0.5 bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white border border-rose-500/50 rounded font-semibold transition active:scale-95 flex items-center justify-center gap-1"
-                >
-                  {isCancellingOrders ? 'Liberando...' : '🧹 Liberar Margen'}
-                </button>
-              ) : (
-                <div className="flex items-center justify-between">
-                  <span>Estado:</span>
-                  <span className="text-gray-400 font-mono">0 retenido</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* 4. Margen Libre / Disponible */}
-          <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3 flex flex-col justify-between shadow-md">
-            <div className="flex items-center justify-between gap-1 text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1 min-w-0">
-                <span className="truncate">🟢 Margen Libre</span>
-                <Tooltip title="Margen Disponible en Binance" text="Capital libre en USDT disponible inmediatamente en Binance Futures para abrir nuevas posiciones o coberturas Short/Long (Hedge). Calculado exactamente como Saldo Margen menos Margen en Posiciones menos Margen en Órdenes Pendientes." />
-              </span>
-              <span className="text-emerald-400 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border border-emerald-500/30 bg-emerald-950/40 whitespace-nowrap shrink-0">Disponible</span>
-            </div>
-            <div className="text-xl lg:text-2xl font-black font-mono text-emerald-400 tracking-tight">
-              ${freeMarginNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between border-t border-gray-700/50 pt-1">
-              <span>Para operar:</span>
-              <span className="text-emerald-300 font-semibold font-mono">
-                {totalBalanceNum > 0 ? ((freeMarginNum / totalBalanceNum) * 100).toFixed(1) : 100}% libre
-              </span>
-            </div>
-          </div>
-
-          {/* 5. Límite Máximo Autorizado */}
-          <div className="bg-gray-800/80 border border-gray-700/80 rounded-xl p-3 flex flex-col justify-between shadow-md">
-            <div className="flex items-center justify-between gap-1 text-gray-400 text-xs mb-1">
-              <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1 min-w-0">
-                <span className="truncate">🛡️ Límite Autorizado</span>
-                <Tooltip title="Límite Máximo de Exposición" text="Porcentaje máximo de tu cartera total que el bot tiene autorización de comprometer en margen simultáneamente." example="Si tienes $1,000 y fijas 50%, el bot nunca usará más de $500 en margen, protegiéndote de sobreexposición." />
-              </span>
-              <span className="text-purple-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider border border-purple-500/30 bg-purple-950/40 whitespace-nowrap shrink-0">
-                {riskData?.risk_percentage || `${riskPercentageInput}%`}
-              </span>
-            </div>
-            <div className="text-xl lg:text-2xl font-black font-mono text-purple-300 tracking-tight">
-              ${maxExpNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between border-t border-gray-700/50 pt-1">
-              <span>Seguridad:</span>
-              <span className="text-purple-400 font-semibold font-mono">Tope máx</span>
-            </div>
-          </div>
-
-        </div>
-
-        {/* Barra de Estrés y Ajuste Rápido de Riesgo */}
-        <div className="mt-4 pt-3 border-t border-gray-800/80 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 relative z-10">
-          
-          {/* Barra de Progreso */}
-          <div className="flex-1 space-y-1.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-gray-300">
-              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                <span className="font-semibold text-slate-300 text-[11px]">Nivel de Utilización de Margen:</span>
-                <Tooltip title="Nivel de Utilización" text="Porcentaje del límite de riesgo autorizado que está en uso en este momento. Verde = Seguro (<50%), Amarillo = Moderado (50-80%), Rojo = Alto Riesgo (>80%)." />
-                <span className="font-mono text-white font-bold bg-gray-900 px-2 py-0.5 rounded border border-gray-700 text-[11px]">{stressRatio.toFixed(1)}% del límite</span>
-              </div>
-              <span className="text-gray-400 text-[10px] sm:text-[11px] font-mono whitespace-nowrap">
-                ${currentExpNum.toFixed(2)} de ${maxExpNum.toFixed(2)} USDT max
-              </span>
-            </div>
-            <div className="w-full bg-gray-950 rounded-full h-3.5 p-0.5 border border-gray-800 relative overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-700 ${stressColor}`}
-                style={{ width: `${stressRatio}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Formulario de Ajuste de Límite (Solo Admin) */}
-          {!readOnly && (
-            <form onSubmit={handleSaveRiskLimit} className="flex items-center gap-2 flex-shrink-0 bg-gray-950/70 p-2 rounded-xl border border-gray-800">
-              <label htmlFor="riskInput" className="text-xs text-gray-300 font-medium whitespace-nowrap pl-1 flex items-center gap-1">
-                <span>Ajustar Límite:</span>
-                <Tooltip title="Ajuste de Riesgo Máximo" text="Guarda el porcentaje máximo de riesgo permitido para el bot tanto en Binance como en la configuración del servidor." />
-              </label>
-              <div className="relative w-20">
-                <input
-                  id="riskInput"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={riskPercentageInput}
-                  onChange={(e) => setRiskPercentageInput(e.target.value)}
-                  className="w-full text-xs font-bold font-mono bg-gray-900 border border-gray-700 rounded-lg py-1.5 pl-2.5 pr-6 text-white text-center focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                />
-                <span className="absolute inset-y-0 right-2 flex items-center text-xs text-gray-400 pointer-events-none font-bold">%</span>
-              </div>
-              <button
-                type="submit"
-                disabled={isSavingRisk}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 text-white text-xs font-bold rounded-lg shadow transition active:scale-95 whitespace-nowrap"
-              >
-                {isSavingRisk ? 'Guardando...' : '💾 Guardar'}
-              </button>
-            </form>
-          )}
-
-        </div>
-
-        {/* Feedback Alert (Riesgo y Liberación de Órdenes) */}
-        {(riskFeedback || cancelOrdersFeedback) && (
-          <div className={`mt-3 p-2.5 rounded-lg text-xs font-semibold flex items-center justify-between gap-2 ${
-            (riskFeedback?.type === 'success' || cancelOrdersFeedback?.type === 'success') 
-              ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800' 
-              : 'bg-rose-950/80 text-rose-300 border border-rose-800'
-          }`}>
-            <div className="flex items-center gap-2">
-              <span>{(riskFeedback?.type === 'success' || cancelOrdersFeedback?.type === 'success') ? '✅' : '⚠️'}</span>
-              <span>{riskFeedback ? riskFeedback.msg : cancelOrdersFeedback.msg}</span>
-            </div>
-            <button 
-              onClick={() => { setRiskFeedback(null); setCancelOrdersFeedback(null); }}
-              className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-900 border border-gray-700"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
-      </div>
-
-      {/* ======================================================== */}
-      {/* 2. KPIs FINANCIEROS Y GESTIÓN INSTITUCIONAL */}
+      {/* 1. KPIs FINANCIEROS Y RENDIMIENTO GENERAL */}
       {/* ======================================================== */}
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-lg p-5 transition-all">
         
@@ -1363,7 +1120,7 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
             </h2>
           </div>
 
-          {/* Filtro por moneda, por estrategia y Exportar CSV */}
+          {/* Filtro por moneda, por estrategia, Historial de Trades, Sincronizar y Exportar CSV */}
           <div className="flex flex-wrap items-center gap-2">
             {availableSymbols.length > 0 && (
               <select
@@ -1390,6 +1147,22 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
                 ))}
               </select>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowAllClosedTrades(true);
+                setTimeout(() => {
+                  const el = document.getElementById('historial-trades-general');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }, 60);
+              }}
+              className="px-3 py-1.5 bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 hover:text-amber-200 border border-amber-600/40 hover:border-amber-500 text-xs font-bold rounded-lg shadow-sm transition flex items-center gap-1.5 active:scale-95 cursor-pointer"
+              title="Ir directamente al historial general de trades cerrados al final de la página"
+            >
+              <span>📜</span>
+              <span>Historial de Trades ↓</span>
+            </button>
 
             <button
               type="button"

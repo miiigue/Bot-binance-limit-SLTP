@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import BinanceSortHeader, { sortTableData } from './BinanceSortHeader';
+import WalletMarginHealth from './WalletMarginHealth';
 
 // Clave para guardar/leer en localStorage
 const STATUS_CACHE_KEY = 'botStatusesCache';
@@ -925,7 +926,16 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
   // -------------------------------------------------------------------------
 
   return (
-    <div className="bg-slate-900 border border-slate-700/80 shadow-xl rounded-2xl p-6 mt-6">
+    <div className="space-y-6 mt-2">
+      {/* ======================================================== */}
+      {/* 1. SECCIÓN BILLETERA BINANCE & SALUD DE MARGEN (AUDITORÍA) */}
+      {/* ======================================================== */}
+      <WalletMarginHealth readOnly={false} />
+
+      {/* ======================================================== */}
+      {/* 2. ESTADO Y MONITOREO DE BOTS EN TIEMPO REAL */}
+      {/* ======================================================== */}
+      <div className="bg-slate-900 border border-slate-700/80 shadow-xl rounded-2xl p-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
           <h2 className="text-xl font-black text-white tracking-wide flex items-center gap-2">
@@ -1733,6 +1743,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
           )}
         </table>
       </div>
+    </div>
     </div>
   );
 }

@@ -2854,6 +2854,7 @@ class RiskManager:
     def get_status(self):
         with self.lock:
             real_margin = None
+            free_margin = None
             open_orders_margin = Decimal('0')
             margin_balance = self.total_balance
             unrealized_pnl = Decimal('0')
@@ -2884,18 +2885,57 @@ class RiskManager:
             if free_margin is None:
                 free_margin = max(Decimal('0'), self.total_balance - real_margin - open_orders_margin)
 
+            # --- CONCILIACIÓN MATEMÁTICA EXACTA DE MARGEN ---
+            # 1. Margen comprometido en posiciones abiertas
+            pos_margin = real_margin
+
+            # 2. Margen no asignado en la billetera antes del impacto del flotante
+            unallocated_wallet = max(Decimal('0'), self.total_balance - pos_margin - open_orders_margin)
+
+            # 3. Flotante negativo retenido / absorbido por Binance
+            # Cuando el PnL no realizado es negativo, Binance reduce el Available Balance directamente.
+            if unrealized_pnl < Decimal('0'):
+                floating_loss_consumed = min(abs(unrealized_pnl), unallocated_wallet)
+            else:
+                floating_loss_consumed = Decimal('0')
+
+            # 4. Margen libre autorizado respetando el límite de riesgo
+            total_used_of_limit = pos_margin + open_orders_margin + floating_loss_consumed
+            free_margin_authorized = max(Decimal('0'), self.max_exposure - total_used_of_limit)
+            # No puede superar el disponible real de Binance
+            free_margin_real = min(free_margin_authorized, free_margin)
+
+            # 5. Porcentaje de utilización real del límite autorizado
+            real_utilization_pct = (total_used_of_limit / self.max_exposure * Decimal('100')) if self.max_exposure > Decimal('0') else Decimal('0')
+            real_utilization_pct = min(Decimal('100'), real_utilization_pct)
+
             exp_pct = (real_margin / self.total_balance * Decimal('100')) if self.total_balance > Decimal('0') else Decimal('0')
 
             return {
                 'total_balance': f"{self.total_balance:.2f}",
+                'total_balance_raw': float(self.total_balance),
                 'margin_balance': f"{margin_balance:.2f}",
+                'margin_balance_raw': float(margin_balance),
                 'risk_percentage': f"{self.risk_percentage:.2%}",
                 'risk_percentage_raw': float(self.risk_percentage * Decimal('100')),
                 'max_exposure': f"{self.max_exposure:.2f}",
+                'max_exposure_raw': float(self.max_exposure),
                 'current_exposure': f"{real_margin:.2f}",
+                'current_exposure_raw': float(real_margin),
                 'open_orders_margin': f"{open_orders_margin:.2f}",
+                'open_orders_margin_raw': float(open_orders_margin),
                 'free_margin': f"{free_margin:.2f}",
+                'free_margin_raw': float(free_margin),
                 'unrealized_pnl': f"{unrealized_pnl:.2f}",
+                'unrealized_pnl_raw': float(unrealized_pnl),
+                'floating_loss_consumed': f"{floating_loss_consumed:.2f}",
+                'floating_loss_consumed_raw': float(floating_loss_consumed),
+                'free_margin_real': f"{free_margin_real:.2f}",
+                'free_margin_real_raw': float(free_margin_real),
+                'total_used_of_limit': f"{total_used_of_limit:.2f}",
+                'total_used_of_limit_raw': float(total_used_of_limit),
+                'real_utilization_pct': f"{real_utilization_pct:.1f}%",
+                'real_utilization_pct_raw': float(real_utilization_pct),
                 'exposure_percentage': f"{exp_pct:.1f}%",
                 'exposure_percentage_raw': float(exp_pct)
             }
