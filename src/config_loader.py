@@ -86,7 +86,15 @@ def get_trading_symbols() -> list[str]:
         return []
 
 def is_multi_strategy_enabled() -> bool:
-    """Verifica si el modo multi-estrategia por moneda está habilitado en config.ini."""
+    """Verifica si el modo multi-estrategia por moneda está habilitado. Consulta DB primero."""
+    try:
+        from src.database import get_bot_setting
+        db_multi = get_bot_setting('multi_strategy_enabled')
+        if db_multi is not None and str(db_multi).strip() != '':
+            return str(db_multi).strip().lower() == 'true'
+    except Exception:
+        pass
+
     config = load_config()
     if not config:
         return False
@@ -97,9 +105,19 @@ def is_multi_strategy_enabled() -> bool:
 
 def get_symbol_strategy_assignments() -> dict[str, str]:
     """
-    Lee las asignaciones símbolo -> nombre_estrategia desde la sección [MULTI_STRATEGY].
-    Retorna un diccionario en mayúsculas: {'SOLUSDT': 'v5_RSI...', 'BTCUSDT': 'v4_EMA...'}
+    Lee las asignaciones símbolo -> nombre_estrategia. Consulta DB primero.
     """
+    try:
+        from src.database import get_bot_setting
+        import json as _json
+        db_assign_raw = get_bot_setting('strategy_assignments')
+        if db_assign_raw:
+            parsed = _json.loads(db_assign_raw)
+            if isinstance(parsed, dict) and parsed:
+                return {k.strip().upper(): v.strip() for k, v in parsed.items() if k and v}
+    except Exception:
+        pass
+
     config = load_config()
     if not config:
         return {}
@@ -117,7 +135,36 @@ def get_symbol_strategy_assignments() -> dict[str, str]:
     return assignments
 
 def get_strategy_for_symbol(symbol: str, fallback_strategy: str = '') -> str:
-    """Obtiene la estrategia asignada a un símbolo específico, o la estrategia activa real (nunca 'Global')."""
+    """
+    Obtiene la estrategia asignada a un símbolo específico, o la estrategia activa real.
+    PRIORIDAD SOBERANA:
+    0. Base de datos (inmune a Git pull, stash o reset).
+    1. Asignaciones multi-estrategia.
+    2. config.ini [STRATEGY_INFO] active_strategy_name.
+    3. Archivos en strategies/
+    """
+    # 0. PRIORIDAD ABSOLUTA: Consultar base de datos
+    try:
+        from src.database import get_active_strategy_from_db, get_bot_setting
+        import json as _json
+
+        # Si multi-estrategia está activa
+        if is_multi_strategy_enabled():
+            db_assign_raw = get_bot_setting('strategy_assignments')
+            if db_assign_raw:
+                db_map = _json.loads(db_assign_raw)
+                sym_strat = db_map.get(symbol.strip().upper(), '').strip()
+                if sym_strat and sym_strat.lower() != 'global':
+                    return sym_strat
+
+        # Estrategia global soberana en DB
+        db_active = get_active_strategy_from_db()
+        if db_active and db_active.lower() != 'global':
+            return db_active
+    except Exception:
+        pass
+
+    # 1. Asignaciones de archivo
     assignments = get_symbol_strategy_assignments()
     strat = assignments.get(symbol.strip().upper(), '').strip()
     if strat and strat.lower() != 'global':
@@ -126,22 +173,29 @@ def get_strategy_for_symbol(symbol: str, fallback_strategy: str = '') -> str:
     if fallback_strategy and fallback_strategy.strip().lower() != 'global':
         return fallback_strategy.strip()
 
-    # Buscar en [STRATEGY_INFO] active_strategy_name
+    # 2. Buscar en [STRATEGY_INFO] active_strategy_name
     config = load_config()
     if config and config.has_section('STRATEGY_INFO'):
         act = config.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
         if act and act.lower() != 'global':
             return act
 
-    # Buscar en la carpeta strategies/ el primer archivo .json disponible
+    # 3. Buscar en la carpeta strategies/ el archivo más reciente o que coincida
     strat_dir = os.path.join(PROJECT_ROOT, 'strategies')
     if os.path.exists(strat_dir):
         files = [f[:-5] for f in os.listdir(strat_dir) if f.endswith('.json') and f[:-5].lower() != 'global']
         if files:
+            v18_match = [f for f in files if 'v18' in f.lower()]
+            if v18_match:
+                return v18_match[0]
+            v17_match = [f for f in files if 'v17' in f.lower()]
+            if v17_match:
+                return v17_match[0]
             v3_match = [f for f in files if 'v3' in f.lower() or 'rsi' in f.lower()]
             return v3_match[0] if v3_match else files[0]
 
-    return 'v3_RSI-SNIPER-MOMENTUM_v3'
+    return 'v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_SL500_3DCA2_ReDi5c5'
+
 
 def derive_short_params(long_params: dict) -> dict:
     """

@@ -1140,6 +1140,46 @@ def set_bot_setting(key: str, value: str) -> bool:
         if conn:
             conn.close()
 
+def get_active_strategy_from_db() -> str | None:
+    """Obtiene la estrategia activa soberana guardada en la base de datos (inmune a Git)."""
+    strat = get_bot_setting('active_strategy_name')
+    if strat and str(strat).strip() and str(strat).strip().lower() != 'global':
+        return str(strat).strip()
+    return None
+
+def set_active_strategy_in_db(name: str) -> bool:
+    """Guarda la estrategia activa soberana en la base de datos para blindarla de reinicios o pulls de Git."""
+    if not name or not str(name).strip():
+        return False
+    clean_name = str(name).strip()
+    if clean_name.lower() == 'global':
+        return False
+    return set_bot_setting('active_strategy_name', clean_name)
+
+def get_saved_trading_params_from_db() -> dict | None:
+    """Obtiene los parámetros de trading soberanos guardados en la base de datos."""
+    raw = get_bot_setting('saved_trading_params_json')
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    return None
+
+def set_saved_trading_params_in_db(params: dict) -> bool:
+    """Guarda los parámetros de trading soberanos en la base de datos."""
+    if not params or not isinstance(params, dict):
+        return False
+    try:
+        return set_bot_setting('saved_trading_params_json', json.dumps(params))
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error serializando parámetros para guardar en DB: {e}")
+        return False
+
+
 def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol: int = 50) -> int:
     """
     Sincroniza en tiempo real los trades completados desde Binance Testnet a la base de datos local SQLite.

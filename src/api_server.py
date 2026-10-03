@@ -494,13 +494,25 @@ def start_bot_workers():
         is_multi = is_multi_strategy_enabled()
         assignments = get_symbol_strategy_assignments()
         global_strat_name = ''
+
+        # Prioridad soberana: Base de Datos (inmune a Git)
         try:
-            cfg_temp = configparser.ConfigParser()
-            if os.path.exists(CONFIG_FILE_PATH):
-                cfg_temp.read(CONFIG_FILE_PATH, encoding='utf-8')
-                global_strat_name = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
-        except Exception:
-            global_strat_name = ''
+            from src.database import get_active_strategy_from_db
+            db_strat = get_active_strategy_from_db()
+            if db_strat and db_strat.lower() != 'global':
+                global_strat_name = db_strat
+                logger.info(f"✅ Estrategia activa cargada con SOBERANÍA desde Base de Datos: {global_strat_name}")
+        except Exception as e_db:
+            logger.warning(f"Aviso al consultar estrategia soberana desde DB: {e_db}")
+
+        if not global_strat_name:
+            try:
+                cfg_temp = configparser.ConfigParser()
+                if os.path.exists(CONFIG_FILE_PATH):
+                    cfg_temp.read(CONFIG_FILE_PATH, encoding='utf-8')
+                    global_strat_name = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
+            except Exception:
+                global_strat_name = ''
 
         from src.config_loader import get_strategy_for_symbol
         if not global_strat_name or global_strat_name.lower() == 'global':
@@ -513,7 +525,8 @@ def start_bot_workers():
             if not strat_name or strat_name.lower() == 'global':
                 strat_name = get_strategy_for_symbol(symbol)
             
-            if is_multi and strat_name:
+            # Cargar parámetros del archivo de estrategia (tanto para modo global como multi)
+            if strat_name and strat_name.lower() != 'global':
                 strat_file = os.path.join(STRATEGIES_PATH, f"{strat_name}.json")
                 if os.path.exists(strat_file):
                     try:
@@ -525,6 +538,17 @@ def start_bot_workers():
                         logger.info(f"-> Parámetros de estrategia '{strat_name}' cargados para {symbol}")
                     except Exception as e_s:
                         logger.warning(f"Error cargando estrategia '{strat_name}' para {symbol}: {e_s}")
+
+            # Máxima prioridad: Parámetros soberanos guardados en base de datos por el usuario
+            try:
+                from src.database import get_saved_trading_params_from_db
+                db_p = get_saved_trading_params_from_db()
+                if db_p and isinstance(db_p, dict):
+                    mapped_db = map_frontend_trading_binance(db_p)
+                    if 'TRADING' in mapped_db:
+                        worker_params.update(mapped_db['TRADING'])
+            except Exception:
+                pass
             
             worker_params['strategy_name'] = strat_name or global_strat_name
             logger.info(f"-> Preparando worker para {symbol} (Estrategia: {worker_params['strategy_name']})...")
@@ -704,6 +728,26 @@ def _build_frontend_config_dict():
     from src.config_loader import is_multi_strategy_enabled, get_symbol_strategy_assignments
     frontend_config['multiStrategyEnabled'] = is_multi_strategy_enabled()
     frontend_config['strategyAssignments'] = get_symbol_strategy_assignments()
+
+    # SOBERANÍA ABSOLUTA DE BASE DE DATOS (Inmune a Git y reinicios)
+    try:
+        from src.database import get_active_strategy_from_db, get_saved_trading_params_from_db, get_bot_setting
+        db_strat = get_active_strategy_from_db()
+        if db_strat:
+            frontend_config['activeStrategyName'] = db_strat
+
+        db_syms = get_bot_setting('symbols_to_trade')
+        if db_syms:
+            frontend_config['symbolsToTrade'] = db_syms
+
+        db_params = get_saved_trading_params_from_db()
+        if db_params and isinstance(db_params, dict):
+            for k, v in db_params.items():
+                if k not in ('activeStrategyName', 'symbolsToTrade') or not frontend_config.get(k):
+                    frontend_config[k] = v
+    except Exception as e_db_f:
+        api_logger.warning(f"Error cargando ajustes soberanos desde DB en frontend_config: {e_db_f}")
+
     return frontend_config
 
 
@@ -1577,6 +1621,22 @@ def update_config_endpoint():
             except Exception as e_strat:
                 logger.warning(f"No se pudo escribir archivo de estrategia '{actual_name_to_save_in_ini}': {e_strat}")
 
+        # 8. SOBERANÍA ABSOLUTA EN BASE DE DATOS (Inmune a Git y reinicios)
+        try:
+            from src.database import set_active_strategy_in_db, set_saved_trading_params_in_db, set_bot_setting
+            if actual_name_to_save_in_ini:
+                set_active_strategy_in_db(actual_name_to_save_in_ini)
+            if symbols_to_save:
+                set_bot_setting('symbols_to_trade', symbols_to_save)
+            if 'multiStrategyEnabled' in frontend_data:
+                set_bot_setting('multi_strategy_enabled', str(frontend_data['multiStrategyEnabled']).lower())
+            if 'strategyAssignments' in frontend_data and isinstance(frontend_data['strategyAssignments'], dict):
+                set_bot_setting('strategy_assignments', json.dumps(frontend_data['strategyAssignments']))
+            set_saved_trading_params_in_db(frontend_data)
+            logger.info(f"✅ SOBERANÍA DB: Configuración y Estrategia '{actual_name_to_save_in_ini}' blindadas en Base de Datos.")
+        except Exception as e_db_sv:
+            logger.error(f"Error al blindar configuración en DB: {e_db_sv}")
+
         # Recargar caché de configuración y clientes
         reload_config()
         load_initial_config()
@@ -2152,6 +2212,22 @@ def load_initial_config():
                 logger.info(f"RiskManager sincronizado con porcentaje de riesgo: {r_pct:.2%}")
         except Exception as e_r:
             logger.warning(f"No se pudo sincronizar porcentaje de riesgo con RiskManager: {e_r}")
+
+    # SOBERANÍA ABSOLUTA DE BASE DE DATOS (Inmune a Git y reinicios)
+    try:
+        from src.database import get_saved_trading_params_from_db, get_bot_setting
+        db_symbols = get_bot_setting('symbols_to_trade')
+        if db_symbols:
+            loaded_symbols_to_trade = [s.strip().upper() for s in db_symbols.split(',') if s.strip()]
+        
+        db_p = get_saved_trading_params_from_db()
+        if db_p and isinstance(db_p, dict):
+            mapped_db = map_frontend_trading_binance(db_p)
+            if 'TRADING' in mapped_db:
+                loaded_trading_params.update(mapped_db['TRADING'])
+                logger.info("✅ SOBERANÍA DB: Configuración de TRADING inicial sobreescrita con soberanía desde Base de Datos.")
+    except Exception as e_init_db:
+        logger.warning(f"Aviso al cargar configuración soberana desde DB al iniciar: {e_init_db}")
 
     logger.info(f"Configuración inicial cargada: {len(loaded_symbols_to_trade)} símbolos, Params procesados: {loaded_trading_params}")
     return True

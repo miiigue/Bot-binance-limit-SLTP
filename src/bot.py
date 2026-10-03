@@ -670,6 +670,8 @@ class SingleSideTradingBot:
 
             self.logger.info(f"[{self.symbol}][{self.trade_side}] Se encontró posición {pos_side} existente: Cantidad={actual_qty}, Entrada={entry_price_binance}, PnL={unrealized_pnl_binance}. Sincronizando estado.")
             self.in_position = True
+            self.is_adopted_position_on_startup = True
+            self.startup_timestamp = time.time()
             self.current_state = BotState.IN_POSITION
             self.state = BotState.IN_POSITION
             self.last_known_entry_price = entry_price_binance
@@ -3750,6 +3752,15 @@ class SingleSideTradingBot:
             # 2. Stop Loss (por USDT o por Porcentaje)
             sl_enabled = self.enable_stop_loss_pnl or (self.support_order_stop_loss_percent > 0)
             allow_software_sl = getattr(self, 'enable_emergency_software_sl', True)
+
+            # ESCUDO DE ARRANQUE (Startup Position Shield):
+            # Si la posición fue adoptada en el arranque y lleva menos de 120 segundos,
+            # protegerla contra cierres accidentales por Stop Loss de software.
+            startup_elapsed = time.time() - getattr(self, 'startup_timestamp', 0)
+            if getattr(self, 'is_adopted_position_on_startup', False) and startup_elapsed < 120:
+                allow_software_sl = False
+                self.logger.debug(f"[{self.symbol}][{self.trade_side}] 🛡️ ESCUDO DE ARRANQUE ACTIVO: Posición preexistente protegida durante los primeros 120s ({int(120 - startup_elapsed)}s restantes).")
+
             if not exit_signal and sl_enabled and allow_software_sl:
                 if self.stop_loss_usdt != 0 and self.last_known_pnl is not None:
                     max_allowed_loss = -abs(Decimal(str(self.stop_loss_usdt)))
