@@ -31,7 +31,8 @@ from src.database import (
     get_admin_investor_dossier, DATABASE_FILE,
     save_user_api_keys, get_user_api_keys, delete_user_api_keys,
     get_user_bot_settings, update_user_bot_settings,
-    get_user_trades, get_user_trading_metrics, format_account_number, init_db_schema
+    get_user_trades, get_user_trading_metrics, format_account_number, init_db_schema,
+    get_strategies_catalog, upsert_strategy_catalog, toggle_strategy_public_status, delete_strategy_catalog
 )
 from src.auth import (
     hash_password, verify_password, generate_jwt, decode_jwt,
@@ -1266,6 +1267,10 @@ def user_bot_update_settings_endpoint():
             syms = [s.strip().upper() for s in str(data['symbols_to_trade']).split(',') if s.strip()]
             if syms:
                 updates['symbols_to_trade'] = ','.join(syms)
+        if 'strategy_name' in data:
+            strat_name = str(data['strategy_name']).strip()
+            if strat_name:
+                updates['strategy_name'] = strat_name
 
         if updates:
             update_user_bot_settings(user_id=user_id, **updates)
@@ -1623,9 +1628,23 @@ def update_config_endpoint():
 
         # 8. SOBERANÍA ABSOLUTA EN BASE DE DATOS (Inmune a Git y reinicios)
         try:
-            from src.database import set_active_strategy_in_db, set_saved_trading_params_in_db, set_bot_setting
+            from src.database import set_active_strategy_in_db, set_saved_trading_params_in_db, set_bot_setting, upsert_strategy_catalog
             if actual_name_to_save_in_ini:
                 set_active_strategy_in_db(actual_name_to_save_in_ini)
+                is_pub = bool(frontend_data.get('is_public') or frontend_data.get('isPublic', False))
+                r_lvl = str(frontend_data.get('risk_level') or frontend_data.get('riskLevel') or 'MODERADO').upper()
+                min_cap = float(frontend_data.get('min_capital_usdt') or frontend_data.get('minCapitalUsdt') or 50.0)
+                d_name = str(frontend_data.get('display_name') or frontend_data.get('displayName') or actual_name_to_save_in_ini)
+                desc = str(frontend_data.get('description') or '')
+                upsert_strategy_catalog(
+                    name=actual_name_to_save_in_ini,
+                    display_name=d_name,
+                    description=desc,
+                    risk_level=r_lvl,
+                    is_public=is_pub,
+                    min_capital_usdt=min_cap,
+                    parameters=frontend_data
+                )
             if symbols_to_save:
                 set_bot_setting('symbols_to_trade', symbols_to_save)
             if 'multiStrategyEnabled' in frontend_data:
@@ -1633,7 +1652,7 @@ def update_config_endpoint():
             if 'strategyAssignments' in frontend_data and isinstance(frontend_data['strategyAssignments'], dict):
                 set_bot_setting('strategy_assignments', json.dumps(frontend_data['strategyAssignments']))
             set_saved_trading_params_in_db(frontend_data)
-            logger.info(f"✅ SOBERANÍA DB: Configuración y Estrategia '{actual_name_to_save_in_ini}' blindadas en Base de Datos.")
+            logger.info(f"✅ SOBERANÍA DB: Configuración, Estrategia '{actual_name_to_save_in_ini}' y Catálogo blindados en Base de Datos.")
         except Exception as e_db_sv:
             logger.error(f"Error al blindar configuración en DB: {e_db_sv}")
 
@@ -2379,6 +2398,50 @@ def get_market_data_endpoint():
 
 # --- NUEVOS ENDPOINTS PARA ESTRATEGIAS ---
 
+def _seed_strategies_catalog_from_files():
+    """Siembra el catálogo soberano de la DB con las estrategias de disco si no existen."""
+    logger = get_logger()
+    try:
+        from src.database import get_strategies_catalog, upsert_strategy_catalog
+        existing = get_strategies_catalog(only_public=False)
+        existing_names = {s['name'] for s in existing}
+        
+        if not os.path.exists(STRATEGIES_PATH):
+            return
+            
+        strategy_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
+        for f in strategy_files:
+            s_name = os.path.splitext(f)[0]
+            if s_name not in existing_names:
+                full_path = os.path.join(STRATEGIES_PATH, f)
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as sf:
+                        data = json.load(sf)
+                    is_pub = bool(data.get('is_public') or data.get('isPublic', False))
+                    # Estrategias insignia activas por defecto como públicas
+                    if 'v18' in s_name or 'v17' in s_name:
+                        is_pub = True
+                    r_lvl = str(data.get('risk_level') or data.get('riskLevel') or 'MODERADO').upper()
+                    min_cap = float(data.get('min_capital_usdt') or data.get('minCapitalUsdt') or 50.0)
+                    d_name = str(data.get('display_name') or data.get('displayName') or s_name)
+                    desc = str(data.get('description') or '')
+                    if not desc and ('v18' in s_name or 'v17' in s_name):
+                        desc = 'Estrategia insignia institucional optimizada con RSI dinámico, Take Profit inteligente y red de seguridad.'
+                    upsert_strategy_catalog(
+                        name=s_name,
+                        display_name=d_name,
+                        description=desc,
+                        risk_level=r_lvl,
+                        is_public=is_pub,
+                        min_capital_usdt=min_cap,
+                        parameters=data
+                    )
+                    logger.info(f"Estrategia '{s_name}' sembrada en catálogo soberano de la DB.")
+                except Exception as e_seed:
+                    logger.warning(f"No se pudo sembrar '{s_name}' en catálogo: {e_seed}")
+    except Exception as e:
+        logger.error(f"Error en _seed_strategies_catalog_from_files: {e}")
+
 # Funciones auxiliares refactorizadas para manejar la lógica de cada método
 def _save_strategy_logic(strategy_name: str, data: dict):
     logger = get_logger()
@@ -2393,6 +2456,27 @@ def _save_strategy_logic(strategy_name: str, data: dict):
         with open(strategy_file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
         logger.info(f"Estrategia '{strategy_name}' guardada exitosamente en {strategy_file_path}")
+
+        # Sincronizar con Catálogo Soberano en DB (Inmune a operaciones Git)
+        try:
+            from src.database import upsert_strategy_catalog
+            is_pub = bool(data.get('is_public') or data.get('isPublic', False))
+            r_lvl = str(data.get('risk_level') or data.get('riskLevel') or 'MODERADO').upper().strip()
+            min_cap = float(data.get('min_capital_usdt') or data.get('minCapitalUsdt') or 50.0)
+            d_name = str(data.get('display_name') or data.get('displayName') or strategy_name).strip()
+            desc = str(data.get('description') or '').strip()
+            upsert_strategy_catalog(
+                name=strategy_name,
+                display_name=d_name,
+                description=desc,
+                risk_level=r_lvl,
+                is_public=is_pub,
+                min_capital_usdt=min_cap,
+                parameters=data
+            )
+            logger.info(f"Estrategia '{strategy_name}' sincronizada en catálogo DB (is_public={is_pub}).")
+        except Exception as e_cat:
+            logger.warning(f"Aviso al sincronizar estrategia '{strategy_name}' con el catálogo de DB: {e_cat}")
 
         # Sincronizar porcentaje de riesgo si viene en los datos de la estrategia
         risk_val = data.get('riskPercentage') or data.get('risk_percentage')
@@ -2413,13 +2497,33 @@ def _save_strategy_logic(strategy_name: str, data: dict):
 def _load_strategy_logic(strategy_name: str):
     logger = get_logger()
     strategy_file_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
-    if not os.path.exists(strategy_file_path):
-        logger.error(f"No se encontró el archivo de estrategia: {strategy_file_path}")
-        return jsonify({"error": f"Estrategia '{strategy_name}' no encontrada."}), 404
-    try:
-        with open(strategy_file_path, 'r', encoding='utf-8') as f:
-            strategy_data = json.load(f)
+    strategy_data = None
 
+    if os.path.exists(strategy_file_path):
+        try:
+            with open(strategy_file_path, 'r', encoding='utf-8') as f:
+                strategy_data = json.load(f)
+        except Exception as e_f:
+            logger.warning(f"Error al leer archivo JSON para '{strategy_name}': {e_f}")
+
+    # Respaldo Soberano en Base de Datos si el archivo no existe en disco
+    if not strategy_data:
+        try:
+            from src.database import get_strategies_catalog
+            catalog = get_strategies_catalog(only_public=False)
+            for item in catalog:
+                if item.get('name') == strategy_name:
+                    strategy_data = item.get('parameters', {})
+                    logger.info(f"Estrategia '{strategy_name}' restaurada desde el catálogo soberano de DB.")
+                    break
+        except Exception as e_db:
+            logger.warning(f"Error consultando DB para estrategia '{strategy_name}': {e_db}")
+
+    if not strategy_data:
+        logger.error(f"No se encontró la estrategia: {strategy_name}")
+        return jsonify({"error": f"Estrategia '{strategy_name}' no encontrada."}), 404
+
+    try:
         ot = str(strategy_data.get('entryOrderType') or strategy_data.get('entry_order_type') or 'MARKET').upper().strip()
         if ot not in ('LIMIT', 'MARKET'):
             ot = 'MARKET'
@@ -2440,39 +2544,35 @@ def _load_strategy_logic(strategy_name: str):
                 pass
 
         return jsonify(strategy_data), 200
-    except json.JSONDecodeError as e_json:
-        logger.error(f"Error al decodificar JSON para la estrategia '{strategy_name}' desde {strategy_file_path}: {e_json}", exc_info=True)
-        return jsonify({"error": f"Error al leer el archivo de la estrategia '{strategy_name}'. Formato JSON inválido."}), 500
     except Exception as e:
-        logger.error(f"Error al cargar la estrategia '{strategy_name}' desde {strategy_file_path}: {e}", exc_info=True)
+        logger.error(f"Error al procesar la estrategia '{strategy_name}': {e}", exc_info=True)
         return jsonify({"error": f"Error interno al cargar la estrategia: {str(e)}"}), 500
 
 def _delete_strategy_logic(strategy_name: str):
     logger = get_logger()
     strategy_file_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
-    if not os.path.exists(strategy_file_path):
-        logger.error(f"No se encontró el archivo de estrategia para eliminar: {strategy_file_path}")
-        return jsonify({"error": f"Estrategia '{strategy_name}' no encontrada."}), 404
+    if os.path.exists(strategy_file_path):
+        try:
+            os.remove(strategy_file_path)
+            logger.info(f"Estrategia '{strategy_name}' eliminada exitosamente de {strategy_file_path}")
+        except OSError as e_os:
+            logger.error(f"Error de OS al eliminar la estrategia '{strategy_name}' desde {strategy_file_path}: {e_os}", exc_info=True)
+
+    # Eliminar permanentemente de la base de datos soberana
     try:
-        os.remove(strategy_file_path)
-        logger.info(f"Estrategia '{strategy_name}' eliminada exitosamente de {strategy_file_path}")
-        return jsonify({"message": f"Estrategia '{strategy_name}' eliminada exitosamente."}), 200
-    except OSError as e_os:
-        logger.error(f"Error de OS al eliminar la estrategia '{strategy_name}' desde {strategy_file_path}: {e_os}", exc_info=True)
-        return jsonify({"error": f"Error del sistema al eliminar la estrategia '{strategy_name}'."}), 500
-    except Exception as e:
-        logger.error(f"Error inesperado al eliminar la estrategia '{strategy_name}' desde {strategy_file_path}: {e}", exc_info=True)
-        return jsonify({"error": f"Error interno inesperado al eliminar la estrategia: {str(e)}"}), 500
+        from src.database import delete_strategy_catalog
+        delete_strategy_catalog(strategy_name)
+        logger.info(f"Estrategia '{strategy_name}' eliminada de strategies_catalog en DB.")
+    except Exception as e_del:
+        logger.warning(f"Error eliminando de strategies_catalog en DB: {e_del}")
+
+    return jsonify({"message": f"Estrategia '{strategy_name}' eliminada exitosamente."}), 200
 
 @app.route('/api/strategies/<strategy_name>', methods=['GET', 'POST', 'DELETE'])
 def handle_specific_strategy(strategy_name: str):
     logger = get_logger()
     logger.info(f"Solicitud {request.method} para estrategia: {strategy_name}")
 
-    # Validación común del nombre de la estrategia
-    # Permitir la mayoría de los caracteres, excepto los que son problemáticos para nombres de archivo/URLs.
-    # Prohibido: '.', '/', '\\'
-    # Permitidos implícitamente: espacios (manejados por encodeURIComponent), guiones, guiones bajos, etc.
     if not strategy_name or any(c in strategy_name for c in ('.', '/', '\\')):
         logger.error(f"Nombre de estrategia inválido: {strategy_name}. No debe contener '.', '/', o '\\'.")
         return jsonify({"error": "Nombre de estrategia inválido. No debe contener '.', '/', o '\\'."}), 400
@@ -2488,7 +2588,6 @@ def handle_specific_strategy(strategy_name: str):
     elif request.method == 'DELETE':
         return _delete_strategy_logic(strategy_name)
     else:
-        # Esto no debería ocurrir si los methods están bien definidos en la ruta
         logger.error(f"Método {request.method} no permitido para esta ruta.")
         return jsonify({"error": "Método no permitido"}), 405
 
@@ -2497,26 +2596,49 @@ def list_strategies():
     logger = get_logger()
     logger.info("Solicitud para listar estrategias guardadas con resumen.")
     try:
+        # Asegurar catálogo sembrado si está vacío
+        _seed_strategies_catalog_from_files()
+        from src.database import get_strategies_catalog
+        catalog_items = {s['name']: s for s in get_strategies_catalog(only_public=False)}
+
         if not os.path.exists(STRATEGIES_PATH):
-            logger.warning(f"El directorio de estrategias {STRATEGIES_PATH} no existe. Devolviendo lista vacía.")
-            return jsonify([]), 200
-            
-        strategy_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
+            logger.warning(f"El directorio de estrategias {STRATEGIES_PATH} no existe.")
+            file_names = []
+        else:
+            file_names = [os.path.splitext(f)[0] for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
+
+        # Unir nombres de disco y de catálogo DB
+        all_strategy_names = list(set(file_names) | set(catalog_items.keys()))
+        all_strategy_names.sort()
+
         results = []
-        for f in strategy_files:
-            strategy_name = os.path.splitext(f)[0]
-            full_path = os.path.join(STRATEGIES_PATH, f)
+        for strategy_name in all_strategy_names:
+            full_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
             config_data = {}
-            try:
-                with open(full_path, 'r', encoding='utf-8') as sf:
-                    config_data = json.load(sf)
-                ot = str(config_data.get('entryOrderType') or config_data.get('entry_order_type') or 'MARKET').upper().strip()
-                if ot not in ('LIMIT', 'MARKET'):
-                    ot = 'MARKET'
-                config_data['entryOrderType'] = ot
-                config_data['entry_order_type'] = ot
-            except Exception as e:
-                logger.warning(f"No se pudo leer config para {strategy_name}: {e}")
+            if os.path.exists(full_path):
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as sf:
+                        config_data = json.load(sf)
+                except Exception as e:
+                    logger.warning(f"No se pudo leer config para {strategy_name}: {e}")
+
+            # Enriquecer con metadatos del catálogo DB
+            db_meta = catalog_items.get(strategy_name, {})
+            if db_meta:
+                if not config_data:
+                    config_data = db_meta.get('parameters', {})
+                config_data['is_public'] = db_meta.get('is_public', False)
+                config_data['risk_level'] = db_meta.get('risk_level', 'MODERADO')
+                config_data['min_capital_usdt'] = db_meta.get('min_capital_usdt', 50.0)
+                config_data['display_name'] = db_meta.get('display_name', strategy_name)
+                config_data['description'] = db_meta.get('description', '')
+
+            ot = str(config_data.get('entryOrderType') or config_data.get('entry_order_type') or 'MARKET').upper().strip()
+            if ot not in ('LIMIT', 'MARKET'):
+                ot = 'MARKET'
+            config_data['entryOrderType'] = ot
+            config_data['entry_order_type'] = ot
+
             results.append({
                 "name": strategy_name,
                 "config": config_data
@@ -2526,6 +2648,105 @@ def list_strategies():
     except Exception as e:
         logger.error(f"Error al listar estrategias: {e}", exc_info=True)
         return jsonify({"error": f"Error interno al listar estrategias: {str(e)}"}), 500
+
+# =====================================================================
+# --- ENDPOINTS PARA EL CATÁLOGO DE ESTRATEGIAS (MARKETPLACE/ADMIN) ---
+# =====================================================================
+
+@app.route('/api/strategies/catalog', methods=['GET'])
+@token_required
+def get_strategies_catalog_endpoint():
+    """Retorna las estrategias curadas. Si es inversionista, SOLO retorna las públicas."""
+    user = getattr(request, 'current_user', {})
+    is_admin = user.get('role') == 'admin'
+    only_public = not is_admin
+
+    catalog = get_strategies_catalog(only_public=only_public)
+    if not catalog and is_admin:
+        _seed_strategies_catalog_from_files()
+        catalog = get_strategies_catalog(only_public=only_public)
+
+    return jsonify({
+        "success": True,
+        "is_admin": is_admin,
+        "strategies": catalog
+    }), 200
+
+@app.route('/api/strategies/catalog/toggle_public', methods=['POST'])
+@token_required
+@admin_required
+def toggle_strategy_catalog_public():
+    """Activa o desactiva la visibilidad pública para inversionistas de una estrategia."""
+    data = request.get_json(force=True, silent=True) or {}
+    name = str(data.get('name') or '').strip()
+    is_public = bool(data.get('is_public', False))
+    if not name:
+        return jsonify({"error": "Nombre de estrategia requerido"}), 400
+
+    ok = toggle_strategy_public_status(name, is_public)
+
+    # Actualizar archivo JSON en disco si existe
+    strat_file = os.path.join(STRATEGIES_PATH, f"{name}.json")
+    if os.path.exists(strat_file):
+        try:
+            with open(strat_file, 'r', encoding='utf-8') as f:
+                f_data = json.load(f)
+            f_data['is_public'] = is_public
+            f_data['isPublic'] = is_public
+            with open(strat_file, 'w', encoding='utf-8') as f:
+                json.dump(f_data, f, indent=4)
+        except Exception as e_f:
+            get_logger().warning(f"No se pudo actualizar is_public en archivo '{strat_file}': {e_f}")
+
+    if ok:
+        status_txt = "🟢 PÚBLICA (Visible para inversionistas)" if is_public else "🔒 PRIVADA (Solo Administrador)"
+        return jsonify({
+            "success": True,
+            "name": name,
+            "is_public": is_public,
+            "message": f"Estrategia '{name}' configurada como {status_txt}."
+        }), 200
+    return jsonify({"error": "No se pudo actualizar la visibilidad en base de datos."}), 500
+
+@app.route('/api/strategies/catalog/upsert', methods=['POST'])
+@token_required
+@admin_required
+def upsert_strategy_catalog_endpoint():
+    """Crea o actualiza una estrategia en el catálogo soberano."""
+    data = request.get_json(force=True, silent=True) or {}
+    name = str(data.get('name') or '').strip()
+    if not name:
+        return jsonify({"error": "Nombre de estrategia requerido"}), 400
+
+    display_name = str(data.get('display_name') or name).strip()
+    description = str(data.get('description') or '').strip()
+    risk_level = str(data.get('risk_level') or 'MODERADO').upper().strip()
+    is_public = bool(data.get('is_public', False))
+    min_capital = float(data.get('min_capital_usdt') or 50.0)
+    parameters = data.get('parameters') or {}
+
+    ok = upsert_strategy_catalog(
+        name=name,
+        display_name=display_name,
+        description=description,
+        risk_level=risk_level,
+        is_public=is_public,
+        min_capital_usdt=min_capital,
+        parameters=parameters
+    )
+    if ok:
+        return jsonify({
+            "success": True,
+            "message": f"Estrategia '{name}' guardada exitosamente en el catálogo soberano."
+        }), 200
+    return jsonify({"error": "Error al guardar en el catálogo de base de datos."}), 500
+
+@app.route('/api/strategies/catalog/<strategy_name>', methods=['DELETE'])
+@token_required
+@admin_required
+def delete_strategy_catalog_endpoint(strategy_name: str):
+    """Elimina permanentemente una estrategia tanto del disco como del catálogo de base de datos."""
+    return _delete_strategy_logic(strategy_name)
 
 BACKTEST_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backtest_history.json')
 BACKTEST_HISTORY_BACKUP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backtest_history.backup.json')

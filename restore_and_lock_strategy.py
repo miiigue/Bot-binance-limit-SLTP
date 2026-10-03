@@ -32,7 +32,9 @@ def main():
 
     # 3. Guardar en Base de Datos con soberanía absoluta
     try:
-        from src.database import set_active_strategy_in_db, set_bot_setting
+        from src.database import set_active_strategy_in_db, set_bot_setting, init_db_schema
+        init_db_schema()
+        
         strat_name = "v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_SL500_3DCA2_ReDi5c5"
         
         set_active_strategy_in_db(strat_name)
@@ -40,6 +42,13 @@ def main():
         set_bot_setting("stop_loss_usdt", "500")
         set_bot_setting("enable_stop_loss_pnl", "true")
         set_bot_setting("enable_emergency_software_sl", "true")
+        
+        try:
+            from src.api_server import _seed_strategies_catalog_from_files
+            _seed_strategies_catalog_from_files()
+            print("✅ Catálogo soberano de estrategias sincronizado y blindado en base de datos.")
+        except Exception as e_seed:
+            print(f"ℹ️ Aviso al sembrar catálogo: {e_seed}")
         
         print("✅ BASE DE DATOS BLOQUEADA:")
         print(f"   -> Estrategia Soberana: {strat_name}")

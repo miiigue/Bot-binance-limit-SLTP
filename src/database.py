@@ -110,7 +110,7 @@ class PGCompatCursor:
         if is_insert and "RETURNING" not in q.upper():
             table_match = re.search(r'INSERT\s+INTO\s+([a-zA-Z0-9_"]+)', q, re.IGNORECASE)
             target_table = table_match.group(1).replace('"', '').lower() if table_match else ''
-            if target_table in ('users', 'trades', 'user_trades', 'investor_transactions', 'user_api_keys', 'user_terms_acceptances'):
+            if target_table in ('users', 'trades', 'user_trades', 'investor_transactions', 'user_api_keys', 'user_terms_acceptances', 'strategies_catalog'):
                 q_with_ret = q.rstrip(';') + " RETURNING id;"
                 try:
                     if params:
@@ -541,6 +541,22 @@ def init_db_schema():
             strategy_name TEXT,
             is_testnet BOOLEAN DEFAULT 0,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """)
+        conn.commit()
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS strategies_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            display_name TEXT,
+            description TEXT,
+            risk_level TEXT DEFAULT 'MODERADO',
+            is_public BOOLEAN DEFAULT 0,
+            min_capital_usdt REAL DEFAULT 50.0,
+            parameters_json TEXT NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME
         )
         """)
         conn.commit()
@@ -1178,6 +1194,147 @@ def set_saved_trading_params_in_db(params: dict) -> bool:
         logger = get_logger()
         logger.error(f"Error serializando parámetros para guardar en DB: {e}")
         return False
+
+# =====================================================================
+# --- CATÁLOGO SOBERANO DE ESTRATEGIAS (PUBLICAS/PRIVADAS INVERSOR) ---
+# =====================================================================
+
+def get_strategies_catalog(only_public: bool = False) -> list[dict]:
+    """Obtiene las estrategias del catálogo soberano de la base de datos."""
+    conn = None
+    try:
+        conn = get_db_connection(timeout=10)
+        cursor = conn.cursor()
+        if only_public:
+            cursor.execute("""
+                SELECT id, name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at
+                FROM strategies_catalog
+                WHERE is_public = 1
+                ORDER BY id ASC
+            """)
+        else:
+            cursor.execute("""
+                SELECT id, name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at
+                FROM strategies_catalog
+                ORDER BY id ASC
+            """)
+        rows = cursor.fetchall()
+        result = []
+        for r in rows:
+            strat_id, name, disp_name, desc, risk, is_pub, min_cap, p_json, c_at, u_at = r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]
+            params = {}
+            if p_json:
+                try:
+                    params = json.loads(p_json)
+                except Exception:
+                    params = {}
+            result.append({
+                "id": strat_id,
+                "name": name,
+                "display_name": disp_name or name,
+                "description": desc or '',
+                "risk_level": risk or 'MODERADO',
+                "is_public": bool(is_pub),
+                "min_capital_usdt": float(min_cap or 50.0),
+                "parameters": params,
+                "created_at": str(c_at) if c_at else None,
+                "updated_at": str(u_at) if u_at else None
+            })
+        return result
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error consultando strategies_catalog: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def upsert_strategy_catalog(
+    name: str,
+    display_name: str = '',
+    description: str = '',
+    risk_level: str = 'MODERADO',
+    is_public: bool = False,
+    min_capital_usdt: float = 50.0,
+    parameters: dict = None
+) -> bool:
+    """Inserta o actualiza una estrategia en el catálogo soberano (inmune a Git)."""
+    if not name or not str(name).strip():
+        return False
+    clean_name = str(name).strip()
+    clean_disp = str(display_name).strip() if display_name else clean_name
+    clean_risk = str(risk_level).upper().strip() if risk_level else 'MODERADO'
+    p_json = json.dumps(parameters or {})
+    now_dt = datetime.now()
+
+    conn = None
+    try:
+        conn = get_db_connection(timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO strategies_catalog (name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                display_name = excluded.display_name,
+                description = excluded.description,
+                risk_level = excluded.risk_level,
+                is_public = excluded.is_public,
+                min_capital_usdt = excluded.min_capital_usdt,
+                parameters_json = excluded.parameters_json,
+                updated_at = excluded.updated_at
+        """, (clean_name, clean_disp, description or '', clean_risk, 1 if is_public else 0, float(min_capital_usdt or 50.0), p_json, now_dt, now_dt))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error al guardar estrategia '{name}' en strategies_catalog: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def toggle_strategy_public_status(name: str, is_public: bool) -> bool:
+    """Modifica la visibilidad pública para inversionistas de una estrategia."""
+    if not name:
+        return False
+    conn = None
+    try:
+        conn = get_db_connection(timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE strategies_catalog
+            SET is_public = ?, updated_at = ?
+            WHERE name = ?
+        """, (1 if is_public else 0, datetime.now(), str(name).strip()))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error cambiando visibilidad pública de estrategia '{name}': {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def delete_strategy_catalog(name: str) -> bool:
+    """Elimina una estrategia del catálogo."""
+    if not name:
+        return False
+    conn = None
+    try:
+        conn = get_db_connection(timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM strategies_catalog WHERE name = ?", (str(name).strip(),))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error eliminando estrategia '{name}' de strategies_catalog: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 
 
 def sync_binance_trades_to_db(symbols: list[str] | None = None, limit_per_symbol: int = 50) -> int:

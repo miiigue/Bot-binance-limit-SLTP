@@ -635,6 +635,14 @@ function ConfigForm({
   const [deleteStrategyError, setDeleteStrategyError] = useState(null);
   const [deleteStrategySuccess, setDeleteStrategySuccess] = useState(null);
 
+  // --- Estados de Publicación y Catálogo para Inversionistas ---
+  const [isStrategyPublic, setIsStrategyPublic] = useState(false);
+  const [strategyRiskLevel, setStrategyRiskLevel] = useState('MODERADO');
+  const [strategyMinCapital, setStrategyMinCapital] = useState(50);
+  const [strategyDescription, setStrategyDescription] = useState('');
+  const [strategyDisplayName, setStrategyDisplayName] = useState('');
+  const [isUpdatingCatalogStatus, setIsUpdatingCatalogStatus] = useState(false);
+
   // --- Estados para Multi-Estrategia por Moneda ---
   const [multiStrategyEnabled, setMultiStrategyEnabled] = useState(false);
   const [strategyAssignments, setStrategyAssignments] = useState({});
@@ -1128,6 +1136,17 @@ function ConfigForm({
         dataToSend.enable_hedge_breakout_requirement = dataToSend.enableHedgeBreakoutRequirement;
       }
 
+      // Parámetros Soberanos del Catálogo para Inversionistas
+      dataToSend.is_public = isStrategyPublic;
+      dataToSend.isPublic = isStrategyPublic;
+      dataToSend.risk_level = strategyRiskLevel;
+      dataToSend.riskLevel = strategyRiskLevel;
+      dataToSend.min_capital_usdt = Number(strategyMinCapital || 50);
+      dataToSend.minCapitalUsdt = Number(strategyMinCapital || 50);
+      dataToSend.description = strategyDescription || '';
+      dataToSend.display_name = strategyDisplayName || nameToSave;
+      dataToSend.displayName = strategyDisplayName || nameToSave;
+
       const result = await onSave(dataToSend);
       if (result?.success || !result?.error) {
         setShowSuccessMessage(true);
@@ -1213,7 +1232,16 @@ function ConfigForm({
       const dataToSave = {
         ...formData,
         riskPercentage: currentRisk,
-        risk_percentage: currentRisk
+        risk_percentage: currentRisk,
+        is_public: isStrategyPublic,
+        isPublic: isStrategyPublic,
+        risk_level: strategyRiskLevel,
+        riskLevel: strategyRiskLevel,
+        min_capital_usdt: Number(strategyMinCapital || 50),
+        minCapitalUsdt: Number(strategyMinCapital || 50),
+        description: strategyDescription || '',
+        display_name: strategyDisplayName || strategyNameInput,
+        displayName: strategyDisplayName || strategyNameInput
       };
       const response = await fetch(`/api/strategies/${encodeURIComponent(strategyNameInput)}`, {
         method: 'POST',
@@ -1250,6 +1278,34 @@ function ConfigForm({
     setIsSavingStrategy(false);
   };
 
+  const handleToggleCatalogPublic = async () => {
+    const targetStrat = strategyNameInput || selectedStrategyToLoad || formData.activeStrategyName;
+    if (!targetStrat) {
+      alert("Debes tener una estrategia seleccionada o con nombre para cambiar su visibilidad.");
+      return;
+    }
+    const nextState = !isStrategyPublic;
+    setIsUpdatingCatalogStatus(true);
+    try {
+      const resp = await fetch('/api/strategies/catalog/toggle_public', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: targetStrat, is_public: nextState })
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        setIsStrategyPublic(nextState);
+        if (onRefreshStrategies) onRefreshStrategies();
+      } else {
+        alert(data.error || 'No se pudo cambiar la visibilidad.');
+      }
+    } catch (e) {
+      alert(`Error de conexión: ${e.message}`);
+    } finally {
+      setIsUpdatingCatalogStatus(false);
+    }
+  };
+
   const handleLoadSelectedStrategy = async (strategyName) => {
     if (!strategyName) {
       setLoadStrategyError("Por favor, selecciona una estrategia para cargar.");
@@ -1284,6 +1340,20 @@ function ConfigForm({
           });
         } catch (e) {}
       }
+
+      // Cargar Parámetros del Catálogo para Inversionistas
+      const isPub = Boolean(strategyData.is_public ?? strategyData.isPublic ?? false);
+      const rLvl = String(strategyData.risk_level ?? strategyData.riskLevel ?? 'MODERADO').toUpperCase();
+      const minCap = Number(strategyData.min_capital_usdt ?? strategyData.minCapitalUsdt ?? 50);
+      const desc = String(strategyData.description ?? '');
+      const dispName = String(strategyData.display_name ?? strategyData.displayName ?? strategyName);
+
+      setIsStrategyPublic(isPub);
+      setStrategyRiskLevel(rLvl);
+      setStrategyMinCapital(minCap);
+      setStrategyDescription(desc);
+      setStrategyDisplayName(dispName);
+
       setFormData(newFormData);
       setStrategyNameInput(strategyName);
       setSelectedStrategyToLoad(strategyName);
@@ -1422,7 +1492,12 @@ function ConfigForm({
                 <option value="">-- Seleccionar Estrategia para Cargar --</option>
                 {availableStrategies.map(item => {
                   const name = typeof item === 'object' ? item.name : item;
-                  return <option key={name} value={name}>📁 {name}</option>;
+                  const isPub = typeof item === 'object' && item.config ? Boolean(item.config.is_public) : false;
+                  return (
+                    <option key={name} value={name}>
+                      {isPub ? '🟢 [PÚBLICA] ' : '🔒 [PRIVADA] '} {name}
+                    </option>
+                  );
                 })}
               </select>
               {selectedStrategyToLoad && (
@@ -1496,6 +1571,93 @@ function ConfigForm({
               <span>➕</span>
               <span>Guardar Nueva Copia</span>
             </button>
+          </div>
+        </div>
+
+        {/* Fila 3: Marketplace & Catálogo para Inversionistas (Control Institucional) */}
+        <div className="bg-slate-950/80 border border-indigo-900/70 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-inner">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-950/80 pb-3">
+            <div>
+              <span className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center gap-2">
+                <span>🛒</span> Catálogo para Inversionistas (Marketplace Soberano)
+              </span>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Define si los inversionistas pueden seleccionar esta estrategia en su pestaña "🤖 Mi Bot" para operar con su propio capital.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleCatalogPublic}
+              disabled={isUpdatingCatalogStatus || !(strategyNameInput || selectedStrategyToLoad)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 shadow-md active:scale-95 whitespace-nowrap self-start sm:self-auto ${
+                isStrategyPublic
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/60 hover:bg-emerald-500/30'
+                  : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700'
+              }`}
+              title="Cambiar visibilidad para inversionistas"
+            >
+              <span>{isStrategyPublic ? '🟢' : '🔒'}</span>
+              <span>{isStrategyPublic ? 'PÚBLICA (Visible para Inversionistas)' : 'PRIVADA (Solo Administrador)'}</span>
+              <span className="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded text-amber-300 ml-1 border border-slate-700">Cambiar</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">
+                Nivel de Riesgo Sugerido:
+              </label>
+              <select
+                value={strategyRiskLevel}
+                onChange={(e) => setStrategyRiskLevel(e.target.value)}
+                className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-400"
+              >
+                <option value="BAJO">🟢 BAJO (Conservador)</option>
+                <option value="MODERADO">🟡 MODERADO (Equilibrado)</option>
+                <option value="ALTO">🔴 ALTO (Agresivo / Scalping)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">
+                Capital Mínimo Sugerido ($ USDT):
+              </label>
+              <input
+                type="number"
+                min="10"
+                step="10"
+                value={strategyMinCapital}
+                onChange={(e) => setStrategyMinCapital(e.target.value)}
+                className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-400"
+                placeholder="50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">
+                Nombre Visible para Inversionistas:
+              </label>
+              <input
+                type="text"
+                value={strategyDisplayName}
+                onChange={(e) => setStrategyDisplayName(e.target.value)}
+                className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-400"
+                placeholder="Ej: RSI Sniper Momentum Pro"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">
+              Descripción Comercial para Inversionistas:
+            </label>
+            <input
+              type="text"
+              value={strategyDescription}
+              onChange={(e) => setStrategyDescription(e.target.value)}
+              className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-400"
+              placeholder="Ej: Estrategia tendencial automatizada con DCA escalonado y Take Profit dinámico."
+            />
           </div>
         </div>
 

@@ -17,8 +17,17 @@ const formatShortDate = (dateStr) => {
   }
 };
 
-export default function UserBotPanel({ activeStrategyName }) {
+export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_bot' }) {
   const { authFetch, user } = useAuth();
+
+  // Sub-pestaña activa dentro del panel (Mi Bot Personal vs Copy-Trading Espejo)
+  const [currentSubTab, setCurrentSubTab] = useState(initialSubTab || 'my_bot');
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setCurrentSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
 
   // Estados de datos
   const [botData, setBotData] = useState(null);
@@ -27,6 +36,15 @@ export default function UserBotPanel({ activeStrategyName }) {
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [feedback, setFeedback] = useState(null);
+
+  // Estados del Catálogo de Estrategias y Personalización
+  const [catalogStrategies, setCatalogStrategies] = useState([]);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
+  const [selectedStrategy, setSelectedStrategy] = useState('');
+  const [allocatedUsdt, setAllocatedUsdt] = useState(100);
+  const [leverage, setLeverage] = useState(10);
+  const [marginType, setMarginType] = useState('ISOLATED');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   // Estados del Formulario de API Keys
   const [apiKey, setApiKey] = useState('');
@@ -90,6 +108,24 @@ export default function UserBotPanel({ activeStrategyName }) {
     setConfirmModal(prev => ({ ...prev, isOpen: false }));
   };
 
+  // Cargar catálogo de estrategias curadas
+  const fetchStrategiesCatalog = useCallback(async () => {
+    setIsLoadingCatalog(true);
+    try {
+      const resp = await authFetch('/api/strategies/catalog');
+      if (resp.ok) {
+        const data = await resp.json();
+        const strats = data.strategies || [];
+        setCatalogStrategies(strats);
+        setSelectedStrategy(prev => prev || (strats.length > 0 ? strats[0].name : ''));
+      }
+    } catch (err) {
+      console.error("Error al obtener catálogo de estrategias:", err);
+    } finally {
+      setIsLoadingCatalog(false);
+    }
+  }, [authFetch]);
+
   // Cargar estado del bot y balance del usuario
   const fetchUserBotStatus = useCallback(async () => {
     try {
@@ -97,6 +133,20 @@ export default function UserBotPanel({ activeStrategyName }) {
       if (!resp.ok) return;
       const data = await resp.json();
       setBotData(data);
+      if (data?.bot_settings) {
+        if (data.bot_settings.strategy_name) {
+          setSelectedStrategy(data.bot_settings.strategy_name);
+        }
+        if (data.bot_settings.allocated_usdt !== undefined) {
+          setAllocatedUsdt(Number(data.bot_settings.allocated_usdt));
+        }
+        if (data.bot_settings.leverage !== undefined) {
+          setLeverage(Number(data.bot_settings.leverage));
+        }
+        if (data.bot_settings.margin_type) {
+          setMarginType(data.bot_settings.margin_type);
+        }
+      }
     } catch (err) {
       console.error("Error al obtener estado de bot de usuario:", err);
     } finally {
@@ -118,6 +168,7 @@ export default function UserBotPanel({ activeStrategyName }) {
   }, [authFetch]);
 
   useEffect(() => {
+    fetchStrategiesCatalog();
     fetchUserBotStatus();
     fetchUserTrades();
     const interval = setInterval(() => {
@@ -134,7 +185,7 @@ export default function UserBotPanel({ activeStrategyName }) {
       clearInterval(interval);
       window.removeEventListener('open-api-modal', handleOpenApiModal);
     };
-  }, [fetchUserBotStatus, fetchUserTrades]);
+  }, [fetchStrategiesCatalog, fetchUserBotStatus, fetchUserTrades]);
 
   // Guardar / Conectar API Keys
   const handleSaveApiKeys = async (e) => {
@@ -228,26 +279,85 @@ export default function UserBotPanel({ activeStrategyName }) {
     });
   };
 
-  // Activar / Pausar Sincronización Automática
+  // Guardar configuración de estrategia, capital y apalancamiento
+  const handleSaveBotSettings = async () => {
+    if (!selectedStrategy) {
+      setFeedback({ type: 'error', text: 'Por favor selecciona una estrategia del catálogo.' });
+      return;
+    }
+    const cap = Number(allocatedUsdt);
+    if (isNaN(cap) || cap < 10) {
+      setFeedback({ type: 'error', text: 'El capital asignado debe ser de al menos 10 USDT.' });
+      return;
+    }
+    setIsSavingSettings(true);
+    setFeedback(null);
+    try {
+      const resp = await authFetch('/api/user/bot/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          strategy_name: selectedStrategy,
+          allocated_usdt: cap,
+          leverage: Number(leverage),
+          margin_type: marginType
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.message || 'Error al guardar parámetros.');
+      setFeedback({ type: 'success', text: `✅ Estrategia "${selectedStrategy}" y parámetros guardados con éxito.` });
+      fetchUserBotStatus();
+    } catch (err) {
+      setFeedback({ type: 'error', text: err.message });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  // Activar / Pausar Operación Automática
   const handleToggleSync = () => {
     if (!botData?.has_valid_keys) {
-      setFeedback({ type: 'error', text: 'Primero debes conectar tus claves API de Binance para activar la replicación de trades.' });
+      setFeedback({ type: 'error', text: 'Primero debes conectar tus claves API de Binance para operar.' });
       setShowApiModal(true);
       return;
     }
 
     const nextState = !isBotRunning;
+    const isMarketplaceMode = (currentSubTab === 'my_bot');
+    const stratTitle = isMarketplaceMode 
+      ? (selectedStrategy || botData?.bot_settings?.strategy_name || 'Estrategia seleccionada')
+      : (botData?.active_strategy || activeStrategyName || 'Estrategia Maestra');
+
     openConfirm({
-      title: nextState ? '¿Activar Replicación Automática?' : '¿Pausar Replicación de Trades?',
+      title: nextState 
+        ? (isMarketplaceMode ? '¿Iniciar tu Bot Personal con esta Estrategia?' : '¿Activar Replicación Copy-Trading?') 
+        : (isMarketplaceMode ? '¿Pausar tu Bot Personal?' : '¿Pausar Replicación de Trades?'),
       message: nextState 
-        ? 'El algoritmo cuantitativo comenzará a copiar en tiempo real cada orden de compra y venta en tu cuenta de Binance Futures.' 
-        : 'Se pausará el copiado de posiciones en tu cuenta. Las órdenes abiertas mantendrán sus Stop Loss en Binance.',
-      confirmText: nextState ? 'Sí, Activar Replicación' : 'Sí, Pausar Replicación',
+        ? (isMarketplaceMode 
+            ? `Tu bot personal comenzará a operar en Binance Futures con la estrategia "${stratTitle}", con $${allocatedUsdt} USDT y ${leverage}x de apalancamiento.`
+            : 'El algoritmo cuantitativo comenzará a copiar en tiempo real cada orden de compra y venta en tu cuenta de Binance Futures.')
+        : 'Se pausará la operativa en tu cuenta de Binance. Las órdenes abiertas mantendrán sus Stop Loss en el exchange.',
+      confirmText: nextState 
+        ? (isMarketplaceMode ? 'Sí, Iniciar Mi Bot' : 'Sí, Activar Replicación') 
+        : (isMarketplaceMode ? 'Sí, Pausar Mi Bot' : 'Sí, Pausar Replicación'),
       type: nextState ? 'success' : 'warning',
       onConfirm: async () => {
         setActionLoading(true);
         setFeedback(null);
         try {
+          if (nextState && isMarketplaceMode && selectedStrategy) {
+            await authFetch('/api/user/bot/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                strategy_name: selectedStrategy,
+                allocated_usdt: Number(allocatedUsdt),
+                leverage: Number(leverage),
+                margin_type: marginType
+              })
+            });
+          }
+
           const resp = await authFetch('/api/user/bot/toggle', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -297,28 +407,34 @@ export default function UserBotPanel({ activeStrategyName }) {
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-bold mb-3">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-              MODALIDAD: CUENTA PROPIA BINANCE (COPY-TRADING)
+              {currentSubTab === 'my_bot' 
+                ? 'MODALIDAD: CUENTA PROPIA BINANCE (BOT PERSONAL AUTÓNOMO)'
+                : 'MODALIDAD: CUENTA PROPIA BINANCE (COPY-TRADING)'}
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Copy-Trading Binance
+              {currentSubTab === 'my_bot' ? '🤖 Mi Bot Personal' : '👥 Copy-Trading Binance'}
             </h1>
             <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
-              Mantén el control y custodia total de tus fondos en tu propio Binance. Las compras y ventas del algoritmo institucional gestionado por el Administrador se replican automáticamente en tu cuenta.
+              {currentSubTab === 'my_bot'
+                ? 'Elige una de las estrategias curadas y autorizadas por el Administrador, asigna tu propio capital y apalancamiento, y pon a operar tu algoritmo personal en Binance Futures.'
+                : 'Mantén el control y custodia total de tus fondos en tu propio Binance. Las compras y ventas del algoritmo institucional gestionado por el Administrador se replican automáticamente en tu cuenta.'}
             </p>
           </div>
 
-          {/* Tarjeta de Saldo Binance y Replicación */}
+          {/* Tarjeta de Saldo Binance y Estado */}
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-4 bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 shadow-inner">
             <div className="pr-4 border-r border-slate-800">
               <span className="text-[10px] text-slate-500 block uppercase tracking-wider font-semibold">Tu Balance Binance</span>
               <span className="text-xl font-black font-mono text-emerald-400">${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs text-slate-400 font-sans">USDT</span></span>
             </div>
             <div>
-              <span className="text-[10px] text-slate-500 block uppercase tracking-wider font-semibold">Replicación Algorítmica</span>
+              <span className="text-[10px] text-slate-500 block uppercase tracking-wider font-semibold">
+                {currentSubTab === 'my_bot' ? 'Estado Mi Bot' : 'Replicación Algorítmica'}
+              </span>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className={`w-3 h-3 rounded-full ${isBotRunning ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'}`}></span>
                 <span className={`text-xs font-bold ${isBotRunning ? 'text-emerald-400' : 'text-slate-400'}`}>
-                  {isBotRunning ? 'SINCRONIZACIÓN ACTIVA' : 'SINCRONIZACIÓN PAUSADA'}
+                  {isBotRunning ? 'OPERACIÓN EN VIVO' : 'PAUSADO'}
                 </span>
               </div>
             </div>
@@ -338,69 +454,359 @@ export default function UserBotPanel({ activeStrategyName }) {
         )}
       </div>
 
-      {/* Tarjeta de Control de Replicación Automática */}
-      <div className={`border rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col justify-between transition-all duration-300 ${
-        isBotRunning 
-          ? 'bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/50 shadow-emerald-500/10' 
-          : 'bg-slate-900/90 border-slate-800'
-      }`}>
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <span>⚡</span> Control de Sincronización
-            </h3>
-            <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2.5 py-0.5 rounded-lg border border-amber-400/30 font-bold">
-              Estrategia Activa
-            </span>
-          </div>
-
-          <div className="p-4 bg-slate-950/80 rounded-2xl border border-slate-800 mb-4 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400 font-medium">Estrategia que replica:</span>
-              <span className="font-bold text-amber-300 font-mono truncate max-w-[260px]" title={botData?.active_strategy || activeStrategyName}>
-                {botData?.active_strategy || activeStrategyName || 'v18_v17_RSI-SNIPER-MOMENTUM'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400 font-medium">Estado de Replicación:</span>
-              <span className={`font-bold ${isBotRunning ? 'text-emerald-400 flex items-center gap-1.5' : 'text-slate-400'}`}>
-                {isBotRunning ? (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    COPIANDO TRADES EN VIVO
-                  </>
-                ) : (
-                  '⏸️ PAUSADO'
-                )}
-              </span>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-            {isBotRunning 
-              ? '🟢 Tu cuenta de Binance está vinculada y ejecutará cada orden de compra y venta del algoritmo institucional en tiempo real.'
-              : '⏸️ La replicación está en pausa. Presiona el botón verde para activar el copiado automático de trades.'}
-          </p>
-        </div>
-
+      {/* Segmented Control: Selector de Modo (Mi Bot Personal vs Copy-Trading Espejo) */}
+      <div className="flex items-center gap-2 p-1.5 bg-slate-900 border border-slate-800 rounded-2xl max-w-md shadow-inner">
         <button
-          onClick={handleToggleSync}
-          disabled={actionLoading}
-          className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
-            isBotRunning
-              ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
-              : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
+          type="button"
+          onClick={() => setCurrentSubTab('my_bot')}
+          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+            currentSubTab === 'my_bot'
+              ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/40'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
           }`}
         >
-          {actionLoading ? (
-            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-          ) : isBotRunning ? (
-            <><span>⏸️</span> PAUSAR REPLICACIÓN DE TRADES</>
-          ) : (
-            <><span>⚡</span> ACTIVAR REPLICACIÓN AUTOMÁTICA</>
-          )}
+          <span>🤖</span> Mi Bot (Elegir Estrategia)
+        </button>
+        <button
+          type="button"
+          onClick={() => setCurrentSubTab('copy_trading')}
+          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+            currentSubTab === 'copy_trading'
+              ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/40'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+          }`}
+        >
+          <span>👥</span> Copy-Trading Espejo
         </button>
       </div>
+
+      {/* ============================================================== */}
+      {/* VISTA 1: MARKETPLACE DE ESTRATEGIAS (MODO MI BOT PERSONAL)     */}
+      {/* ============================================================== */}
+      {currentSubTab === 'my_bot' && (
+        <div className="space-y-6 animate-fadeIn">
+          
+          {/* Tarjeta de Control Principal del Bot Personal */}
+          <div className={`border rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col justify-between transition-all duration-300 ${
+            isBotRunning 
+              ? 'bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/50 shadow-emerald-500/10' 
+              : 'bg-slate-900/90 border-slate-800'
+          }`}>
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <span>⚡</span> Panel Operativo de tu Bot Personal
+                </h3>
+                <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2.5 py-0.5 rounded-lg border border-amber-400/30 font-bold">
+                  {isBotRunning ? 'ACTIVO' : 'LISTO'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-slate-950/80 rounded-2xl border border-slate-800 mb-4">
+                <div className="text-xs">
+                  <span className="text-slate-500 block uppercase font-semibold">Estrategia Asignada:</span>
+                  <span className="font-extrabold text-amber-300 font-mono text-sm truncate block mt-0.5" title={selectedStrategy}>
+                    {selectedStrategy || 'Ninguna seleccionada'}
+                  </span>
+                </div>
+                <div className="text-xs">
+                  <span className="text-slate-500 block uppercase font-semibold">Capital Asignado:</span>
+                  <span className="font-extrabold text-emerald-400 font-mono text-sm block mt-0.5">
+                    ${allocatedUsdt} USDT
+                  </span>
+                </div>
+                <div className="text-xs">
+                  <span className="text-slate-500 block uppercase font-semibold">Apalancamiento & Margen:</span>
+                  <span className="font-extrabold text-sky-400 font-mono text-sm block mt-0.5">
+                    {leverage}x • {marginType}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                {isBotRunning 
+                  ? '🟢 Tu bot personal está operando en vivo en Binance Futures con la estrategia asignada. Para cambiar de estrategia o parámetros, pausa primero el bot.'
+                  : '⏸️ Bot pausado. Selecciona tu estrategia favorita en el catálogo de abajo, define tu capital y presiona el botón para comenzar a operar.'}
+              </p>
+            </div>
+
+            <button
+              onClick={handleToggleSync}
+              disabled={actionLoading}
+              className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
+                isBotRunning
+                  ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
+                  : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
+              }`}
+            >
+              {actionLoading ? (
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+              ) : isBotRunning ? (
+                <><span>⏸️</span> PAUSAR MI BOT PERSONAL</>
+              ) : (
+                <><span>⚡</span> INICIAR MI BOT CON ESTA ESTRATEGIA</>
+              )}
+            </button>
+          </div>
+
+          {/* Catálogo de Estrategias Públicas Curadas */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold mb-2">
+                  <span>🛒</span> MARKETPLACE DE ESTRATEGIAS CUANTITATIVAS
+                </div>
+                <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+                  Catálogo de Estrategias Públicas Disponibles
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                  Elige la estrategia que prefieras para tu bot. Todas han sido curadas y optimizadas institucionalmente por el Administrador.
+                </p>
+              </div>
+              <button
+                onClick={fetchStrategiesCatalog}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition self-start sm:self-auto"
+              >
+                ↻ Actualizar Catálogo
+              </button>
+            </div>
+
+            {isLoadingCatalog && catalogStrategies.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
+                <div className="w-6 h-6 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+                <span>Cargando catálogo de estrategias autorizadas...</span>
+              </div>
+            ) : catalogStrategies.length === 0 ? (
+              <div className="p-8 bg-slate-950/60 border border-slate-800 rounded-2xl text-center text-slate-400 text-xs">
+                No hay estrategias marcadas como públicas en este momento. El administrador activará opciones en breve.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {catalogStrategies.map((strat) => {
+                  const isSelected = (selectedStrategy === strat.name);
+                  const riskColor = 
+                    strat.risk_level === 'BAJO' ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30' :
+                    strat.risk_level === 'ALTO' ? 'text-rose-400 bg-rose-500/15 border-rose-500/30' :
+                    'text-amber-400 bg-amber-500/15 border-amber-500/30';
+
+                  return (
+                    <div
+                      key={strat.id || strat.name}
+                      onClick={() => setSelectedStrategy(strat.name)}
+                      className={`cursor-pointer rounded-2xl p-5 border transition-all relative flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-gradient-to-b from-indigo-950/60 via-slate-900 to-slate-950 border-indigo-500 shadow-xl shadow-indigo-500/10 ring-2 ring-indigo-500/50'
+                          : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${riskColor}`}>
+                            RIESGO {strat.risk_level || 'MODERADO'}
+                          </span>
+                          {isSelected && (
+                            <span className="text-[10px] font-black text-indigo-400 bg-indigo-500/20 px-2 py-0.5 rounded-md border border-indigo-500/40">
+                              SELECCIONADA
+                            </span>
+                          )}
+                        </div>
+
+                        <h4 className="text-base font-extrabold text-white mb-1.5 leading-snug">
+                          {strat.display_name || strat.name}
+                        </h4>
+
+                        <p className="text-xs text-slate-400 mb-4 leading-relaxed line-clamp-3">
+                          {strat.description || 'Estrategia cuantitativa con gestión dinámica de riesgo y toma de ganancias inteligente.'}
+                        </p>
+                      </div>
+
+                      <div className="border-t border-slate-800/80 pt-3 flex items-center justify-between mt-auto">
+                        <div>
+                          <span className="text-[10px] text-slate-500 block uppercase font-bold">Capital Sugerido</span>
+                          <span className="text-xs font-mono font-black text-amber-400">
+                            Min. ${strat.min_capital_usdt || 50} USDT
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedStrategy(strat.name);
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                            isSelected
+                              ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                          }`}
+                        >
+                          {isSelected ? '✓ Seleccionada' : 'Seleccionar'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Asignación de Capital y Apalancamiento */}
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+                <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <span>⚙️</span> Personaliza tu Capital y Apalancamiento
+                </h4>
+                <span className="text-xs text-slate-400">
+                  Estrategia activa a configurar: <strong className="text-amber-300 font-mono">{selectedStrategy || 'Ninguna'}</strong>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Capital Asignado */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
+                    Capital USDT Asignado:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="10"
+                      step="10"
+                      value={allocatedUsdt}
+                      onChange={(e) => setAllocatedUsdt(e.target.value)}
+                      className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-mono font-bold text-white outline-none focus:border-amber-400"
+                    />
+                    <span className="absolute right-3 top-2.5 text-xs text-slate-500 font-bold">USDT</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Saldo disponible en tu Binance: ${balance.toFixed(2)} USDT
+                  </span>
+                </div>
+
+                {/* Apalancamiento */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
+                    Apalancamiento (Leverage):
+                  </label>
+                  <select
+                    value={leverage}
+                    onChange={(e) => setLeverage(e.target.value)}
+                    className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-400"
+                  >
+                    <option value="1">1x (Sin Apalancamiento - Spot)</option>
+                    <option value="2">2x (Muy Conservador)</option>
+                    <option value="3">3x (Recomendado Institucional)</option>
+                    <option value="5">5x (Moderado)</option>
+                    <option value="10">10x (Estándar)</option>
+                    <option value="20">20x (Dinámico)</option>
+                  </select>
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Multiplicador de tamaño de posición.
+                  </span>
+                </div>
+
+                {/* Margen */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
+                    Modo de Margen:
+                  </label>
+                  <select
+                    value={marginType}
+                    onChange={(e) => setMarginType(e.target.value)}
+                    className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-400"
+                  >
+                    <option value="ISOLATED">ISOLATED (Margen Aislado - Recomendado)</option>
+                    <option value="CROSSED">CROSSED (Margen Cruzado)</option>
+                  </select>
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Aislado limita el riesgo exclusivamente a la orden.
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handleSaveBotSettings}
+                  disabled={isSavingSettings}
+                  className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2"
+                >
+                  <span>💾</span>
+                  <span>{isSavingSettings ? 'Guardando...' : 'Guardar Parámetros de Mi Bot'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* VISTA 2: COPY-TRADING ESPEJO (MODO 1:1 REPLICACIÓN MAESTRA)    */}
+      {/* ============================================================== */}
+      {currentSubTab === 'copy_trading' && (
+        <div className="space-y-6 animate-fadeIn">
+          <div className={`border rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col justify-between transition-all duration-300 ${
+            isBotRunning 
+              ? 'bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/50 shadow-emerald-500/10' 
+              : 'bg-slate-900/90 border-slate-800'
+          }`}>
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <span>⚡</span> Control de Sincronización Copy-Trading
+                </h3>
+                <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2.5 py-0.5 rounded-lg border border-amber-400/30 font-bold">
+                  Estrategia Maestra
+                </span>
+              </div>
+
+              <div className="p-4 bg-slate-950/80 rounded-2xl border border-slate-800 mb-4 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400 font-medium">Estrategia que replica:</span>
+                  <span className="font-bold text-amber-300 font-mono truncate max-w-[260px]" title={botData?.active_strategy || activeStrategyName}>
+                    {botData?.active_strategy || activeStrategyName || 'v18_v17_RSI-SNIPER-MOMENTUM'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400 font-medium">Estado de Replicación:</span>
+                  <span className={`font-bold ${isBotRunning ? 'text-emerald-400 flex items-center gap-1.5' : 'text-slate-400'}`}>
+                    {isBotRunning ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        COPIANDO TRADES EN VIVO
+                      </>
+                    ) : (
+                      '⏸️ PAUSADO'
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                {isBotRunning 
+                  ? '🟢 Tu cuenta de Binance está vinculada y ejecutará cada orden de compra y venta del algoritmo institucional en tiempo real.'
+                  : '⏸️ La replicación está en pausa. Presiona el botón verde para activar el copiado automático de trades.'}
+              </p>
+            </div>
+
+            <button
+              onClick={handleToggleSync}
+              disabled={actionLoading}
+              className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
+                isBotRunning
+                  ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
+                  : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
+              }`}
+            >
+              {actionLoading ? (
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+              ) : isBotRunning ? (
+                <><span>⏸️</span> PAUSAR REPLICACIÓN DE TRADES</>
+              ) : (
+                <><span>⚡</span> ACTIVAR REPLICACIÓN AUTOMÁTICA</>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Sección 3: Historial y Métricas de Operaciones Replicadas */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">

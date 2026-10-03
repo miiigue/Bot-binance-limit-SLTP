@@ -144,6 +144,20 @@ CREATE TABLE IF NOT EXISTS bot_settings (
     value TEXT
 );
 
+-- Catálogo Soberano de Estrategias Curadas para Inversionistas
+CREATE TABLE IF NOT EXISTS strategies_catalog (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(128) NOT NULL UNIQUE,
+    display_name VARCHAR(128),
+    description TEXT,
+    risk_level VARCHAR(32) DEFAULT 'MODERADO',
+    is_public BOOLEAN DEFAULT false,
+    min_capital_usdt DOUBLE PRECISION DEFAULT 50.0,
+    parameters_json TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
 -- Índices de Alto Rendimiento para Búsquedas Frecuentes
 CREATE INDEX IF NOT EXISTS idx_user_trades_user_id ON user_trades(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_trades_symbol ON user_trades(symbol);
@@ -152,6 +166,7 @@ CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
 CREATE INDEX IF NOT EXISTS idx_trades_close_ts ON trades(close_timestamp);
 CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON user_api_keys(user_id, is_valid);
 CREATE INDEX IF NOT EXISTS idx_user_bot_settings_running ON user_bot_settings(is_running);
+CREATE INDEX IF NOT EXISTS idx_strategies_catalog_public ON strategies_catalog(is_public);
 """
 
 
