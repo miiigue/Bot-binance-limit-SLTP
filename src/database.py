@@ -7,15 +7,16 @@ from datetime import datetime
 import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-from decimal import Decimal
-from dotenv import load_dotenv
-
-# Cargar .env de forma explícita desde la raíz del proyecto
-env_file_path = os.path.join(BASE_DIR, '.env')
-if os.path.exists(env_file_path):
-    load_dotenv(dotenv_path=env_file_path, override=True)
-else:
-    load_dotenv(override=True)
+try:
+    from dotenv import load_dotenv
+    # Cargar .env de forma explícita desde la raíz del proyecto
+    env_file_path = os.path.join(BASE_DIR, '.env')
+    if os.path.exists(env_file_path):
+        load_dotenv(dotenv_path=env_file_path, override=True)
+    else:
+        load_dotenv(override=True)
+except ImportError:
+    pass
 
 import pandas as pd
 from typing import Union
