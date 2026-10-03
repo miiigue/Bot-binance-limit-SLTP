@@ -16,12 +16,32 @@ def main():
     print("🛡️ INICIANDO RESTAURACIÓN Y BLINDAJE SOBERANO DE ESTRATEGIA...")
     print("=" * 60)
 
-    # 1. Intentar restaurar config.ini desde git stash si existe
-    res_stash = os.system("git checkout stash@{0} -- config.ini 2>/dev/null")
-    if res_stash == 0:
-        print("✅ config.ini restaurado exitosamente desde git stash.")
-    else:
-        print("ℹ️ Stash no requerido o no encontrado. Usando config.ini actual.")
+    strat_name = "v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_SL500_3DCA2_ReDi5c5"
+
+    # 1. Actualizar directamente config.ini con la estrategia y Stop Loss correctos
+    config_file = os.path.join(PROJECT_ROOT, "config.ini")
+    if os.path.exists(config_file):
+        try:
+            import configparser
+            cp = configparser.ConfigParser(allow_no_value=True)
+            cp.read(config_file, encoding='utf-8')
+            
+            if not cp.has_section('TRADING'):
+                cp.add_section('TRADING')
+            cp.set('TRADING', 'active_strategy_name', strat_name)
+            cp.set('TRADING', 'stop_loss_usdt', '500')
+            cp.set('TRADING', 'enable_stop_loss_pnl', 'true')
+            cp.set('TRADING', 'enable_emergency_software_sl', 'true')
+            
+            if not cp.has_section('STRATEGY_INFO'):
+                cp.add_section('STRATEGY_INFO')
+            cp.set('STRATEGY_INFO', 'active_strategy_name', strat_name)
+            
+            with open(config_file, 'w', encoding='utf-8') as f:
+                cp.write(f)
+            print("✅ config.ini actualizado directamente con la estrategia y SL de 500 USDT.")
+        except Exception as e_cfg:
+            print(f"ℹ️ Aviso al actualizar config.ini: {e_cfg}")
 
     # 2. Aplicar skip-worktree para que Git NUNCA MÁS sobreescriba config.ini
     res_skip = os.system("git update-index --skip-worktree config.ini 2>/dev/null")
