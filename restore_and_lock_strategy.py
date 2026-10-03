@@ -20,11 +20,15 @@ def main():
 
     # 1. Actualizar directamente config.ini con la estrategia y Stop Loss correctos
     config_file = os.path.join(PROJECT_ROOT, "config.ini")
+    tmp_file = os.path.join(PROJECT_ROOT, "config.ini.tmp")
     if os.path.exists(config_file):
         try:
             import configparser
             cp = configparser.ConfigParser(allow_no_value=True)
-            cp.read(config_file, encoding='utf-8')
+            if os.path.exists(tmp_file):
+                cp.read([config_file, tmp_file], encoding='utf-8')
+            else:
+                cp.read(config_file, encoding='utf-8')
             
             if not cp.has_section('TRADING'):
                 cp.add_section('TRADING')
