@@ -28,7 +28,7 @@ const formatElapsedTime = (totalSeconds) => {
 };
 
 function MainDashboard() {
-  const { user, isAdmin, isInvestor, isAuthenticated, isLoading, logout, authFetch } = useAuth();
+  const { user, isAdmin, isInvestor, isAuthenticated, isLoading, logout, authFetch, updateUser } = useAuth();
 
   const [config, setConfig] = useState(null);
   const [botsRunning, setBotsRunning] = useState(null);
@@ -68,15 +68,15 @@ function MainDashboard() {
   }, [activeStrategyDisplayName, config?.activeStrategyName, availableStrategies]);
 
   // Pestañas dinámicas según el rol:
-  // Admin: 'monitor', 'my_bot', 'config', 'chart', 'performance', 'radar', 'backtest', 'investors'
-  // Investor: 'my_bot', 'my_investment', 'performance', 'chart'
-  const [activeTab, setActiveTab] = useState(isInvestor ? 'my_bot' : 'monitor');
+  // Admin: 'monitor', 'config', 'performance', 'investors', 'my_bot', 'copy_trading', 'chart', 'radar', 'backtest'
+  // Investor: 'my_investment', 'copy_trading', 'my_bot', 'performance', 'chart'
+  const [activeTab, setActiveTab] = useState(isInvestor ? 'my_investment' : 'monitor');
   const [chartSelectedSymbol, setChartSelectedSymbol] = useState('SOLUSDT');
 
   // Asegurar que si el rol es Inversionista, nunca esté en una pestaña de Admin
   useEffect(() => {
-    if (isInvestor && !['my_bot', 'my_investment', 'performance', 'chart'].includes(activeTab)) {
-      setActiveTab('my_bot');
+    if (isInvestor && !['my_investment', 'copy_trading', 'my_bot', 'performance', 'chart'].includes(activeTab)) {
+      setActiveTab('my_investment');
     }
   }, [isInvestor, activeTab]);
 
@@ -416,7 +416,7 @@ function MainDashboard() {
     return <AuthModal />;
   }
 
-  const isCopyTradeActiveTab = activeTab === 'my_bot' || activeTab === 'copy_trading' || (isInvestor && !['my_investment', 'performance'].includes(activeTab));
+  const isCopyTradeActiveTab = isInvestor && (activeTab === 'my_bot' || activeTab === 'copy_trading');
   const userBinanceBalance = Number(userBotHeader?.balance_usdt || 0);
   const isUserBotRunning = Boolean(userBotHeader?.bot_settings?.is_running);
 
@@ -717,7 +717,19 @@ function MainDashboard() {
                       : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
                   }`}
                 >
-                  <span>⚡</span> Copy-Trading Binance
+                  <span>🤖</span> Mi Bot
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('copy_trading')}
+                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
+                    activeTab === 'copy_trading'
+                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
+                  }`}
+                >
+                  <span>⚡</span> Copy-Trading
                 </button>
               </>
             )}
@@ -906,9 +918,16 @@ function MainDashboard() {
         )}
       </main>
 
-      {/* Modal Obligatorio de Términos Legales y Descargo de Responsabilidad */}
-      {isAuthenticated && user && user.terms_accepted_version !== 'v1.0-2026' && (
-        <LegalTermsModal user={user} onTermsAccepted={() => window.location.reload()} />
+      {/* Modal Obligatorio de Términos Legales y Descargo de Responsabilidad (Solo Inversionistas) */}
+      {isAuthenticated && user && !isAdmin && user.terms_accepted_version !== 'v1.0-2026' && (
+        <LegalTermsModal 
+          user={user} 
+          onTermsAccepted={(updatedUser) => {
+            if (updateUser) {
+              updateUser(updatedUser);
+            }
+          }} 
+        />
       )}
 
       {/* Contenedor de Notificaciones Toast Flotantes */}

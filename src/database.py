@@ -1357,21 +1357,29 @@ def toggle_strategy_public_status(name: str, is_public: bool) -> bool:
         conn = get_db_connection(timeout=10)
         _ensure_strategies_catalog_table(conn)
         cursor = conn.cursor()
-        now_dt = datetime.now()
+        now_dt = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        # 1. Intentar actualizar por nombre
+        # 1. Intentar actualizar por nombre (sin importar mayúsculas/minúsculas)
         cursor.execute("""
             UPDATE strategies_catalog
             SET is_public = ?, updated_at = ?
-            WHERE name = ?
+            WHERE LOWER(name) = LOWER(?)
         """, (pub_bool, now_dt, clean_name))
         
-        # 2. Si aún no estaba en la tabla, insertarla
+        # 2. Si aún no estaba en la tabla, buscar archivo JSON o insertarla
         if cursor.rowcount == 0:
+            params_json = '{}'
+            strat_file = os.path.join(STRATEGIES_PATH, f"{clean_name}.json")
+            if os.path.exists(strat_file):
+                try:
+                    with open(strat_file, 'r', encoding='utf-8') as f:
+                        params_json = f.read()
+                except Exception:
+                    pass
             cursor.execute("""
                 INSERT INTO strategies_catalog (name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (clean_name, clean_name, '', 'MODERADO', pub_bool, 50.0, '{}', now_dt, now_dt))
+            """, (clean_name, clean_name, '', 'MODERADO', pub_bool, 50.0, params_json, now_dt, now_dt))
             
         conn.commit()
         return True
@@ -1782,6 +1790,9 @@ def get_user_by_id(user_id: int) -> dict:
         res.setdefault('terms_accepted_version', None)
         res.setdefault('terms_accepted_at', None)
         res.setdefault('terms_accepted_ip', None)
+        if res.get('role') == 'admin':
+            res['terms_accepted'] = 1
+            res['terms_accepted_version'] = 'v1.0-2026'
         return res
     except Exception as e:
         get_logger().error(f"Error al obtener usuario por ID {user_id}: {e}")
@@ -1810,6 +1821,9 @@ def get_user_by_identifier(identifier: str) -> dict:
         res.setdefault('terms_accepted_version', None)
         res.setdefault('terms_accepted_at', None)
         res.setdefault('terms_accepted_ip', None)
+        if res.get('role') == 'admin':
+            res['terms_accepted'] = 1
+            res['terms_accepted_version'] = 'v1.0-2026'
         return res
     except Exception as e:
         get_logger().error(f"Error al buscar usuario por identificador '{identifier}': {e}")

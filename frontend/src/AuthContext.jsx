@@ -128,12 +128,21 @@ export function AuthProvider({ children }) {
   };
 
   // Cerrar Sesión
-  const logout = () => {
+  const logout = useCallback(() => {
     setToken(null);
     setUser(null);
     localStorage.removeItem('bot_auth_token');
     localStorage.removeItem('bot_auth_user');
-  };
+  }, []);
+
+  // Actualizar datos del usuario reactivamente en memoria y localStorage
+  const updateUser = useCallback((newUserData) => {
+    setUser(prev => {
+      const updated = { ...(prev || {}), ...newUserData };
+      localStorage.setItem('bot_auth_user', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
 
   // authFetch: Realiza llamadas fetch inyectando el token JWT y capturando 401
   const authFetch = useCallback(async (url, options = {}) => {
@@ -149,7 +158,7 @@ export function AuthProvider({ children }) {
       logout();
     }
     return response;
-  }, []);
+  }, [logout]);
 
   const value = {
     token,
@@ -163,6 +172,7 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
+    updateUser,
     authFetch,
     checkSetupStatus
   };

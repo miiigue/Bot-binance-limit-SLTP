@@ -812,6 +812,13 @@ def auth_register_endpoint():
             if not user_id:
                 return jsonify({"status": "error", "message": "Error al registrar el Super Administrador."}), 500
 
+            # Registrar aceptación de términos para admin
+            try:
+                from src.database import record_terms_acceptance
+                record_terms_acceptance(user_id, 'v1.0-2026', ip_address=request.remote_addr, user_agent=request.headers.get('User-Agent'))
+            except Exception:
+                pass
+
             token = generate_jwt(user_id=user_id, username=username, role='admin')
             user_data = {
                 "id": user_id,
@@ -819,7 +826,9 @@ def auth_register_endpoint():
                 "email": email,
                 "role": "admin",
                 "status": "active",
-                "requested_capital": investment_amount
+                "requested_capital": investment_amount,
+                "terms_accepted": 1,
+                "terms_accepted_version": "v1.0-2026"
             }
             api_logger.info(f"Super Administrador inicial registrado exitosamente: {username}")
             return jsonify({
@@ -835,6 +844,13 @@ def auth_register_endpoint():
             if not user_id:
                 return jsonify({"status": "error", "message": "Error al registrar la cuenta."}), 500
 
+            # Registrar la aceptación de términos firmada en el modal de registro
+            try:
+                from src.database import record_terms_acceptance
+                record_terms_acceptance(user_id, 'v1.0-2026', ip_address=request.remote_addr, user_agent=request.headers.get('User-Agent'))
+            except Exception:
+                pass
+
             # Inicializar configuración de bot por defecto
             get_user_bot_settings(user_id)
 
@@ -845,7 +861,9 @@ def auth_register_endpoint():
                 "email": email,
                 "role": 'investor',
                 "status": 'active',
-                "account_number": format_account_number(user_id)
+                "account_number": format_account_number(user_id),
+                "terms_accepted": 1,
+                "terms_accepted_version": "v1.0-2026"
             }
             api_logger.info(f"Nuevo usuario SaaS registrado y activo: {username} (ID: {user_id})")
             return jsonify({
@@ -919,13 +937,17 @@ def auth_login_endpoint():
         # Actualizar último acceso y emitir token
         update_last_login(user['id'])
         token = generate_jwt(user_id=user['id'], username=user['username'], role=user['role'])
+        is_adm = (user['role'] == 'admin')
         user_data = {
             "id": user['id'],
             "username": user['username'],
             "email": user['email'],
             "role": user['role'],
             "status": user['status'],
-            "account_number": user.get('account_number')
+            "account_number": user.get('account_number'),
+            "requested_capital": float(user.get('requested_capital') or 0.0),
+            "terms_accepted": 1 if is_adm else user.get('terms_accepted', 0),
+            "terms_accepted_version": 'v1.0-2026' if is_adm else user.get('terms_accepted_version')
         }
         api_logger.info(f"Sesión iniciada exitosamente: {user['username']} (Rol: {user['role']}, Cuenta: {user.get('account_number')})")
         return jsonify({
@@ -946,6 +968,9 @@ def auth_me_endpoint():
     user = get_user_by_id(request.current_user['user_id'])
     if not user:
         return jsonify({"status": "error", "message": "Usuario no encontrado."}), 404
+    if user.get('role') == 'admin':
+        user['terms_accepted'] = 1
+        user['terms_accepted_version'] = 'v1.0-2026'
     return jsonify({"status": "success", "user": user})
 
 
@@ -960,7 +985,11 @@ def accept_terms_endpoint():
         ip_address = request.remote_addr or request.headers.get('X-Forwarded-For') or '0.0.0.0'
         user_agent = request.headers.get('User-Agent', '')
 
-        from .database import record_terms_acceptance
+        try:
+            from src.database import record_terms_acceptance
+        except ImportError:
+            from database import record_terms_acceptance
+
         success = record_terms_acceptance(user_id, terms_version, ip_address, user_agent)
         if success:
             updated_user = get_user_by_id(user_id)
@@ -2662,7 +2691,7 @@ def get_strategies_catalog_endpoint():
     only_public = not is_admin
 
     catalog = get_strategies_catalog(only_public=only_public)
-    if not catalog and is_admin:
+    if not catalog:
         _seed_strategies_catalog_from_files()
         catalog = get_strategies_catalog(only_public=only_public)
 

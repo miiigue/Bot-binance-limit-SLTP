@@ -1347,10 +1347,19 @@ function ConfigForm({
           );
         }
       } else {
-        alert(data.error || data.message || `Error (${resp.status}): No se pudo cambiar la visibilidad.`);
+        const errText = data.error || data.message || `Error (${resp.status}): No se pudo cambiar la visibilidad.`;
+        if (addToast) {
+          addToast('Aviso de Visibilidad', errText, 'error');
+        } else {
+          alert(errText);
+        }
       }
     } catch (e) {
-      alert(`Error de conexión: ${e.message}`);
+      if (addToast) {
+        addToast('Error de conexión', e.message, 'error');
+      } else {
+        alert(`Error de conexión: ${e.message}`);
+      }
     } finally {
       setIsUpdatingCatalogStatus(false);
     }
@@ -1618,31 +1627,15 @@ function ConfigForm({
                 })}
               </select>
               {selectedStrategyToLoad && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleCatalogPublic(selectedStrategyToLoad)}
-                    disabled={isUpdatingCatalogStatus}
-                    className={`px-3 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow border ${
-                      isStrategyPublic
-                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-600/70 hover:bg-emerald-900'
-                        : 'bg-slate-800 text-slate-300 border-slate-600 hover:bg-slate-700'
-                    }`}
-                    title="Alternar entre Pública y Privada para inversionistas (No modifica el bot en vivo)"
-                  >
-                    <span>{isStrategyPublic ? '🟢' : '🔒'}</span>
-                    <span className="hidden sm:inline">{isStrategyPublic ? 'Pública' : 'Privada'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteStrategy(selectedStrategyToLoad)}
-                    className="px-3.5 py-2.5 bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-700/60 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow"
-                    title="Eliminar esta estrategia"
-                  >
-                    <span>🗑️</span>
-                    <span className="hidden sm:inline">Eliminar</span>
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteStrategy(selectedStrategyToLoad)}
+                  className="px-3.5 py-2.5 bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-700/60 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow"
+                  title="Eliminar esta estrategia guardada"
+                >
+                  <span>🗑️</span>
+                  <span className="hidden sm:inline">Eliminar</span>
+                </button>
               )}
             </div>
           </div>
