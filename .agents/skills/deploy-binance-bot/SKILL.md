@@ -63,21 +63,21 @@ git push origin main
 Usar cuando se hayan modificado componentes de la interfaz web (`frontend/`) o archivos del bot:
 
 ```powershell
-ssh root@178.105.192.140 "cd /opt/bot-binance && git pull origin main && python3 restore_and_lock_strategy.py && cd frontend && npm run build && cd .. && systemctl restart binance-bot"
+ssh root@178.105.192.140 "cd /opt/bot-binance && git pull origin main && ./venv/bin/python3 restore_and_lock_strategy.py && cd frontend && npm run build && cd .. && systemctl restart binance-bot"
 ```
 
 ### Opción B: Despliegue Rápido (Solo Backend / Python)
 Usar cuando únicamente se hayan modificado archivos `.py` o parámetros de configuración, sin cambios en frontend:
 
 ```powershell
-ssh root@178.105.192.140 "cd /opt/bot-binance && git pull origin main && python3 restore_and_lock_strategy.py && systemctl restart binance-bot"
+ssh root@178.105.192.140 "cd /opt/bot-binance && git pull origin main && ./venv/bin/python3 restore_and_lock_strategy.py && systemctl restart binance-bot"
 ```
 
 ### Opción C: Forzar Actualización Limpia (Si existiera conflicto con versiones previas)
 Si hubiera cambios residuales previos en el VPS:
 
 ```powershell
-ssh root@178.105.192.140 "cd /opt/bot-binance && git stash drop || true && git update-index --skip-worktree config.ini && git pull origin main && python3 restore_and_lock_strategy.py && cd frontend && npm run build && cd .. && systemctl restart binance-bot"
+ssh root@178.105.192.140 "cd /opt/bot-binance && git stash drop || true && git update-index --skip-worktree config.ini && git pull origin main && ./venv/bin/python3 restore_and_lock_strategy.py && cd frontend && npm run build && cd .. && systemctl restart binance-bot"
 ```
 
 ---

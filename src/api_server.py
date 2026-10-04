@@ -37,7 +37,7 @@ from src.database import (
 from src.auth import (
     hash_password, verify_password, generate_jwt, decode_jwt,
     token_required, admin_required, is_login_rate_limited,
-    record_failed_login, clear_failed_logins
+    record_failed_login, clear_failed_logins, get_token_from_request
 )
 from src.bot import TradingBot, BotState 
 from src.binance_client import (
@@ -2675,79 +2675,87 @@ def get_strategies_catalog_endpoint():
 @app.route('/api/strategies/catalog/toggle_public', methods=['POST'])
 def toggle_strategy_catalog_public():
     """Activa o desactiva la visibilidad pública para inversionistas de una estrategia."""
-    token = get_token_from_request()
-    if token:
-        payload = decode_jwt(token)
-        if payload and payload.get('role') == 'investor':
-            return jsonify({"error": "Permiso denegado: solo el administrador puede cambiar visibilidad."}), 403
+    try:
+        token = get_token_from_request()
+        if token:
+            payload = decode_jwt(token)
+            if payload and payload.get('role') == 'investor':
+                return jsonify({"error": "Permiso denegado: solo el administrador puede cambiar visibilidad."}), 403
 
-    data = request.get_json(force=True, silent=True) or {}
-    name = str(data.get('name') or '').strip()
-    is_public = bool(data.get('is_public', False))
-    if not name:
-        return jsonify({"error": "Nombre de estrategia requerido"}), 400
+        data = request.get_json(force=True, silent=True) or {}
+        name = str(data.get('name') or '').strip()
+        is_public = bool(data.get('is_public', False))
+        if not name:
+            return jsonify({"error": "Nombre de estrategia requerido"}), 400
 
-    ok = toggle_strategy_public_status(name, is_public)
+        ok = toggle_strategy_public_status(name, is_public)
 
-    # Actualizar archivo JSON en disco si existe
-    strat_file = os.path.join(STRATEGIES_PATH, f"{name}.json")
-    if os.path.exists(strat_file):
-        try:
-            with open(strat_file, 'r', encoding='utf-8') as f:
-                f_data = json.load(f)
-            f_data['is_public'] = is_public
-            f_data['isPublic'] = is_public
-            with open(strat_file, 'w', encoding='utf-8') as f:
-                json.dump(f_data, f, indent=4)
-        except Exception as e_f:
-            get_logger().warning(f"No se pudo actualizar is_public en archivo '{strat_file}': {e_f}")
+        # Actualizar archivo JSON en disco si existe
+        strat_file = os.path.join(STRATEGIES_PATH, f"{name}.json")
+        if os.path.exists(strat_file):
+            try:
+                with open(strat_file, 'r', encoding='utf-8') as f:
+                    f_data = json.load(f)
+                f_data['is_public'] = is_public
+                f_data['isPublic'] = is_public
+                with open(strat_file, 'w', encoding='utf-8') as f:
+                    json.dump(f_data, f, indent=4)
+            except Exception as e_f:
+                get_logger().warning(f"No se pudo actualizar is_public en archivo '{strat_file}': {e_f}")
 
-    if ok:
-        status_txt = "🟢 PÚBLICA (Visible para inversionistas)" if is_public else "🔒 PRIVADA (Solo Administrador)"
-        return jsonify({
-            "success": True,
-            "name": name,
-            "is_public": is_public,
-            "message": f"Estrategia '{name}' configurada como {status_txt}."
-        }), 200
-    return jsonify({"error": "No se pudo actualizar la visibilidad en base de datos."}), 500
+        if ok:
+            status_txt = "🟢 PÚBLICA (Visible para inversionistas)" if is_public else "🔒 PRIVADA (Solo Administrador)"
+            return jsonify({
+                "success": True,
+                "name": name,
+                "is_public": is_public,
+                "message": f"Estrategia '{name}' configurada como {status_txt}."
+            }), 200
+        return jsonify({"error": "No se pudo actualizar la visibilidad en base de datos."}), 500
+    except Exception as e_main:
+        get_logger().error(f"Error en toggle_strategy_catalog_public: {e_main}", exc_info=True)
+        return jsonify({"error": f"Error interno: {str(e_main)}"}), 500
 
 @app.route('/api/strategies/catalog/upsert', methods=['POST'])
 def upsert_strategy_catalog_endpoint():
     """Crea o actualiza una estrategia en el catálogo soberano."""
-    token = get_token_from_request()
-    if token:
-        payload = decode_jwt(token)
-        if payload and payload.get('role') == 'investor':
-            return jsonify({"error": "Permiso denegado: solo el administrador puede editar el catálogo."}), 403
+    try:
+        token = get_token_from_request()
+        if token:
+            payload = decode_jwt(token)
+            if payload and payload.get('role') == 'investor':
+                return jsonify({"error": "Permiso denegado: solo el administrador puede editar el catálogo."}), 403
 
-    data = request.get_json(force=True, silent=True) or {}
-    name = str(data.get('name') or '').strip()
-    if not name:
-        return jsonify({"error": "Nombre de estrategia requerido"}), 400
+        data = request.get_json(force=True, silent=True) or {}
+        name = str(data.get('name') or '').strip()
+        if not name:
+            return jsonify({"error": "Nombre de estrategia requerido"}), 400
 
-    display_name = str(data.get('display_name') or name).strip()
-    description = str(data.get('description') or '').strip()
-    risk_level = str(data.get('risk_level') or 'MODERADO').upper().strip()
-    is_public = bool(data.get('is_public', False))
-    min_capital = float(data.get('min_capital_usdt') or 50.0)
-    parameters = data.get('parameters') or {}
+        display_name = str(data.get('display_name') or name).strip()
+        description = str(data.get('description') or '').strip()
+        risk_level = str(data.get('risk_level') or 'MODERADO').upper().strip()
+        is_public = bool(data.get('is_public', False))
+        min_capital = float(data.get('min_capital_usdt') or 50.0)
+        parameters = data.get('parameters') or {}
 
-    ok = upsert_strategy_catalog(
-        name=name,
-        display_name=display_name,
-        description=description,
-        risk_level=risk_level,
-        is_public=is_public,
-        min_capital_usdt=min_capital,
-        parameters=parameters
-    )
-    if ok:
-        return jsonify({
-            "success": True,
-            "message": f"Estrategia '{name}' guardada exitosamente en el catálogo soberano."
-        }), 200
-    return jsonify({"error": "Error al guardar en el catálogo de base de datos."}), 500
+        ok = upsert_strategy_catalog(
+            name=name,
+            display_name=display_name,
+            description=description,
+            risk_level=risk_level,
+            is_public=is_public,
+            min_capital_usdt=min_capital,
+            parameters=parameters
+        )
+        if ok:
+            return jsonify({
+                "success": True,
+                "message": f"Estrategia '{name}' guardada exitosamente en el catálogo soberano."
+            }), 200
+        return jsonify({"error": "Error al guardar en el catálogo de base de datos."}), 500
+    except Exception as e_main:
+        get_logger().error(f"Error en upsert_strategy_catalog_endpoint: {e_main}", exc_info=True)
+        return jsonify({"error": f"Error interno: {str(e_main)}"}), 500
 
 @app.route('/api/strategies/catalog/<strategy_name>', methods=['DELETE'])
 @token_required

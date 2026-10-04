@@ -11,24 +11,43 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+# Cargar .env de forma manual y robusta si dotenv no estuviera presente
+env_file = os.path.join(PROJECT_ROOT, ".env")
+if os.path.exists(env_file):
+    try:
+        with open(env_file, 'r', encoding='utf-8') as f_env:
+            for line in f_env:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, v = line.split('=', 1)
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'")
+                    if k and k not in os.environ:
+                        os.environ[k] = v
+    except Exception:
+        pass
+
 # Auto-detectar y usar el entorno virtual si se ejecutó con el python global del sistema
-candidates = [
-    os.path.join(PROJECT_ROOT, "venv", "bin", "python3"),
-    os.path.join(PROJECT_ROOT, "venv", "bin", "python"),
-    os.path.join(PROJECT_ROOT, ".venv", "bin", "python3"),
-    os.path.join(PROJECT_ROOT, ".venv", "bin", "python"),
-    os.path.join(PROJECT_ROOT, "venv", "Scripts", "python.exe"),
-    os.path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe"),
-]
-for cand in candidates:
-    if os.path.exists(cand):
-        try:
-            if os.path.realpath(sys.executable) != os.path.realpath(cand):
+if os.environ.get('_RESTORE_LOCK_VENV_ACTIVATED') != '1':
+    in_venv = (sys.prefix != getattr(sys, 'base_prefix', sys.prefix)) or hasattr(sys, 'real_prefix')
+    if not in_venv:
+        candidates = [
+            os.path.join(PROJECT_ROOT, "venv", "bin", "python3"),
+            os.path.join(PROJECT_ROOT, "venv", "bin", "python"),
+            os.path.join(PROJECT_ROOT, ".venv", "bin", "python3"),
+            os.path.join(PROJECT_ROOT, ".venv", "bin", "python"),
+            os.path.join(PROJECT_ROOT, "venv", "Scripts", "python.exe"),
+            os.path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe"),
+        ]
+        for cand in candidates:
+            if os.path.exists(cand):
                 print(f"🔄 Activando entorno virtual de producción: {cand}")
-                os.execv(cand, [cand] + sys.argv)
-        except Exception:
-            pass
-        break
+                os.environ['_RESTORE_LOCK_VENV_ACTIVATED'] = '1'
+                try:
+                    os.execv(cand, [cand] + sys.argv)
+                except Exception as e_reexec:
+                    print(f"ℹ️ Aviso al ejecutar venv: {e_reexec}")
+                break
 
 
 def main():

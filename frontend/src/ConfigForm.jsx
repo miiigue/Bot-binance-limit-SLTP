@@ -1321,7 +1321,12 @@ function ConfigForm({
         headers,
         body: JSON.stringify({ name: stratName, is_public: newPublicState })
       });
-      const data = await resp.json();
+      let data = {};
+      try {
+        data = await resp.json();
+      } catch (parseErr) {
+        data = { error: `Error del servidor (${resp.status}): ${resp.statusText || 'Respuesta no válida'}` };
+      }
       if (resp.ok) {
         setLocalCatalogRows(prev => ({
           ...prev,
@@ -1342,7 +1347,7 @@ function ConfigForm({
           );
         }
       } else {
-        alert(data.error || data.message || 'No se pudo cambiar la visibilidad.');
+        alert(data.error || data.message || `Error (${resp.status}): No se pudo cambiar la visibilidad.`);
       }
     } catch (e) {
       alert(`Error de conexión: ${e.message}`);
@@ -1394,7 +1399,12 @@ function ConfigForm({
           min_capital_usdt: Number(row.min_capital_usdt) || 50
         })
       });
-      const data = await resp.json();
+      let data = {};
+      try {
+        data = await resp.json();
+      } catch (parseErr) {
+        data = { error: `Error del servidor (${resp.status}): ${resp.statusText || 'Respuesta no válida'}` };
+      }
       if (resp.ok) {
         if (onRefreshStrategies) onRefreshStrategies();
         if (addToast) {
@@ -1403,7 +1413,7 @@ function ConfigForm({
           alert(`Metadatos de "${stratName}" guardados con éxito.`);
         }
       } else {
-        alert(data.error || data.message || 'Error al guardar metadatos en catálogo.');
+        alert(data.error || data.message || `Error (${resp.status}): Error al guardar metadatos en catálogo.`);
       }
     } catch (e) {
       alert(`Error de conexión: ${e.message}`);

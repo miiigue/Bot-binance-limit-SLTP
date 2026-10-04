@@ -21,6 +21,7 @@ trades_limit.db
 *.sqlite
 *.sqlite3
 *.db
+*.disabled_migrated
 
 # Logs y Cache de datos
 *.log

@@ -10,9 +10,11 @@ import os
 import sys
 import sqlite3
 from urllib.parse import urlparse
-from dotenv import load_dotenv
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Intentar importar psycopg2
 try:
