@@ -610,7 +610,8 @@ function ConfigForm({
   onRefreshStrategies,
   isLoadingStrategies,
   strategyError,
-  onStrategyNameChange
+  onStrategyNameChange,
+  addToast
 }) {
   const [formData, setFormData] = useState(defaultConfigValues);
   const [isLoading, setIsLoading] = useState(false);
@@ -642,6 +643,8 @@ function ConfigForm({
   const [strategyDescription, setStrategyDescription] = useState('');
   const [strategyDisplayName, setStrategyDisplayName] = useState('');
   const [isUpdatingCatalogStatus, setIsUpdatingCatalogStatus] = useState(false);
+  const [localCatalogRows, setLocalCatalogRows] = useState({});
+  const [isCatalogManagerOpen, setIsCatalogManagerOpen] = useState(true);
 
   // --- Estados para Multi-Estrategia por Moneda ---
   const [multiStrategyEnabled, setMultiStrategyEnabled] = useState(false);
@@ -689,6 +692,33 @@ function ConfigForm({
       onRefreshStrategies();
     }
   }, [onRefreshStrategies]);
+
+  // --- Sincronizar catálogo local cuando cambia availableStrategies ---
+  useEffect(() => {
+    if (availableStrategies && availableStrategies.length > 0) {
+      setLocalCatalogRows(prev => {
+        const next = { ...prev };
+        availableStrategies.forEach(item => {
+          const name = typeof item === 'object' ? item.name : item;
+          const cfg = (typeof item === 'object' && item.config) ? item.config : {};
+          const isPub = Boolean(cfg.is_public ?? cfg.isPublic ?? false);
+          const rLvl = String(cfg.risk_level ?? cfg.riskLevel ?? 'MODERADO').toUpperCase();
+          const minCap = Number(cfg.min_capital_usdt ?? cfg.minCapitalUsdt ?? 50);
+          const dispName = String(cfg.display_name ?? cfg.displayName ?? name);
+          const desc = String(cfg.description ?? '');
+
+          next[name] = {
+            display_name: prev[name]?.display_name !== undefined ? prev[name].display_name : dispName,
+            description: prev[name]?.description !== undefined ? prev[name].description : desc,
+            risk_level: prev[name]?.risk_level !== undefined ? prev[name].risk_level : rLvl,
+            is_public: prev[name]?.is_public !== undefined ? prev[name].is_public : isPub,
+            min_capital_usdt: prev[name]?.min_capital_usdt !== undefined ? prev[name].min_capital_usdt : minCap
+          };
+        });
+        return next;
+      });
+    }
+  }, [availableStrategies]);
 
   // --- Sincronizar formData cuando cambia propInitialConfig ---
   useEffect(() => {
@@ -1278,26 +1308,102 @@ function ConfigForm({
     setIsSavingStrategy(false);
   };
 
-  const handleToggleCatalogPublic = async () => {
-    const targetStrat = strategyNameInput || selectedStrategyToLoad || formData.activeStrategyName;
+  const handleToggleStrategyVisibility = async (stratName, newPublicState) => {
+    if (!stratName) return;
+    setIsUpdatingCatalogStatus(true);
+    try {
+      const token = localStorage.getItem('bot_auth_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const resp = await fetch('/api/strategies/catalog/toggle_public', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name: stratName, is_public: newPublicState })
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        setLocalCatalogRows(prev => ({
+          ...prev,
+          [stratName]: {
+            ...(prev[stratName] || {}),
+            is_public: newPublicState
+          }
+        }));
+        if (selectedStrategyToLoad === stratName) {
+          setIsStrategyPublic(newPublicState);
+        }
+        if (onRefreshStrategies) onRefreshStrategies();
+        if (addToast) {
+          addToast(
+            'Visibilidad Actualizada',
+            `Estrategia "${stratName}" ahora es ${newPublicState ? '🟢 PÚBLICA (Para Inversionistas)' : '🔒 PRIVADA (Solo Admin)'}. El bot en vivo sigue intacto.`,
+            'success'
+          );
+        }
+      } else {
+        alert(data.error || data.message || 'No se pudo cambiar la visibilidad.');
+      }
+    } catch (e) {
+      alert(`Error de conexión: ${e.message}`);
+    } finally {
+      setIsUpdatingCatalogStatus(false);
+    }
+  };
+
+  const handleToggleCatalogPublic = async (stratNameToToggle = null) => {
+    const targetStrat = stratNameToToggle || strategyNameInput || selectedStrategyToLoad || formData.activeStrategyName;
     if (!targetStrat) {
       alert("Debes tener una estrategia seleccionada o con nombre para cambiar su visibilidad.");
       return;
     }
-    const nextState = !isStrategyPublic;
+    const currentRow = localCatalogRows[targetStrat];
+    const currentState = currentRow ? currentRow.is_public : isStrategyPublic;
+    const nextState = !currentState;
+    await handleToggleStrategyVisibility(targetStrat, nextState);
+  };
+
+  const handleUpdateCatalogRowField = (stratName, field, value) => {
+    setLocalCatalogRows(prev => ({
+      ...prev,
+      [stratName]: {
+        ...(prev[stratName] || {}),
+        [field]: value
+      }
+    }));
+  };
+
+  const handleSaveCatalogRow = async (stratName) => {
+    const row = localCatalogRows[stratName];
+    if (!row) return;
     setIsUpdatingCatalogStatus(true);
     try {
-      const resp = await fetch('/api/strategies/catalog/toggle_public', {
+      const token = localStorage.getItem('bot_auth_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const resp = await fetch('/api/strategies/catalog/upsert', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: targetStrat, is_public: nextState })
+        headers,
+        body: JSON.stringify({
+          name: stratName,
+          display_name: row.display_name || stratName,
+          description: row.description || '',
+          risk_level: row.risk_level || 'MODERADO',
+          is_public: Boolean(row.is_public),
+          min_capital_usdt: Number(row.min_capital_usdt) || 50
+        })
       });
       const data = await resp.json();
       if (resp.ok) {
-        setIsStrategyPublic(nextState);
         if (onRefreshStrategies) onRefreshStrategies();
+        if (addToast) {
+          addToast('Catálogo Actualizado', `Metadatos de "${stratName}" guardados para los inversionistas.`, 'success');
+        } else {
+          alert(`Metadatos de "${stratName}" guardados con éxito.`);
+        }
       } else {
-        alert(data.error || 'No se pudo cambiar la visibilidad.');
+        alert(data.error || data.message || 'Error al guardar metadatos en catálogo.');
       }
     } catch (e) {
       alert(`Error de conexión: ${e.message}`);
@@ -1492,7 +1598,8 @@ function ConfigForm({
                 <option value="">-- Seleccionar Estrategia para Cargar --</option>
                 {availableStrategies.map(item => {
                   const name = typeof item === 'object' ? item.name : item;
-                  const isPub = typeof item === 'object' && item.config ? Boolean(item.config.is_public) : false;
+                  const row = localCatalogRows[name] || {};
+                  const isPub = Boolean(row.is_public !== undefined ? row.is_public : (item.config ? item.config.is_public : false));
                   return (
                     <option key={name} value={name}>
                       {isPub ? '🟢 [PÚBLICA] ' : '🔒 [PRIVADA] '} {name}
@@ -1501,29 +1608,45 @@ function ConfigForm({
                 })}
               </select>
               {selectedStrategyToLoad && (
-                <button
-                  type="button"
-                  onClick={() => handleDeleteStrategy(selectedStrategyToLoad)}
-                  className="px-3.5 py-2.5 bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-700/60 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow"
-                  title="Eliminar esta estrategia"
-                >
-                  <span>🗑️</span>
-                  <span className="hidden sm:inline">Eliminar</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleCatalogPublic(selectedStrategyToLoad)}
+                    disabled={isUpdatingCatalogStatus}
+                    className={`px-3 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow border ${
+                      isStrategyPublic
+                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-600/70 hover:bg-emerald-900'
+                        : 'bg-slate-800 text-slate-300 border-slate-600 hover:bg-slate-700'
+                    }`}
+                    title="Alternar entre Pública y Privada para inversionistas (No modifica el bot en vivo)"
+                  >
+                    <span>{isStrategyPublic ? '🟢' : '🔒'}</span>
+                    <span className="hidden sm:inline">{isStrategyPublic ? 'Pública' : 'Privada'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteStrategy(selectedStrategyToLoad)}
+                    className="px-3.5 py-2.5 bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-700/60 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow"
+                    title="Eliminar esta estrategia"
+                  >
+                    <span>🗑️</span>
+                    <span className="hidden sm:inline">Eliminar</span>
+                  </button>
+                </>
               )}
             </div>
           </div>
 
           {/* Badge Estado Activo */}
           <div className="flex flex-col justify-end">
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Estrategia Activa:</span>
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Estrategia Activa en el Bot:</span>
             <span className="text-sm font-extrabold text-amber-400 font-mono flex items-center gap-1.5 mt-0.5">
-              <span>⭐</span> {strategyNameInput || formData.activeStrategyName || 'Sin Nombre Asignado'}
+              <span>⭐</span> {formData.activeStrategyName || strategyNameInput || 'Sin Nombre Asignado'}
             </span>
           </div>
         </div>
 
-        {/* Fila 2: Nombre Obligatorio y Botones de Guardado */}
+        {/* Fila 2: Nombre Obligatorio y Botones de Guardado de Parámetros */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
           
           {/* Input Obligatorio del Nombre */}
@@ -1574,91 +1697,174 @@ function ConfigForm({
           </div>
         </div>
 
-        {/* Fila 3: Marketplace & Catálogo para Inversionistas (Control Institucional) */}
-        <div className="bg-slate-950/80 border border-indigo-900/70 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-inner">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-950/80 pb-3">
+        {/* ========================================================================================= */}
+        {/* Fila 3: GESTOR COMPLETO DEL CATÁLOGO DE ESTRATEGIAS (SELECTOR AL LADO DE CADA ESTRATEGIA) */}
+        {/* ========================================================================================= */}
+        <div className="bg-slate-950/90 border border-indigo-800/80 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-950 pb-3">
             <div>
-              <span className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center gap-2">
-                <span>🛒</span> Catálogo para Inversionistas (Marketplace Soberano)
-              </span>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Define si los inversionistas pueden seleccionar esta estrategia en su pestaña "🤖 Mi Bot" para operar con su propio capital.
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center gap-2">
+                  <span>🛒</span> Catálogo para Inversionistas (Marketplace Soberano)
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-950 text-indigo-300 border border-indigo-700/60">
+                  {availableStrategies.length} Estrategias Registradas
+                </span>
+              </div>
+              <p className="text-[11.5px] text-slate-300 mt-1">
+                🛡️ <strong className="text-amber-300">Control 100% Independiente:</strong> Activa o desactiva la visibilidad pública de cada estrategia para los inversionistas. Cambiar este selector <strong className="text-emerald-300">NO modifica ni reinicia el bot que está operando en vivo</strong>.
               </p>
             </div>
             <button
               type="button"
-              onClick={handleToggleCatalogPublic}
-              disabled={isUpdatingCatalogStatus || !(strategyNameInput || selectedStrategyToLoad)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 shadow-md active:scale-95 whitespace-nowrap self-start sm:self-auto ${
-                isStrategyPublic
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/60 hover:bg-emerald-500/30'
-                  : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700'
-              }`}
-              title="Cambiar visibilidad para inversionistas"
+              onClick={() => setIsCatalogManagerOpen(!isCatalogManagerOpen)}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-indigo-300 border border-indigo-800/60 transition flex items-center gap-1.5 self-start sm:self-auto"
             >
-              <span>{isStrategyPublic ? '🟢' : '🔒'}</span>
-              <span>{isStrategyPublic ? 'PÚBLICA (Visible para Inversionistas)' : 'PRIVADA (Solo Administrador)'}</span>
-              <span className="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded text-amber-300 ml-1 border border-slate-700">Cambiar</span>
+              <span>{isCatalogManagerOpen ? '🔼 Ocultar Lista' : '🔽 Desplegar Lista Completa'}</span>
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">
-                Nivel de Riesgo Sugerido:
-              </label>
-              <select
-                value={strategyRiskLevel}
-                onChange={(e) => setStrategyRiskLevel(e.target.value)}
-                className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-400"
-              >
-                <option value="BAJO">🟢 BAJO (Conservador)</option>
-                <option value="MODERADO">🟡 MODERADO (Equilibrado)</option>
-                <option value="ALTO">🔴 ALTO (Agresivo / Scalping)</option>
-              </select>
-            </div>
+          {isCatalogManagerOpen && (
+            <div className="space-y-3 pt-1">
+              {availableStrategies.length === 0 ? (
+                <p className="text-xs text-slate-400 py-4 text-center italic">
+                  No hay estrategias registradas todavía. Crea o guarda tu primera configuración arriba.
+                </p>
+              ) : (
+                availableStrategies.map(item => {
+                  const name = typeof item === 'object' ? item.name : item;
+                  const row = localCatalogRows[name] || {};
+                  const isPub = Boolean(row.is_public);
+                  const isBotActive = (name === (formData.activeStrategyName || strategyNameInput));
 
-            <div>
-              <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">
-                Capital Mínimo Sugerido ($ USDT):
-              </label>
-              <input
-                type="number"
-                min="10"
-                step="10"
-                value={strategyMinCapital}
-                onChange={(e) => setStrategyMinCapital(e.target.value)}
-                className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-400"
-                placeholder="50"
-              />
-            </div>
+                  return (
+                    <div 
+                      key={name}
+                      className={`p-3.5 sm:p-4 rounded-xl border transition-all ${
+                        isBotActive
+                          ? 'bg-amber-950/20 border-amber-500/60 shadow-md ring-1 ring-amber-500/20'
+                          : 'bg-slate-900/90 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      {/* Cabecera de la fila: Nombre y Selector de Visibilidad */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                          <span className="font-mono text-xs sm:text-sm font-black text-white break-all">
+                            {name}
+                          </span>
+                          {isBotActive && (
+                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-amber-400 text-slate-950 flex items-center gap-1 shadow-sm">
+                              <span>⭐</span> ACTIVA EN EL BOT
+                            </span>
+                          )}
+                        </div>
 
-            <div>
-              <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">
-                Nombre Visible para Inversionistas:
-              </label>
-              <input
-                type="text"
-                value={strategyDisplayName}
-                onChange={(e) => setStrategyDisplayName(e.target.value)}
-                className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white outline-none focus:border-indigo-400"
-                placeholder="Ej: RSI Sniper Momentum Pro"
-              />
-            </div>
-          </div>
+                        {/* SELECTOR DIRECTO DE VISIBILIDAD AL LADO DE CADA ESTRATEGIA */}
+                        <div className="flex items-center gap-2 self-start sm:self-auto flex-shrink-0">
+                          <span className="text-[11px] font-bold text-slate-400 hidden md:inline">Visibilidad:</span>
+                          <select
+                            value={isPub ? 'public' : 'private'}
+                            onChange={(e) => handleToggleStrategyVisibility(name, e.target.value === 'public')}
+                            disabled={isUpdatingCatalogStatus}
+                            className={`py-1.5 px-3 rounded-xl text-xs font-black border transition-all cursor-pointer shadow-sm outline-none ${
+                              isPub
+                                ? 'bg-emerald-950 text-emerald-300 border-emerald-500/80 hover:bg-emerald-900'
+                                : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
+                            }`}
+                            title="Alternar entre Pública y Privada (No altera el bot en vivo)"
+                          >
+                            <option value="public">🟢 PÚBLICA (Visible para Inversionistas)</option>
+                            <option value="private">🔒 PRIVADA (Solo Administrador)</option>
+                          </select>
+                        </div>
+                      </div>
 
-          <div>
-            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">
-              Descripción Comercial para Inversionistas:
-            </label>
-            <input
-              type="text"
-              value={strategyDescription}
-              onChange={(e) => setStrategyDescription(e.target.value)}
-              className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-400"
-              placeholder="Ej: Estrategia tendencial automatizada con DCA escalonado y Take Profit dinámico."
-            />
-          </div>
+                      {/* Parámetros de Catálogo para Inversionistas */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 mt-3 text-xs">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Riesgo Sugerido:</label>
+                          <select
+                            value={row.risk_level || 'MODERADO'}
+                            onChange={(e) => handleUpdateCatalogRowField(name, 'risk_level', e.target.value)}
+                            className="w-full py-1.5 px-2.5 bg-slate-950 border border-slate-700 rounded-lg text-xs font-bold text-white outline-none focus:border-indigo-400"
+                          >
+                            <option value="BAJO">🟢 BAJO (Conservador)</option>
+                            <option value="MODERADO">🟡 MODERADO (Equilibrado)</option>
+                            <option value="ALTO">🔴 ALTO (Agresivo)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Capital Mínimo ($ USDT):</label>
+                          <input
+                            type="number"
+                            min="10"
+                            step="10"
+                            value={row.min_capital_usdt ?? 50}
+                            onChange={(e) => handleUpdateCatalogRowField(name, 'min_capital_usdt', e.target.value)}
+                            className="w-full py-1.5 px-2.5 bg-slate-950 border border-slate-700 rounded-lg text-xs font-bold text-white outline-none focus:border-indigo-400"
+                            placeholder="50"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre Comercial Visible:</label>
+                          <input
+                            type="text"
+                            value={row.display_name || ''}
+                            onChange={(e) => handleUpdateCatalogRowField(name, 'display_name', e.target.value)}
+                            className="w-full py-1.5 px-2.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white outline-none focus:border-indigo-400"
+                            placeholder={name}
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2 md:col-span-3">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Descripción para Inversionistas:</label>
+                          <input
+                            type="text"
+                            value={row.description || ''}
+                            onChange={(e) => handleUpdateCatalogRowField(name, 'description', e.target.value)}
+                            className="w-full py-1.5 px-2.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 outline-none focus:border-indigo-400"
+                            placeholder="Ej: Estrategia tendencial automatizada con DCA escalonado y Take Profit dinámico."
+                          />
+                        </div>
+
+                        <div className="flex items-end gap-1.5 sm:col-span-2 md:col-span-1 justify-end mt-1 sm:mt-0">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveCatalogRow(name)}
+                            disabled={isUpdatingCatalogStatus}
+                            className="px-3 py-1.5 bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 rounded-lg text-xs font-bold transition flex items-center gap-1 active:scale-95 shadow"
+                            title="Guardar metadatos en catálogo sin alterar el bot"
+                          >
+                            <span>💾</span>
+                            <span>Guardar</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleLoadSelectedStrategy(name)}
+                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1 active:scale-95"
+                            title="Cargar parámetros de trading en el formulario técnico inferior"
+                          >
+                            <span>⚙️</span>
+                            <span className="hidden sm:inline">Editar</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteStrategy(name)}
+                            className="p-1.5 bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800/50 rounded-lg text-xs font-bold transition active:scale-95"
+                            title="Eliminar estrategia"
+                          >
+                            <span>🗑️</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
 
         {/* Mensajes de Validación y Feedback */}

@@ -1298,15 +1298,19 @@ def toggle_strategy_public_status(name: str, is_public: bool) -> bool:
     """Modifica la visibilidad pública para inversionistas de una estrategia."""
     if not name:
         return False
+    clean_name = str(name).strip()
     conn = None
     try:
         conn = get_db_connection(timeout=10)
         cursor = conn.cursor()
+        now_dt = datetime.now()
         cursor.execute("""
-            UPDATE strategies_catalog
-            SET is_public = ?, updated_at = ?
-            WHERE name = ?
-        """, (1 if is_public else 0, datetime.now(), str(name).strip()))
+            INSERT INTO strategies_catalog (name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                is_public = excluded.is_public,
+                updated_at = excluded.updated_at
+        """, (clean_name, clean_name, '', 'MODERADO', 1 if is_public else 0, 50.0, '{}', now_dt, now_dt))
         conn.commit()
         return True
     except Exception as e:

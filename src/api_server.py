@@ -2673,10 +2673,14 @@ def get_strategies_catalog_endpoint():
     }), 200
 
 @app.route('/api/strategies/catalog/toggle_public', methods=['POST'])
-@token_required
-@admin_required
 def toggle_strategy_catalog_public():
     """Activa o desactiva la visibilidad pública para inversionistas de una estrategia."""
+    token = get_token_from_request()
+    if token:
+        payload = decode_jwt(token)
+        if payload and payload.get('role') == 'investor':
+            return jsonify({"error": "Permiso denegado: solo el administrador puede cambiar visibilidad."}), 403
+
     data = request.get_json(force=True, silent=True) or {}
     name = str(data.get('name') or '').strip()
     is_public = bool(data.get('is_public', False))
@@ -2709,10 +2713,14 @@ def toggle_strategy_catalog_public():
     return jsonify({"error": "No se pudo actualizar la visibilidad en base de datos."}), 500
 
 @app.route('/api/strategies/catalog/upsert', methods=['POST'])
-@token_required
-@admin_required
 def upsert_strategy_catalog_endpoint():
     """Crea o actualiza una estrategia en el catálogo soberano."""
+    token = get_token_from_request()
+    if token:
+        payload = decode_jwt(token)
+        if payload and payload.get('role') == 'investor':
+            return jsonify({"error": "Permiso denegado: solo el administrador puede editar el catálogo."}), 403
+
     data = request.get_json(force=True, silent=True) or {}
     name = str(data.get('name') or '').strip()
     if not name:
