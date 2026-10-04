@@ -2691,6 +2691,7 @@ def toggle_strategy_catalog_public():
         ok = toggle_strategy_public_status(name, is_public)
 
         # Actualizar archivo JSON en disco si existe
+        file_updated = False
         strat_file = os.path.join(STRATEGIES_PATH, f"{name}.json")
         if os.path.exists(strat_file):
             try:
@@ -2700,10 +2701,11 @@ def toggle_strategy_catalog_public():
                 f_data['isPublic'] = is_public
                 with open(strat_file, 'w', encoding='utf-8') as f:
                     json.dump(f_data, f, indent=4)
+                file_updated = True
             except Exception as e_f:
                 get_logger().warning(f"No se pudo actualizar is_public en archivo '{strat_file}': {e_f}")
 
-        if ok:
+        if ok or file_updated:
             status_txt = "🟢 PÚBLICA (Visible para inversionistas)" if is_public else "🔒 PRIVADA (Solo Administrador)"
             return jsonify({
                 "success": True,
@@ -2711,7 +2713,7 @@ def toggle_strategy_catalog_public():
                 "is_public": is_public,
                 "message": f"Estrategia '{name}' configurada como {status_txt}."
             }), 200
-        return jsonify({"error": "No se pudo actualizar la visibilidad en base de datos."}), 500
+        return jsonify({"error": "No se pudo actualizar la visibilidad en base de datos ni en disco."}), 500
     except Exception as e_main:
         get_logger().error(f"Error en toggle_strategy_catalog_public: {e_main}", exc_info=True)
         return jsonify({"error": f"Error interno: {str(e_main)}"}), 500

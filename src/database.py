@@ -1200,17 +1200,58 @@ def set_saved_trading_params_in_db(params: dict) -> bool:
 # --- CATÁLOGO SOBERANO DE ESTRATEGIAS (PUBLICAS/PRIVADAS INVERSOR) ---
 # =====================================================================
 
+def _ensure_strategies_catalog_table(conn):
+    """Garantiza que la tabla strategies_catalog exista tanto en PostgreSQL como en SQLite con tipos correctos."""
+    try:
+        cur = conn.cursor()
+        is_pg = hasattr(conn, '_conn') or type(conn).__module__.startswith('psycopg2')
+        if is_pg:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS strategies_catalog (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(128) NOT NULL UNIQUE,
+                    display_name VARCHAR(128),
+                    description TEXT,
+                    risk_level VARCHAR(32) DEFAULT 'MODERADO',
+                    is_public BOOLEAN DEFAULT false,
+                    min_capital_usdt DOUBLE PRECISION DEFAULT 50.0,
+                    parameters_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS idx_strategies_catalog_public ON strategies_catalog(is_public);
+            """)
+        else:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS strategies_catalog (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    display_name TEXT,
+                    description TEXT,
+                    risk_level TEXT DEFAULT 'MODERADO',
+                    is_public BOOLEAN DEFAULT 0,
+                    min_capital_usdt REAL DEFAULT 50.0,
+                    parameters_json TEXT NOT NULL DEFAULT '{}',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME
+                );
+            """)
+        conn.commit()
+    except Exception as e:
+        get_logger().debug(f"Aviso en _ensure_strategies_catalog_table: {e}")
+
 def get_strategies_catalog(only_public: bool = False) -> list[dict]:
     """Obtiene las estrategias del catálogo soberano de la base de datos."""
     conn = None
     try:
         conn = get_db_connection(timeout=10)
+        _ensure_strategies_catalog_table(conn)
         cursor = conn.cursor()
         if only_public:
             cursor.execute("""
                 SELECT id, name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at
                 FROM strategies_catalog
-                WHERE is_public = 1
+                WHERE is_public IS TRUE
                 ORDER BY id ASC
             """)
         else:
@@ -1244,7 +1285,7 @@ def get_strategies_catalog(only_public: bool = False) -> list[dict]:
         return result
     except Exception as e:
         logger = get_logger()
-        logger.error(f"Error consultando strategies_catalog: {e}")
+        logger.error(f"Error consultando strategies_catalog: {e}", exc_info=True)
         return []
     finally:
         if conn:
@@ -1265,30 +1306,41 @@ def upsert_strategy_catalog(
     clean_name = str(name).strip()
     clean_disp = str(display_name).strip() if display_name else clean_name
     clean_risk = str(risk_level).upper().strip() if risk_level else 'MODERADO'
+    pub_bool = bool(is_public)
     p_json = json.dumps(parameters or {})
     now_dt = datetime.now()
 
     conn = None
     try:
         conn = get_db_connection(timeout=10)
+        _ensure_strategies_catalog_table(conn)
         cursor = conn.cursor()
+        
+        # 1. Intentar actualizar directamente si ya existe
         cursor.execute("""
-            INSERT INTO strategies_catalog (name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-                display_name = excluded.display_name,
-                description = excluded.description,
-                risk_level = excluded.risk_level,
-                is_public = excluded.is_public,
-                min_capital_usdt = excluded.min_capital_usdt,
-                parameters_json = excluded.parameters_json,
-                updated_at = excluded.updated_at
-        """, (clean_name, clean_disp, description or '', clean_risk, 1 if is_public else 0, float(min_capital_usdt or 50.0), p_json, now_dt, now_dt))
+            UPDATE strategies_catalog
+            SET display_name = ?,
+                description = ?,
+                risk_level = ?,
+                is_public = ?,
+                min_capital_usdt = ?,
+                parameters_json = ?,
+                updated_at = ?
+            WHERE name = ?
+        """, (clean_disp, description or '', clean_risk, pub_bool, float(min_capital_usdt or 50.0), p_json, now_dt, clean_name))
+
+        # 2. Si no existía, insertar
+        if cursor.rowcount == 0:
+            cursor.execute("""
+                INSERT INTO strategies_catalog (name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (clean_name, clean_disp, description or '', clean_risk, pub_bool, float(min_capital_usdt or 50.0), p_json, now_dt, now_dt))
+
         conn.commit()
         return True
     except Exception as e:
         logger = get_logger()
-        logger.error(f"Error al guardar estrategia '{name}' en strategies_catalog: {e}")
+        logger.error(f"Error al guardar estrategia '{name}' en strategies_catalog: {e}", exc_info=True)
         return False
     finally:
         if conn:
@@ -1299,23 +1351,33 @@ def toggle_strategy_public_status(name: str, is_public: bool) -> bool:
     if not name:
         return False
     clean_name = str(name).strip()
+    pub_bool = bool(is_public)
     conn = None
     try:
         conn = get_db_connection(timeout=10)
+        _ensure_strategies_catalog_table(conn)
         cursor = conn.cursor()
         now_dt = datetime.now()
+        
+        # 1. Intentar actualizar por nombre
         cursor.execute("""
-            INSERT INTO strategies_catalog (name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-                is_public = excluded.is_public,
-                updated_at = excluded.updated_at
-        """, (clean_name, clean_name, '', 'MODERADO', 1 if is_public else 0, 50.0, '{}', now_dt, now_dt))
+            UPDATE strategies_catalog
+            SET is_public = ?, updated_at = ?
+            WHERE name = ?
+        """, (pub_bool, now_dt, clean_name))
+        
+        # 2. Si aún no estaba en la tabla, insertarla
+        if cursor.rowcount == 0:
+            cursor.execute("""
+                INSERT INTO strategies_catalog (name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (clean_name, clean_name, '', 'MODERADO', pub_bool, 50.0, '{}', now_dt, now_dt))
+            
         conn.commit()
         return True
     except Exception as e:
         logger = get_logger()
-        logger.error(f"Error cambiando visibilidad pública de estrategia '{name}': {e}")
+        logger.error(f"Error cambiando visibilidad pública de estrategia '{name}': {e}", exc_info=True)
         return False
     finally:
         if conn:
@@ -1328,6 +1390,7 @@ def delete_strategy_catalog(name: str) -> bool:
     conn = None
     try:
         conn = get_db_connection(timeout=10)
+        _ensure_strategies_catalog_table(conn)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM strategies_catalog WHERE name = ?", (str(name).strip(),))
         conn.commit()
