@@ -23,6 +23,9 @@ trades_limit.db
 *.db
 *.disabled_migrated
 
+# Estrategias soberanas del usuario (gestionadas por la Base de Datos PostgreSQL)
+strategies/*.json
+
 # Logs y Cache de datos
 *.log
 *.log.*

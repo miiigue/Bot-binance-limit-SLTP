@@ -526,30 +526,47 @@ def start_bot_workers():
             if not strat_name or strat_name.lower() == 'global':
                 strat_name = get_strategy_for_symbol(symbol)
             
-            # Cargar parámetros del archivo de estrategia (tanto para modo global como multi)
+            strat_loaded = False
+            # Cargar parámetros de la estrategia (prioridad: Catálogo DB primero, luego disco)
             if strat_name and strat_name.lower() != 'global':
-                strat_file = os.path.join(STRATEGIES_PATH, f"{strat_name}.json")
-                if os.path.exists(strat_file):
-                    try:
-                        with open(strat_file, 'r', encoding='utf-8') as f_sf:
-                            strat_json = json.load(f_sf)
-                        mapped = map_frontend_trading_binance(strat_json)
-                        if 'TRADING' in mapped:
-                            worker_params.update(mapped['TRADING'])
-                        logger.info(f"-> Parámetros de estrategia '{strat_name}' cargados para {symbol}")
-                    except Exception as e_s:
-                        logger.warning(f"Error cargando estrategia '{strat_name}' para {symbol}: {e_s}")
+                strat_json = None
+                try:
+                    from src.database import get_strategies_catalog
+                    catalog = get_strategies_catalog(only_public=False)
+                    for item in catalog:
+                        if item.get('name') == strat_name:
+                            strat_json = item.get('parameters', {})
+                            break
+                except Exception as e_cat_ld:
+                    logger.debug(f"Aviso consultando catálogo para {strat_name}: {e_cat_ld}")
 
-            # Máxima prioridad: Parámetros soberanos guardados en base de datos por el usuario
-            try:
-                from src.database import get_saved_trading_params_from_db
-                db_p = get_saved_trading_params_from_db()
-                if db_p and isinstance(db_p, dict):
-                    mapped_db = map_frontend_trading_binance(db_p)
-                    if 'TRADING' in mapped_db:
-                        worker_params.update(mapped_db['TRADING'])
-            except Exception:
-                pass
+                if not strat_json:
+                    strat_file = os.path.join(STRATEGIES_PATH, f"{strat_name}.json")
+                    if os.path.exists(strat_file):
+                        try:
+                            with open(strat_file, 'r', encoding='utf-8') as f_sf:
+                                strat_json = json.load(f_sf)
+                        except Exception as e_s:
+                            logger.warning(f"Error cargando archivo de estrategia '{strat_name}' para {symbol}: {e_s}")
+
+                if strat_json and isinstance(strat_json, dict):
+                    mapped = map_frontend_trading_binance(strat_json)
+                    if 'TRADING' in mapped:
+                        worker_params.update(mapped['TRADING'])
+                        strat_loaded = True
+                    logger.info(f"-> Parámetros de estrategia '{strat_name}' aplicados soberanamente para {symbol}")
+
+            # Solo si NO se cargó ninguna estrategia específica, aplicar parámetros generales guardados en DB
+            if not strat_loaded:
+                try:
+                    from src.database import get_saved_trading_params_from_db
+                    db_p = get_saved_trading_params_from_db()
+                    if db_p and isinstance(db_p, dict):
+                        mapped_db = map_frontend_trading_binance(db_p)
+                        if 'TRADING' in mapped_db:
+                            worker_params.update(mapped_db['TRADING'])
+                except Exception:
+                    pass
             
             worker_params['strategy_name'] = strat_name or global_strat_name
             logger.info(f"-> Preparando worker para {symbol} (Estrategia: {worker_params['strategy_name']})...")
@@ -2428,20 +2445,36 @@ def get_market_data_endpoint():
 # --- NUEVOS ENDPOINTS PARA ESTRATEGIAS ---
 
 def _seed_strategies_catalog_from_files():
-    """Siembra el catálogo soberano de la DB con las estrategias de disco si no existen."""
+    """Siembra el catálogo soberano de la DB con las estrategias iniciales si el catálogo está vacío."""
     logger = get_logger()
     try:
-        from src.database import get_strategies_catalog, upsert_strategy_catalog
+        from src.database import get_strategies_catalog, upsert_strategy_catalog, get_deleted_strategies
+        deleted_set = get_deleted_strategies()
+
+        # Limpiar del disco cualquier archivo huérfano que el usuario haya eliminado
+        if os.path.exists(STRATEGIES_PATH):
+            for f in os.listdir(STRATEGIES_PATH):
+                if f.endswith('.json'):
+                    s_name = os.path.splitext(f)[0]
+                    if s_name in deleted_set:
+                        try:
+                            os.remove(os.path.join(STRATEGIES_PATH, f))
+                            logger.info(f"Archivo huérfano de estrategia eliminada '{s_name}' eliminado de disco.")
+                        except Exception:
+                            pass
+
         existing = get_strategies_catalog(only_public=False)
-        existing_names = {s['name'] for s in existing}
-        
+        # SOBERANÍA ABSOLUTA: Si ya existen estrategias en la DB, no auto-sembrar de disco
+        if existing:
+            return
+
         if not os.path.exists(STRATEGIES_PATH):
             return
             
         strategy_files = [f for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
         for f in strategy_files:
             s_name = os.path.splitext(f)[0]
-            if s_name not in existing_names:
+            if s_name not in deleted_set:
                 full_path = os.path.join(STRATEGIES_PATH, f)
                 try:
                     with open(full_path, 'r', encoding='utf-8') as sf:
@@ -2465,7 +2498,7 @@ def _seed_strategies_catalog_from_files():
                         min_capital_usdt=min_cap,
                         parameters=data
                     )
-                    logger.info(f"Estrategia '{s_name}' sembrada en catálogo soberano de la DB.")
+                    logger.info(f"Estrategia inicial '{s_name}' sembrada en catálogo soberano de la DB.")
                 except Exception as e_seed:
                     logger.warning(f"No se pudo sembrar '{s_name}' en catálogo: {e_seed}")
     except Exception as e:
@@ -2525,28 +2558,29 @@ def _save_strategy_logic(strategy_name: str, data: dict):
 
 def _load_strategy_logic(strategy_name: str):
     logger = get_logger()
-    strategy_file_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
     strategy_data = None
 
-    if os.path.exists(strategy_file_path):
-        try:
-            with open(strategy_file_path, 'r', encoding='utf-8') as f:
-                strategy_data = json.load(f)
-        except Exception as e_f:
-            logger.warning(f"Error al leer archivo JSON para '{strategy_name}': {e_f}")
+    # 1. Prioridad Soberana: Base de Datos catálogo primero
+    try:
+        from src.database import get_strategies_catalog
+        catalog = get_strategies_catalog(only_public=False)
+        for item in catalog:
+            if item.get('name') == strategy_name and item.get('parameters'):
+                strategy_data = item.get('parameters', {})
+                logger.info(f"Estrategia '{strategy_name}' cargada desde el catálogo soberano de DB.")
+                break
+    except Exception as e_db:
+        logger.warning(f"Error consultando DB para estrategia '{strategy_name}': {e_db}")
 
-    # Respaldo Soberano en Base de Datos si el archivo no existe en disco
+    # 2. Respaldo en disco si no existía en DB
     if not strategy_data:
-        try:
-            from src.database import get_strategies_catalog
-            catalog = get_strategies_catalog(only_public=False)
-            for item in catalog:
-                if item.get('name') == strategy_name:
-                    strategy_data = item.get('parameters', {})
-                    logger.info(f"Estrategia '{strategy_name}' restaurada desde el catálogo soberano de DB.")
-                    break
-        except Exception as e_db:
-            logger.warning(f"Error consultando DB para estrategia '{strategy_name}': {e_db}")
+        strategy_file_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
+        if os.path.exists(strategy_file_path):
+            try:
+                with open(strategy_file_path, 'r', encoding='utf-8') as f:
+                    strategy_data = json.load(f)
+            except Exception as e_f:
+                logger.warning(f"Error al leer archivo JSON para '{strategy_name}': {e_f}")
 
     if not strategy_data:
         logger.error(f"No se encontró la estrategia: {strategy_name}")
@@ -2587,11 +2621,12 @@ def _delete_strategy_logic(strategy_name: str):
         except OSError as e_os:
             logger.error(f"Error de OS al eliminar la estrategia '{strategy_name}' desde {strategy_file_path}: {e_os}", exc_info=True)
 
-    # Eliminar permanentemente de la base de datos soberana
+    # Eliminar permanentemente de la base de datos soberana y registrar en lista negra
     try:
-        from src.database import delete_strategy_catalog
+        from src.database import delete_strategy_catalog, mark_strategy_as_deleted
         delete_strategy_catalog(strategy_name)
-        logger.info(f"Estrategia '{strategy_name}' eliminada de strategies_catalog en DB.")
+        mark_strategy_as_deleted(strategy_name)
+        logger.info(f"Estrategia '{strategy_name}' eliminada de strategies_catalog y marcada como eliminada en DB.")
     except Exception as e_del:
         logger.warning(f"Error eliminando de strategies_catalog en DB: {e_del}")
 
@@ -2625,37 +2660,42 @@ def list_strategies():
     logger = get_logger()
     logger.info("Solicitud para listar estrategias guardadas con resumen.")
     try:
-        # Asegurar catálogo sembrado si está vacío
+        # Asegurar catálogo sembrado si la base de datos está vacía
         _seed_strategies_catalog_from_files()
-        from src.database import get_strategies_catalog
-        catalog_items = {s['name']: s for s in get_strategies_catalog(only_public=False)}
+        from src.database import get_strategies_catalog, get_deleted_strategies
+        deleted_set = get_deleted_strategies()
+        catalog_items = {s['name']: s for s in get_strategies_catalog(only_public=False) if s['name'] not in deleted_set}
 
         if not os.path.exists(STRATEGIES_PATH):
             logger.warning(f"El directorio de estrategias {STRATEGIES_PATH} no existe.")
             file_names = []
         else:
-            file_names = [os.path.splitext(f)[0] for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json')]
+            file_names = [os.path.splitext(f)[0] for f in os.listdir(STRATEGIES_PATH) if f.endswith('.json') and os.path.splitext(f)[0] not in deleted_set]
 
-        # Unir nombres de disco y de catálogo DB
+        # Unir nombres de disco y de catálogo DB excluyendo eliminadas
         all_strategy_names = list(set(file_names) | set(catalog_items.keys()))
         all_strategy_names.sort()
 
         results = []
         for strategy_name in all_strategy_names:
-            full_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
             config_data = {}
-            if os.path.exists(full_path):
-                try:
-                    with open(full_path, 'r', encoding='utf-8') as sf:
-                        config_data = json.load(sf)
-                except Exception as e:
-                    logger.warning(f"No se pudo leer config para {strategy_name}: {e}")
+            # PRIORIDAD SOBERANA: Catálogo DB primero
+            db_meta = catalog_items.get(strategy_name, {})
+            if db_meta and db_meta.get('parameters'):
+                config_data = dict(db_meta.get('parameters', {}))
+
+            # Respaldo en disco si no existía en catálogo DB
+            if not config_data:
+                full_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
+                if os.path.exists(full_path):
+                    try:
+                        with open(full_path, 'r', encoding='utf-8') as sf:
+                            config_data = json.load(sf)
+                    except Exception as e:
+                        logger.warning(f"No se pudo leer config para {strategy_name}: {e}")
 
             # Enriquecer con metadatos del catálogo DB
-            db_meta = catalog_items.get(strategy_name, {})
             if db_meta:
-                if not config_data:
-                    config_data = db_meta.get('parameters', {})
                 config_data['is_public'] = db_meta.get('is_public', False)
                 config_data['risk_level'] = db_meta.get('risk_level', 'MODERADO')
                 config_data['min_capital_usdt'] = db_meta.get('min_capital_usdt', 50.0)

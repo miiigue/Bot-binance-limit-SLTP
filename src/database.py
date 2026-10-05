@@ -1126,6 +1126,12 @@ def get_bot_setting(key: str, default: str | None = None) -> str | None:
         try:
             conn = get_db_connection(timeout=10)
             cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS bot_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
             cursor.execute("SELECT value FROM bot_settings WHERE key = ?", (key,))
             row = cursor.fetchone()
             return row[0] if row else default
@@ -1201,6 +1207,49 @@ def set_saved_trading_params_in_db(params: dict) -> bool:
         logger = get_logger()
         logger.error(f"Error serializando parámetros para guardar en DB: {e}")
         return False
+
+def mark_strategy_as_deleted(name: str) -> bool:
+    """Registra una estrategia en la lista negra persistente de eliminadas para que nunca vuelva a ser resucitada por Git o seeders."""
+    if not name:
+        return False
+    clean_name = str(name).strip()
+    raw = get_bot_setting('deleted_strategies_list', '[]')
+    try:
+        deleted = json.loads(raw) if raw else []
+        if not isinstance(deleted, list):
+            deleted = []
+    except Exception:
+        deleted = []
+    if clean_name not in deleted:
+        deleted.append(clean_name)
+        set_bot_setting('deleted_strategies_list', json.dumps(deleted))
+    return True
+
+def unmark_strategy_as_deleted(name: str) -> bool:
+    """Si el usuario crea o guarda una estrategia con ese nombre, la quita de la lista negra."""
+    if not name:
+        return False
+    clean_name = str(name).strip()
+    raw = get_bot_setting('deleted_strategies_list', '[]')
+    try:
+        deleted = json.loads(raw) if raw else []
+        if isinstance(deleted, list) and clean_name in deleted:
+            deleted = [x for x in deleted if x != clean_name]
+            set_bot_setting('deleted_strategies_list', json.dumps(deleted))
+    except Exception:
+        pass
+    return True
+
+def get_deleted_strategies() -> set[str]:
+    """Retorna el conjunto de nombres de estrategias que fueron eliminadas explícitamente."""
+    raw = get_bot_setting('deleted_strategies_list', '[]')
+    try:
+        deleted = json.loads(raw) if raw else []
+        if isinstance(deleted, list):
+            return set(deleted)
+    except Exception:
+        pass
+    return set()
 
 # =====================================================================
 # --- CATÁLOGO SOBERANO DE ESTRATEGIAS (PUBLICAS/PRIVADAS INVERSOR) ---
@@ -1310,6 +1359,7 @@ def upsert_strategy_catalog(
     if not name or not str(name).strip():
         return False
     clean_name = str(name).strip()
+    unmark_strategy_as_deleted(clean_name)
     clean_disp = str(display_name).strip() if display_name else clean_name
     clean_risk = str(risk_level).upper().strip() if risk_level else 'MODERADO'
     pub_bool = bool(is_public)
@@ -1398,15 +1448,17 @@ def toggle_strategy_public_status(name: str, is_public: bool) -> bool:
             conn.close()
 
 def delete_strategy_catalog(name: str) -> bool:
-    """Elimina una estrategia del catálogo."""
+    """Elimina una estrategia del catálogo y la añade a la lista negra permanente."""
     if not name:
         return False
+    clean_name = str(name).strip()
+    mark_strategy_as_deleted(clean_name)
     conn = None
     try:
         conn = get_db_connection(timeout=10)
         _ensure_strategies_catalog_table(conn)
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM strategies_catalog WHERE name = ?", (str(name).strip(),))
+        cursor.execute("DELETE FROM strategies_catalog WHERE name = ?", (clean_name,))
         conn.commit()
         return True
     except Exception as e:

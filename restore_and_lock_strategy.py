@@ -55,11 +55,20 @@ def main():
     print("🛡️ INICIANDO RESTAURACIÓN Y BLINDAJE SOBERANO DE ESTRATEGIA...")
     print("=" * 60)
 
-    strat_name = "v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_SL500_3DCA2_ReDi5c5"
+    # 1. Inicializar esquema de Base de Datos
+    try:
+        from src.database import get_active_strategy_from_db, set_active_strategy_in_db, set_bot_setting, init_db_schema
+        init_db_schema()
+    except Exception as e_init:
+        print(f"❌ Error al inicializar esquema de base de datos: {e_init}")
+        sys.exit(1)
 
-    # 1. Actualizar directamente config.ini con la estrategia y Stop Loss correctos
+    # 2. Respetar la estrategia soberana activa que el usuario configuró en DB o config.ini
+    strat_name = get_active_strategy_from_db()
+
     config_file = os.path.join(PROJECT_ROOT, "config.ini")
     tmp_file = os.path.join(PROJECT_ROOT, "config.ini.tmp")
+    cp = None
     if os.path.exists(config_file):
         try:
             import configparser
@@ -68,41 +77,48 @@ def main():
                 cp.read([config_file, tmp_file], encoding='utf-8')
             else:
                 cp.read(config_file, encoding='utf-8')
+            if not strat_name or strat_name.lower() == 'global':
+                strat_name = cp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
+        except Exception as e_cfg_rd:
+            print(f"ℹ️ Aviso al leer config.ini: {e_cfg_rd}")
 
-            if not cp.has_section('TRADING'):
-                cp.add_section('TRADING')
-            cp.set('TRADING', 'active_strategy_name', strat_name)
-            cp.set('TRADING', 'stop_loss_usdt', '500')
-            cp.set('TRADING', 'enable_stop_loss_pnl', 'true')
-            cp.set('TRADING', 'enable_emergency_software_sl', 'true')
+    if not strat_name or strat_name.lower() == 'global':
+        try:
+            from src.config_loader import get_strategy_for_symbol
+            strat_name = get_strategy_for_symbol('BTCUSDT')
+        except Exception:
+            strat_name = 'v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_SL500_3DCA2_ReDi5c5'
 
+    print(f"✅ Estrategia activa soberana preservada: '{strat_name}'")
+
+    # 3. Sincronizar active_strategy_name en config.ini SIN tocar los parámetros del usuario (SL, TP, etc.)
+    if cp is not None and os.path.exists(config_file):
+        try:
             if not cp.has_section('STRATEGY_INFO'):
                 cp.add_section('STRATEGY_INFO')
             cp.set('STRATEGY_INFO', 'active_strategy_name', strat_name)
 
+            if not cp.has_section('TRADING'):
+                cp.add_section('TRADING')
+            cp.set('TRADING', 'active_strategy_name', strat_name)
+
             with open(config_file, 'w', encoding='utf-8') as f:
                 cp.write(f)
-            print("✅ config.ini actualizado directamente con la estrategia, SL de 500 USDT y parámetros calibrados.")
+            print(f"✅ config.ini sincronizado con la estrategia activa: '{strat_name}'.")
         except Exception as e_cfg:
             print(f"ℹ️ Aviso al actualizar config.ini: {e_cfg}")
 
-    # 2. Aplicar skip-worktree para que Git NUNCA MÁS sobreescriba config.ini
+    # 4. Aplicar skip-worktree para que Git NUNCA MÁS sobreescriba config.ini
     res_skip = os.system("git update-index --skip-worktree config.ini 2>/dev/null")
     if res_skip == 0:
         print("✅ Protección skip-worktree activada: Git ignorará config.ini para siempre.")
     else:
         print("ℹ️ Aviso al aplicar skip-worktree.")
 
-    # 3. Guardar en Base de Datos con soberanía absoluta
+    # 5. Blindar en Base de Datos preservando soberanía
     try:
-        from src.database import set_active_strategy_in_db, set_bot_setting, init_db_schema
-        init_db_schema()
-
         set_active_strategy_in_db(strat_name)
         set_bot_setting("active_strategy_name", strat_name)
-        set_bot_setting("stop_loss_usdt", "500")
-        set_bot_setting("enable_stop_loss_pnl", "true")
-        set_bot_setting("enable_emergency_software_sl", "true")
 
         try:
             from src.api_server import _seed_strategies_catalog_from_files
@@ -111,16 +127,15 @@ def main():
         except Exception as e_seed:
             print(f"ℹ️ Aviso al sembrar catálogo: {e_seed}")
 
-        print("✅ BASE DE DATOS BLOQUEADA:")
-        print(f"   -> Estrategia Soberana: {strat_name}")
-        print("   -> Stop Loss Soberano: 500 USDT")
-        print("   -> SL de Emergencia por Software: Protegido con escudo de arranque de 120s")
+        print("✅ BASE DE DATOS SOBERANA ASEGURADA:")
+        print(f"   -> Estrategia Activa: {strat_name}")
+        print("   -> Parámetros de Trading: 100% Preservados del panel de usuario")
     except Exception as e:
         print(f"❌ Error guardando en base de datos: {e}")
         sys.exit(1)
 
     print("=" * 60)
-    print("🎉 BLINDAJE COMPLETADO EXITOSAMENTE")
+    print("🎉 BLINDAJE SOBERANO COMPLETADO EXITOSAMENTE")
     print("=" * 60)
 
 
