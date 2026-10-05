@@ -75,6 +75,9 @@ def main():
             cp.set('TRADING', 'stop_loss_usdt', '500')
             cp.set('TRADING', 'enable_stop_loss_pnl', 'true')
             cp.set('TRADING', 'enable_emergency_software_sl', 'true')
+            cp.set('TRADING', 'rsi_entry_level_high', '58')
+            cp.set('TRADING', 'rsi_threshold_up', '1.0')
+            cp.set('TRADING', 'rsi_positive_candles_required', '1')
 
             if not cp.has_section('STRATEGY_INFO'):
                 cp.add_section('STRATEGY_INFO')
@@ -82,7 +85,7 @@ def main():
 
             with open(config_file, 'w', encoding='utf-8') as f:
                 cp.write(f)
-            print("✅ config.ini actualizado directamente con la estrategia y SL de 500 USDT.")
+            print("✅ config.ini actualizado directamente con la estrategia, SL de 500 USDT y parámetros calibrados.")
         except Exception as e_cfg:
             print(f"ℹ️ Aviso al actualizar config.ini: {e_cfg}")
 
@@ -103,6 +106,9 @@ def main():
         set_bot_setting("stop_loss_usdt", "500")
         set_bot_setting("enable_stop_loss_pnl", "true")
         set_bot_setting("enable_emergency_software_sl", "true")
+        set_bot_setting("rsi_entry_level_high", "58")
+        set_bot_setting("rsi_threshold_up", "1.0")
+        set_bot_setting("rsi_positive_candles_required", "1")
 
         try:
             from src.api_server import _seed_strategies_catalog_from_files

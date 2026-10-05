@@ -32,6 +32,12 @@ except ImportError:
 from .logger_setup import get_logger
 
 DATABASE_FILE = os.path.join(BASE_DIR, 'trades_limit.db')
+STRATEGIES_PATH = os.path.join(BASE_DIR, 'strategies')
+if not os.path.exists(STRATEGIES_PATH):
+    try:
+        os.makedirs(STRATEGIES_PATH, exist_ok=True)
+    except Exception:
+        pass
 
 
 def get_postgres_url() -> str:

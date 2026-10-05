@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import ConfirmModal from './ConfirmModal';
 
@@ -19,6 +19,7 @@ const formatShortDate = (dateStr) => {
 
 export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_bot' }) {
   const { authFetch, user } = useAuth();
+  const hasLoadedInitialSettings = useRef(false);
 
   // Sub-pestaña activa dentro del panel (Mi Bot Personal vs Copy-Trading Espejo)
   const [currentSubTab, setCurrentSubTab] = useState(initialSubTab || 'my_bot');
@@ -133,7 +134,8 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
       if (!resp.ok) return;
       const data = await resp.json();
       setBotData(data);
-      if (data?.bot_settings) {
+      if (!hasLoadedInitialSettings.current && data?.bot_settings) {
+        hasLoadedInitialSettings.current = true;
         if (data.bot_settings.strategy_name) {
           setSelectedStrategy(data.bot_settings.strategy_name);
         }
@@ -306,6 +308,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.message || 'Error al guardar parámetros.');
       setFeedback({ type: 'success', text: `✅ Estrategia "${selectedStrategy}" y parámetros guardados con éxito.` });
+      hasLoadedInitialSettings.current = false;
       fetchUserBotStatus();
     } catch (err) {
       setFeedback({ type: 'error', text: err.message });

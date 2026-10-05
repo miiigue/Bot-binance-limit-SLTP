@@ -1250,9 +1250,16 @@ class SingleSideTradingBot:
                  return None
                  
             # Get the latest volume and its corresponding SMA value
-            # We compare the last volume bar with the SMA calculated up to that point
-            current_volume = klines['volume'].iloc[-1]
-            average_volume = volume_sma.iloc[-1] # Use the last calculated SMA
+            # En velas en formación (iloc[-1]), el volumen es incompleto durante el desarrollo de la vela.
+            # Comparamos con la última vela cerrada (iloc[-2]) o con la vela actual si ya superó el volumen promedio.
+            if len(klines) >= 2 and len(volume_sma) >= 2:
+                vol_completed = float(klines['volume'].iloc[-2])
+                vol_forming = float(klines['volume'].iloc[-1])
+                current_volume = max(vol_completed, vol_forming)
+                average_volume = float(volume_sma.iloc[-2])
+            else:
+                current_volume = float(klines['volume'].iloc[-1])
+                average_volume = float(volume_sma.iloc[-1])
 
             # Check for NaN values resulting from coercion or calculation
             if pd.isna(current_volume) or pd.isna(average_volume):
@@ -2990,18 +2997,25 @@ class SingleSideTradingBot:
             price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
             self.logger.info(f"[{self.symbol}] Precio actual: {current_price:.{price_precision_log}f}, RSI({self.rsi_period}, {self.rsi_interval}): {self.last_rsi_value:.2f}")
 
-            # --- NUEVA LÓGICA PARA EL DELTA DEL RSI ---
+            # --- LÓGICA CORREGIDA PARA EL DELTA DEL RSI ---
+            # El delta de RSI debe calcularse entre la vela actual y la vela anterior en klines.
+            # Medir la diferencia entre ticks de 3 segundos arrojaba +0.00 en cada ciclo, bloqueando todas las entradas.
             rsi_delta = None
-            if self.previous_rsi_value is not None and self.last_rsi_value is not None:
-                # Asegurarse que ambos son números antes de restar
+            if rsi_values is not None and len(rsi_values) >= 2:
+                try:
+                    c_rsi = float(rsi_values.iloc[-1])
+                    p_rsi = float(rsi_values.iloc[-2])
+                    rsi_delta = c_rsi - p_rsi
+                    self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Delta RSI de Vela: Actual={c_rsi:.2f}, Vela Anterior={p_rsi:.2f}, Delta={rsi_delta:+.2f}")
+                except Exception as e_delta:
+                    self.logger.warning(f"[{self.symbol}] Error calculando Delta RSI de velas: {e_delta}")
+            
+            # Respaldo: si solo hay 1 vela o el cálculo falló, usar diferencia entre ciclos
+            if rsi_delta is None and self.previous_rsi_value is not None and self.last_rsi_value is not None:
                 if isinstance(self.previous_rsi_value, (int, float)) and isinstance(self.last_rsi_value, (int, float)):
                     rsi_delta = self.last_rsi_value - self.previous_rsi_value
-                    self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: Actual={self.last_rsi_value:.2f}, Anterior={self.previous_rsi_value:.2f}, Delta={rsi_delta:.2f}")
-                else:
-                    self.logger.warning(f"[{self.symbol}] Chequeo Delta RSI: RSI actual o anterior no son numéricos (Actual: {self.last_rsi_value}, Anterior: {self.previous_rsi_value}).")
-            else:
-                self.logger.info(f"[{self.symbol}] Chequeo Delta RSI: No hay RSI anterior o actual para calcular delta (Actual={self.last_rsi_value}, Anterior={self.previous_rsi_value})")
-            # --- FIN NUEVA LÓGICA DELTA RSI ---
+                    self.logger.info(f"[{self.symbol}] Chequeo Delta RSI (Ciclo): Actual={self.last_rsi_value:.2f}, Anterior={self.previous_rsi_value:.2f}, Delta={rsi_delta:.2f}")
+            # --- FIN LÓGICA DELTA RSI ---
 
             # --- Lógica de Volumen --- MODIFICADA
             volume_check_passed = False # Por defecto, no pasa
