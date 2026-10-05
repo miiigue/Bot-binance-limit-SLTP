@@ -3191,29 +3191,49 @@ class RiskManager:
             self.logger.info(f"Balance actualizado. Nuevo Saldo: {self.total_balance} USDT, Exposición Máxima: {self.max_exposure} USDT")
 
     def get_current_exposure(self) -> Decimal:
-        """Calcula en tiempo real la suma exacta del margen real en riesgo en todas las posiciones abiertas activas."""
+        """Calcula la suma del margen real en riesgo de las posiciones abiertas, descartando valores corruptos."""
         total_exp = Decimal('0')
+        # Un margen individual válido nunca supera unas pocas veces el balance de la cuenta
+        sane_limit = max(self.total_balance, Decimal('1')) * Decimal('10')
+
+        def _lev(bot):
+            try:
+                lv = Decimal(str(getattr(bot, 'leverage', 12) or 12))
+                return lv if lv > 0 else Decimal('12')
+            except Exception:
+                return Decimal('12')
+
         try:
             with status_lock:
                 for symbol, bot_instance in list(worker_statuses.items()):
-                    if hasattr(bot_instance, 'in_position') and bot_instance.in_position:
+                    if not (hasattr(bot_instance, 'in_position') and bot_instance.in_position):
+                        continue
+                    contribution = None
+                    try:
                         margin = getattr(bot_instance, 'margin_for_current_position', None)
-                        if margin is not None and margin > Decimal('0'):
-                            total_exp += Decimal(str(margin))
-                        elif hasattr(bot_instance, 'current_position') and bot_instance.current_position:
-                            entry_p = Decimal(str(bot_instance.current_position.get('entry_price', 0)))
-                            qty = Decimal(str(bot_instance.current_position.get('quantity', 0)))
-                            lev = Decimal(str(getattr(bot_instance, 'leverage', 12) or 12))
-                            if lev > 0:
-                                total_exp += (entry_p * qty) / lev
-                            else:
-                                total_exp += (entry_p * qty) / Decimal('12')
-                        elif hasattr(bot_instance, 'position_size_usdt'):
-                            lev = Decimal(str(getattr(bot_instance, 'leverage', 12) or 12))
-                            if lev > 0:
-                                total_exp += Decimal(str(bot_instance.position_size_usdt)) / lev
-                            else:
-                                total_exp += Decimal(str(bot_instance.position_size_usdt)) / Decimal('12')
+                        if margin is not None:
+                            margin = Decimal(str(margin))
+                            if Decimal('0') < margin <= sane_limit:
+                                contribution = margin
+                    except Exception:
+                        contribution = None
+                    if contribution is None:
+                        try:
+                            cp = getattr(bot_instance, 'current_position', None)
+                            if cp:
+                                entry_p = abs(Decimal(str(cp.get('entry_price', 0))))
+                                qty = abs(Decimal(str(cp.get('quantity', 0))))
+                                est = (entry_p * qty) / _lev(bot_instance)
+                                if Decimal('0') < est <= sane_limit:
+                                    contribution = est
+                            if contribution is None and hasattr(bot_instance, 'position_size_usdt'):
+                                est = abs(Decimal(str(bot_instance.position_size_usdt))) / _lev(bot_instance)
+                                if Decimal('0') < est <= sane_limit:
+                                    contribution = est
+                        except Exception:
+                            contribution = None
+                    if contribution is not None:
+                        total_exp += contribution
         except Exception as e:
             self.logger.warning(f"Error calculando exposición actual en RiskManager: {e}")
         return total_exp
@@ -3307,6 +3327,13 @@ class RiskManager:
 
             exp_pct = (real_margin / self.total_balance * Decimal('100')) if self.total_balance > Decimal('0') else Decimal('0')
 
+            # Conciliación REAL: las 4 tarjetas deben sumar el límite autorizado.
+            # limit_gap > 0 => parte del límite sin asignar (p.ej. ganancia flotante / límite de Binance)
+            # limit_gap < 0 => las posiciones ya exceden el límite autorizado
+            reconciled_sum = pos_margin + floating_loss_consumed + open_orders_margin + free_margin_real
+            limit_gap = self.max_exposure - reconciled_sum
+            is_reconciled = abs(limit_gap) <= Decimal('0.05')
+
             return {
                 'total_balance': f"{self.total_balance:.2f}",
                 'total_balance_raw': float(self.total_balance),
@@ -3333,7 +3360,9 @@ class RiskManager:
                 'real_utilization_pct': f"{real_utilization_pct:.1f}%",
                 'real_utilization_pct_raw': float(real_utilization_pct),
                 'exposure_percentage': f"{exp_pct:.1f}%",
-                'exposure_percentage_raw': float(exp_pct)
+                'exposure_percentage_raw': float(exp_pct),
+                'limit_gap_raw': float(limit_gap),
+                'is_reconciled': bool(is_reconciled)
             }
 
 risk_manager = RiskManager(logger=api_logger) # <-- CORRECCIÓN: Usar el nombre de variable correcto 'api_logger'

@@ -136,6 +136,12 @@ export default function WalletMarginHealth({ readOnly = false }) {
     ? Math.max(0, Math.min(100, (totalUsedOfLimit / maxExp) * 100))
     : 0;
 
+  // 6. Conciliación real: las 4 tarjetas deben sumar el límite autorizado
+  const limitGap = riskData?.limit_gap_raw !== undefined
+    ? riskData.limit_gap_raw
+    : (maxExp - (currentExp + floatingLossConsumed + openOrdersMargin + freeMarginReal));
+  const isReconciled = Math.abs(limitGap) <= 0.05;
+
   // Colores y badges según el estrés real
   const isExhausted = freeMarginReal <= 0.01;
   const stressColor = realUtilizationPct > 85 ? 'bg-rose-500' : realUtilizationPct > 55 ? 'bg-amber-500' : 'bg-emerald-500';
@@ -376,7 +382,13 @@ export default function WalletMarginHealth({ readOnly = false }) {
             </span>
             <span className="text-purple-400 font-bold">=</span>
             <span className="text-purple-300 font-black">${maxExp.toFixed(2)} USDT</span>
-            <span className="text-[11px] text-slate-400 font-sans">(100% verificado)</span>
+            <span className={isReconciled ? 'text-[11px] text-emerald-400 font-sans' : 'text-[11px] text-amber-400 font-sans'}>
+              {isReconciled
+                ? '(100% verificado)'
+                : (limitGap > 0
+                    ? `(Sin asignar al límite: $${limitGap.toFixed(2)})`
+                    : `(Excede el límite por $${Math.abs(limitGap).toFixed(2)})`)}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">

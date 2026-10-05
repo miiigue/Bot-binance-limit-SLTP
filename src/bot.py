@@ -685,7 +685,17 @@ class SingleSideTradingBot:
                 'positionAmt': pos_amt_binance,
                 'side': self.trade_side
             }
-            initial_margin = Decimal(str(position_data.get('initialMargin', '0')))
+            try:
+                initial_margin = Decimal(str(position_data.get('initialMargin', position_data.get('positionInitialMargin', '0')) or '0'))
+            except Exception:
+                initial_margin = Decimal('0')
+            _lev_adopt = Decimal(str(getattr(self, 'leverage', 12) or 12))
+            if _lev_adopt <= 0:
+                _lev_adopt = Decimal('12')
+            _est_margin = (entry_price_binance * actual_qty) / _lev_adopt
+            # positionRisk no siempre trae initialMargin (o viene corrupto): usar nocional/apalancamiento
+            if initial_margin <= 0 or initial_margin > (_est_margin * Decimal('5')):
+                initial_margin = _est_margin
             self.margin_for_current_position = initial_margin
             mark_p = float(position_data.get('markPrice', '0') or 0.0)
             if mark_p <= 0 and abs(pos_amt_binance) > Decimal('1e-9'):

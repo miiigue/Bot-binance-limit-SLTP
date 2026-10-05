@@ -1184,7 +1184,7 @@ def get_futures_account_details() -> dict | None:
 
         # Testnet de Binance a veces devuelve agregados corruptos (desbordamiento int64 ~ -9.22e10).
         # Un margen válido es >= 0 y no puede superar por mucho el balance de la cuenta.
-        limit = max(wallet, Decimal('1')) * Decimal('1000')
+        limit = max(wallet, Decimal('1')) * Decimal('10')
 
         def _valid(v, allow_negative=False):
             if allow_negative:
