@@ -2016,9 +2016,9 @@ class SingleSideTradingBot:
             self.logger.debug(f"[{self.symbol}] Saltando obtención de datos en estado ERROR")
             return None
 
-        limit_needed = max(self.rsi_period + 15, self.volume_sma_period + 10, 50)
+        limit_needed = max(self.rsi_period + 15, self.volume_sma_period + 10, 150)
         if self.evaluate_ma_filter:
-            limit_needed = max(limit_needed, self.ma_period + 10)
+            limit_needed = max(limit_needed, self.ma_period + 50)
         if self.evaluate_support_strategy:
             limit_needed = max(limit_needed, self.support_history_candles + 10)
         
@@ -2969,6 +2969,26 @@ class SingleSideTradingBot:
         Condición combinada: RSI en rango [low, high] Y RSI >= threshold_up.
         """
         if not self.in_position and not self.pending_entry_order_id: # Asegurar que no hay orden de entrada PENDIENTE
+            is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
+
+            # 0. En Modo Unidireccional (One-Way Mode), Binance prohíbe tener posiciones opuestas en el mismo par.
+            # Si el lado opuesto ya tiene posición activa en Binance, este bot debe esperar su cierre.
+            try:
+                from src.binance_client import is_hedge_mode
+                if not is_hedge_mode():
+                    parent = getattr(self, 'parent_coordinator', None)
+                    if parent:
+                        opp_bot = parent.short_bot if not is_short else parent.long_bot
+                        if opp_bot and getattr(opp_bot, 'in_position', False):
+                            self.logger.debug(f"[{self.symbol}][{self.trade_side}] Modo One-Way activo y posición opuesta ({opp_bot.trade_side}) abierta. Omitiendo entrada.")
+                            if hasattr(self, 'entry_diagnostics') and isinstance(self.entry_diagnostics, dict):
+                                self.entry_diagnostics['blocked_reason'] = f"Bloqueado: Posición opuesta {opp_bot.trade_side} abierta en modo One-Way"
+                                self.entry_diagnostics['blocked_ts'] = time.time()
+                            self._update_state(BotState.IDLE)
+                            return
+            except Exception as e_ow:
+                self.logger.debug(f"[{self.symbol}] Aviso al validar modo One-Way: {e_ow}")
+
             self._update_state(BotState.CHECKING_CONDITIONS)
             current_price = Decimal(klines_df.iloc[-1]['close'])
 
@@ -2985,28 +3005,55 @@ class SingleSideTradingBot:
 
             if rsi_values is None or rsi_values.empty:
                 self.logger.warning(f"[{self.symbol}] No se pudieron calcular los valores RSI.")
-                # Asegurar que previous_rsi_value no se quede desactualizado si el cálculo actual falla
-                # y antes sí teníamos un valor. No lo ponemos a None aquí directamente,
-                # sino que no lo actualizamos con un valor inválido.
                 self._update_state(BotState.IDLE) 
                 return
 
-            # self.last_rsi_value se actualiza aquí
             self.last_rsi_value = rsi_values.iloc[-1]
-            # Calcular la precisión del precio para el log de forma segura
             price_precision_log = self.price_tick_size.as_tuple().exponent * -1 if self.price_tick_size and self.price_tick_size.is_finite() and self.price_tick_size > Decimal('0') else 2
             self.logger.info(f"[{self.symbol}] Precio actual: {current_price:.{price_precision_log}f}, RSI({self.rsi_period}, {self.rsi_interval}): {self.last_rsi_value:.2f}")
 
-            # --- LÓGICA CORREGIDA PARA EL DELTA DEL RSI ---
-            # El delta de RSI debe calcularse entre la vela actual y la vela anterior en klines.
-            # Medir la diferencia entre ticks de 3 segundos arrojaba +0.00 en cada ciclo, bloqueando todas las entradas.
+            # --- LÓGICA ROBUSTA PARA EL DELTA DEL RSI ---
+            # El momentum del RSI evalúa:
+            # 1. Vela en formación actual: (iloc[-1] - iloc[-2])
+            # 2. Vela cerrada reciente: (iloc[-2] - iloc[-3]) (ruptura confirmada en cierre)
+            # 3. Delta acumulado en la ventana de velas: (iloc[-1] - iloc[-window-1])
             rsi_delta = None
+            forming_delta = 0.0
+            closed_delta = 0.0
+            window_delta = 0.0
+
             if rsi_values is not None and len(rsi_values) >= 2:
                 try:
                     c_rsi = float(rsi_values.iloc[-1])
                     p_rsi = float(rsi_values.iloc[-2])
-                    rsi_delta = c_rsi - p_rsi
-                    self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Delta RSI de Vela: Actual={c_rsi:.2f}, Vela Anterior={p_rsi:.2f}, Delta={rsi_delta:+.2f}")
+                    forming_delta = c_rsi - p_rsi
+                    
+                    if len(rsi_values) >= 3:
+                        closed_delta = float(rsi_values.iloc[-2]) - float(rsi_values.iloc[-3])
+                    else:
+                        closed_delta = forming_delta
+
+                    w_size = getattr(self, 'rsi_candles_window', 3) or 3
+                    actual_w = min(w_size, len(rsi_values) - 1)
+                    closed_window_delta = 0.0
+                    if actual_w > 0:
+                        window_delta = float(rsi_values.iloc[-1]) - float(rsi_values.iloc[-1 - actual_w])
+                        if len(rsi_values) >= actual_w + 2:
+                            closed_window_delta = float(rsi_values.iloc[-2]) - float(rsi_values.iloc[-2 - actual_w])
+                        else:
+                            closed_window_delta = closed_delta
+                    else:
+                        window_delta = forming_delta
+                        closed_window_delta = closed_delta
+
+                    # Para LONG: buscamos momentum positivo (subida)
+                    # Para SHORT: buscamos momentum negativo (caída)
+                    if is_short:
+                        rsi_delta = min(forming_delta, closed_delta, window_delta, closed_window_delta)
+                        self.logger.info(f"[{self.symbol}][SHORT] Chequeo Delta RSI: Formando={forming_delta:+.2f}, Cerrada={closed_delta:+.2f}, Ventana={window_delta:+.2f}, VentanaCerrada={closed_window_delta:+.2f} -> Efectivo={rsi_delta:+.2f}")
+                    else:
+                        rsi_delta = max(forming_delta, closed_delta, window_delta, closed_window_delta)
+                        self.logger.info(f"[{self.symbol}][LONG] Chequeo Delta RSI: Formando={forming_delta:+.2f}, Cerrada={closed_delta:+.2f}, Ventana={window_delta:+.2f}, VentanaCerrada={closed_window_delta:+.2f} -> Efectivo={rsi_delta:+.2f}")
                 except Exception as e_delta:
                     self.logger.warning(f"[{self.symbol}] Error calculando Delta RSI de velas: {e_delta}")
             
@@ -3073,33 +3120,40 @@ class SingleSideTradingBot:
                 rsi_diffs = rsi_values.diff().dropna()
                 if not rsi_diffs.empty:
                     actual_window = min(rsi_window, len(rsi_diffs))
-                    recent_diffs = rsi_diffs.tail(actual_window)
-                    evaluated_window_size = len(recent_diffs)
-                    
-                    for diff_val in recent_diffs:
-                        val = float(diff_val)
-                        if is_short:
-                            # Para SHORT: buscamos caídas de RSI (momentum bajista)
-                            if rsi_min_delta > 0.0:
-                                if val <= -rsi_min_delta:
-                                    matching_rsi_candles_count += 1
+                    recent_diffs_forming = rsi_diffs.tail(actual_window)
+                    recent_diffs_closed = rsi_diffs.iloc[-actual_window - 1 : -1] if len(rsi_diffs) > actual_window else recent_diffs_forming
+                    evaluated_window_size = len(recent_diffs_forming)
+
+                    def _count_matching_diffs(diff_series):
+                        count = 0
+                        for diff_val in diff_series:
+                            val = float(diff_val)
+                            if is_short:
+                                if rsi_min_delta > 0.0:
+                                    if val <= -rsi_min_delta:
+                                        count += 1
+                                else:
+                                    if val < 0.0:
+                                        count += 1
                             else:
-                                if val < 0.0:
-                                    matching_rsi_candles_count += 1
-                        else:
-                            # Para LONG: buscamos subidas de RSI (momentum alcista)
-                            if rsi_min_delta > 0.0:
-                                if val >= rsi_min_delta:
-                                    matching_rsi_candles_count += 1
-                            else:
-                                if val > 0.0:
-                                    matching_rsi_candles_count += 1
-                    
+                                if rsi_min_delta > 0.0:
+                                    if val >= rsi_min_delta:
+                                        count += 1
+                                else:
+                                    if val > 0.0:
+                                        count += 1
+                        return count
+
+                    count_forming = _count_matching_diffs(recent_diffs_forming)
+                    count_closed = _count_matching_diffs(recent_diffs_closed)
+                    matching_rsi_candles_count = max(count_forming, count_closed)
+
                     if matching_rsi_candles_count < rsi_req_cnt:
                         rsi_window_passed = False
-                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Ventana RSI NO CUMPLIDO: {matching_rsi_candles_count}/{rsi_req_cnt} velas {'bajistas' if is_short else 'positivas'} en ventana de {actual_window} (mín delta: {rsi_min_delta:.2f})")
+                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Ventana RSI NO CUMPLIDO: {matching_rsi_candles_count}/{rsi_req_cnt} velas {'bajistas' if is_short else 'positivas'} (Formando={count_forming}, Cerradas={count_closed}, ventana: {actual_window}, mín delta: {rsi_min_delta:.2f})")
                     else:
-                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Ventana RSI CUMPLIDO: {matching_rsi_candles_count}/{rsi_req_cnt} velas {'bajistas' if is_short else 'positivas'} en ventana de {actual_window} (mín delta: {rsi_min_delta:.2f})")
+                        rsi_window_passed = True
+                        self.logger.info(f"[{self.symbol}][{self.trade_side}] Chequeo Ventana RSI CUMPLIDO: {matching_rsi_candles_count}/{rsi_req_cnt} velas {'bajistas' if is_short else 'positivas'} (Formando={count_forming}, Cerradas={count_closed}, ventana: {actual_window}, mín delta: {rsi_min_delta:.2f})")
 
             # --- Definir condition_rsi_change_meets_thresh_up y rsi_delta_str ---
             condition_rsi_change_meets_thresh_up = False
@@ -3187,11 +3241,11 @@ class SingleSideTradingBot:
                     latest_oi_data = oi_history[0]
                     current_oi_usdt = latest_oi_data.get('sumOpenInterestValue', Decimal('0'))
                     current_oi_value_for_log = f"{current_oi_usdt:.2f}"
-                    self.logger.warning(f"[{self.symbol}] Chequeo Open Interest (Activado, Período: {self.open_interest_period}): Solo se obtuvo 1 punto de OI ({current_oi_value_for_log}). No se puede comparar. Condición NO cumplida.")
-                    # condition_oi_increase_met permanece False
+                    self.logger.warning(f"[{self.symbol}] Chequeo Open Interest: Solo se obtuvo 1 punto de OI ({current_oi_value_for_log}). Omitiendo bloqueo estricto para no congelar la estrategia.")
+                    condition_oi_increase_met = True
                 else:
-                    self.logger.warning(f"[{self.symbol}] Chequeo Open Interest (Activado, Período: {self.open_interest_period}): No se pudieron obtener suficientes datos de OI (recibidos: {len(oi_history) if oi_history else 'None'}). Condición NO cumplida.")
-                    # condition_oi_increase_met permanece False
+                    self.logger.warning(f"[{self.symbol}] Chequeo Open Interest: No se pudieron obtener suficientes datos de OI (recibidos: {len(oi_history) if oi_history else 'None'}). Omitiendo bloqueo estricto para no congelar la estrategia.")
+                    condition_oi_increase_met = True
             # --- FIN Lógica de Open Interest ---
 
             # --- AÑADIDO: Lógica de Filtro de Media Móvil ---
@@ -3657,12 +3711,14 @@ class SingleSideTradingBot:
             self._verify_position_status() 
             return
         
+        is_short = (getattr(self, 'trade_side', 'LONG') == 'SHORT')
         self.current_position = {
             'entry_price': filled_price,
             'quantity': filled_quantity,
             'entry_time': pd.Timestamp.fromtimestamp(update_time_ms / 1000, tz='UTC'),
             'position_size_usdt': abs(filled_price * filled_quantity),
-            'positionAmt': filled_quantity 
+            'positionAmt': -filled_quantity if is_short else filled_quantity,
+            'side': self.trade_side
         }
         
         # --- Guardar el RSI al momento de la entrada ---
@@ -3690,9 +3746,10 @@ class SingleSideTradingBot:
         self.price_trailing_stop_armed = False # Resetear al entrar en nueva posición
         # ----------------------------------------------
 
-        # --- ¡NUEVO! Notificar al gestor de riesgo sobre la nueva exposición ---
-        position_value_usdt = Decimal(str(filled_quantity)) * Decimal(str(filled_price))
-        self.risk_manager.add_exposure(position_value_usdt)
+        # --- Notificar al gestor de riesgo sobre la nueva exposición (si está configurado) ---
+        if self.risk_manager:
+            position_value_usdt = Decimal(str(filled_quantity)) * Decimal(str(filled_price))
+            self.risk_manager.add_exposure(position_value_usdt)
         # -----------------------------------------------------------------
 
         self._update_state(BotState.IN_POSITION)
@@ -4062,7 +4119,8 @@ class SingleSideTradingBot:
             self.logger.info(f"[{self.symbol}] Orden de salida {self.pending_exit_order_id} LLENADA. Procesando...")
             
             # Quitar el margen de la exposición
-            self.risk_manager.remove_exposure(self.margin_for_current_position)
+            if self.risk_manager:
+                self.risk_manager.remove_exposure(self.margin_for_current_position)
             self.logger.info(f"[{self.symbol}] Posición cerrada. Eliminando MARGEN {self.margin_for_current_position} USDT de la exposición.")
             self.margin_for_current_position = Decimal('0')
 
@@ -4159,9 +4217,10 @@ class SingleSideTradingBot:
         # El estado después de un cierre exitoso debe ser IDLE.
         self._update_state(BotState.IDLE)
 
-        # --- ¡NUEVO! Notificar al gestor de riesgo que la exposición ha terminado ---
-        position_value_usdt = Decimal(str(self.last_known_position_size)) * Decimal(str(self.last_known_entry_price))
-        self.risk_manager.remove_exposure(position_value_usdt)
+        # --- Notificar al gestor de riesgo que la exposición ha terminado ---
+        if self.risk_manager and self.last_known_position_size and self.last_known_entry_price:
+            position_value_usdt = Decimal(str(self.last_known_position_size)) * Decimal(str(self.last_known_entry_price))
+            self.risk_manager.remove_exposure(position_value_usdt)
         # -------------------------------------------------------------------
 
     def _verify_position_status(self):

@@ -234,7 +234,29 @@ def derive_short_params(long_params: dict) -> dict:
 
     return short_params
 
-# Ejemplo de uso (no se ejecuta al importar)
+def load_trading_params() -> dict:
+    """
+    Carga los parámetros de trading activos combinando config.ini y la estrategia activa.
+    Garantiza que TradingBot pueda instanciarse directamente sin error de importación.
+    """
+    params = {}
+    config = load_config()
+    if config and config.has_section('TRADING'):
+        params = dict(config.items('TRADING'))
+
+    try:
+        from src.database import get_saved_trading_params_from_db
+        saved_db = get_saved_trading_params_from_db()
+        if saved_db and isinstance(saved_db, dict):
+            from src.api_server import map_frontend_trading_binance
+            mapped = map_frontend_trading_binance(saved_db)
+            if 'TRADING' in mapped:
+                params.update(mapped['TRADING'])
+    except Exception:
+        pass
+
+    return params
+
 if __name__ == '__main__':
     print(f"Buscando config en: {CONFIG_FILE_PATH}")
     cfg = load_config()

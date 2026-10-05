@@ -1056,8 +1056,26 @@ def get_open_interest_history(symbol: str, period: str, limit: int = 2) -> list[
         # Sin embargo, para continuar con el flujo de desarrollo y si el SDK se actualiza o hay otro método,
         # lo dejaremos así conceptualmente.
         
-        # UPDATE: La librería `binance-futures-connector` SÍ tiene `open_interest_hist`.
-        oi_history = client.open_interest_hist(symbol=symbol, period=period, limit=limit)
+        # UPDATE: La librería `binance-futures-connector` tiene `open_interest_hist`,
+        # pero en Binance Testnet este endpoint retorna 202 vacío (sin datos).
+        oi_history = None
+        try:
+            oi_history = client.open_interest_hist(symbol=symbol, period=period, limit=limit)
+        except Exception as e_hist:
+            logger.debug(f"[{symbol}] client.open_interest_hist arrojó excepción: {e_hist}")
+
+        # Fallback: consultar el endpoint público de producción fapi.binance.com (datos reales de mercado sin auth)
+        if not oi_history:
+            try:
+                public_url = f"https://fapi.binance.com/futures/data/openInterestHist?symbol={symbol.upper()}&period={period}&limit={limit}"
+                resp = requests.get(public_url, timeout=4, headers={'User-Agent': 'Mozilla/5.0'})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, list) and len(data) > 0:
+                        oi_history = data
+                        logger.debug(f"[{symbol}] OI obtenido vía endpoint público de producción: {len(oi_history)} puntos.")
+            except Exception as e_pub:
+                logger.debug(f"[{symbol}] Fallback público de OI falló: {e_pub}")
         
         if oi_history:
             logger.info(f"[{symbol}] Se obtuvieron {len(oi_history)} puntos de Open Interest. El más reciente: {oi_history[-1] if oi_history else 'N/A'}")

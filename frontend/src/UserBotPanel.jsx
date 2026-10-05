@@ -308,7 +308,6 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.message || 'Error al guardar parámetros.');
       setFeedback({ type: 'success', text: `✅ Estrategia "${selectedStrategy}" y parámetros guardados con éxito.` });
-      hasLoadedInitialSettings.current = false;
       fetchUserBotStatus();
     } catch (err) {
       setFeedback({ type: 'error', text: err.message });
