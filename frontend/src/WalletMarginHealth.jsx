@@ -133,7 +133,7 @@ export default function WalletMarginHealth({ readOnly = false }) {
 
   // 5. Nivel de Utilización Real
   const realUtilizationPct = maxExp > 0
-    ? Math.min(100, (totalUsedOfLimit / maxExp) * 100)
+    ? Math.max(0, Math.min(100, (totalUsedOfLimit / maxExp) * 100))
     : 0;
 
   // Colores y badges según el estrés real

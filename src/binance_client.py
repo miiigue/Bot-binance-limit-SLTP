@@ -1167,13 +1167,66 @@ def get_futures_account_details() -> dict | None:
         acc = client.account()
         if not acc:
             return None
+        logger = get_logger()
+
+        def _dec(key):
+            try:
+                return Decimal(str(acc.get(key, '0')))
+            except Exception:
+                return Decimal('0')
+
+        wallet = _dec('totalWalletBalance')
+        margin_balance = _dec('totalMarginBalance')
+        pos_margin = _dec('totalPositionInitialMargin')
+        order_margin = _dec('totalOpenOrderInitialMargin')
+        unrealized = _dec('totalUnrealizedProfit')
+        available = _dec('availableBalance')
+
+        # Testnet de Binance a veces devuelve agregados corruptos (desbordamiento int64 ~ -9.22e10).
+        # Un margen válido es >= 0 y no puede superar por mucho el balance de la cuenta.
+        limit = max(wallet, Decimal('1')) * Decimal('1000')
+
+        def _valid(v, allow_negative=False):
+            if allow_negative:
+                return abs(v) <= limit
+            return Decimal('0') <= v <= limit
+
+        if not _valid(pos_margin):
+            # Recalcular desde las posiciones individuales (fuente confiable)
+            recomputed = Decimal('0')
+            for p in acc.get('positions', []) or []:
+                try:
+                    amt = Decimal(str(p.get('positionAmt', '0')))
+                    if abs(amt) < Decimal('1e-9'):
+                        continue
+                    im = Decimal(str(p.get('positionInitialMargin', p.get('initialMargin', '0'))))
+                    if not _valid(im):
+                        notional = abs(Decimal(str(p.get('notional', '0'))))
+                        lev = Decimal(str(p.get('leverage', '1') or '1'))
+                        im = notional / lev if lev > 0 else notional
+                    recomputed += im
+                except Exception:
+                    continue
+            logger.warning(f"totalPositionInitialMargin inválido ({pos_margin}); recalculado desde posiciones: {recomputed}")
+            pos_margin = recomputed
+        if not _valid(order_margin):
+            logger.warning(f"totalOpenOrderInitialMargin inválido ({order_margin}); usando 0")
+            order_margin = Decimal('0')
+        if not _valid(unrealized, allow_negative=True):
+            logger.warning(f"totalUnrealizedProfit inválido ({unrealized}); usando 0")
+            unrealized = Decimal('0')
+        if not _valid(margin_balance):
+            margin_balance = wallet + unrealized
+        if not _valid(available):
+            available = max(Decimal('0'), margin_balance - pos_margin - order_margin)
+
         return {
-            'total_wallet_balance': Decimal(str(acc.get('totalWalletBalance', '0'))),
-            'total_margin_balance': Decimal(str(acc.get('totalMarginBalance', '0'))),
-            'total_position_initial_margin': Decimal(str(acc.get('totalPositionInitialMargin', '0'))),
-            'total_open_order_initial_margin': Decimal(str(acc.get('totalOpenOrderInitialMargin', '0'))),
-            'total_unrealized_profit': Decimal(str(acc.get('totalUnrealizedProfit', '0'))),
-            'available_balance': Decimal(str(acc.get('availableBalance', '0'))),
+            'total_wallet_balance': wallet,
+            'total_margin_balance': margin_balance,
+            'total_position_initial_margin': pos_margin,
+            'total_open_order_initial_margin': order_margin,
+            'total_unrealized_profit': unrealized,
+            'available_balance': available,
         }
     except Exception as e:
         logger = get_logger()

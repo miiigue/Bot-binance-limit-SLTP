@@ -3303,7 +3303,7 @@ class RiskManager:
 
             # 5. Porcentaje de utilización real del límite autorizado
             real_utilization_pct = (total_used_of_limit / self.max_exposure * Decimal('100')) if self.max_exposure > Decimal('0') else Decimal('0')
-            real_utilization_pct = min(Decimal('100'), real_utilization_pct)
+            real_utilization_pct = max(Decimal('0'), min(Decimal('100'), real_utilization_pct))
 
             exp_pct = (real_margin / self.total_balance * Decimal('100')) if self.total_balance > Decimal('0') else Decimal('0')
 
