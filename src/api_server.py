@@ -2400,6 +2400,67 @@ def reset_trades_endpoint():
         logger.error(f"Error al reiniciar historial de trades: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/api/demo/reset', methods=['POST'])
+def reset_demo_account_endpoint():
+    """Reinicia completamente la cuenta Demo / Testnet: cancela órdenes, cierra posiciones activas en Binance Testnet y restablece el PnL e historial a 0.00 USDT."""
+    logger = get_logger()
+    logger.warning("Solicitud POST /api/demo/reset recibida. Reiniciando cuenta Demo/Testnet de Binance...")
+    try:
+        closed_count = 0
+        # 1. Cancelar órdenes y cerrar posiciones reales activas en Binance Testnet
+        try:
+            from src.binance_client import get_futures_client, get_futures_position_information, create_futures_market_order
+            client = get_futures_client()
+            if client:
+                positions = get_futures_position_information() or []
+                for p in positions:
+                    sym = p.get('symbol')
+                    if not sym:
+                        continue
+                    try:
+                        client.cancel_open_orders(symbol=sym)
+                    except Exception:
+                        pass
+                    amt = float(p.get('positionAmt', 0))
+                    if abs(amt) > 1e-9:
+                        side = 'SELL' if amt > 0 else 'BUY'
+                        raw_ps = p.get('positionSide', 'BOTH')
+                        order = create_futures_market_order(sym, side=side, quantity=abs(amt), reduce_only=True, position_side=raw_ps)
+                        if order:
+                            closed_count += 1
+        except Exception as e_bin:
+            logger.warning(f"Aviso al cerrar posiciones en Binance Testnet durante demo reset: {e_bin}")
+
+        # 2. Resetear base de datos (trades y cutoff)
+        from src.database import clear_trade_history
+        clear_trade_history()
+
+        global _sync_paused_until
+        _sync_paused_until = time.time() + 15  # Pausar sync por 15 segundos post-reset
+
+        # 3. Resetear session stats y workers
+        session_manager.reset_stats()
+        with status_lock:
+            for sym, worker in worker_statuses.items():
+                if hasattr(worker, 'session_pnl'):
+                    worker.session_pnl = Decimal('0')
+                if hasattr(worker, 'historical_pnl'):
+                    worker.historical_pnl = Decimal('0')
+                if hasattr(worker, '_reset_state'):
+                    try:
+                        worker._reset_state()
+                        worker.in_position = False
+                        worker.current_state = BotState.IDLE
+                    except Exception:
+                        pass
+
+        msg = f"Cuenta Demo de Binance reiniciada con éxito. Se cerraron {closed_count} posiciones y el historial de PnL se restableció a $0.00 USDT."
+        api_logger.info(msg)
+        return jsonify({"success": True, "message": msg, "closed_positions": closed_count}), 200
+    except Exception as e:
+        logger.error(f"Error al reiniciar cuenta demo: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # --- ENDPOINT PARA EXPLORADOR Y RADAR DE MERCADO CON CACHÉ ---
 _market_data_cache = {
     'timestamp': 0,

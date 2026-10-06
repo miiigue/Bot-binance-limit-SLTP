@@ -128,23 +128,23 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
 
   const handleResetTradesClick = () => {
     openConfirm({
-      title: '🔄 ¿Vaciar Historial de Trades y Reiniciar PnL?',
-      message: 'Esta acción eliminará todos los trades cerrados de la base de datos PostgreSQL, restablecerá el PnL acumulado de la sesión a $0.00 USDT y fijará el corte de sincronización para operar limpio desde cero.',
-      confirmText: 'Sí, Vaciar Historial & PnL',
+      title: '🔄 ¿Reiniciar Cuenta Demo / Testnet de Binance?',
+      message: '⚠️ Esta acción cancelará todas las órdenes en Binance Testnet, cerrará todas las posiciones abiertas y restablecerá el historial de trades y PnL acumulado a $0.00 USDT.',
+      confirmText: 'Sí, Reiniciar Demo Binance',
       type: 'danger',
       onConfirm: async () => {
         setIsActionPending(true);
         try {
-          const resp = await fetch('/api/trades/reset', { method: 'POST' });
+          const resp = await fetch('/api/demo/reset', { method: 'POST' });
           const data = await resp.json();
           if (resp.ok) {
-            notify('🔄 Historial Reiniciado', 'El historial de trades y PnL se restableció a 0.00 USDT.', 'success');
+            notify('🔄 Demo Reiniciada', data.message || 'La cuenta demo de Binance se restableció a $0.00 USDT.', 'success');
             setTimeout(() => {
               localStorage.removeItem('botStatusesCache');
               window.location.reload();
-            }, 1000);
+            }, 1200);
           } else {
-            notify('Error al Reiniciar', data.error || 'No se pudo reiniciar el historial.', 'error');
+            notify('Error al Reiniciar Demo', data.error || 'No se pudo reiniciar la cuenta demo.', 'error');
           }
         } catch (err) {
           notify('Error de Conexión', err.message, 'error');
