@@ -418,7 +418,19 @@ function MainDashboard() {
 
   const isCopyTradeActiveTab = isInvestor && (activeTab === 'my_bot' || activeTab === 'copy_trading');
   const userBinanceBalance = Number(userBotHeader?.balance_usdt || 0);
-  const isUserBotRunning = Boolean(userBotHeader?.bot_settings?.is_running);
+  const isUserBotRunningRaw = Boolean(userBotHeader?.bot_settings?.is_running);
+  const userOpMode = userBotHeader?.bot_settings?.operating_mode || 'COPY_TRADING';
+  
+  const isCopyActive = isUserBotRunningRaw && userOpMode === 'COPY_TRADING';
+  const isPersonalActive = isUserBotRunningRaw && userOpMode === 'PERSONAL_BOT';
+
+  const headerModeLabel = (activeTab === 'my_bot' || userOpMode === 'PERSONAL_BOT') && activeTab !== 'copy_trading'
+    ? 'Bot Personal:'
+    : 'Copy-Trading:';
+
+  const headerModeActive = (activeTab === 'my_bot' || userOpMode === 'PERSONAL_BOT') && activeTab !== 'copy_trading'
+    ? isPersonalActive
+    : isCopyActive;
 
   // 3. DASHBOARD AUTENTICADO
   return (
@@ -467,9 +479,9 @@ function MainDashboard() {
               {isCopyTradeActiveTab ? (
                 <>
                   <div className="flex items-center gap-1 font-bold text-slate-950 truncate">
-                    <span className="text-[10px]">Copy-Trading:</span>
-                    <span className={`text-xs font-bold ${isUserBotRunning ? 'text-emerald-950' : 'text-amber-950'}`}>
-                      {isUserBotRunning ? '● ACTIVO' : '○ PAUSADO'}
+                    <span className="text-[10px]">{headerModeLabel}</span>
+                    <span className={`text-xs font-bold ${headerModeActive ? 'text-emerald-950' : 'text-amber-950'}`}>
+                      {headerModeActive ? '● ACTIVO' : '○ PAUSADO'}
                     </span>
                   </div>
 
@@ -523,12 +535,12 @@ function MainDashboard() {
             <div className="flex-initial px-2">
               <div className="flex items-center gap-3 text-slate-950 font-bold">
                 {isCopyTradeActiveTab ? (
-                  /* Modo Copy Trade: Mostrar Datos Propios del Usuario */
+                  /* Modo Copy Trade / Bot Personal: Mostrar Datos Propios del Usuario */
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border border-slate-800 px-3 py-1 rounded-xl shadow-sm">
-                      <span className="text-xs text-slate-400">Copy-Trading:</span>
-                      <span className={`text-xs font-bold flex items-center gap-1.5 ${isUserBotRunning ? 'text-emerald-400' : 'text-amber-400'}`}>
-                        {isUserBotRunning ? (
+                      <span className="text-xs text-slate-400">{headerModeLabel}</span>
+                      <span className={`text-xs font-bold flex items-center gap-1.5 ${headerModeActive ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {headerModeActive ? (
                           <>
                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                             ACTIVO

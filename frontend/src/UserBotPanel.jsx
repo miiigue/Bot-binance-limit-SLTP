@@ -391,7 +391,12 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
     });
   };
 
-  const isBotRunning = Boolean(botData?.bot_settings?.is_running);
+  const rawIsRunning = Boolean(botData?.bot_settings?.is_running);
+  const operatingMode = botData?.bot_settings?.operating_mode || 'COPY_TRADING';
+
+  const isCopyTradingActive = rawIsRunning && operatingMode === 'COPY_TRADING';
+  const isPersonalBotActive = rawIsRunning && operatingMode === 'PERSONAL_BOT';
+
   const hasKeys = Boolean(botData?.has_valid_keys);
   const balance = Number(botData?.balance_usdt || 0);
 
@@ -437,13 +442,24 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
             </div>
             <div>
               <span className="text-[10px] text-slate-500 block uppercase tracking-wider font-semibold">
-                {currentSubTab === 'my_bot' ? 'Estado Mi Bot' : 'Replicación Algorítmica'}
+                {currentSubTab === 'my_bot' ? 'Estado Mi Bot Personal' : 'Replicación Copy-Trading'}
               </span>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className={`w-3 h-3 rounded-full ${isBotRunning ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'}`}></span>
-                <span className={`text-xs font-bold ${isBotRunning ? 'text-emerald-400' : 'text-slate-400'}`}>
-                  {isBotRunning ? 'OPERACIÓN EN VIVO' : 'PAUSADO'}
-                </span>
+                {currentSubTab === 'my_bot' ? (
+                  <>
+                    <span className={`w-3 h-3 rounded-full ${isPersonalBotActive ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'}`}></span>
+                    <span className={`text-xs font-bold ${isPersonalBotActive ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      {isPersonalBotActive ? 'OPERACIÓN EN VIVO' : (isCopyTradingActive ? 'PAUSADO (Copy-Trading Activo)' : 'PAUSADO')}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className={`w-3 h-3 rounded-full ${isCopyTradingActive ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'}`}></span>
+                    <span className={`text-xs font-bold ${isCopyTradingActive ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      {isCopyTradingActive ? 'COPIANDO TRADES EN VIVO' : (isPersonalBotActive ? 'PAUSADO (Bot Personal Activo)' : 'PAUSADO')}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -474,6 +490,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           }`}
         >
           <span>🤖</span> Mi Bot (Elegir Estrategia)
+          {isPersonalBotActive && <span className="w-2 h-2 rounded-full bg-emerald-950 animate-pulse"></span>}
         </button>
         <button
           type="button"
@@ -485,6 +502,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           }`}
         >
           <span>👥</span> Copy-Trading Espejo
+          {isCopyTradingActive && <span className="w-2 h-2 rounded-full bg-emerald-950 animate-pulse"></span>}
         </button>
       </div>
 
@@ -496,7 +514,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           
           {/* Tarjeta de Control Principal del Bot Personal */}
           <div className={`border rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col justify-between transition-all duration-300 ${
-            isBotRunning 
+            isPersonalBotActive 
               ? 'bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/50 shadow-emerald-500/10' 
               : 'bg-slate-900/90 border-slate-800'
           }`}>
@@ -505,8 +523,12 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                   <span>⚡</span> Panel Operativo de tu Bot Personal
                 </h3>
-                <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2.5 py-0.5 rounded-lg border border-amber-400/30 font-bold">
-                  {isBotRunning ? 'ACTIVO' : 'LISTO'}
+                <span className={`text-[10px] px-2.5 py-0.5 rounded-lg border font-bold ${
+                  isPersonalBotActive
+                    ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
+                    : 'text-amber-400 bg-amber-400/10 border-amber-400/30'
+                }`}>
+                  {isPersonalBotActive ? 'EN VIVO' : 'LISTO'}
                 </span>
               </div>
 
@@ -531,10 +553,16 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 </div>
               </div>
 
+              {isCopyTradingActive && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-300 text-xs mb-4">
+                  ℹ️ Tu cuenta está actualmente en <strong>Modo Copy-Trading Espejo</strong>. Al presionar <strong>"INICIAR MI BOT CON ESTA ESTRATEGIA"</strong>, se pausará la replicación de Copy-Trading y tu cuenta operará de forma autónoma con tu estrategia seleccionada.
+                </div>
+              )}
+
               <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                {isBotRunning 
+                {isPersonalBotActive 
                   ? '🟢 Tu bot personal está operando en vivo en Binance Futures con la estrategia asignada. Para cambiar de estrategia o parámetros, pausa primero el bot.'
-                  : '⏸️ Bot pausado. Selecciona tu estrategia favorita en el catálogo de abajo, define tu capital y presiona el botón para comenzar a operar.'}
+                  : '⏸️ Bot personal pausado. Selecciona tu estrategia favorita en el catálogo de abajo, define tu capital y presiona el botón para comenzar a operar.'}
               </p>
             </div>
 
@@ -542,14 +570,14 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
               onClick={handleToggleSync}
               disabled={actionLoading}
               className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
-                isBotRunning
+                isPersonalBotActive
                   ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
                   : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
               }`}
             >
               {actionLoading ? (
                 <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-              ) : isBotRunning ? (
+              ) : isPersonalBotActive ? (
                 <><span>⏸️</span> PAUSAR MI BOT PERSONAL</>
               ) : (
                 <><span>⚡</span> INICIAR MI BOT CON ESTA ESTRATEGIA</>
@@ -752,7 +780,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
       {currentSubTab === 'copy_trading' && (
         <div className="space-y-6 animate-fadeIn">
           <div className={`border rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col justify-between transition-all duration-300 ${
-            isBotRunning 
+            isCopyTradingActive 
               ? 'bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/50 shadow-emerald-500/10' 
               : 'bg-slate-900/90 border-slate-800'
           }`}>
@@ -775,12 +803,14 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-400 font-medium">Estado de Replicación:</span>
-                  <span className={`font-bold ${isBotRunning ? 'text-emerald-400 flex items-center gap-1.5' : 'text-slate-400'}`}>
-                    {isBotRunning ? (
+                  <span className={`font-bold ${isCopyTradingActive ? 'text-emerald-400 flex items-center gap-1.5' : 'text-slate-400'}`}>
+                    {isCopyTradingActive ? (
                       <>
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                         COPIANDO TRADES EN VIVO
                       </>
+                    ) : isPersonalBotActive ? (
+                      '⏸️ PAUSADO (Modo Bot Personal Activo)'
                     ) : (
                       '⏸️ PAUSADO'
                     )}
@@ -788,8 +818,14 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 </div>
               </div>
 
+              {isPersonalBotActive && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-300 text-xs mb-4">
+                  ℹ️ Tu cuenta está actualmente operando en <strong>Modo Bot Personal</strong>. Al presionar <strong>"ACTIVAR REPLICACIÓN AUTOMÁTICA"</strong>, se pausará tu bot personal y pasarás a copiar al algoritmo institucional en tiempo real.
+                </div>
+              )}
+
               <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                {isBotRunning 
+                {isCopyTradingActive 
                   ? '🟢 Tu cuenta de Binance está vinculada y ejecutará cada orden de compra y venta del algoritmo institucional en tiempo real.'
                   : '⏸️ La replicación está en pausa. Presiona el botón verde para activar el copiado automático de trades.'}
               </p>
@@ -799,14 +835,14 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
               onClick={handleToggleSync}
               disabled={actionLoading}
               className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
-                isBotRunning
+                isCopyTradingActive
                   ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
                   : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
               }`}
             >
               {actionLoading ? (
                 <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-              ) : isBotRunning ? (
+              ) : isCopyTradingActive ? (
                 <><span>⏸️</span> PAUSAR REPLICACIÓN DE TRADES</>
               ) : (
                 <><span>⚡</span> ACTIVAR REPLICACIÓN AUTOMÁTICA</>
