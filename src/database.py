@@ -2448,8 +2448,8 @@ def get_user_bot_settings(user_id: int) -> dict:
         cursor.execute("""
             INSERT INTO user_bot_settings (
                 user_id, is_running, allocated_usdt, leverage, margin_type,
-                symbols_to_trade, strategy_name, max_open_positions, updated_at
-            ) VALUES (?, ?, 100.0, 10, 'ISOLATED', 'BTCUSDT,ETHUSDT,SOLUSDT', 'WTN Scalper Pro', 3, ?)
+                symbols_to_trade, strategy_name, operating_mode, max_open_positions, updated_at
+            ) VALUES (?, ?, 100.0, 10, 'ISOLATED', 'BTCUSDT,ETHUSDT,SOLUSDT', 'WTN Scalper Pro', 'COPY_TRADING', 3, ?)
         """, (user_id, False, now_str))
         conn.commit()
 
@@ -2481,7 +2481,7 @@ def update_user_bot_settings(user_id: int, **kwargs) -> bool:
 
         allowed_fields = [
             'is_running', 'allocated_usdt', 'leverage', 'margin_type',
-            'symbols_to_trade', 'strategy_name', 'max_open_positions',
+            'symbols_to_trade', 'strategy_name', 'operating_mode', 'max_open_positions',
             'last_started_at', 'last_stopped_at', 'error_message'
         ]
 
@@ -2513,20 +2513,22 @@ def update_user_bot_settings(user_id: int, **kwargs) -> bool:
         conn.close()
 
 
-def get_all_active_bot_users() -> list:
+def get_all_active_bot_users(operating_mode: str = None) -> list:
     """
     Retorna la lista de todos los usuarios que tienen su bot encendido (is_running = 1)
     junto con sus credenciales de API descifradas y parámetros de trading.
+    Si operating_mode está especificado (ej. 'COPY_TRADING' o 'PERSONAL_BOT'), filtra únicamente ese modo.
     """
     conn = get_db_connection()
     if not conn:
         return []
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        sql = """
             SELECT u.id as user_id, u.username, u.email, u.status as user_status,
                    b.is_running, b.allocated_usdt, b.leverage, b.margin_type,
-                   b.symbols_to_trade, b.strategy_name, b.max_open_positions,
+                   b.symbols_to_trade, b.strategy_name, COALESCE(b.operating_mode, 'COPY_TRADING') as operating_mode,
+                   b.max_open_positions,
                    k.api_key_encrypted, k.api_secret_encrypted, k.api_key_masked,
                    k.is_testnet, k.is_valid, k.balance_detected
             FROM users u
@@ -2535,7 +2537,16 @@ def get_all_active_bot_users() -> list:
             WHERE b.is_running = TRUE 
               AND u.status IN ('active', 'pending')
               AND k.is_valid = TRUE
-        """)
+        """
+        params = []
+        if operating_mode:
+            if operating_mode.upper() == 'COPY_TRADING':
+                sql += " AND (b.operating_mode IS NULL OR b.operating_mode = 'COPY_TRADING')"
+            else:
+                sql += " AND b.operating_mode = ?"
+                params.append(operating_mode.upper())
+
+        cursor.execute(sql, params)
         rows = cursor.fetchall()
         active_list = []
         for r in rows:

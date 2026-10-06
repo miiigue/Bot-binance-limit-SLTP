@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS user_bot_settings (
     margin_type VARCHAR(16) DEFAULT 'ISOLATED',
     symbols_to_trade TEXT DEFAULT 'BTCUSDT,ETHUSDT,SOLUSDT',
     strategy_name VARCHAR(64) DEFAULT 'WTN Scalper Pro',
+    operating_mode VARCHAR(32) DEFAULT 'COPY_TRADING',
     max_open_positions INTEGER DEFAULT 3,
     last_started_at TIMESTAMP,
     last_stopped_at TIMESTAMP,
@@ -215,7 +216,8 @@ def init_postgres_schema(pg_url: str):
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_ip VARCHAR(64);",
             "ALTER TABLE user_api_keys ADD COLUMN IF NOT EXISTS api_base_url VARCHAR(255) DEFAULT NULL;",
             "ALTER TABLE user_trades ADD COLUMN IF NOT EXISTS is_testnet BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE user_bot_settings ADD COLUMN IF NOT EXISTS error_message TEXT;"
+            "ALTER TABLE user_bot_settings ADD COLUMN IF NOT EXISTS error_message TEXT;",
+            "ALTER TABLE user_bot_settings ADD COLUMN IF NOT EXISTS operating_mode VARCHAR(32) DEFAULT 'COPY_TRADING';"
         ]
         for mig in migrations:
             try:

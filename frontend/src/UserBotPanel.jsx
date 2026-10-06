@@ -302,7 +302,8 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           strategy_name: selectedStrategy,
           allocated_usdt: cap,
           leverage: Number(leverage),
-          margin_type: marginType
+          margin_type: marginType,
+          operating_mode: 'PERSONAL_BOT'
         })
       });
       const data = await resp.json();
@@ -326,6 +327,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
 
     const nextState = !isBotRunning;
     const isMarketplaceMode = (currentSubTab === 'my_bot');
+    const targetMode = isMarketplaceMode ? 'PERSONAL_BOT' : 'COPY_TRADING';
     const stratTitle = isMarketplaceMode 
       ? (selectedStrategy || botData?.bot_settings?.strategy_name || 'Estrategia seleccionada')
       : (botData?.active_strategy || activeStrategyName || 'Estrategia Maestra');
@@ -336,8 +338,8 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
         : (isMarketplaceMode ? '¿Pausar tu Bot Personal?' : '¿Pausar Replicación de Trades?'),
       message: nextState 
         ? (isMarketplaceMode 
-            ? `Tu bot personal comenzará a operar en Binance Futures con la estrategia "${stratTitle}", con $${allocatedUsdt} USDT y ${leverage}x de apalancamiento.`
-            : 'El algoritmo cuantitativo comenzará a copiar en tiempo real cada orden de compra y venta en tu cuenta de Binance Futures.')
+            ? `Tu bot personal comenzará a operar en Binance Futures con la estrategia "${stratTitle}", con $${allocatedUsdt} USDT y ${leverage}x de apalancamiento (Modo Autónomo).`
+            : 'El algoritmo cuantitativo comenzará a copiar en tiempo real cada orden de compra y venta en tu cuenta de Binance Futures (Modo Copy-Trading Espejo).')
         : 'Se pausará la operativa en tu cuenta de Binance. Las órdenes abiertas mantendrán sus Stop Loss en el exchange.',
       confirmText: nextState 
         ? (isMarketplaceMode ? 'Sí, Iniciar Mi Bot' : 'Sí, Activar Replicación') 
@@ -355,7 +357,8 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 strategy_name: selectedStrategy,
                 allocated_usdt: Number(allocatedUsdt),
                 leverage: Number(leverage),
-                margin_type: marginType
+                margin_type: marginType,
+                operating_mode: 'PERSONAL_BOT'
               })
             });
           }
@@ -363,7 +366,10 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           const resp = await authFetch('/api/user/bot/toggle', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ is_running: nextState })
+            body: JSON.stringify({ 
+              is_running: nextState,
+              operating_mode: targetMode
+            })
           });
           const resJson = await resp.json();
           if (!resp.ok) throw new Error(resJson.message);

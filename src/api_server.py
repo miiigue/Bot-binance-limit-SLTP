@@ -1259,20 +1259,28 @@ def user_bot_toggle_endpoint():
         settings = get_user_bot_settings(user_id=user_id)
         current_state = bool(settings.get('is_running', False))
         target_state = bool(data.get('is_running', not current_state))
+        target_mode = str(data.get('operating_mode', '')).upper().strip()
 
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        toggle_kwargs = {'is_running': target_state, 'error_message': None}
+        if target_mode in ['COPY_TRADING', 'PERSONAL_BOT']:
+            toggle_kwargs['operating_mode'] = target_mode
+
         if target_state:
-            ok = update_user_bot_settings(user_id=user_id, is_running=True, last_started_at=now_str, error_message=None)
+            toggle_kwargs['last_started_at'] = now_str
+            ok = update_user_bot_settings(user_id=user_id, **toggle_kwargs)
             if not ok:
                 return jsonify({"status": "error", "message": "No se pudo actualizar el estado del bot en la base de datos."}), 500
-            api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) ENCENDIÓ su bot personal.")
-            msg = "¡Bot personal activado! El algoritmo institucional operará en tu cuenta de Binance."
+            mode_label = "Copy-Trading Espejo" if target_mode == 'COPY_TRADING' else "Bot Personal Autónomo"
+            api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) ENCENDIÓ su bot en modo {mode_label}.")
+            msg = f"¡Bot activado en modo {mode_label}! El sistema operará según tus preferencias."
         else:
-            ok = update_user_bot_settings(user_id=user_id, is_running=False, last_stopped_at=now_str)
+            toggle_kwargs['last_stopped_at'] = now_str
+            ok = update_user_bot_settings(user_id=user_id, **toggle_kwargs)
             if not ok:
                 return jsonify({"status": "error", "message": "No se pudo pausar el bot en la base de datos."}), 500
-            api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) PAUSÓ su bot personal.")
-            msg = "Bot personal pausado. No se abrirán nuevas operaciones."
+            api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) PAUSÓ su bot.")
+            msg = "Bot pausado. No se abrirán nuevas operaciones."
 
         new_settings = get_user_bot_settings(user_id=user_id)
         return jsonify({
@@ -1317,6 +1325,10 @@ def user_bot_update_settings_endpoint():
             strat_name = str(data['strategy_name']).strip()
             if strat_name:
                 updates['strategy_name'] = strat_name
+        if 'operating_mode' in data:
+            mode = str(data['operating_mode']).upper().strip()
+            if mode in ['COPY_TRADING', 'PERSONAL_BOT']:
+                updates['operating_mode'] = mode
 
         if updates:
             update_user_bot_settings(user_id=user_id, **updates)

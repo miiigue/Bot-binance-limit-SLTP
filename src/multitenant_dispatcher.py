@@ -60,7 +60,7 @@ def dispatch_entry_order_to_users(symbol: str, signal_side: str, entry_price: fl
     y tengan el símbolo incluido en su configuración.
     """
     logger = get_logger()
-    active_users = get_all_active_bot_users()
+    active_users = get_all_active_bot_users(operating_mode='COPY_TRADING')
     if not active_users:
         return {"dispatched": 0, "success": 0, "errors": 0}
 
@@ -177,7 +177,7 @@ def dispatch_exit_order_to_users(symbol: str, exit_reason: str, exit_price: floa
     un Take Profit, Stop Loss o señal de salida algorítmica.
     """
     logger = get_logger()
-    active_users = get_all_active_bot_users()
+    active_users = get_all_active_bot_users(operating_mode='COPY_TRADING')
     if not active_users:
         return {"dispatched": 0, "closed": 0}
 
