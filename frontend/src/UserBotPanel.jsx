@@ -42,7 +42,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
   const [catalogStrategies, setCatalogStrategies] = useState([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState('');
-  const [expandedStrategyId, setExpandedStrategyId] = useState(null);
+  const [isCatalogOpen, setIsCatalogOpen] = useState(true);
   const [allocatedUsdt, setAllocatedUsdt] = useState(100);
   const [leverage, setLeverage] = useState(10);
   const [marginType, setMarginType] = useState('ISOLATED');
@@ -646,147 +646,108 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                   Elige la estrategia que prefieras para tu bot. Todas han sido curadas y optimizadas institucionalmente por el Administrador.
                 </p>
               </div>
-              <button
-                onClick={fetchStrategiesCatalog}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition self-start sm:self-auto"
-              >
-                ↻ Actualizar Catálogo
-              </button>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsCatalogOpen(prev => !prev)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-indigo-500/40 rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95"
+                >
+                  <span>{isCatalogOpen ? '🔼 Ocultar Lista' : '🔽 Desplegar Lista Completa'}</span>
+                </button>
+                <button
+                  onClick={fetchStrategiesCatalog}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition"
+                >
+                  ↻ Actualizar Catálogo
+                </button>
+              </div>
             </div>
 
-            {isLoadingCatalog && catalogStrategies.length === 0 ? (
-              <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
-                <div className="w-6 h-6 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
-                <span>Cargando catálogo de estrategias autorizadas...</span>
-              </div>
-            ) : catalogStrategies.length === 0 ? (
-              <div className="p-8 bg-slate-950/60 border border-slate-800 rounded-2xl text-center text-slate-400 text-xs">
-                No hay estrategias marcadas como públicas en este momento. El administrador activará opciones en breve.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {catalogStrategies.map((strat) => {
-                  const isSelected = (selectedStrategy === strat.name);
-                  const isExpanded = (expandedStrategyId === strat.name);
-                  const cfg = strat.parameters || {};
-                  const riskColor = 
-                    strat.risk_level === 'BAJO' ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30' :
-                    strat.risk_level === 'ALTO' ? 'text-rose-400 bg-rose-500/15 border-rose-500/30' :
-                    'text-amber-400 bg-amber-500/15 border-amber-500/30';
+            {isCatalogOpen && (
+              <>
+                {isLoadingCatalog && catalogStrategies.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
+                    <div className="w-6 h-6 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Cargando catálogo de estrategias autorizadas...</span>
+                  </div>
+                ) : catalogStrategies.length === 0 ? (
+                  <div className="p-8 bg-slate-950/60 border border-slate-800 rounded-2xl text-center text-slate-400 text-xs">
+                    No hay estrategias marcadas como públicas en este momento. El administrador activará opciones en breve.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {catalogStrategies.map((strat) => {
+                      const isSelected = (selectedStrategy === strat.name);
+                      const riskColor = 
+                        strat.risk_level === 'BAJO' ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30' :
+                        strat.risk_level === 'ALTO' ? 'text-rose-400 bg-rose-500/15 border-rose-500/30' :
+                        'text-amber-400 bg-amber-500/15 border-amber-500/30';
 
-                  return (
-                    <div
-                      key={strat.id || strat.name}
-                      onClick={() => setSelectedStrategy(strat.name)}
-                      className={`cursor-pointer rounded-2xl p-5 border transition-all relative flex flex-col justify-between overflow-hidden ${
-                        isSelected
-                          ? 'bg-gradient-to-b from-indigo-950/60 via-slate-900 to-slate-950 border-indigo-500 shadow-xl shadow-indigo-500/10 ring-2 ring-indigo-500/50'
-                          : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-                          <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${riskColor}`}>
-                            RIESGO {strat.risk_level || 'MODERADO'}
-                          </span>
-                          {isSelected && (
-                            <span className="text-[10px] font-black text-indigo-400 bg-indigo-500/20 px-2 py-0.5 rounded-md border border-indigo-500/40">
-                              SELECCIONADA
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Título sanitizado con break-words para evitar desbordamientos visuales */}
-                        <h4 
-                          className="text-sm font-black text-white mb-2 leading-snug break-all tracking-tight"
-                          title={strat.display_name || strat.name}
+                      return (
+                        <div
+                          key={strat.id || strat.name}
+                          onClick={() => setSelectedStrategy(strat.name)}
+                          className={`cursor-pointer rounded-2xl p-5 border transition-all relative flex flex-col justify-between overflow-hidden ${
+                            isSelected
+                              ? 'bg-gradient-to-b from-indigo-950/60 via-slate-900 to-slate-950 border-indigo-500 shadow-xl shadow-indigo-500/10 ring-2 ring-indigo-500/50'
+                              : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
+                          }`}
                         >
-                          {strat.display_name || strat.name}
-                        </h4>
-
-                        <p className="text-xs text-slate-400 mb-4 leading-relaxed line-clamp-3">
-                          {strat.description || 'Estrategia cuantitativa con gestión dinámica de riesgo y toma de ganancias inteligente.'}
-                        </p>
-
-                        {/* PANEL DESPLEGABLE DE DETALLES TÉCNICOS */}
-                        {isExpanded && (
-                          <div className="mb-4 p-3 bg-slate-900/95 rounded-xl border border-indigo-500/40 space-y-2 text-xs animate-fadeIn shadow-inner">
-                            <div className="text-[10px] font-black text-indigo-300 uppercase tracking-wider flex items-center justify-between border-b border-slate-800 pb-1.5">
-                              <span>📋 Parámetros de la Estrategia</span>
-                              <span className="text-[9px] text-slate-400">Verificado</span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
-                              <div className="bg-slate-950 p-1.5 rounded border border-slate-800">
-                                <span className="text-slate-500 block text-[9px] uppercase font-sans">Orden Entrada</span>
-                                <span className="text-amber-300 font-bold">{cfg.entryOrderType || cfg.entry_order_type || 'MARKET'}</span>
-                              </div>
-                              <div className="bg-slate-950 p-1.5 rounded border border-slate-800">
-                                <span className="text-slate-500 block text-[9px] uppercase font-sans">RSI & Intervalo</span>
-                                <span className="text-sky-300 font-bold">{cfg.rsiInterval || '5m'} • RSI({cfg.rsiPeriod || 14})</span>
-                              </div>
-                              <div className="bg-slate-950 p-1.5 rounded border border-slate-800">
-                                <span className="text-slate-500 block text-[9px] uppercase font-sans">Take Profit</span>
-                                <span className="text-emerald-400 font-bold">+{cfg.takeProfitUSDT ?? cfg.take_profit_usdt ?? 20} USDT</span>
-                              </div>
-                              <div className="bg-slate-950 p-1.5 rounded border border-slate-800">
-                                <span className="text-slate-500 block text-[9px] uppercase font-sans">Stop Loss</span>
-                                <span className="text-rose-400 font-bold">-${Math.abs(cfg.stopLossUSDT ?? cfg.stop_loss_usdt ?? 10)} USDT</span>
-                              </div>
-                              <div className="bg-slate-950 p-1.5 rounded border border-slate-800 col-span-2">
-                                <span className="text-slate-500 block text-[9px] uppercase font-sans">Módulos de Seguridad</span>
-                                <span className="text-slate-200 text-[10px] flex flex-wrap gap-1 mt-0.5 font-sans">
-                                  {cfg.enableDcaReentry && <span className="px-1.5 py-0.5 bg-cyan-950 text-cyan-300 rounded border border-cyan-800">🔄 DCA</span>}
-                                  {cfg.enableHedgeProtection && <span className="px-1.5 py-0.5 bg-indigo-950 text-indigo-300 rounded border border-indigo-800">🛡️ Smart Hedge</span>}
-                                  {cfg.enableMarketRegimeFilter && <span className="px-1.5 py-0.5 bg-purple-950 text-purple-300 rounded border border-purple-800">📈 HTF Regime</span>}
-                                  {cfg.enableEmergencyCrashExit && <span className="px-1.5 py-0.5 bg-rose-950 text-rose-300 rounded border border-rose-800">🚨 Anti-Crash</span>}
-                                  {!cfg.enableDcaReentry && !cfg.enableHedgeProtection && !cfg.enableMarketRegimeFilter && !cfg.enableEmergencyCrashExit && <span className="text-slate-400 italic">Eficacia Estándar</span>}
+                          <div>
+                            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                              <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${riskColor}`}>
+                                RIESGO {strat.risk_level || 'MODERADO'}
+                              </span>
+                              {isSelected && (
+                                <span className="text-[10px] font-black text-indigo-400 bg-indigo-500/20 px-2 py-0.5 rounded-md border border-indigo-500/40">
+                                  SELECCIONADA
                                 </span>
-                              </div>
+                              )}
+                            </div>
+
+                            {/* Título sanitizado con break-words para evitar desbordamientos visuales */}
+                            <h4 
+                              className="text-sm font-black text-white mb-2 leading-snug break-all tracking-tight"
+                              title={strat.display_name || strat.name}
+                            >
+                              {strat.display_name || strat.name}
+                            </h4>
+
+                            <p className="text-xs text-slate-400 mb-4 leading-relaxed line-clamp-3">
+                              {strat.description || 'Estrategia cuantitativa con gestión dinámica de riesgo y toma de ganancias inteligente.'}
+                            </p>
+                          </div>
+
+                          <div className="border-t border-slate-800/80 pt-3 flex items-center justify-between gap-2 mt-auto">
+                            <div>
+                              <span className="text-[10px] text-slate-500 block uppercase font-bold">Capital Sugerido</span>
+                              <span className="text-xs font-mono font-black text-amber-400">
+                                Min. ${strat.min_capital_usdt || 50} USDT
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedStrategy(strat.name);
+                                }}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                                  isSelected
+                                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow'
+                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                                }`}
+                              >
+                                {isSelected ? '✓ Seleccionada' : 'Seleccionar'}
+                              </button>
                             </div>
                           </div>
-                        )}
-                      </div>
-
-                      <div className="border-t border-slate-800/80 pt-3 flex items-center justify-between gap-2 mt-auto">
-                        <div>
-                          <span className="text-[10px] text-slate-500 block uppercase font-bold">Capital Sugerido</span>
-                          <span className="text-xs font-mono font-black text-amber-400">
-                            Min. ${strat.min_capital_usdt || 50} USDT
-                          </span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          {/* BOTÓN DESPLEGAR / VER DETALLE */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setExpandedStrategyId(isExpanded ? null : strat.name);
-                            }}
-                            className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-indigo-300 border border-indigo-700/60 transition flex items-center gap-1 active:scale-95"
-                            title="Desplegar o replegar la especificación técnica completa de esta estrategia"
-                          >
-                            <span>{isExpanded ? '🔼 Ocultar' : '👁️ Desplegar / Ver'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedStrategy(strat.name);
-                            }}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                              isSelected
-                                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow'
-                                : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                            }`}
-                          >
-                            {isSelected ? '✓ Seleccionada' : 'Seleccionar'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
 
             {/* Asignación de Capital y Apalancamiento */}

@@ -60,12 +60,15 @@ function MainDashboard() {
   const [userBotHeader, setUserBotHeader] = useState(null);
 
   const activeStrategyDisplay = useMemo(() => {
+    if (activeTab === 'my_bot' && userBotHeader?.bot_settings?.strategy_name) {
+      return userBotHeader.bot_settings.strategy_name;
+    }
     if (activeStrategyDisplayName) return activeStrategyDisplayName;
     const name = config?.activeStrategyName;
     if (!name) return 'v3_RSI-SNIPER-MOMENTUM_v3';
     const found = availableStrategies?.find(s => s.name === name || s.filename === name || s.id === name);
     return found?.name || name;
-  }, [activeStrategyDisplayName, config?.activeStrategyName, availableStrategies]);
+  }, [activeTab, userBotHeader, activeStrategyDisplayName, config?.activeStrategyName, availableStrategies]);
 
   // Pestañas dinámicas según el rol:
   // Admin: 'monitor', 'config', 'performance', 'investors', 'my_bot', 'copy_trading', 'chart', 'radar', 'backtest'

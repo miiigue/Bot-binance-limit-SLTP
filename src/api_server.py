@@ -2406,30 +2406,89 @@ def reset_demo_account_endpoint():
     logger = get_logger()
     logger.warning("Solicitud POST /api/demo/reset recibida. Reiniciando cuenta Demo/Testnet de Binance...")
     try:
+        # Extraer token de usuario si está presente para manejar credenciales de usuario o master
+        user_id = None
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            try:
+                import jwt
+                from src.database import JWT_SECRET
+                payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+                user_id = payload.get('user_id')
+            except Exception:
+                pass
+
         closed_count = 0
-        # 1. Cancelar órdenes y cerrar posiciones reales activas en Binance Testnet
+        clients_to_check = []
+
+        # Cliente Master / Testnet General
         try:
-            from src.binance_client import get_futures_client, get_futures_position_information, create_futures_market_order
-            client = get_futures_client()
-            if client:
-                positions = get_futures_position_information() or []
-                for p in positions:
+            from src.binance_client import get_futures_client
+            master_client = get_futures_client()
+            if master_client:
+                clients_to_check.append(('master', master_client))
+        except Exception as e_m:
+            logger.warning(f"No se pudo obtener el cliente master para reset demo: {e_m}")
+
+        # Cliente de usuario si tiene API keys registradas
+        if user_id:
+            try:
+                from src.database import get_user_api_keys, update_user_bot_settings
+                from src.binance_client import get_user_futures_client
+                # Pausar bot personal del usuario
+                update_user_bot_settings(user_id=user_id, is_running=False)
+                user_keys = get_user_api_keys(user_id=user_id, decrypt=True)
+                if user_keys and user_keys.get('api_key') and user_keys.get('api_secret'):
+                    u_client = get_user_futures_client(
+                        user_keys['api_key'],
+                        user_keys['api_secret'],
+                        is_testnet=user_keys.get('is_testnet', True),
+                        base_url=user_keys.get('api_base_url')
+                    )
+                    if u_client:
+                        clients_to_check.append((f'user_{user_id}', u_client))
+            except Exception as e_u:
+                logger.warning(f"Aviso al obtener cliente de usuario {user_id} para reset demo: {e_u}")
+
+        # Cancelar órdenes y cerrar posiciones en todos los clientes aplicables
+        for c_label, cli in clients_to_check:
+            try:
+                acc_positions = cli.account().get('positions', [])
+                for p in acc_positions:
                     sym = p.get('symbol')
                     if not sym:
                         continue
+                    amt = float(p.get('positionAmt', 0))
+                    # Cancelar órdenes abiertas para este símbolo
                     try:
-                        client.cancel_open_orders(symbol=sym)
+                        cli.cancel_open_orders(symbol=sym)
                     except Exception:
                         pass
-                    amt = float(p.get('positionAmt', 0))
+
                     if abs(amt) > 1e-9:
                         side = 'SELL' if amt > 0 else 'BUY'
                         raw_ps = p.get('positionSide', 'BOTH')
-                        order = create_futures_market_order(sym, side=side, quantity=abs(amt), reduce_only=True, position_side=raw_ps)
-                        if order:
-                            closed_count += 1
-        except Exception as e_bin:
-            logger.warning(f"Aviso al cerrar posiciones en Binance Testnet durante demo reset: {e_bin}")
+                        try:
+                            from src.binance_client import adjust_quantity_for_symbol, is_hedge_mode
+                            adj_q = adjust_quantity_for_symbol(sym, abs(amt)) or abs(amt)
+                            order_params = {
+                                'symbol': sym.upper(),
+                                'side': side,
+                                'type': 'MARKET',
+                                'quantity': adj_q,
+                                'positionSide': raw_ps
+                            }
+                            if raw_ps == 'BOTH':
+                                order_params['reduceOnly'] = 'true'
+                            order_res = cli.new_order(**order_params)
+                            if order_res and isinstance(order_res, dict) and order_res.get('orderId'):
+                                closed_count += 1
+                                logger.info(f"[{c_label}] Posición {sym} ({amt}) cerrada exitosamente en Binance Testnet/Demo.")
+                        except Exception as e_ord:
+                            logger.error(f"[{c_label}] Error al enviar orden de cierre para {sym}: {e_ord}")
+            except Exception as e_cli:
+                logger.warning(f"Aviso al consultar posiciones para cliente {c_label}: {e_cli}")
 
         # 2. Resetear base de datos (trades y cutoff)
         from src.database import clear_trade_history
