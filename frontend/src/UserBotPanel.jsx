@@ -317,7 +317,16 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
     }
   };
 
-  // Activar / Pausar Operación Automática
+  const rawIsRunning = Boolean(botData?.bot_settings?.is_running);
+  const operatingMode = botData?.bot_settings?.operating_mode || 'COPY_TRADING';
+
+  const isCopyTradingActive = rawIsRunning && operatingMode === 'COPY_TRADING';
+  const isPersonalBotActive = rawIsRunning && operatingMode === 'PERSONAL_BOT';
+
+  const hasKeys = Boolean(botData?.has_valid_keys);
+  const balance = Number(botData?.balance_usdt || 0);
+
+  // Activar / Pausar Operación Automática según la pestaña activa
   const handleToggleSync = () => {
     if (!botData?.has_valid_keys) {
       setFeedback({ type: 'error', text: 'Primero debes conectar tus claves API de Binance para operar.' });
@@ -325,9 +334,13 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
       return;
     }
 
-    const nextState = !isBotRunning;
     const isMarketplaceMode = (currentSubTab === 'my_bot');
     const targetMode = isMarketplaceMode ? 'PERSONAL_BOT' : 'COPY_TRADING';
+
+    // Determinar si la modalidad de la pestaña actual está activa
+    const currentlyActive = isMarketplaceMode ? isPersonalBotActive : isCopyTradingActive;
+    const nextState = !currentlyActive;
+
     const stratTitle = isMarketplaceMode 
       ? (selectedStrategy || botData?.bot_settings?.strategy_name || 'Estrategia seleccionada')
       : (botData?.active_strategy || activeStrategyName || 'Estrategia Maestra');
@@ -390,15 +403,6 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
       }
     });
   };
-
-  const rawIsRunning = Boolean(botData?.bot_settings?.is_running);
-  const operatingMode = botData?.bot_settings?.operating_mode || 'COPY_TRADING';
-
-  const isCopyTradingActive = rawIsRunning && operatingMode === 'COPY_TRADING';
-  const isPersonalBotActive = rawIsRunning && operatingMode === 'PERSONAL_BOT';
-
-  const hasKeys = Boolean(botData?.has_valid_keys);
-  const balance = Number(botData?.balance_usdt || 0);
 
   if (isLoading && !botData) {
     return (
