@@ -2624,31 +2624,59 @@ def _format_short_datetime(dt_str: str) -> str:
         return str(dt_str)
 
 
-def get_user_trades(user_id: int, limit: int = 50) -> list:
+def clear_user_trades(user_id: int) -> bool:
+    """Elimina el historial de operaciones personales de un usuario y reinicia sus métricas."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM user_trades WHERE user_id = ?", (user_id,))
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("UPDATE user_bot_settings SET last_started_at = ?, is_running = FALSE WHERE user_id = ?", (now_str, user_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al limpiar trades de usuario {user_id}: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        conn.close()
+
+
+def get_user_trades(user_id: int, limit: int = 50, mode: str = None) -> list:
     """Retorna el historial de operaciones de la cuenta personal del usuario ejecutadas durante su sesión activa."""
     conn = get_db_connection()
     if not conn:
         return []
     try:
         cursor = conn.cursor()
-        # Consultar la fecha en que el usuario activó la replicación por última vez
-        cursor.execute("SELECT last_started_at FROM user_bot_settings WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT last_started_at, operating_mode FROM user_bot_settings WHERE user_id = ?", (user_id,))
         settings_row = cursor.fetchone()
         last_started_at = settings_row['last_started_at'] if settings_row and settings_row['last_started_at'] else None
+        current_op_mode = mode or (settings_row['operating_mode'] if settings_row and settings_row.get('operating_mode') else None)
+
+        query = "SELECT * FROM user_trades WHERE user_id = ?"
+        params = [user_id]
 
         if last_started_at:
-            cursor.execute("""
-                SELECT * FROM user_trades 
-                WHERE user_id = ? AND open_timestamp >= ? 
-                ORDER BY id DESC LIMIT ?
-            """, (user_id, last_started_at, limit))
-        else:
-            cursor.execute("""
-                SELECT * FROM user_trades 
-                WHERE user_id = ? 
-                ORDER BY id DESC LIMIT ?
-            """, (user_id, limit))
+            query += " AND open_timestamp >= ?"
+            params.append(last_started_at)
 
+        if current_op_mode:
+            clean_mode = str(current_op_mode).upper().strip()
+            if clean_mode in ['COPY_TRADING', 'COPYTRADING']:
+                query += " AND (close_reason LIKE '%Copy%' OR close_reason LIKE '%Espejo%' OR strategy_name LIKE '%Copy%' OR strategy_name = 'WTN Scalper Pro' OR close_reason IS NULL)"
+            elif clean_mode in ['PERSONAL_BOT', 'MY_BOT']:
+                query += " AND (close_reason LIKE '%Personal%' OR close_reason LIKE '%Bot%' OR strategy_name NOT LIKE '%Copy%')"
+
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+
+        cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
         result = []
         for r in rows:
@@ -2664,7 +2692,7 @@ def get_user_trades(user_id: int, limit: int = 50) -> list:
         conn.close()
 
 
-def get_user_trading_metrics(user_id: int) -> dict:
+def get_user_trading_metrics(user_id: int, mode: str = None) -> dict:
     """Calcula las métricas de rendimiento del bot personal del usuario durante la sesión activa."""
     conn = get_db_connection()
     if not conn:
@@ -2675,36 +2703,39 @@ def get_user_trading_metrics(user_id: int) -> dict:
         }
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT last_started_at FROM user_bot_settings WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT last_started_at, operating_mode FROM user_bot_settings WHERE user_id = ?", (user_id,))
         settings_row = cursor.fetchone()
         last_started_at = settings_row['last_started_at'] if settings_row and settings_row['last_started_at'] else None
+        current_op_mode = mode or (settings_row['operating_mode'] if settings_row and settings_row.get('operating_mode') else None)
+
+        where_conds = ["user_id = ?", "close_timestamp IS NOT NULL"]
+        params = [user_id]
 
         if last_started_at:
-            cursor.execute("""
-                SELECT COUNT(*) as total,
-                       SUM(CASE WHEN pnl_usdt > 0 THEN 1 ELSE 0 END) as wins,
-                       SUM(CASE WHEN pnl_usdt < 0 THEN 1 ELSE 0 END) as losses,
-                       SUM(pnl_usdt) as net_pnl,
-                       SUM(gross_pnl_usdt) as gross_pnl,
-                       SUM(commission_usdt) as total_comm,
-                       SUM(CASE WHEN pnl_usdt > 0 THEN pnl_usdt ELSE 0 END) as gross_win,
-                       SUM(CASE WHEN pnl_usdt < 0 THEN abs(pnl_usdt) ELSE 0 END) as gross_loss
-                FROM user_trades 
-                WHERE user_id = ? AND close_timestamp IS NOT NULL AND open_timestamp >= ?
-            """, (user_id, last_started_at))
-        else:
-            cursor.execute("""
-                SELECT COUNT(*) as total,
-                       SUM(CASE WHEN pnl_usdt > 0 THEN 1 ELSE 0 END) as wins,
-                       SUM(CASE WHEN pnl_usdt < 0 THEN 1 ELSE 0 END) as losses,
-                       SUM(pnl_usdt) as net_pnl,
-                       SUM(gross_pnl_usdt) as gross_pnl,
-                       SUM(commission_usdt) as total_comm,
-                       SUM(CASE WHEN pnl_usdt > 0 THEN pnl_usdt ELSE 0 END) as gross_win,
-                       SUM(CASE WHEN pnl_usdt < 0 THEN abs(pnl_usdt) ELSE 0 END) as gross_loss
-                FROM user_trades 
-                WHERE user_id = ? AND close_timestamp IS NOT NULL
-            """, (user_id,))
+            where_conds.append("open_timestamp >= ?")
+            params.append(last_started_at)
+
+        if current_op_mode:
+            clean_mode = str(current_op_mode).upper().strip()
+            if clean_mode in ['COPY_TRADING', 'COPYTRADING']:
+                where_conds.append("(close_reason LIKE '%Copy%' OR close_reason LIKE '%Espejo%' OR strategy_name LIKE '%Copy%' OR strategy_name = 'WTN Scalper Pro' OR close_reason IS NULL)")
+            elif clean_mode in ['PERSONAL_BOT', 'MY_BOT']:
+                where_conds.append("(close_reason LIKE '%Personal%' OR close_reason LIKE '%Bot%' OR strategy_name NOT LIKE '%Copy%')")
+
+        where_sql = " AND ".join(where_conds)
+
+        cursor.execute(f"""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN pnl_usdt > 0 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl_usdt < 0 THEN 1 ELSE 0 END) as losses,
+                   SUM(pnl_usdt) as net_pnl,
+                   SUM(gross_pnl_usdt) as gross_pnl,
+                   SUM(commission_usdt) as total_comm,
+                   SUM(CASE WHEN pnl_usdt > 0 THEN pnl_usdt ELSE 0 END) as gross_win,
+                   SUM(CASE WHEN pnl_usdt < 0 THEN abs(pnl_usdt) ELSE 0 END) as gross_loss
+            FROM user_trades 
+            WHERE {where_sql}
+        """, tuple(params))
 
         row = cursor.fetchone()
         if not row:

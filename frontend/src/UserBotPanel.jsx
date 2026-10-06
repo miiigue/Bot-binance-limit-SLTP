@@ -188,7 +188,8 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
   // Cargar trades personales del usuario
   const fetchUserTrades = useCallback(async () => {
     try {
-      const resp = await authFetch('/api/user/trades?limit=30');
+      const modeParam = currentSubTab === 'my_bot' ? 'PERSONAL_BOT' : 'COPY_TRADING';
+      const resp = await authFetch(`/api/user/trades?limit=50&mode=${modeParam}`);
       if (!resp.ok) return;
       const data = await resp.json();
       setTradesData(data.trades || []);
@@ -196,7 +197,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
     } catch (err) {
       console.error("Error al obtener operaciones del usuario:", err);
     }
-  }, [authFetch]);
+  }, [authFetch, currentSubTab]);
 
   useEffect(() => {
     fetchStrategiesCatalog();
@@ -451,20 +452,9 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-bold mb-3">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-              {currentSubTab === 'my_bot' 
-                ? 'MODALIDAD: CUENTA PROPIA BINANCE (BOT PERSONAL AUTÓNOMO)'
-                : 'MODALIDAD: CUENTA PROPIA BINANCE (COPY-TRADING)'}
-            </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               {currentSubTab === 'my_bot' ? '🤖 Mi Bot Personal' : '👥 Copy-Trading Binance'}
             </h1>
-            <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
-              {currentSubTab === 'my_bot'
-                ? 'Elige una de las estrategias curadas y autorizadas por el Administrador, asigna tu propio capital y apalancamiento, y pon a operar tu algoritmo personal en Binance Futures.'
-                : 'Mantén el control y custodia total de tus fondos en tu propio Binance. Las compras y ventas del algoritmo institucional gestionado por el Administrador se replican automáticamente en tu cuenta.'}
-            </p>
           </div>
 
           {/* Tarjeta de Saldo Binance y Estado */}
@@ -525,33 +515,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
         )}
       </div>
 
-      {/* Segmented Control: Selector de Modo (Mi Bot Personal vs Copy-Trading Espejo) */}
-      <div className="flex items-center gap-2 p-1.5 bg-slate-900 border border-slate-800 rounded-2xl max-w-md shadow-inner">
-        <button
-          type="button"
-          onClick={() => setCurrentSubTab('my_bot')}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
-            currentSubTab === 'my_bot'
-              ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/40'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <span>🤖</span> Mi Bot (Elegir Estrategia)
-          {isPersonalBotActive && <span className="w-2 h-2 rounded-full bg-emerald-950 animate-pulse"></span>}
-        </button>
-        <button
-          type="button"
-          onClick={() => setCurrentSubTab('copy_trading')}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
-            currentSubTab === 'copy_trading'
-              ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/40'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <span>👥</span> Copy-Trading Espejo
-          {isCopyTradingActive && <span className="w-2 h-2 rounded-full bg-emerald-950 animate-pulse"></span>}
-        </button>
-      </div>
+
 
       {/* ============================================================== */}
       {/* VISTA 1: MARKETPLACE DE ESTRATEGIAS (MODO MI BOT PERSONAL)     */}
@@ -918,15 +882,17 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
         </div>
       )}
 
-      {/* Sección 3: Historial y Métricas de Operaciones Replicadas */}
+      {/* Sección 3: Historial y Métricas de Operaciones Replicadas / Personales */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
           <div>
             <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <span>📊</span> Historial de Operaciones Replicadas en tu Binance
+              <span>📊</span> {currentSubTab === 'my_bot' ? 'Historial de Operaciones de tu Bot Personal' : 'Historial de Operaciones Replicadas (Copy-Trading)'}
             </h3>
             <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
-              Compras y ventas ejecutadas exclusivamente sobre tu cuenta de Binance Futures por el bot maestro.
+              {currentSubTab === 'my_bot'
+                ? 'Compras y ventas ejecutadas de forma autónoma por la estrategia asignada a tu bot personal.'
+                : 'Compras y ventas ejecutadas exclusivamente sobre tu cuenta de Binance Futures por el bot maestro.'}
             </p>
           </div>
           <button
@@ -954,7 +920,9 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           </div>
 
           <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
-            <span className="text-[10px] text-slate-500 uppercase block tracking-wider font-semibold">Trades Replicados</span>
+            <span className="text-[10px] text-slate-500 uppercase block tracking-wider font-semibold">
+              {currentSubTab === 'my_bot' ? 'Trades Ejecutados' : 'Trades Replicados'}
+            </span>
             <span className="text-lg font-black font-mono text-white">
               {metricsData?.total_trades || 0}
             </span>
@@ -968,7 +936,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           </div>
         </div>
 
-        {/* Gráfico de Crecimiento de Capital Personal (Copy-Trading) */}
+        {/* Gráfico de Crecimiento de Capital Personal */}
         {userEquityPoints.length > 1 && (() => {
           const minE = Math.min(0, ...userEquityPoints.map(p => p.cumulative));
           const maxE = Math.max(0.1, ...userEquityPoints.map(p => p.cumulative));
@@ -989,7 +957,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
             <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-white flex items-center gap-1.5">
-                  <span>📈 Curva de Capital de tu Cuenta (Copy-Trading)</span>
+                  <span>📈 Curva de Capital ({currentSubTab === 'my_bot' ? 'Bot Personal' : 'Copy-Trading'})</span>
                 </span>
                 <span className={`font-mono font-black ${lastPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {lastPnl >= 0 ? '+' : ''}${lastPnl.toFixed(4)} USDT Acumulados
@@ -1017,7 +985,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           );
         })()}
 
-        {/* Tabla de Operaciones Replicadas */}
+        {/* Tabla de Operaciones */}
         <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-900/90 text-slate-400 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-800">
@@ -1067,8 +1035,10 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-slate-500 text-xs">
-                    No hay operaciones cerradas registradas para esta sesión de copytrading. Las nuevas posiciones de la estrategia cuantitativa activa quedarán registradas aquí.
+                  <td colSpan={9} className="p-8 text-center text-slate-500 text-xs">
+                    {currentSubTab === 'my_bot'
+                      ? 'No hay operaciones cerradas registradas para esta sesión de tu bot personal. Las nuevas posiciones ejecutadas por tu estrategia quedarán registradas aquí.'
+                      : 'No hay operaciones cerradas registradas para esta sesión de copytrading. Las nuevas posiciones de la estrategia cuantitativa activa quedarán registradas aquí.'}
                   </td>
                 </tr>
               )}

@@ -1351,8 +1351,9 @@ def user_trades_endpoint():
     try:
         user_id = request.current_user['user_id']
         limit = min(200, int(request.args.get('limit', 50)))
-        trades = get_user_trades(user_id=user_id, limit=limit)
-        metrics = get_user_trading_metrics(user_id=user_id)
+        mode = request.args.get('mode')
+        trades = get_user_trades(user_id=user_id, limit=limit, mode=mode)
+        metrics = get_user_trading_metrics(user_id=user_id, mode=mode)
         return jsonify({
             "status": "success",
             "trades": trades,
@@ -2491,8 +2492,10 @@ def reset_demo_account_endpoint():
                 logger.warning(f"Aviso al consultar posiciones para cliente {c_label}: {e_cli}")
 
         # 2. Resetear base de datos (trades y cutoff)
-        from src.database import clear_trade_history
+        from src.database import clear_trade_history, clear_user_trades
         clear_trade_history()
+        if user_id:
+            clear_user_trades(user_id)
 
         global _sync_paused_until
         _sync_paused_until = time.time() + 15  # Pausar sync por 15 segundos post-reset
