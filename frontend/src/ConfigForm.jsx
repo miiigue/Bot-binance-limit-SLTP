@@ -1213,13 +1213,108 @@ function ConfigForm({
     handleSaveAndApply();
   };
 
-  // Guardar como Nueva Versión / Copia
-  const handleSaveAsNewCopy = () => {
+  // Guardar como Nueva Versión / Copia (SOLO GUARDAR EN BIBLIOTECA, SIN APLICAR AL BOT EN VIVO)
+  const handleSaveAsNewCopy = async (overrideName = null) => {
+    setValidationError(null);
+    setShowSuccessMessage(false);
+    setError(null);
+
     const defaultNewName = strategyNameInput ? `${strategyNameInput}_v2` : 'MiEstrategia_v1';
-    const newName = prompt("Introduce un nuevo nombre para esta copia de la estrategia:", defaultNewName);
-    if (!newName || !newName.trim()) return;
-    setStrategyNameInput(newName.trim());
-    handleSaveAndApply(newName.trim());
+    let nameToSave = (typeof overrideName === 'string' && overrideName.trim()) 
+      ? overrideName.trim() 
+      : (strategyNameInput ? strategyNameInput.trim() : null);
+
+    if (!overrideName) {
+      const promptedName = prompt("Introduce un nuevo nombre para guardar esta estrategia en la biblioteca:", strategyNameInput || defaultNewName);
+      if (!promptedName || !promptedName.trim()) return;
+      nameToSave = promptedName.trim();
+    }
+
+    if (!nameToSave) {
+      setValidationError("⚠️ Debes escribir un NOMBRE para la estrategia antes de guardar.");
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    if (anySpecial(nameToSave)) {
+      setValidationError("⚠️ El nombre no debe contener puntos (.), barras (/) ni caracteres especiales.");
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const symbols = (formData.symbolsToTrade || '').trim();
+    if (!symbols) {
+      setValidationError("⚠️ Debes indicar al menos un par de monedas en 'Símbolos' (ej: SOLUSDT, BTCUSDT).");
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const currentRisk = Number(formData.riskPercentage ?? riskPercentage ?? 50);
+
+      // Saneamiento de asignaciones: Garantizar que NINGÚN par quede sin estrategia ni tenga 'Global'
+      const sanitizedAssignments = { ...strategyAssignments };
+      const fallbackForPairs = nameToSave || (availableStrategies[0]?.name) || 'v3_RSI-SNIPER-MOMENTUM_v3';
+      symbolsList.forEach(sym => {
+        const cur = sanitizedAssignments[sym];
+        if (!cur || String(cur).trim().toLowerCase() === 'global') {
+          sanitizedAssignments[sym] = fallbackForPairs;
+        }
+      });
+
+      const dataToSave = {
+        ...formData,
+        activeStrategyName: nameToSave,
+        symbolsToTrade: symbols,
+        riskPercentage: currentRisk,
+        risk_percentage: currentRisk,
+        multiStrategyEnabled: multiStrategyEnabled,
+        strategyAssignments: sanitizedAssignments,
+        is_public: isStrategyPublic,
+        isPublic: isStrategyPublic,
+        risk_level: strategyRiskLevel,
+        riskLevel: strategyRiskLevel,
+        min_capital_usdt: Number(strategyMinCapital || 50),
+        minCapitalUsdt: Number(strategyMinCapital || 50),
+        description: strategyDescription || '',
+        display_name: strategyDisplayName || nameToSave,
+        displayName: strategyDisplayName || nameToSave
+      };
+
+      const response = await fetch(`/api/strategies/${encodeURIComponent(nameToSave)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataToSave),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setStrategyNameInput(nameToSave);
+        setSelectedStrategyToLoad(nameToSave);
+        if (onRefreshStrategies) {
+          onRefreshStrategies();
+        }
+
+        if (addToast) {
+          addToast(
+            '📁 Estrategia Guardada',
+            `Estrategia "${nameToSave}" guardada con éxito en la biblioteca. El bot en vivo sigue ejecutando su estrategia activa.`,
+            'success'
+          );
+        } else {
+          setLoadStrategySuccess(`✓ Estrategia "${nameToSave}" guardada exitosamente en la biblioteca (sin aplicar al bot en vivo).`);
+          setTimeout(() => setLoadStrategySuccess(null), 5000);
+        }
+      } else {
+        setValidationError(result?.error || "Error al guardar la estrategia.");
+      }
+    } catch (err) {
+      setValidationError(err.message || "Error al guardar la estrategia.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const anySpecial = (str) => {
@@ -1686,16 +1781,16 @@ function ConfigForm({
               <span>{isLoading ? 'Guardando...' : 'Guardar y Aplicar al Bot'}</span>
             </button>
 
-            {/* Botón Secundario: Guardar como Nueva Copia */}
+            {/* Botón Secundario: Guardar como Nueva Copia (Solo Guardar en Biblioteca) */}
             <button
               type="button"
-              onClick={handleSaveAsNewCopy}
+              onClick={() => handleSaveAsNewCopy()}
               disabled={isLoading}
               className="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 font-bold text-xs rounded-xl shadow transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
-              title="Guardar una copia con otro nombre"
+              title="Guarda la configuración como estrategia en la biblioteca sin modificar ni aplicar al bot en vivo"
             >
               <span>➕</span>
-              <span>Guardar Nueva Copia</span>
+              <span>Guardar Nueva Copia (Solo Guardar)</span>
             </button>
           </div>
         </div>
