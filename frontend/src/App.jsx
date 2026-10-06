@@ -53,6 +53,7 @@ function MainDashboard() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [countdown, setCountdown] = useState(0);
 
+  const [activeTab, setActiveTab] = useState(isInvestor ? 'my_investment' : 'monitor');
   const [availableStrategies, setAvailableStrategies] = useState([]);
   const [isLoadingStrategies, setIsLoadingStrategies] = useState(false);
   const [strategyError, setStrategyError] = useState(null);
@@ -70,10 +71,6 @@ function MainDashboard() {
     return found?.name || name;
   }, [activeTab, userBotHeader, activeStrategyDisplayName, config?.activeStrategyName, availableStrategies]);
 
-  // Pestañas dinámicas según el rol:
-  // Admin: 'monitor', 'config', 'performance', 'investors', 'my_bot', 'copy_trading', 'chart', 'radar', 'backtest'
-  // Investor: 'my_investment', 'copy_trading', 'my_bot', 'performance', 'chart'
-  const [activeTab, setActiveTab] = useState(isInvestor ? 'my_investment' : 'monitor');
   const [chartSelectedSymbol, setChartSelectedSymbol] = useState('SOLUSDT');
 
   // Asegurar que si el rol es Inversionista, nunca esté en una pestaña de Admin
