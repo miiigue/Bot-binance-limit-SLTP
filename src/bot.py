@@ -3773,7 +3773,8 @@ class SingleSideTradingBot:
                     'symbol': self.symbol,
                     'signal_side': self.trade_side,
                     'entry_price': float(filled_price),
-                    'reason': f"Estrategia {getattr(self, 'strategy_name', 'Quant')} ({self.trade_side})"
+                    'reason': f"Estrategia {getattr(self, 'strategy_name', 'Quant')} ({self.trade_side})",
+                    'strategy_name': getattr(self, 'strategy_name', '')
                 },
                 daemon=True
             ).start()
