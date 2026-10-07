@@ -110,7 +110,10 @@ class PGCompatCursor:
         # 2. Traducción de funciones y sintaxis SQLite -> PostgreSQL
         q = re.sub(r'\bIFNULL\b', 'COALESCE', q, flags=re.IGNORECASE)
         q = re.sub(r"strftime\s*\(\s*'%s'\s*,\s*([a-zA-Z0-9_]+)\s*\)", r"EXTRACT(EPOCH FROM \1)", q, flags=re.IGNORECASE)
-        q = q.replace('?', '%s')
+        # 2b. Escapar '%' literales (ej. LIKE '%val%') para evitar errores de interpolación en psycopg2
+        q = q.replace('?', '__PARAM_PLACEHOLDER__')
+        q = q.replace('%', '%%')
+        q = q.replace('__PARAM_PLACEHOLDER__', '%s')
 
         # 3. Soporte transparente para lastrowid en sentencias INSERT
         is_insert = q.upper().startswith("INSERT INTO")
