@@ -257,16 +257,38 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
         except Exception:
             pass
 
-        allocated_usdt = float(user.get('allocated_usdt', 100.0) or 100.0)
-        max_open = max(1, int(user.get('max_open_positions', 3) or 3))
-        if balance_detected > 10.0 and allocated_usdt > balance_detected:
-            allocated_usdt = round(balance_detected * 0.90, 2)
-        elif balance_detected <= 10.0 and allocated_usdt > 10.0:
-            allocated_usdt = 10.0
+        # 1. Obtener balance disponible real en Binance
+        available_balance = 0.0
+        try:
+            balances = client.balance()
+            if isinstance(balances, list):
+                for b in balances:
+                    if str(b.get('asset', '')).upper() == 'USDT':
+                        available_balance = float(b.get('availableBalance', 0.0) or b.get('balance', 0.0) or 0.0)
+                        break
+        except Exception:
+            pass
 
-        # Margen por posición distribuido según cupo de posiciones permitidas
-        capital_per_pos = max(6.0, round(allocated_usdt / max_open, 2))
-        leverage = int(user.get('leverage', 10) or 10)
+        # Margen por orden (USDT) configurado por el usuario o de la estrategia
+        order_margin = float(user.get('allocated_usdt') or params.get('position_size_usdt') or params.get('positionSizeUSDT') or 50.0)
+        if order_margin < 5.0:
+            order_margin = 5.0
+
+        # Verificar saldo libre disponible en Binance para cubrir el margen
+        if available_balance > 0 and available_balance < order_margin:
+            logger.warning(f"⚠️ [{clean_sym}] Saldo libre en Binance ({available_balance:.2f} USDT) insuficiente para cubrir margen de orden ({order_margin:.2f} USDT).")
+            return False
+
+        # Multiplicador: Apalancamiento de la estrategia definida por el administrador (o del usuario)
+        strat_lev = params.get('leverage')
+        if strat_lev is not None:
+            try:
+                leverage = int(strat_lev)
+            except (ValueError, TypeError):
+                leverage = int(user.get('leverage', 10) or 10)
+        else:
+            leverage = int(user.get('leverage', 10) or 10)
+
         margin_type = str(user.get('margin_type', 'ISOLATED')).upper().strip()
 
         # 2. Configurar margen y apalancamiento
@@ -279,8 +301,8 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
         except Exception:
             pass
 
-        # 3. Calcular tamaño y ajustar a LOT_SIZE
-        notional = capital_per_pos * leverage
+        # 3. Valor nominal de la posición: Margen * Multiplicador
+        notional = order_margin * leverage
         if entry_price <= 0:
             return False
 
@@ -448,7 +470,7 @@ def run_personal_bot_cycle():
                 open_positions[p.get('symbol')] = p
 
         if do_heartbeat:
-            logger.info(f"🔍 [PersonalBotEngine - {username}] Posiciones abiertas: {len(open_positions)}/{user.get('max_open_positions', 3)}. Estrategia: '{strat_name}'")
+            logger.info(f"🔍 [PersonalBotEngine - {username}] Posiciones abiertas: {len(open_positions)}. Estrategia: '{strat_name}'")
 
         # RECONCILIACIÓN AUTOMÁTICA SOBERANA CON user_trades:
         # Si hay una fila en user_trades marcada como abierta (close_timestamp IS NULL)
@@ -521,13 +543,8 @@ def run_personal_bot_cycle():
                     continue
 
         # -------------------------------------------------------------
-        # PASO B: EVALUAR ENTRADAS EN SÍMBOLOS CANDIDATOS
+        # PASO B: EVALUAR ENTRADAS EN SÍMBOLOS CANDIDATOS (PARIDAD CON ADMINISTRADOR)
         # -------------------------------------------------------------
-        max_open = int(user.get('max_open_positions', 3) or 3)
-        current_open_count = len(open_positions)
-        if current_open_count >= max_open:
-            continue  # Cupo máximo de posiciones alcanzado
-
         # Determinar lista de símbolos a evaluar
         raw_user_syms = str(user.get('symbols_to_trade', '')).strip()
         # Si tiene el valor por defecto restringido de 3 símbolos o está vacío, expandir a lista de mercado de alta liquidez
@@ -545,8 +562,6 @@ def run_personal_bot_cycle():
         for sym in candidate_symbols:
             if sym in open_positions:
                 continue
-            if current_open_count >= max_open:
-                break
 
             # Cooldown de 60 segundos por símbolo para el usuario
             last_entry = _user_symbol_cooldown.get((user_id, sym), 0)

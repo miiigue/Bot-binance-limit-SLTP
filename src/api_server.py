@@ -1348,11 +1348,6 @@ def user_bot_update_settings_endpoint():
                 updates['leverage'] = min(50, max(1, int(data['leverage'])))
             except (ValueError, TypeError):
                 pass
-        if 'max_open_positions' in data:
-            try:
-                updates['max_open_positions'] = max(1, min(20, int(data['max_open_positions'])))
-            except (ValueError, TypeError):
-                pass
         if 'margin_type' in data:
             m_type = str(data['margin_type']).upper().strip()
             if m_type in ['ISOLATED', 'CROSSED']:
