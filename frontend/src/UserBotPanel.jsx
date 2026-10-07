@@ -47,6 +47,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
   const [allocatedUsdt, setAllocatedUsdt] = useState(100);
   const [leverage, setLeverage] = useState(10);
   const [marginType, setMarginType] = useState('ISOLATED');
+  const [maxOpenPositions, setMaxOpenPositions] = useState(1);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   // Estados del Formulario de API Keys
@@ -177,6 +178,9 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
         }
         if (data.bot_settings.margin_type) {
           setMarginType(data.bot_settings.margin_type);
+        }
+        if (data.bot_settings.max_open_positions !== undefined) {
+          setMaxOpenPositions(Number(data.bot_settings.max_open_positions));
         }
       }
     } catch (err) {
@@ -334,6 +338,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           allocated_usdt: cap,
           leverage: Number(leverage),
           margin_type: marginType,
+          max_open_positions: Number(maxOpenPositions),
           operating_mode: 'PERSONAL_BOT'
         })
       });
@@ -403,6 +408,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 allocated_usdt: Number(allocatedUsdt),
                 leverage: Number(leverage),
                 margin_type: marginType,
+                max_open_positions: Number(maxOpenPositions),
                 operating_mode: 'PERSONAL_BOT'
               })
             });
@@ -545,23 +551,29 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-slate-950/80 rounded-2xl border border-slate-800 mb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-950/80 rounded-2xl border border-slate-800 mb-4">
                 <div className="text-xs">
-                  <span className="text-slate-500 block uppercase font-semibold">Estrategia Asignada:</span>
+                  <span className="text-slate-500 block uppercase font-semibold">Estrategia:</span>
                   <span className="font-extrabold text-amber-300 font-mono text-sm truncate block mt-0.5" title={selectedStrategy}>
                     {selectedStrategy || 'Ninguna seleccionada'}
                   </span>
                 </div>
                 <div className="text-xs">
-                  <span className="text-slate-500 block uppercase font-semibold">Capital Asignado:</span>
+                  <span className="text-slate-500 block uppercase font-semibold">Margen Asignado:</span>
                   <span className="font-extrabold text-emerald-400 font-mono text-sm block mt-0.5">
                     ${allocatedUsdt} USDT
                   </span>
                 </div>
                 <div className="text-xs">
-                  <span className="text-slate-500 block uppercase font-semibold">Apalancamiento & Margen:</span>
+                  <span className="text-slate-500 block uppercase font-semibold">Apalancamiento:</span>
                   <span className="font-extrabold text-sky-400 font-mono text-sm block mt-0.5">
                     {leverage}x • {marginType}
+                  </span>
+                </div>
+                <div className="text-xs">
+                  <span className="text-slate-500 block uppercase font-semibold">Posiciones Máx:</span>
+                  <span className="font-extrabold text-indigo-300 font-mono text-sm block mt-0.5">
+                    {maxOpenPositions} {Number(maxOpenPositions) === 1 ? 'pos' : 'pos'} (${(Number(allocatedUsdt) / Math.max(1, Number(maxOpenPositions))).toFixed(2)} c/u)
                   </span>
                 </div>
               </div>
@@ -827,11 +839,11 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Capital Asignado */}
                 <div>
                   <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
-                    Capital USDT Asignado:
+                    Margen / Capital Asignado:
                   </label>
                   <div className="relative">
                     <input
@@ -845,7 +857,28 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                     <span className="absolute right-3 top-2.5 text-xs text-slate-500 font-bold">USDT</span>
                   </div>
                   <span className="text-[10px] text-slate-500 mt-1 block">
-                    Saldo disponible en tu Binance: ${balance.toFixed(2)} USDT
+                    Dinero real de tu saldo asignado a operar.
+                  </span>
+                </div>
+
+                {/* Máximo de Posiciones Simultáneas */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
+                    Máx. Posiciones Simultáneas:
+                  </label>
+                  <select
+                    value={maxOpenPositions}
+                    onChange={(e) => setMaxOpenPositions(Number(e.target.value))}
+                    className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-400"
+                  >
+                    <option value="1">1 Posición (100% Capital en 1 trade)</option>
+                    <option value="2">2 Posiciones Simultáneas (50% cada una)</option>
+                    <option value="3">3 Posiciones Simultáneas (33% cada una)</option>
+                    <option value="4">4 Posiciones Simultáneas (25% cada una)</option>
+                    <option value="5">5 Posiciones Simultáneas (20% cada una)</option>
+                  </select>
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Controla cuántas órdenes puede abrir a la vez.
                   </span>
                 </div>
 
@@ -867,7 +900,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                     <option value="20">20x (Dinámico)</option>
                   </select>
                   <span className="text-[10px] text-slate-500 mt-1 block">
-                    Multiplicador de tamaño de posición.
+                    Multiplica el poder de mercado de tu margen.
                   </span>
                 </div>
 
@@ -889,6 +922,32 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                   </span>
                 </div>
               </div>
+
+              {/* Desglose de Cálculo Matemático Transparente */}
+              {(() => {
+                const totalCap = Number(allocatedUsdt) || 0;
+                const maxPos = Math.max(1, Number(maxOpenPositions) || 1);
+                const marginPerPos = totalCap / maxPos;
+                const lev = Number(leverage) || 1;
+                const notionalPerPos = marginPerPos * lev;
+                return (
+                  <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                        <span>📐</span> Desglose Transparente de tu Operación:
+                      </span>
+                      <p className="text-[11px] text-slate-400">
+                        Cada posición retendrá <strong className="text-emerald-400 font-mono">${marginPerPos.toFixed(2)} USDT</strong> de margen real de tu cuenta.
+                        Con apalancamiento <strong>{lev}x</strong>, el tamaño nominal de mercado en Binance será de <strong className="text-amber-300 font-mono">${notionalPerPos.toFixed(2)} USDT</strong>.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 font-mono text-[11px] px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 whitespace-nowrap">
+                      <span>Margen Real/Posición:</span>
+                      <strong className="text-emerald-400">${marginPerPos.toFixed(2)} USDT</strong>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="flex justify-end pt-2">
                 <button
