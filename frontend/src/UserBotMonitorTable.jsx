@@ -93,11 +93,11 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
           <table className="w-full text-left border-collapse min-w-[900px]">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/60 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                <th className="py-3 px-4">Símbolo</th>
-                <th className="py-3 px-4">Estrategia y Estado</th>
-                <th className="py-3 px-4">PnL Flotante / Hist</th>
-                <th className="py-3 px-4">Radar & Posición LONG</th>
-                <th className="py-3 px-4">Radar & Posición SHORT</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[13%]">Símbolo</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[18%]">Estrategia y Estado</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[17%]">PnL Flotante / Hist</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[26%]">Radar & Posición LONG</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[26%]">Radar & Posición SHORT</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs font-sans">
@@ -121,7 +121,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                     }`}
                   >
                     {/* 1. SÍMBOLO */}
-                    <td className="py-3.5 px-4 font-mono font-black text-sm text-white">
+                    <td className="py-4 px-4 sm:px-6 font-mono font-black text-sm text-white">
                       <div className="flex items-center gap-2">
                         <span className="tracking-tight">{item.symbol}</span>
                         <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700/80 font-bold">
@@ -131,9 +131,9 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                     </td>
 
                     {/* 2. ESTRATEGIA Y ESTADO */}
-                    <td className="py-3.5 px-4">
+                    <td className="py-4 px-4 sm:px-6">
                       <div className="flex flex-col gap-1 items-start">
-                        <span className="font-mono text-[11px] font-bold text-amber-300 truncate max-w-[170px]" title={item.strategy_name}>
+                        <span className="font-mono text-[11px] font-bold text-amber-300 truncate max-w-[240px]">
                           {item.strategy_name}
                         </span>
                         {inPos ? (
@@ -154,7 +154,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                     </td>
 
                     {/* 3. PNL FLOTANTE / HIST */}
-                    <td className="py-3.5 px-4 font-mono">
+                    <td className="py-4 px-4 sm:px-6 font-mono">
                       <div className="flex flex-col gap-0.5 text-xs">
                         <div className="flex items-center gap-1">
                           <span className="text-[10px] font-sans text-slate-500 uppercase font-bold">Flotante:</span>
@@ -172,7 +172,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                     </td>
 
                     {/* 4. RADAR Y POSICIÓN LONG */}
-                    <td className="py-3.5 px-4">
+                    <td className="py-4 px-4 sm:px-6">
                       {isLong && item.position ? (
                         /* CUANDO ABRE LA POSICIÓN: SOLO LA BARRA CON INFORMACIÓN DE TP Y SL */
                         <PositionTpSlBar position={item.position} />
@@ -183,7 +183,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                     </td>
 
                     {/* 5. RADAR Y POSICIÓN SHORT */}
-                    <td className="py-3.5 px-4">
+                    <td className="py-4 px-4 sm:px-6">
                       {isShort && item.position ? (
                         /* CUANDO ABRE LA POSICIÓN: SOLO LA BARRA CON INFORMACIÓN DE TP Y SL */
                         <PositionTpSlBar position={item.position} />
@@ -214,9 +214,6 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
             <span className="w-3.5 h-3.5 rounded bg-rose-950/80 border border-rose-600/70 inline-block"></span>
             <span>Rojo = Condición Pendiente</span>
           </span>
-          <span className="text-slate-500 hidden md:inline">
-            (Pasa el cursor por cada cuadro para ver el indicador y detalle técnico)
-          </span>
         </div>
 
         {lastUpdated && (
@@ -243,7 +240,7 @@ function PositionTpSlBar({ position }) {
   const isProfit = Number(unrealized_pnl || 0) >= 0;
 
   return (
-    <div className="flex flex-col gap-1.5 w-full min-w-[270px] max-w-[340px] py-1 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+    <div className="flex flex-col gap-1.5 w-full max-w-sm xl:max-w-md py-1 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800/80 shadow-inner">
       {/* FILA 1: TAKE PROFIT */}
       <div className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between text-[11px] leading-tight">
@@ -335,41 +332,45 @@ function PositionTpSlBar({ position }) {
 
 /**
  * Subcomponente: VolumeRadarBlocks
- * Muestra "sin información, cuadros tipo volumen que están en rojo y pasan a verde cuando se cumple la condición"
+ * Muestra cuadros tipo volumen que se llenan de izquierda a derecha.
+ * Los cuadros verdes se ubican del lado izquierdo según la cantidad de condiciones cumplidas.
+ * Sin información ni detalles técnicos en hover para la sesión del usuario.
  */
 function VolumeRadarBlocks({ radar, side = 'LONG', inOtherPos = false }) {
-  if (!radar || !Array.isArray(radar.conditions) || radar.conditions.length === 0) {
+  if (!radar) {
     return (
       <div className="text-slate-500 text-[11px] font-sans italic py-1">
-        <span>Escaneando velas...</span>
+        <span>Escaneando...</span>
       </div>
     );
   }
 
-  const { conditions, met_count, total_count, all_met } = radar;
+  const { met_count = 0, total_count = 5, all_met = false } = radar;
+  const total = total_count || 5;
 
   return (
-    <div className="flex items-center gap-2 py-1 flex-wrap">
-      {/* Serie de Cuadros Tipo Volumen (Ecualizador LED) */}
-      <div 
-        className="flex items-center gap-1.5 p-1.5 rounded-xl bg-slate-950/80 border border-slate-800"
-        title={`Radar ${side}: ${met_count}/${total_count} condiciones cuantitativas cumplidas`}
-      >
-        {conditions.map((c, idx) => {
-          const isPassed = Boolean(c.passed);
+    <div className="flex items-center gap-3 py-1 flex-wrap">
+      {/* Serie de Cuadros Tipo Volumen que se llenan progresivamente de izquierda a derecha */}
+      <div className="flex items-center gap-1.5 p-1.5 rounded-xl bg-slate-950/90 border border-slate-800/90 shadow-inner">
+        {Array.from({ length: total }).map((_, idx) => {
+          // Llenado de izquierda a derecha:
+          // Si met_count es 3, los primeros 3 cuadros (idx 0, 1, 2) son verdes; los restantes rojos.
+          const isLitGreen = idx < met_count;
+
           return (
             <div
-              key={c.id || idx}
-              title={`${idx + 1}. ${c.name} (${c.desc}): ${isPassed ? 'CUMPLIDO ✅' : 'PENDIENTE ❌'} (Valor: ${c.value})`}
-              className={`w-5 h-6 sm:w-6 sm:h-7 rounded-md transition-all duration-300 flex items-center justify-center cursor-help border ${
-                isPassed
-                  ? 'bg-emerald-500 border-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.55)] text-slate-950 font-black'
-                  : 'bg-rose-950/60 border-rose-800/70 text-rose-500/40 opacity-70'
+              key={idx}
+              className={`w-6 h-7 sm:w-7 sm:h-8 rounded-lg transition-all duration-300 border flex items-center justify-center select-none ${
+                isLitGreen
+                  ? 'bg-gradient-to-t from-emerald-600 to-emerald-400 border-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.7)]'
+                  : 'bg-rose-950/50 border-rose-900/60 opacity-60'
               }`}
             >
-              <span className="text-[10px] font-mono font-black select-none">
-                {isPassed ? '✓' : ''}
-              </span>
+              <div 
+                className={`w-2.5 h-1 rounded-full ${
+                  isLitGreen ? 'bg-white/90 shadow-sm' : 'bg-rose-800/40'
+                }`} 
+              />
             </div>
           );
         })}
@@ -377,12 +378,12 @@ function VolumeRadarBlocks({ radar, side = 'LONG', inOtherPos = false }) {
 
       {/* Insignia cuando todas las condiciones se cumplen o estado alternativo */}
       {all_met ? (
-        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider animate-pulse border shadow ${
+        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider animate-pulse border shadow ${
           side === 'LONG'
-            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-emerald-500/30'
-            : 'bg-rose-500 text-slate-950 border-rose-300 shadow-rose-500/30'
+            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-emerald-500/40'
+            : 'bg-rose-500 text-slate-950 border-rose-300 shadow-rose-500/40'
         }`}>
-          <span>⚡</span> SEÑAL ({met_count}/{total_count})
+          <span>⚡</span> LISTO ({met_count}/{total})
         </span>
       ) : inOtherPos ? (
         <span className="text-[10px] text-slate-500 font-sans italic">
