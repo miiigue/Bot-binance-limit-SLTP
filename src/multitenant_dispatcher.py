@@ -642,3 +642,249 @@ def dispatch_exit_order_to_users(symbol: str, exit_reason: str, exit_price: floa
             logger.warning(f"Aviso al cerrar posición para {username}: {e}")
 
     return results
+
+
+def get_user_monitor_status(user_id: int) -> dict:
+    """
+    Retorna el estado en vivo de todas las posiciones abiertas y el radar cuantitativo
+    de cada símbolo para el usuario específico.
+    """
+    from src.database import get_user_bot_settings, get_user_api_keys, get_db_connection
+    settings = get_user_bot_settings(user_id) or {}
+    keys = get_user_api_keys(user_id, decrypt=True) or {}
+    
+    strat_name = str(settings.get('strategy_name') or 'BOT_PARAPRUEBAS').strip()
+    params = load_strategy_params(strat_name)
+    
+    # 1. Obtener cliente y posiciones reales en Binance
+    user_dict = {
+        'user_id': user_id,
+        'username': settings.get('username', f'user_{user_id}'),
+        'api_key': keys.get('api_key'),
+        'api_secret': keys.get('api_secret'),
+        'is_testnet': bool(keys.get('is_testnet', False)),
+        'api_base_url': keys.get('api_base_url')
+    }
+    
+    open_positions = {}
+    if user_dict['api_key'] and user_dict['api_secret']:
+        try:
+            client = get_cached_user_client(user_dict)
+            if client:
+                pos_risk = client.get_position_risk()
+                if pos_risk and isinstance(pos_risk, list):
+                    for p in pos_risk:
+                        amt = float(p.get('positionAmt', 0.0) or 0.0)
+                        if abs(amt) > 1e-6:
+                            open_positions[p.get('symbol')] = p
+        except Exception as e_pos:
+            get_logger().debug(f"Aviso consultando posiciones de monitor para user {user_id}: {e_pos}")
+
+    # 2. PnL Histórico por símbolo desde user_trades
+    historical_pnls = {}
+    try:
+        conn = get_db_connection()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT symbol, SUM(COALESCE(pnl_usdt, 0.0)) as total_pnl
+                FROM user_trades
+                WHERE user_id = ? AND close_timestamp IS NOT NULL
+                GROUP BY symbol
+            """, (user_id,))
+            for r in cur.fetchall():
+                historical_pnls[r['symbol']] = round(float(r['total_pnl'] or 0.0), 4)
+            conn.close()
+    except Exception:
+        pass
+
+    # 3. Lista de símbolos a monitorear: posiciones abiertas + símbolos candidatos
+    raw_user_syms = str(settings.get('symbols_to_trade', '')).strip()
+    if not raw_user_syms or raw_user_syms in ('BTCUSDT,ETHUSDT,SOLUSDT', 'BTCUSDT'):
+        strat_syms = params.get('symbols_to_trade') or params.get('symbolsToTrade')
+        if strat_syms:
+            symbols_list = [s.strip().upper() for s in str(strat_syms).split(',') if s.strip()]
+        else:
+            symbols_list = DEFAULT_MARKET_SYMBOLS.copy()
+    else:
+        symbols_list = [s.strip().upper() for s in raw_user_syms.split(',') if s.strip()]
+
+    # Asegurar que todas las posiciones abiertas estén en la lista
+    for sym in open_positions.keys():
+        if sym not in symbols_list:
+            symbols_list.append(sym)
+
+    # Parámetros de la estrategia para TP, SL, Trailing
+    tp_usdt = float(params.get('take_profit_usdt', params.get('takeProfitUSDT', 50.0)) or 50.0)
+    sl_usdt = float(params.get('stop_loss_usdt', params.get('stopLossUSDT', 400.0)) or 400.0)
+    ts_act = float(params.get('pnl_trailing_stop_activation_usdt', 3.5) or 3.5)
+    ts_drop = float(params.get('pnl_trailing_stop_drop_usdt', 1.5) or 1.5)
+    enable_ts = str(params.get('enable_pnl_trailing_stop', True)).lower() == 'true'
+
+    # Parámetros de indicadores para el radar
+    rsi_interval = str(params.get('rsi_interval', '1m') or '1m')
+    rsi_period = int(params.get('rsi_period', 7) or 7)
+    rsi_type = str(params.get('rsi_type', 'CUTLER')).upper()
+    trade_dir = str(params.get('trade_direction', 'BIDIRECTIONAL')).upper()
+
+    low_long = float(params.get('rsi_entry_level_low', 22) or 22)
+    high_long = float(params.get('rsi_entry_level_high', 45) or 45)
+    thresh_up = float(params.get('rsi_threshold_up', 2.0) or 2.0)
+
+    low_short = float(params.get('rsi_short_entry_level_low', 55) or 55)
+    high_short = float(params.get('rsi_short_entry_level_high', 70) or 70)
+    thresh_down = float(params.get('rsi_threshold_down', 2.5) or 2.5)
+
+    v_period = int(params.get('volume_sma_period', 20) or 20)
+    v_factor = float(params.get('volume_factor', 1.0) or 1.0)
+    eval_vol = str(params.get('evaluate_volume_filter', False)).lower() == 'true'
+
+    symbols_data = []
+
+    for sym in symbols_list:
+        pos_raw = open_positions.get(sym)
+        in_pos = pos_raw is not None
+        trade_side = None
+        unrealized_pnl = 0.0
+        pos_info = None
+
+        if in_pos:
+            amt = float(pos_raw.get('positionAmt', 0.0) or 0.0)
+            trade_side = 'LONG' if amt > 0 else 'SHORT'
+            unrealized_pnl = round(float(pos_raw.get('unRealizedProfit', 0.0) or 0.0), 2)
+            entry_p = float(pos_raw.get('entryPrice', 0.0) or 0.0)
+            mark_p = float(pos_raw.get('markPrice', entry_p) or entry_p)
+
+            # Cálculo de TP
+            tp_progress = min(100.0, max(0.0, (unrealized_pnl / tp_usdt) * 100.0)) if tp_usdt > 0 else 0.0
+            tp_remaining = max(0.0, tp_usdt - unrealized_pnl)
+
+            # Trailing stop
+            peak_val = _user_peak_pnl.get((user_id, sym), 0.0)
+            if unrealized_pnl > peak_val:
+                peak_val = unrealized_pnl
+            ts_armed = enable_ts and (peak_val >= ts_act)
+
+            # Cálculo de SL
+            sl_dist = round(abs(sl_usdt) - abs(min(0.0, unrealized_pnl)), 2)
+            sl_fill = min(100.0, max(0.0, (abs(min(0.0, unrealized_pnl)) / abs(sl_usdt)) * 100.0)) if sl_usdt > 0 else 0.0
+
+            pos_info = {
+                'side': trade_side,
+                'amt': amt,
+                'entry_price': entry_p,
+                'mark_price': mark_p,
+                'unrealized_pnl': unrealized_pnl,
+                'tp': {
+                    'target_usdt': tp_usdt,
+                    'progress_pct': round(tp_progress, 1),
+                    'remaining_usdt': round(tp_remaining, 2)
+                },
+                'sl': {
+                    'target_usdt': -abs(sl_usdt),
+                    'distance_usdt': sl_dist,
+                    'fill_pct': round(sl_fill, 1)
+                },
+                'ts': {
+                    'enabled': enable_ts,
+                    'armed': ts_armed,
+                    'act_threshold': ts_act,
+                    'drop_usdt': ts_drop,
+                    'peak_value': round(peak_val, 2)
+                }
+            }
+
+        # 4. Calcular condiciones del radar (LONG y SHORT)
+        klines = get_cached_klines(sym, interval=rsi_interval, limit=100)
+        curr_rsi = 50.0
+        delta_rsi = 0.0
+        is_green = True
+        vol_ok = True
+        c_vol = 1.0
+        v_sma = 1.0
+
+        if klines is not None and len(klines) >= 15:
+            rsi_series = calculate_rsi(klines['close'], period=rsi_period, rsi_type=rsi_type)
+            if rsi_series is not None and len(rsi_series) >= 2:
+                curr_rsi = round(float(rsi_series.iloc[-1]), 1)
+                delta_rsi = round(float(rsi_series.iloc[-1] - rsi_series.iloc[-2]), 1)
+            last_c = float(klines['close'].iloc[-1])
+            last_o = float(klines['open'].iloc[-1])
+            is_green = (last_c >= last_o)
+
+            if eval_vol and len(klines['volume']) >= v_period + 1:
+                vol_s = pd.to_numeric(klines['volume'], errors='coerce')
+                v_sma = float(vol_s.rolling(v_period).mean().iloc[-2]) or 1.0
+                vol_c = float(vol_s.iloc[-2])
+                vol_f = float(vol_s.iloc[-1])
+                c_vol = max(vol_c, vol_f)
+                vol_ok = (c_vol >= v_factor * v_sma)
+
+        last_entry_ts = _user_symbol_cooldown.get((user_id, sym), 0)
+        cooldown_active = (time.time() - last_entry_ts < 60)
+        dir_allows_long = trade_dir in ('LONG', 'BIDIRECTIONAL')
+        dir_allows_short = trade_dir in ('SHORT', 'BIDIRECTIONAL')
+
+        long_cond1 = (low_long <= curr_rsi <= high_long)
+        long_cond2 = (delta_rsi >= thresh_up)
+        long_cond3 = is_green
+        long_cond4 = vol_ok
+        long_cond5 = dir_allows_long and not cooldown_active
+
+        long_conditions = [
+            {'id': 'rsi_range', 'name': 'RSI en Rango', 'desc': f'RSI [{low_long}-{high_long}]', 'value': f'{curr_rsi}', 'passed': bool(long_cond1)},
+            {'id': 'rsi_delta', 'name': 'Delta RSI', 'desc': f'Delta >= +{thresh_up}', 'value': f'{delta_rsi:+}', 'passed': bool(long_cond2)},
+            {'id': 'candle_trend', 'name': 'Vela Alcista', 'desc': 'Cierre >= Apertura', 'value': 'Verde' if is_green else 'Roja', 'passed': bool(long_cond3)},
+            {'id': 'volume_filter', 'name': 'Filtro Volumen', 'desc': f'Vol >= {v_factor}x SMA', 'value': 'OK' if vol_ok else 'Bajo', 'passed': bool(long_cond4)},
+            {'id': 'direction', 'name': 'Dirección & Cooldown', 'desc': 'Permitido y sin cooldown', 'value': 'OK' if long_cond5 else 'Bloqueado', 'passed': bool(long_cond5)}
+        ]
+        long_met_count = sum(1 for c in long_conditions if c['passed'])
+
+        short_cond1 = (low_short <= curr_rsi <= high_short)
+        short_cond2 = (delta_rsi <= -abs(thresh_down))
+        short_cond3 = not is_green
+        short_cond4 = vol_ok
+        short_cond5 = dir_allows_short and not cooldown_active
+
+        short_conditions = [
+            {'id': 'rsi_range', 'name': 'RSI en Rango', 'desc': f'RSI [{low_short}-{high_short}]', 'value': f'{curr_rsi}', 'passed': bool(short_cond1)},
+            {'id': 'rsi_delta', 'name': 'Delta RSI', 'desc': f'Delta <= -{thresh_down}', 'value': f'{delta_rsi:+}', 'passed': bool(short_cond2)},
+            {'id': 'candle_trend', 'name': 'Vela Bajista', 'desc': 'Cierre <= Apertura', 'value': 'Roja' if not is_green else 'Verde', 'passed': bool(short_cond3)},
+            {'id': 'volume_filter', 'name': 'Filtro Volumen', 'desc': f'Vol >= {v_factor}x SMA', 'value': 'OK' if vol_ok else 'Bajo', 'passed': bool(short_cond4)},
+            {'id': 'direction', 'name': 'Dirección & Cooldown', 'desc': 'Permitido y sin cooldown', 'value': 'OK' if short_cond5 else 'Bloqueado', 'passed': bool(short_cond5)}
+        ]
+        short_met_count = sum(1 for c in short_conditions if c['passed'])
+
+        state_label = 'In Position' if in_pos else ('Cooldown' if cooldown_active else 'Buscando Entrada')
+
+        symbols_data.append({
+            'symbol': sym,
+            'strategy_name': strat_name,
+            'state': state_label,
+            'in_position': in_pos,
+            'trade_side': trade_side,
+            'unrealized_pnl': unrealized_pnl,
+            'historical_pnl': historical_pnls.get(sym, 0.0),
+            'cooldown_active': cooldown_active,
+            'position': pos_info,
+            'long_radar': {
+                'conditions': long_conditions,
+                'met_count': long_met_count,
+                'total_count': len(long_conditions),
+                'all_met': (long_met_count == len(long_conditions))
+            },
+            'short_radar': {
+                'conditions': short_conditions,
+                'met_count': short_met_count,
+                'total_count': len(short_conditions),
+                'all_met': (short_met_count == len(short_conditions))
+            }
+        })
+
+    return {
+        'status': 'success',
+        'strategy_name': strat_name,
+        'operating_mode': str(settings.get('operating_mode') or 'PERSONAL_BOT'),
+        'is_running': bool(settings.get('is_running', False)),
+        'symbols': symbols_data
+    }

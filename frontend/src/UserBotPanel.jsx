@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import ConfirmModal from './ConfirmModal';
+import UserBotMonitorTable from './UserBotMonitorTable';
 
 const formatShortDate = (dateStr) => {
   if (!dateStr) return 'N/A';
@@ -595,6 +596,9 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
               )}
             </button>
           </div>
+
+          {/* Panel de Monitoreo en Vivo de tu Bot Personal (Posiciones Abiertas y Radar de Señales) */}
+          <UserBotMonitorTable authFetch={authFetch} isRunning={isPersonalBotActive} />
 
           {/* Catálogo de Estrategias Públicas Curadas */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">

@@ -1242,6 +1242,20 @@ def user_bot_status_endpoint():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/user/bot/monitor', methods=['GET'])
+@token_required
+def user_bot_monitor_endpoint():
+    """Retorna el monitoreo en vivo de posiciones abiertas y radar cuantitativo para el bot personal del usuario."""
+    try:
+        user_id = request.current_user['user_id']
+        from src.multitenant_dispatcher import get_user_monitor_status
+        data = get_user_monitor_status(user_id)
+        return jsonify(data)
+    except Exception as e:
+        api_logger.error(f"Error al consultar monitoreo de bot personal para usuario {user_id}: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route('/api/user/bot/toggle', methods=['POST'])
 @token_required
 def user_bot_toggle_endpoint():
