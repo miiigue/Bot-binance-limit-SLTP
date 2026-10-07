@@ -1202,7 +1202,14 @@ def user_bot_status_endpoint():
 
         live_balance = float(keys.get('balance_detected', 0.0)) if keys else 0.0
 
-        # Si el usuario tiene credenciales válidas, consultar balance en tiempo real en Binance
+        # Si el usuario tiene credenciales válidas, consultar balance y desglose en tiempo real en Binance Futures
+        wallet_balance = live_balance
+        available_balance = live_balance
+        initial_margin = 0.0
+        unrealized_pnl = 0.0
+        equity = live_balance
+        open_positions_count = 0
+
         if keys and keys.get('is_valid') and keys.get('api_key') and keys.get('api_secret'):
             try:
                 from src.binance_client import get_user_futures_client
@@ -1212,17 +1219,23 @@ def user_bot_status_endpoint():
                     is_testnet=bool(keys.get('is_testnet', False)),
                     base_url=keys.get('api_base_url')
                 )
-                balances = u_client.balance()
-                if isinstance(balances, list):
-                    for b in balances:
-                        if str(b.get('asset', '')).upper() == 'USDT':
-                            live_balance = round(float(b.get('balance', 0.0) or b.get('availableBalance', 0.0) or 0.0), 2)
-                            break
-                    # Sincronizar en DB de forma silenciosa
-                    from src.database import update_user_api_keys_balance
-                    update_user_api_keys_balance(user_id=user_id, balance_usdt=live_balance)
+                acc = u_client.account()
+                if isinstance(acc, dict):
+                    wallet_balance = round(float(acc.get('totalWalletBalance', 0.0) or 0.0), 2)
+                    available_balance = round(float(acc.get('availableBalance', 0.0) or 0.0), 2)
+                    initial_margin = round(float(acc.get('totalInitialMargin', 0.0) or 0.0), 2)
+                    unrealized_pnl = round(float(acc.get('totalUnrealizedProfit', 0.0) or 0.0), 2)
+                    equity = round(float(acc.get('totalMarginBalance', 0.0) or 0.0), 2)
+                    positions = acc.get('positions', [])
+                    open_positions_count = sum(1 for p in positions if abs(float(p.get('positionAmt', 0.0) or 0.0)) > 1e-6)
+
+                live_balance = wallet_balance
+
+                # Sincronizar en DB de forma silenciosa
+                from src.database import update_user_api_keys_balance
+                update_user_api_keys_balance(user_id=user_id, balance_usdt=wallet_balance)
             except Exception as e_live:
-                api_logger.debug(f"Aviso al consultar balance en vivo para usuario {user_id}: {e_live}")
+                api_logger.debug(f"Aviso al consultar desglose de cuenta para usuario {user_id}: {e_live}")
 
         cfg_temp = load_config()
         active_strategy = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip() or 'v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_sinSL_3DCA0c8_ReDi5c5'
@@ -1234,6 +1247,14 @@ def user_bot_status_endpoint():
             "is_testnet": bool(keys.get('is_testnet', False)) if keys else False,
             "api_key_masked": keys.get('api_key_masked') if keys else None,
             "balance_usdt": live_balance,
+            "wallet_breakdown": {
+                "wallet_balance": wallet_balance,
+                "available_balance": available_balance,
+                "margin_in_positions": initial_margin,
+                "unrealized_pnl": unrealized_pnl,
+                "equity": equity,
+                "open_positions_count": open_positions_count
+            },
             "active_strategy": active_strategy,
             "metrics": metrics
         })

@@ -356,6 +356,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
 
   const hasKeys = Boolean(botData?.has_valid_keys);
   const balance = Number(botData?.balance_usdt || 0);
+  const walletBreakdown = botData?.wallet_breakdown || null;
 
   // Activar / Pausar Operación Automática según la pestaña activa
   const handleToggleSync = () => {
@@ -595,6 +596,103 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 <><span>⚡</span> INICIAR MI BOT CON ESTA ESTRATEGIA</>
               )}
             </button>
+          </div>
+
+          {/* Tarjeta de Distribución de Capital en Binance (¿Dónde está tu dinero?) */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+              <div>
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <span>💼</span> Distribución de tu Capital en Binance Futures
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Desglose exacto en tiempo real de dónde se encuentra tu dinero y cómo está distribuido en Binance:
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono px-3 py-1 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
+                  Saldo Billetera: <strong className="text-white">${(walletBreakdown?.wallet_balance ?? balance).toFixed(2)} USDT</strong>
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* 1. Margen Trabajando */}
+              <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800/90 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                    <span>🔒</span> Margen en Posiciones
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 font-bold">
+                    En juego
+                  </span>
+                </div>
+                <span className="text-base sm:text-xl font-black font-mono text-amber-400 mt-1.5">
+                  ${(walletBreakdown?.margin_in_positions || 0).toFixed(2)} <span className="text-[10px] text-slate-400">USDT</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-sans mt-1">
+                  Colateral en {walletBreakdown?.open_positions_count || 0} posiciones abiertas
+                </span>
+              </div>
+
+              {/* 2. Saldo Disponible Libre */}
+              <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800/90 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                    <span>🟢</span> Saldo Libre en Binance
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-300 font-bold">
+                    Disponible
+                  </span>
+                </div>
+                <span className="text-base sm:text-xl font-black font-mono text-emerald-400 mt-1.5">
+                  ${(walletBreakdown?.available_balance ?? balance).toFixed(2)} <span className="text-[10px] text-slate-400">USDT</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-sans mt-1">
+                  Sin riesgo de mercado, libre en cuenta
+                </span>
+              </div>
+
+              {/* 3. PnL Flotante en Vivo */}
+              <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800/90 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                    <span>📈</span> PnL Flotante en Vivo
+                  </span>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-bold ${
+                    (walletBreakdown?.unrealized_pnl || 0) >= 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'
+                  }`}>
+                    Mercado
+                  </span>
+                </div>
+                <span className={`text-base sm:text-xl font-black font-mono mt-1.5 ${
+                  (walletBreakdown?.unrealized_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                }`}>
+                  {(walletBreakdown?.unrealized_pnl || 0) >= 0 ? '+' : ''}${(walletBreakdown?.unrealized_pnl || 0).toFixed(2)} <span className="text-[10px] text-slate-400">USDT</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-sans mt-1">
+                  Fluctuación temporal no realizada
+                </span>
+              </div>
+
+              {/* 4. Patrimonio Neto Total (Equity) */}
+              <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800/90 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                    <span>💎</span> Patrimonio Total (Equity)
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-300 font-bold">
+                    Neto
+                  </span>
+                </div>
+                <span className="text-base sm:text-xl font-black font-mono text-sky-400 mt-1.5">
+                  ${(walletBreakdown?.equity ?? balance).toFixed(2)} <span className="text-[10px] text-slate-400">USDT</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-sans mt-1">
+                  Saldo Billetera + PnL flotante
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Panel de Monitoreo en Vivo de tu Bot Personal (Posiciones Abiertas y Radar de Señales) */}
@@ -990,19 +1088,19 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
         })()}
 
         {/* Tabla de Operaciones */}
-        <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950">
+        <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 shadow-inner">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-900/90 text-slate-400 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-800">
               <tr>
-                <th className="p-3">PnL Neto</th>
-                <th className="p-3">ID Trade</th>
-                <th className="p-3">Símbolo</th>
-                <th className="p-3">Tipo</th>
-                <th className="p-3">Precio Entrada</th>
-                <th className="p-3">Precio Salida</th>
-                <th className="p-3">Cantidad</th>
-                <th className="p-3">Apertura</th>
-                <th className="p-3">Cierre</th>
+                <th className="p-3.5 sm:px-4">Fecha / Hora</th>
+                <th className="p-3.5">ID Trade</th>
+                <th className="p-3.5">Moneda / Par</th>
+                <th className="p-3.5">Lado</th>
+                <th className="p-3.5">Precio Entrada</th>
+                <th className="p-3.5">Precio Salida</th>
+                <th className="p-3.5">Cantidad</th>
+                <th className="p-3.5">PnL Realizado</th>
+                <th className="p-3.5 sm:pr-4">Estado</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -1011,28 +1109,69 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                   const pnl = Number(t.pnl_usdt || 0);
                   const isWin = pnl >= 0;
                   const tradeId = t.id || t.binance_trade_id || '-';
+                  const isClosed = Boolean(t.close_timestamp);
+
                   return (
-                    <tr key={t.id || tradeId} className="hover:bg-slate-900/50 transition">
-                      <td className={`p-3 font-bold font-mono ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {t.close_timestamp ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : 'En curso'}
+                    <tr key={t.id || tradeId} className="hover:bg-slate-900/50 transition font-sans">
+                      {/* 1. Fecha / Hora */}
+                      <td className="p-3.5 sm:px-4 text-slate-300 font-mono text-[11px] whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <span className="text-white font-medium">{t.open_time_short || formatShortDate(t.open_timestamp)}</span>
+                          {isClosed && (
+                            <span className="text-[10px] text-slate-500">
+                              Fin: {t.close_time_short || formatShortDate(t.close_timestamp)}
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td className="p-3 font-bold font-mono text-amber-400">#{tradeId}</td>
-                      <td className="p-3 font-bold font-mono text-white">{t.symbol}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          t.trade_type === 'LONG' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'
+
+                      {/* 2. ID Trade */}
+                      <td className="p-3.5 font-bold font-mono text-amber-400">#{tradeId}</td>
+
+                      {/* 3. Moneda / Par */}
+                      <td className="p-3.5 font-bold font-mono text-white">
+                        <div className="flex items-center gap-1.5">
+                          <span>{t.symbol}</span>
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-cyan-300 border border-slate-700/80 font-mono">Perp</span>
+                        </div>
+                      </td>
+
+                      {/* 4. Lado */}
+                      <td className="p-3.5">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                          t.trade_type === 'LONG' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                         }`}>
                           {t.trade_type}
                         </span>
                       </td>
-                      <td className="p-3 font-mono text-slate-300">${Number(t.open_price).toFixed(2)}</td>
-                      <td className="p-3 font-mono text-slate-300">{t.close_price ? `$${Number(t.close_price).toFixed(2)}` : 'Abierta'}</td>
-                      <td className="p-3 font-mono text-slate-400">{t.quantity}</td>
-                      <td className="p-3 text-slate-300 font-mono text-[11px] whitespace-nowrap">
-                        {t.open_time_short || formatShortDate(t.open_timestamp)}
+
+                      {/* 5. Precio Entrada */}
+                      <td className="p-3.5 font-mono text-slate-200 font-semibold">${Number(t.open_price).toFixed(2)}</td>
+
+                      {/* 6. Precio Salida */}
+                      <td className="p-3.5 font-mono text-slate-300">
+                        {isClosed ? `$${Number(t.close_price).toFixed(2)}` : <span className="text-slate-500 italic">Abierta</span>}
                       </td>
-                      <td className="p-3 text-slate-400 font-mono text-[11px] whitespace-nowrap">
-                        {t.close_time_short || (t.close_timestamp ? formatShortDate(t.close_timestamp) : 'En curso')}
+
+                      {/* 7. Cantidad */}
+                      <td className="p-3.5 font-mono text-slate-400">{t.quantity}</td>
+
+                      {/* 8. PnL Realizado */}
+                      <td className={`p-3.5 font-bold font-mono text-xs ${isClosed ? (isWin ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-400'}`}>
+                        {isClosed ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : <span className="text-amber-400/90 text-xs font-sans">En curso</span>}
+                      </td>
+
+                      {/* 9. Estado */}
+                      <td className="p-3.5 sm:pr-4">
+                        {isClosed ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                            <span>✅</span> Cerrada
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> En curso
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

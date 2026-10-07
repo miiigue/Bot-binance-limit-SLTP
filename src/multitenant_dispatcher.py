@@ -450,6 +450,39 @@ def run_personal_bot_cycle():
         if do_heartbeat:
             logger.info(f"🔍 [PersonalBotEngine - {username}] Posiciones abiertas: {len(open_positions)}/{user.get('max_open_positions', 3)}. Estrategia: '{strat_name}'")
 
+        # RECONCILIACIÓN AUTOMÁTICA SOBERANA CON user_trades:
+        # Si hay una fila en user_trades marcada como abierta (close_timestamp IS NULL)
+        # pero el símbolo YA NO está abierto en Binance, cerrarla en la base de datos
+        # para que nunca muestre trades "En curso" huérfanos.
+        try:
+            from src.database import get_db_connection
+            conn_recon = get_db_connection()
+            if conn_recon:
+                cur_recon = conn_recon.cursor()
+                cur_recon.execute("""
+                    SELECT id, symbol, open_price, position_size_usdt 
+                    FROM user_trades 
+                    WHERE user_id = ? AND close_timestamp IS NULL
+                """, (user_id,))
+                ghost_trades = cur_recon.fetchall()
+                for gt in ghost_trades:
+                    gt_sym = str(gt['symbol']).upper()
+                    if gt_sym not in open_positions:
+                        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        cur_recon.execute("""
+                            UPDATE user_trades 
+                            SET close_timestamp = ?, 
+                                close_price = open_price, 
+                                pnl_usdt = 0.0, 
+                                close_reason = 'Cierre confirmado en Binance'
+                            WHERE id = ?
+                        """, (now_str, gt['id']))
+                        conn_recon.commit()
+                        logger.info(f"🔄 [PersonalBotEngine] Trade huérfano #{gt['id']} ({gt_sym}) reconciliado y cerrado en base de datos.")
+                conn_recon.close()
+        except Exception as e_recon:
+            logger.debug(f"Aviso en reconciliación de trades huérfanos: {e_recon}")
+
         # -------------------------------------------------------------
         # PASO A: EVALUAR SALIDAS EN POSICIONES ABIERTAS DEL USUARIO
         # -------------------------------------------------------------
