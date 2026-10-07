@@ -2533,7 +2533,7 @@ def get_all_active_bot_users(operating_mode: str = None) -> list:
                    b.symbols_to_trade, b.strategy_name, COALESCE(b.operating_mode, 'COPY_TRADING') as operating_mode,
                    b.max_open_positions,
                    k.api_key_encrypted, k.api_secret_encrypted, k.api_key_masked,
-                   k.is_testnet, k.is_valid, k.balance_detected
+                   k.is_testnet, k.is_valid, k.balance_detected, k.api_base_url
             FROM users u
             JOIN user_bot_settings b ON u.id = b.user_id
             JOIN user_api_keys k ON u.id = k.user_id
@@ -2562,6 +2562,58 @@ def get_all_active_bot_users(operating_mode: str = None) -> list:
     except Exception as e:
         get_logger().error(f"Error al consultar usuarios con bot activo: {e}")
         return []
+    finally:
+        conn.close()
+
+
+def close_user_trade_record(user_id: int, symbol: str, close_price: float, pnl_usdt: float, close_reason: str, exit_order_id: str = None) -> bool:
+    """
+    Actualiza la operación abierta más reciente de un símbolo para ese usuario con sus datos de cierre definitivos.
+    Si no existe una fila abierta previa, crea una nueva fila de cierre completa.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        # Buscar el trade abierto más reciente de este símbolo
+        cursor.execute("""
+            SELECT id, open_price, quantity, position_size_usdt
+            FROM user_trades
+            WHERE user_id = ? AND symbol = ? AND close_timestamp IS NULL
+            ORDER BY id DESC LIMIT 1
+        """, (user_id, symbol.upper()))
+        row = cursor.fetchone()
+
+        if row:
+            trade_id = row['id']
+            cursor.execute("""
+                UPDATE user_trades
+                SET close_timestamp = ?, close_price = ?, pnl_usdt = ?, close_reason = ?,
+                    binance_trade_id = COALESCE(?, binance_trade_id)
+                WHERE id = ?
+            """, (now_str, float(close_price), float(pnl_usdt), close_reason, exit_order_id, trade_id))
+            conn.commit()
+            return True
+        else:
+            # Fallback: registrar nuevo trade completo si no había fila previa
+            cursor.execute("""
+                INSERT INTO user_trades (
+                    user_id, symbol, trade_type, open_timestamp, close_timestamp,
+                    open_price, close_price, quantity, position_size_usdt,
+                    pnl_usdt, close_reason, binance_trade_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                user_id, symbol.upper(), 'TRADE', now_str, now_str,
+                float(close_price), float(close_price), 0.0, 0.0,
+                float(pnl_usdt), close_reason, exit_order_id
+            ))
+            conn.commit()
+            return True
+    except Exception as e:
+        get_logger().error(f"Error al actualizar cierre de trade personal para usuario {user_id}: {e}")
+        return False
     finally:
         conn.close()
 

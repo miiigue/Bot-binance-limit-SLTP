@@ -23,7 +23,7 @@ from binance.error import ClientError
 from src.logger_setup import get_logger
 from src.database import (
     get_all_active_bot_users, record_user_trade, update_user_bot_settings,
-    get_strategies_catalog
+    get_strategies_catalog, close_user_trade_record
 )
 from src.binance_client import (
     get_user_futures_client, adjust_quantity_for_symbol, get_historical_klines
@@ -38,6 +38,7 @@ _user_peak_pnl = {}           # { (user_id, symbol): float } -> Para Trailing St
 _user_symbol_cooldown = {}    # { (user_id, symbol): float } -> Evitar re-entradas en ráfaga
 _engine_started = False
 _engine_lock = threading.Lock()
+_last_heartbeat_time = 0
 
 STRATEGIES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'strategies')
 
@@ -187,9 +188,12 @@ def evaluate_strategy_signal(symbol: str, klines_df: pd.DataFrame, params: dict)
             if long_ok and eval_vol:
                 v_period = int(params.get('volume_sma_period', 20) or 20)
                 v_factor = float(params.get('volume_factor', 1.0) or 1.0)
-                if len(klines_df['volume']) >= v_period:
-                    v_sma = float(klines_df['volume'].rolling(v_period).mean().iloc[-1])
-                    c_vol = float(klines_df['volume'].iloc[-1])
+                if len(klines_df['volume']) >= v_period + 1:
+                    vol_series = pd.to_numeric(klines_df['volume'], errors='coerce')
+                    v_sma = float(vol_series.rolling(v_period).mean().iloc[-2])
+                    vol_completed = float(vol_series.iloc[-2])
+                    vol_forming = float(vol_series.iloc[-1])
+                    c_vol = max(vol_completed, vol_forming)
                     if c_vol < v_factor * v_sma:
                         long_ok = False
 
@@ -254,11 +258,14 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
             pass
 
         allocated_usdt = float(user.get('allocated_usdt', 100.0) or 100.0)
+        max_open = max(1, int(user.get('max_open_positions', 3) or 3))
         if balance_detected > 10.0 and allocated_usdt > balance_detected:
             allocated_usdt = round(balance_detected * 0.90, 2)
         elif balance_detected <= 10.0 and allocated_usdt > 10.0:
             allocated_usdt = 10.0
 
+        # Margen por posición distribuido según cupo de posiciones permitidas
+        capital_per_pos = max(6.0, round(allocated_usdt / max_open, 2))
         leverage = int(user.get('leverage', 10) or 10)
         margin_type = str(user.get('margin_type', 'ISOLATED')).upper().strip()
 
@@ -273,7 +280,7 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
             pass
 
         # 3. Calcular tamaño y ajustar a LOT_SIZE
-        notional = allocated_usdt * leverage
+        notional = capital_per_pos * leverage
         if entry_price <= 0:
             return False
 
@@ -371,21 +378,13 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
         order_id = str(order_res.get('orderId', '')) if isinstance(order_res, dict) else ''
         strat_name = str(user.get('strategy_name') or 'BOT_PARAPRUEBAS')
 
-        record_user_trade(
+        close_user_trade_record(
             user_id=user_id,
             symbol=clean_sym,
-            trade_type='LONG' if pos_amt > 0 else 'SHORT',
-            open_timestamp=datetime.now(),
-            open_price=entry_price if entry_price > 0 else current_price,
-            quantity=qty,
-            position_size_usdt=round(qty * current_price, 2),
-            close_timestamp=datetime.now(),
             close_price=current_price,
             pnl_usdt=unrealized_pnl,
             close_reason=f"{exit_reason} (Bot Personal)",
-            binance_trade_id=order_id,
-            strategy_name=strat_name,
-            is_testnet=bool(user.get('is_testnet', False))
+            exit_order_id=order_id
         )
         logger.info(f"🛑 [PersonalBot - {username} (ID: {user_id})] POSICIÓN CERRADA en {clean_sym} ({side} {qty}, PnL: ${unrealized_pnl:+.2f} USDT). Razón: {exit_reason}")
         # Limpiar peak de trailing stop
@@ -413,6 +412,13 @@ def run_personal_bot_cycle():
     if not active_users:
         return
 
+    global _last_heartbeat_time
+    now_ts = time.time()
+    do_heartbeat = (now_ts - _last_heartbeat_time >= 30.0)
+    if do_heartbeat:
+        _last_heartbeat_time = now_ts
+        logger.info(f"⚡ [PersonalBotEngine] Ciclo activo - monitoreando {len(active_users)} usuario(s) en Binance Futures.")
+
     for user in active_users:
         user_id = user['user_id']
         username = user['username']
@@ -429,7 +435,9 @@ def run_personal_bot_cycle():
             logger.debug(f"Aviso al consultar posiciones para {username}: {e_pos}")
             continue
 
-        if not positions_data or not isinstance(positions_data, list):
+        # CRITICAL FIX: En Binance Demo/Testnet, si NO hay posiciones abiertas, get_position_risk() retorna [].
+        # 'if not positions_data' evalúa True en lista vacía y provocaba 'continue', bloqueando la apertura del primer trade.
+        if positions_data is None or not isinstance(positions_data, list):
             continue
 
         # Mapear posiciones abiertas actualmente en Binance para este usuario
@@ -438,6 +446,9 @@ def run_personal_bot_cycle():
             amt = float(p.get('positionAmt', 0.0) or 0.0)
             if abs(amt) > 1e-6:
                 open_positions[p.get('symbol')] = p
+
+        if do_heartbeat:
+            logger.info(f"🔍 [PersonalBotEngine - {username}] Posiciones abiertas: {len(open_positions)}/{user.get('max_open_positions', 3)}. Estrategia: '{strat_name}'")
 
         # -------------------------------------------------------------
         # PASO A: EVALUAR SALIDAS EN POSICIONES ABIERTAS DEL USUARIO
@@ -518,6 +529,7 @@ def run_personal_bot_cycle():
             signal = evaluate_strategy_signal(sym, klines, params)
             if signal in ('LONG', 'SHORT'):
                 curr_price = float(klines['close'].iloc[-1])
+                logger.info(f"🎯 [PersonalBot - {username}] Señal {signal} detectada en {sym} (Precio: {curr_price}) para estrategia '{strat_name}'. Ejecutando orden...")
                 success = execute_user_entry(client, user, sym, signal, curr_price, params)
                 if success:
                     _user_symbol_cooldown[(user_id, sym)] = time.time()
