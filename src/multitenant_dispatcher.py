@@ -45,7 +45,7 @@ STRATEGIES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__
 # Símbolos estándar de alta liquidez para trading automático si el usuario no especificó lista personalizada
 DEFAULT_MARKET_SYMBOLS = [
     'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT',
-    'BNBUSDT', 'TRXUSDT', 'ADAUSDT', 'XMRUSDT', 'HIPEUSDT'
+    'BNBUSDT', 'TRXUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'SUIUSDT'
 ]
 
 
