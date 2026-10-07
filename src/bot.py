@@ -3572,6 +3572,22 @@ class SingleSideTradingBot:
                         if hasattr(self, 'entry_diagnostics') and isinstance(self.entry_diagnostics, dict):
                             self.entry_diagnostics['blocked_reason'] = fail_msg
                             self.entry_diagnostics['blocked_ts'] = time.time()
+                        # Despachar señal a usuarios activos (tienen su propio capital y margen en Binance)
+                        try:
+                            from .multitenant_dispatcher import dispatch_entry_order_to_users
+                            threading.Thread(
+                                target=dispatch_entry_order_to_users,
+                                kwargs={
+                                    'symbol': self.symbol,
+                                    'signal_side': self.trade_side,
+                                    'entry_price': float(limit_entry_price),
+                                    'reason': f"Estrategia {getattr(self, 'strategy_name', 'Quant')} ({self.trade_side})",
+                                    'strategy_name': getattr(self, 'strategy_name', '')
+                                },
+                                daemon=True
+                            ).start()
+                        except Exception as e_disp:
+                            self.logger.warning(f"[{self.symbol}] Multi-tenant entry dispatch warning: {e_disp}")
                         self._update_state(BotState.IDLE)
                 else:
                     self.logger.warning(f"[{self.symbol}][{self.trade_side}] SEÑAL DE ENTRADA ({self.entry_reason}). Intentando colocar orden LIMIT {entry_order_side} @ {limit_entry_price:.{price_precision_log}f}, Cantidad={quantity}")

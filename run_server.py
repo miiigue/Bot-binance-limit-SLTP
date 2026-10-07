@@ -30,6 +30,13 @@ def main():
     except Exception as e:
         print(f"[AVISO] Config: {e}")
 
+    try:
+        from src.multitenant_dispatcher import start_personal_bot_engine
+        start_personal_bot_engine()
+        print("[OK] Motor autónomo de bots personales iniciado 24/7.")
+    except Exception as e:
+        print(f"[AVISO] PersonalBotEngine: {e}")
+
     print("[INFO] Servidor corriendo en http://127.0.0.1:5002")
     app.run(host='127.0.0.1', port=5002, debug=False, use_reloader=False)
 
