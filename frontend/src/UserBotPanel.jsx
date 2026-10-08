@@ -139,6 +139,32 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
     });
   };
 
+  // Reiniciar solo Historial de Trades y PnL del Usuario (sin tocar posiciones de Binance)
+  const handleResetUserTrades = () => {
+    openConfirm({
+      title: '🗑️ ¿Reiniciar Historial de Trades & PnL?',
+      message: '⚠️ Esta acción vaciará el historial de operaciones de tu sesión y pondrá tu PnL acumulado en $0.00 USDT. Tu bot y posiciones activas seguirán operando con total normalidad.',
+      confirmText: 'Sí, Vaciar Historial',
+      type: 'danger',
+      onConfirm: async () => {
+        setActionLoading(true);
+        setFeedback(null);
+        try {
+          const resp = await authFetch('/api/user/trades/reset', { method: 'POST' });
+          const resJson = await resp.json();
+          if (!resp.ok) throw new Error(resJson.message || resJson.error);
+          setFeedback({ type: 'success', text: `✅ ${resJson.message}` });
+          fetchUserTrades();
+          fetchUserBotStatus();
+        } catch (err) {
+          setFeedback({ type: 'error', text: `Error al reiniciar trades: ${err.message}` });
+        } finally {
+          setActionLoading(false);
+        }
+      }
+    });
+  };
+
   // Cargar catálogo de estrategias curadas
   const fetchStrategiesCatalog = useCallback(async () => {
     setIsLoadingCatalog(true);
@@ -1019,12 +1045,22 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 : 'Compras y ventas ejecutadas exclusivamente sobre tu cuenta de Binance Futures por el bot maestro.'}
             </p>
           </div>
-          <button
-            onClick={fetchUserTrades}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition self-start sm:self-auto"
-          >
-            ↻ Actualizar Historial
-          </button>
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <button
+              onClick={fetchUserTrades}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95"
+            >
+              ↻ Actualizar Historial
+            </button>
+            <button
+              onClick={handleResetUserTrades}
+              disabled={actionLoading}
+              className="px-3 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-800/60 rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95 disabled:opacity-50"
+              title="Reiniciar el historial de operaciones personales y poner el PnL a 0.00 USDT"
+            >
+              <span>🗑️</span> Vaciar Historial & PnL
+            </button>
+          </div>
         </div>
 
         {/* Métricas Personales */}

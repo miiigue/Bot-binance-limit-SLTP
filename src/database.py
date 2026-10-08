@@ -2679,7 +2679,7 @@ def _format_short_datetime(dt_str: str) -> str:
         return str(dt_str)
 
 
-def clear_user_trades(user_id: int) -> bool:
+def clear_user_trades(user_id: int, stop_bot: bool = False) -> bool:
     """Elimina el historial de operaciones personales de un usuario y reinicia sus métricas."""
     conn = get_db_connection()
     if not conn:
@@ -2687,8 +2687,9 @@ def clear_user_trades(user_id: int) -> bool:
     try:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM user_trades WHERE user_id = ?", (user_id,))
-        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        cursor.execute("UPDATE user_bot_settings SET last_started_at = ?, is_running = FALSE WHERE user_id = ?", (now_str, user_id))
+        if stop_bot:
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute("UPDATE user_bot_settings SET last_started_at = ?, is_running = FALSE WHERE user_id = ?", (now_str, user_id))
         conn.commit()
         return True
     except Exception as e:

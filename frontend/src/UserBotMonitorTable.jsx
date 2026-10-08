@@ -16,6 +16,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [fetchError, setFetchError] = useState(null);
+  const [isResettingTrades, setIsResettingTrades] = useState(false);
 
   const fetchMonitor = useCallback(async () => {
     try {
@@ -46,8 +47,33 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
     return () => clearInterval(interval);
   }, [fetchMonitor]);
 
+  const handleResetTrades = async () => {
+    if (!window.confirm("⚠️ ¿Deseas reiniciar tu historial de trades y poner el PnL histórico a 0.00 USDT? Tu bot y posiciones activas seguirán operando con normalidad.")) {
+      return;
+    }
+    setIsResettingTrades(true);
+    try {
+      const resp = await authFetch('/api/user/trades/reset', { method: 'POST' });
+      const data = await resp.json();
+      if (resp.ok && data.status === 'success') {
+        alert("✅ Historial de trades y PnL reiniciados con éxito a 0.00 USDT.");
+        fetchMonitor();
+      } else {
+        alert(`Error al reiniciar trades: ${data.message || 'Error desconocido'}`);
+      }
+    } catch (err) {
+      alert(`Error al reiniciar trades: ${err.message}`);
+    } finally {
+      setIsResettingTrades(false);
+    }
+  };
+
   const symbols = monitorData?.symbols || [];
   const openPositionsCount = symbols.reduce((acc, s) => acc + (s.in_long ? 1 : 0) + (s.in_short ? 1 : (s.in_position ? 1 : 0)), 0);
+
+  const totalUnrealizedPnl = monitorData?.summary?.total_unrealized_pnl ?? symbols.reduce((acc, s) => acc + Number(s.unrealized_pnl || 0), 0);
+  const totalHistoricalPnl = monitorData?.summary?.total_historical_pnl ?? symbols.reduce((acc, s) => acc + Number(s.historical_pnl || 0), 0);
+  const totalMarginCommitted = monitorData?.summary?.total_margin_usdt ?? symbols.reduce((acc, s) => acc + Number(s.margin_usdt || 0), 0);
 
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-4 animate-fadeIn">
@@ -81,8 +107,17 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
           <button
             onClick={fetchMonitor}
             className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95"
+            title="Actualizar datos en vivo"
           >
             <span>↻</span> Refrescar
+          </button>
+          <button
+            onClick={handleResetTrades}
+            disabled={isResettingTrades}
+            className="px-3 py-1 bg-rose-950/80 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-800/60 rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95 disabled:opacity-50"
+            title="Reiniciar el historial de operaciones personales y poner el PnL histórico a 0.00 USDT"
+          >
+            <span>🗑️</span> {isResettingTrades ? 'Reiniciando...' : 'Vaciar Historial & PnL'}
           </button>
         </div>
       </div>
@@ -172,14 +207,43 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
 
                     {/* 3. PNL FLOTANTE / HIST */}
                     <td className="py-4 px-4 sm:px-6 font-mono">
-                      <div className="flex flex-col gap-0.5 text-xs">
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-sans text-slate-500 uppercase font-bold">Flotante:</span>
+                      <div className="flex flex-col gap-1 text-xs">
+                        {/* Flotante global del par */}
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] font-sans text-slate-400 font-semibold uppercase">Flotante:</span>
                           <span className={`font-black text-sm ${unPnlColor}`}>
-                            {unPnl >= 0 ? '+' : ''}{unPnl.toFixed(2)} <span className="text-[10px]">USDT</span>
+                            {inPos ? `${unPnl >= 0 ? '+' : ''}${unPnl.toFixed(2)} USDT` : '0.00 USDT'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 text-[11px]">
+
+                        {/* Desglose por lado (L: / S:) cuando hay posición activa, tal como en Admin */}
+                        {inPos && (item.in_long || item.in_short) && (
+                          <div className="flex flex-col gap-0.5 pt-0.5 border-t border-slate-800/80 text-[10px]">
+                            {item.in_long && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-400 font-sans font-bold flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> L (Long):
+                                </span>
+                                <span className={`font-bold ${Number(item.long_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {Number(item.long_pnl || 0) >= 0 ? '+' : ''}{Number(item.long_pnl || 0).toFixed(2)} USDT
+                                </span>
+                              </div>
+                            )}
+                            {item.in_short && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-400 font-sans font-bold flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span> S (Short):
+                                </span>
+                                <span className={`font-bold ${Number(item.short_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {Number(item.short_pnl || 0) >= 0 ? '+' : ''}{Number(item.short_pnl || 0).toFixed(2)} USDT
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Histórico acumulado */}
+                        <div className="flex items-center justify-between gap-1 text-[11px] pt-0.5 border-t border-slate-800/60">
                           <span className="text-[10px] font-sans text-slate-500 uppercase font-semibold">Histórico:</span>
                           <span className={`font-bold ${histPnlColor}`}>
                             {histPnl >= 0 ? '+' : ''}{histPnl.toFixed(2)} USDT
@@ -213,6 +277,62 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                 );
               })}
             </tbody>
+
+            {/* TOTALES CONSOLIDADOS (TAL COMO SE VE EN ADMIN) */}
+            {symbols.length > 0 && (
+              <tfoot className="bg-slate-950 border-t-2 border-slate-700 font-mono text-xs">
+                <tr className="divide-x divide-slate-800/80">
+                  {/* 1 y 2: Símbolo, Estrategia & Estado */}
+                  <td colSpan="2" className="py-3.5 px-4 sm:px-6 text-left font-sans font-bold text-slate-200">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">📊</span>
+                      <span>TOTALES CONSOLIDADOS ({symbols.length} pares)</span>
+                    </div>
+                  </td>
+
+                  {/* 3: PnL Flotante neto e Histórico consolidado */}
+                  <td className="py-3.5 px-4 sm:px-6 text-xs font-mono">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="text-[10px] text-slate-400 font-sans font-semibold">Flotante neto:</span>
+                        <span className={`font-black ${totalUnrealizedPnl < 0 ? 'text-rose-400' : totalUnrealizedPnl > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                          {totalUnrealizedPnl >= 0 ? `+${totalUnrealizedPnl.toFixed(4)}` : totalUnrealizedPnl.toFixed(4)} USDT
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-1.5 pt-0.5 border-t border-slate-800">
+                        <span className="text-[10px] text-slate-400 font-sans font-semibold">Histórico pares:</span>
+                        <span className={`font-bold ${totalHistoricalPnl < 0 ? 'text-rose-400' : totalHistoricalPnl > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                          {totalHistoricalPnl >= 0 ? `+${totalHistoricalPnl.toFixed(4)}` : totalHistoricalPnl.toFixed(4)} USDT
+                        </span>
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 4: Métricas en vivo (Dual Hedge) & Margen total */}
+                  <td className="py-3.5 px-4 sm:px-6 text-center text-[11px] text-slate-400 font-sans">
+                    <div className="flex flex-col items-center justify-center gap-1">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700/60 text-slate-300">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Métricas en vivo (Dual Hedge)
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Margen total: <strong className="text-white">${totalMarginCommitted.toFixed(2)} USDT</strong>
+                      </span>
+                    </div>
+                  </td>
+
+                  {/* 5: Posiciones activas */}
+                  <td className="py-3.5 px-4 sm:px-6 font-mono text-xs">
+                    <div className="flex flex-col items-end sm:items-start justify-center gap-1">
+                      <span className="text-[10px] text-slate-400 font-sans font-semibold">En posición:</span>
+                      <span className="font-black text-amber-300">
+                        {openPositionsCount} {openPositionsCount === 1 ? 'posición activa' : 'posiciones activas'}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}
@@ -251,27 +371,72 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
 function PositionTpSlBar({ position }) {
   if (!position) return null;
 
-  const { tp, sl, ts, unrealized_pnl } = position;
+  const { tp, sl, ts, unrealized_pnl, margin_usdt, notional_usdt, leverage, side } = position;
+  const pnlUsdt = Number(unrealized_pnl || 0);
+  const isProfit = pnlUsdt >= 0;
   const tpProgress = Math.min(100, Math.max(0, Number(tp?.progress_pct || 0)));
-  const slFillPct = Math.min(100, Math.max(0, Number(sl?.fill_pct || 0)));
-  const isProfit = Number(unrealized_pnl || 0) >= 0;
+
+  const lossUsdt = Math.abs(Math.min(0, pnlUsdt));
+  const slTargetUsdt = Math.abs(Number(sl?.target_usdt || 400));
+  const slFillPct = slTargetUsdt > 0 ? (lossUsdt / slTargetUsdt) * 100 : 0;
+
+  // Rango de riesgo dinámico según pérdida consumida del Stop Loss
+  let riskBadge = null;
+  if (pnlUsdt >= 0) {
+    riskBadge = <span className="font-medium text-emerald-400">🛡️ Seguro</span>;
+  } else if (slFillPct < 5) {
+    const pctStr = slFillPct < 1 ? slFillPct.toFixed(1) : Math.round(slFillPct);
+    riskBadge = <span className="font-mono font-bold text-amber-400 animate-pulse">⚠️ Riesgo Inicial ({pctStr}%)</span>;
+  } else if (slFillPct < 25) {
+    riskBadge = <span className="font-mono font-bold text-amber-400 animate-pulse">⚠️ Riesgo Bajo ({Math.round(slFillPct)}%)</span>;
+  } else if (slFillPct < 60) {
+    riskBadge = <span className="font-mono font-bold text-orange-400 animate-pulse">⚡ Riesgo Medio ({Math.round(slFillPct)}%)</span>;
+  } else {
+    riskBadge = <span className="font-mono font-bold text-rose-400 animate-pulse">🚨 Riesgo Alto ({Math.round(slFillPct)}%)</span>;
+  }
 
   return (
-    <div className="flex flex-col gap-1.5 w-full max-w-sm xl:max-w-md py-1 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800/80 shadow-inner">
-      {/* FILA 1: TAKE PROFIT */}
-      <div className="flex flex-col gap-0.5">
-        <div className="flex items-center justify-between text-[11px] leading-tight">
-          <span className="font-bold text-emerald-300 flex items-center gap-1">
-            <span>🎯 TP:</span>
-            <span className="font-mono text-emerald-200">+{Number(tp?.target_usdt || 50).toFixed(2)} USDT</span>
+    <div className="flex flex-col gap-1.5 w-full max-w-sm xl:max-w-md py-1.5 bg-slate-950/85 p-3 rounded-xl border border-slate-800/80 shadow-inner">
+      {/* CABECERA DE LA POSICIÓN: Lado, PnL en vivo y Margen (tal como en Admin) */}
+      <div className="flex items-center justify-between text-[11px] pb-1 border-b border-slate-800/80">
+        <div className="flex items-center gap-1.5">
+          <span className={`w-2 h-2 rounded-full ${isProfit ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse`}></span>
+          <span className="font-bold text-white font-mono">{side ? `POSICIÓN ${side}` : 'EN POSICIÓN'}</span>
+          {leverage && (
+            <span className="text-[10px] px-1 py-0.2 rounded bg-slate-900 border border-slate-700 font-mono text-cyan-300 font-bold">
+              {leverage}x
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-slate-400 font-sans font-semibold">PnL:</span>
+          <span className={`font-mono font-black text-xs ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {isProfit ? `+${pnlUsdt.toFixed(2)}` : pnlUsdt.toFixed(2)} USDT
           </span>
-          <div className="flex items-center gap-1 text-[10px]">
+        </div>
+      </div>
+
+      {/* FILA 1: TAKE PROFIT (Muestra profit obtenido) */}
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center justify-between text-[11px] leading-tight flex-wrap gap-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-bold text-emerald-300 flex items-center gap-1">
+              <span>🎯 TP:</span>
+              <span className="font-mono text-emerald-200">+{Number(tp?.target_usdt || 50).toFixed(2)} USDT</span>
+            </span>
+            {pnlUsdt > 0 && (
+              <span className="text-[10px] font-mono font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
+                Profit: +{pnlUsdt.toFixed(2)} USDT
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px]">
             {tp?.remaining_usdt !== undefined && tp.remaining_usdt > 0 && (
               <span className="text-slate-400 font-sans hidden sm:inline">
                 (Falta: +{Number(tp.remaining_usdt).toFixed(2)})
               </span>
             )}
-            <span className={`font-mono font-black ${isProfit ? 'text-emerald-400' : 'text-slate-400'}`}>
+            <span className={`font-mono font-black ${isProfit ? 'text-emerald-400' : 'text-slate-500'}`}>
               {Math.round(tpProgress)}%
             </span>
           </div>
@@ -292,7 +457,7 @@ function PositionTpSlBar({ position }) {
         </div>
       </div>
 
-      {/* FILA 2: STOP LOSS O TRAILING STOP */}
+      {/* FILA 2: STOP LOSS O TRAILING STOP (Muestra loss actual y rango de riesgo) */}
       {ts?.armed ? (
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center justify-between text-[11px] leading-tight">
@@ -313,22 +478,23 @@ function PositionTpSlBar({ position }) {
         </div>
       ) : (
         <div className="flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[11px] leading-tight">
-            <span className="font-bold text-rose-300 flex items-center gap-1">
-              <span>🛑 SL:</span>
-              <span className="font-mono text-rose-200">{Number(sl?.target_usdt || -400).toFixed(2)} USDT</span>
-            </span>
+          <div className="flex items-center justify-between text-[11px] leading-tight flex-wrap gap-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-bold text-rose-300 flex items-center gap-1">
+                <span>🛑 SL:</span>
+                <span className="font-mono text-rose-200">{Number(sl?.target_usdt || -400).toFixed(2)} USDT</span>
+              </span>
+              {pnlUsdt < 0 && (
+                <span className="text-[10px] font-mono font-black text-rose-300 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/40">
+                  Loss: {pnlUsdt.toFixed(2)} USDT
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1.5 text-[10px]">
               <span className="text-slate-400 font-sans">
                 Colchón: <span className="font-mono font-medium text-slate-200">+{Number(sl?.distance_usdt || 0).toFixed(2)}</span>
               </span>
-              {isProfit ? (
-                <span className="font-medium text-emerald-400">🛡️ Seguro</span>
-              ) : (
-                <span className="font-mono font-bold text-rose-400 animate-pulse">
-                  {Math.round(slFillPct)}% riesgo
-                </span>
-              )}
+              {riskBadge}
             </div>
           </div>
           <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-700/80">
@@ -338,9 +504,17 @@ function PositionTpSlBar({ position }) {
                   ? 'bg-gradient-to-r from-red-600 to-rose-500 animate-pulse'
                   : 'bg-gradient-to-r from-rose-600 to-red-500'
               }`}
-              style={{ width: `${slFillPct}%` }}
+              style={{ width: `${Math.min(100, Math.max(slFillPct > 0 ? 3 : 0, slFillPct))}%` }}
             />
           </div>
+        </div>
+      )}
+
+      {/* PIE DE TARJETA: Valor Nominal y Margen Asignado */}
+      {(margin_usdt !== undefined || notional_usdt !== undefined) && (
+        <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-900 text-slate-400 font-mono">
+          <span>Valor: <strong className="text-slate-200">${notional_usdt || '0.00'} USDT</strong></span>
+          <span>Margen: <strong className="text-amber-300">${margin_usdt || '0.00'} USDT</strong></span>
         </div>
       )}
     </div>

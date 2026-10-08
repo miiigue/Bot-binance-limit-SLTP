@@ -1418,6 +1418,28 @@ def user_trades_endpoint():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/user/trades/reset', methods=['POST'])
+@token_required
+def user_trades_reset_endpoint():
+    """Reinicia el historial de trades del usuario y su PnL acumulado a $0.00 USDT."""
+    try:
+        user_id = request.current_user['user_id']
+        username = request.current_user.get('username', f'user_{user_id}')
+        from src.database import clear_user_trades
+        ok = clear_user_trades(user_id, stop_bot=False)
+        if ok:
+            api_logger.info(f"Historial de trades del usuario {user_id} ({username}) reiniciado con éxito a 0.00 USDT.")
+            return jsonify({
+                "status": "success",
+                "message": "Historial de trades y PnL reiniciados a 0.00 USDT con éxito."
+            }), 200
+        else:
+            return jsonify({"status": "error", "message": "No se pudo reiniciar el historial de trades en la base de datos."}), 500
+    except Exception as e:
+        api_logger.error(f"Error al reiniciar trades de usuario: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # =====================================================================
 # --- ENDPOINTS EXCLUSIVOS DEL SUPER ADMINISTRADOR (GESTIÓN & BACKUP) ---
 # =====================================================================
@@ -2558,7 +2580,7 @@ def reset_demo_account_endpoint():
         from src.database import clear_trade_history, clear_user_trades
         clear_trade_history()
         if user_id:
-            clear_user_trades(user_id)
+            clear_user_trades(user_id, stop_bot=True)
 
         global _sync_paused_until
         _sync_paused_until = time.time() + 15  # Pausar sync por 15 segundos post-reset

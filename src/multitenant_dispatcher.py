@@ -872,12 +872,21 @@ def get_user_monitor_status(user_id: int) -> dict:
         pos_long_info = None
         pos_short_info = None
         tot_unrealized_pnl = 0.0
+        pnl_l = 0.0
+        pnl_s = 0.0
+        margin_l = 0.0
+        margin_s = 0.0
+        notional_l = 0.0
+        notional_s = 0.0
 
         if pos_long_raw:
             amt_l = float(pos_long_raw.get('positionAmt', 0.0) or 0.0)
             pnl_l = round(float(pos_long_raw.get('unRealizedProfit', 0.0) or 0.0), 2)
             entry_p_l = float(pos_long_raw.get('entryPrice', 0.0) or 0.0)
             mark_p_l = float(pos_long_raw.get('markPrice', entry_p_l) or entry_p_l)
+            lev_l = max(1, int(pos_long_raw.get('leverage', 10) or 10))
+            notional_l = round(abs(amt_l) * mark_p_l, 2)
+            margin_l = round(float(pos_long_raw.get('initialMargin', 0.0) or (notional_l / lev_l)), 2)
             tot_unrealized_pnl += pnl_l
 
             tp_prog_l = min(100.0, max(0.0, (pnl_l / tp_usdt) * 100.0)) if tp_usdt > 0 else 0.0
@@ -895,6 +904,9 @@ def get_user_monitor_status(user_id: int) -> dict:
                 'entry_price': entry_p_l,
                 'mark_price': mark_p_l,
                 'unrealized_pnl': pnl_l,
+                'margin_usdt': margin_l,
+                'notional_usdt': notional_l,
+                'leverage': lev_l,
                 'tp': {'target_usdt': tp_usdt, 'progress_pct': round(tp_prog_l, 1), 'remaining_usdt': round(tp_rem_l, 2)},
                 'sl': {'target_usdt': -abs(sl_usdt), 'distance_usdt': sl_dist_l, 'fill_pct': round(sl_fill_l, 1)},
                 'ts': {'enabled': enable_ts, 'armed': ts_armed_l, 'act_threshold': ts_act, 'drop_usdt': ts_drop, 'peak_value': round(pk_l, 2)}
@@ -905,6 +917,9 @@ def get_user_monitor_status(user_id: int) -> dict:
             pnl_s = round(float(pos_short_raw.get('unRealizedProfit', 0.0) or 0.0), 2)
             entry_p_s = float(pos_short_raw.get('entryPrice', 0.0) or 0.0)
             mark_p_s = float(pos_short_raw.get('markPrice', entry_p_s) or entry_p_s)
+            lev_s = max(1, int(pos_short_raw.get('leverage', 10) or 10))
+            notional_s = round(abs(amt_s) * mark_p_s, 2)
+            margin_s = round(float(pos_short_raw.get('initialMargin', 0.0) or (notional_s / lev_s)), 2)
             tot_unrealized_pnl += pnl_s
 
             tp_prog_s = min(100.0, max(0.0, (pnl_s / tp_usdt) * 100.0)) if tp_usdt > 0 else 0.0
@@ -922,11 +937,16 @@ def get_user_monitor_status(user_id: int) -> dict:
                 'entry_price': entry_p_s,
                 'mark_price': mark_p_s,
                 'unrealized_pnl': pnl_s,
+                'margin_usdt': margin_s,
+                'notional_usdt': notional_s,
+                'leverage': lev_s,
                 'tp': {'target_usdt': tp_usdt, 'progress_pct': round(tp_prog_s, 1), 'remaining_usdt': round(tp_rem_s, 2)},
                 'sl': {'target_usdt': -abs(sl_usdt), 'distance_usdt': sl_dist_s, 'fill_pct': round(sl_fill_s, 1)},
                 'ts': {'enabled': enable_ts, 'armed': ts_armed_s, 'act_threshold': ts_act, 'drop_usdt': ts_drop, 'peak_value': round(pk_s, 2)}
             }
 
+        tot_margin = round(margin_l + margin_s, 2)
+        tot_notional = round(notional_l + notional_s, 2)
         in_pos = bool(pos_long_raw or pos_short_raw)
         trade_side_label = 'BIDI' if (pos_long_raw and pos_short_raw) else ('LONG' if pos_long_raw else ('SHORT' if pos_short_raw else None))
 
@@ -1003,9 +1023,13 @@ def get_user_monitor_status(user_id: int) -> dict:
             'in_position': in_pos,
             'in_long': bool(pos_long_raw),
             'in_short': bool(pos_short_raw),
+            'long_pnl': pnl_l if pos_long_raw else None,
+            'short_pnl': pnl_s if pos_short_raw else None,
             'trade_side': trade_side_label,
             'unrealized_pnl': round(tot_unrealized_pnl, 2),
             'historical_pnl': historical_pnls.get(sym, 0.0),
+            'margin_usdt': tot_margin,
+            'notional_usdt': tot_notional,
             'cooldown_active': (cd_long or cd_short),
             'position': pos_long_info or pos_short_info,
             'long_position': pos_long_info,
@@ -1024,11 +1048,24 @@ def get_user_monitor_status(user_id: int) -> dict:
             }
         })
 
+    tot_unrealized_all = sum(float(s.get('unrealized_pnl') or 0.0) for s in symbols_data)
+    tot_hist_all = sum(float(s.get('historical_pnl') or 0.0) for s in symbols_data)
+    tot_margin_all = sum(float(s.get('margin_usdt') or 0.0) for s in symbols_data)
+    tot_active_pairs = sum(1 for s in symbols_data if s.get('in_position'))
+    tot_positions_all = sum((1 if s.get('in_long') else 0) + (1 if s.get('in_short') else 0) for s in symbols_data)
+
     return {
         'status': 'success',
         'strategy_name': strat_name,
         'operating_mode': str(settings.get('operating_mode') or 'PERSONAL_BOT'),
         'is_running': bool(settings.get('is_running', False)),
         'is_hedge': is_hedge,
+        'summary': {
+            'total_unrealized_pnl': round(tot_unrealized_all, 4),
+            'total_historical_pnl': round(tot_hist_all, 4),
+            'total_margin_usdt': round(tot_margin_all, 2),
+            'active_pairs': tot_active_pairs,
+            'total_positions': tot_positions_all
+        },
         'symbols': symbols_data
     }
