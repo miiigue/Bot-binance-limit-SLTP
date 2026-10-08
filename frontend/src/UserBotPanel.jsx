@@ -1102,6 +1102,8 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 <th className="p-3.5">Precio Entrada</th>
                 <th className="p-3.5">Precio Salida</th>
                 <th className="p-3.5">Cantidad</th>
+                <th className="p-3.5">Margen</th>
+                <th className="p-3.5">Valor Posición</th>
                 <th className="p-3.5">PnL Realizado</th>
                 <th className="p-3.5 sm:pr-4">Estado</th>
               </tr>
@@ -1113,6 +1115,10 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                   const isWin = pnl >= 0;
                   const tradeId = t.id || t.binance_trade_id || '-';
                   const isClosed = Boolean(t.close_timestamp);
+
+                  const posVal = Number(t.position_value_usdt) || Number(t.position_size_usdt) || (Number(t.open_price || 0) * Number(t.quantity || 0));
+                  const lev = Number(t.leverage || (botData?.bot_settings?.leverage) || 10);
+                  const marginVal = Number(t.margin_usdt) || (posVal > 0 && lev > 0 ? (posVal / lev) : 0);
 
                   return (
                     <tr key={t.id || tradeId} className="hover:bg-slate-900/50 transition font-sans">
@@ -1159,12 +1165,22 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                       {/* 7. Cantidad */}
                       <td className="p-3.5 font-mono text-slate-400">{t.quantity}</td>
 
-                      {/* 8. PnL Realizado */}
+                      {/* 8. Margen */}
+                      <td className="p-3.5 font-mono text-cyan-300 font-semibold whitespace-nowrap">
+                        ${marginVal.toFixed(2)} <span className="text-[10px] text-slate-500 font-sans">USDT</span>
+                      </td>
+
+                      {/* 9. Valor Posición */}
+                      <td className="p-3.5 font-mono text-amber-300 font-semibold whitespace-nowrap">
+                        ${posVal.toFixed(2)} <span className="text-[10px] text-slate-500 font-sans">USDT</span>
+                      </td>
+
+                      {/* 10. PnL Realizado */}
                       <td className={`p-3.5 font-bold font-mono text-xs ${isClosed ? (isWin ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-400'}`}>
                         {isClosed ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : <span className="text-amber-400/90 text-xs font-sans">En curso</span>}
                       </td>
 
-                      {/* 9. Estado */}
+                      {/* 11. Estado */}
                       <td className="p-3.5 sm:pr-4">
                         {isClosed ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
@@ -1181,7 +1197,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 })
               ) : (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-500 text-xs">
+                  <td colSpan={11} className="p-8 text-center text-slate-500 text-xs">
                     {currentSubTab === 'my_bot'
                       ? 'No hay operaciones cerradas registradas para esta sesión de tu bot personal. Las nuevas posiciones ejecutadas por tu estrategia quedarán registradas aquí.'
                       : 'No hay operaciones cerradas registradas para esta sesión de copytrading. Las nuevas posiciones de la estrategia cuantitativa activa quedarán registradas aquí.'}

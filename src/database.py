@@ -2709,10 +2709,11 @@ def get_user_trades(user_id: int, limit: int = 50, mode: str = None) -> list:
         return []
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT last_started_at, operating_mode FROM user_bot_settings WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT last_started_at, operating_mode, leverage FROM user_bot_settings WHERE user_id = ?", (user_id,))
         settings_row = cursor.fetchone()
         last_started_at = settings_row['last_started_at'] if settings_row and settings_row['last_started_at'] else None
         current_op_mode = mode or (settings_row['operating_mode'] if settings_row and settings_row.get('operating_mode') else None)
+        user_lev = float(settings_row['leverage'] if settings_row and settings_row.get('leverage') else 10)
 
         query = "SELECT * FROM user_trades WHERE user_id = ?"
         params = [user_id]
@@ -2738,6 +2739,20 @@ def get_user_trades(user_id: int, limit: int = 50, mode: str = None) -> list:
             trade_dict = dict(r)
             trade_dict['open_time_short'] = _format_short_datetime(trade_dict.get('open_timestamp'))
             trade_dict['close_time_short'] = _format_short_datetime(trade_dict.get('close_timestamp'))
+
+            # Valor nominal de la posición (USDT)
+            pos_val = float(trade_dict.get('position_size_usdt') or 0.0)
+            if pos_val <= 0 and trade_dict.get('open_price') and trade_dict.get('quantity'):
+                pos_val = round(float(trade_dict['open_price']) * float(trade_dict['quantity']), 2)
+            trade_dict['position_value_usdt'] = pos_val
+
+            # Margen de esa posición (USDT)
+            marg_val = float(trade_dict.get('margin_usdt') or 0.0)
+            if marg_val <= 0:
+                trade_lev = float(trade_dict.get('leverage') or user_lev or 10)
+                marg_val = round(pos_val / trade_lev, 2) if (pos_val > 0 and trade_lev > 0) else 0.0
+            trade_dict['margin_usdt'] = marg_val
+
             result.append(trade_dict)
         return result
     except Exception as e:
