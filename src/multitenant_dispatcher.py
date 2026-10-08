@@ -413,15 +413,36 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
         order_id = str(order_res.get('orderId', '')) if isinstance(order_res, dict) else ''
         strat_name = str(user.get('strategy_name') or 'BOT_PARAPRUEBAS')
 
+        # Determinar el lado real de la operación (LONG o SHORT)
+        if position_side in ('LONG', 'SHORT'):
+            actual_side = position_side
+        elif pos_amt > 0:
+            actual_side = 'LONG'
+        else:
+            actual_side = 'SHORT'
+
+        eff_entry_p = float(entry_price or 0.0)
+        if eff_entry_p <= 0:
+            eff_entry_p = float(current_price or 0.0)
+        eff_notional = round(qty * eff_entry_p, 2)
+
+        op_mode = str(user.get('operating_mode', '')).upper()
+        mode_suffix = " (Bot Personal)" if ('PERSONAL' in op_mode or 'MY_BOT' in op_mode) else (" (Copy Trading)" if 'COPY' in op_mode else "")
+        final_reason = f"{exit_reason}{mode_suffix}" if mode_suffix and mode_suffix not in exit_reason else exit_reason
+
         close_user_trade_record(
             user_id=user_id,
             symbol=clean_sym,
             close_price=current_price,
             pnl_usdt=unrealized_pnl,
-            close_reason=f"{exit_reason} (Bot Personal)",
-            exit_order_id=order_id
+            close_reason=final_reason,
+            exit_order_id=order_id,
+            trade_type=actual_side,
+            quantity=qty,
+            open_price=eff_entry_p,
+            position_size_usdt=eff_notional
         )
-        logger.info(f"🛑 [PersonalBot - {username} (ID: {user_id})] POSICIÓN CERRADA en {clean_sym} ({side} {qty}, PnL: ${unrealized_pnl:+.2f} USDT). Razón: {exit_reason}")
+        logger.info(f"🛑 [PersonalBot - {username} (ID: {user_id})] POSICIÓN CERRADA en {clean_sym} ({actual_side} {qty}, PnL: ${unrealized_pnl:+.2f} USDT). Razón: {exit_reason}")
         # Limpiar peak de trailing stop
         _user_peak_pnl.pop((user_id, clean_sym, pos_side), None)
         _user_peak_pnl.pop((user_id, clean_sym), None)
@@ -746,7 +767,9 @@ def dispatch_exit_order_to_users(symbol: str, exit_reason: str, exit_price: floa
                     continue
                 unrealized_pnl = float(p.get('unRealizedProfit', 0.0) or 0.0)
                 entry_p = float(p.get('entryPrice', exit_price) or exit_price)
-                close_user_position(client, user, clean_sym, amt, exit_price, unrealized_pnl, exit_reason, entry_price=entry_p)
+                raw_ps = str(p.get('positionSide', 'BOTH')).upper()
+                pos_side = ('LONG' if amt > 0 else 'SHORT') if raw_ps == 'BOTH' else raw_ps
+                close_user_position(client, user, clean_sym, amt, exit_price, unrealized_pnl, exit_reason, entry_price=entry_p, position_side=pos_side)
                 results["closed"] += 1
 
         except Exception as e:

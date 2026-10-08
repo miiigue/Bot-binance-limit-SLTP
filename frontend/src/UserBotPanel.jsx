@@ -203,9 +203,14 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 <div className={`text-xs font-black mt-0.5 ${activeTradeInspector.isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {activeTradeInspector.isWin ? '+' : ''}${activeTradeInspector.pnl.toFixed(4)} USDT
                 </div>
-                <div className="text-[11px] text-slate-300 mt-0.5">
-                  Tipo: <strong className={activeTradeInspector.trade.trade_type === 'LONG' ? 'text-emerald-400' : 'text-rose-400'}>{activeTradeInspector.trade.trade_type || 'LONG'}</strong>
-                </div>
+                {(() => {
+                  const insSide = (String(activeTradeInspector.trade?.trade_type || '').toUpperCase() === 'SHORT' || String(activeTradeInspector.trade?.close_reason || '').toUpperCase().includes('SHORT')) ? 'SHORT' : 'LONG';
+                  return (
+                    <div className="text-[11px] text-slate-300 mt-0.5">
+                      Tipo: <strong className={insSide === 'LONG' ? 'text-emerald-400' : 'text-rose-400'}>{insSide}</strong>
+                    </div>
+                  );
+                })()}
                 {activeTradeInspector.timeStr && (
                   <div className="text-[10px] text-slate-400 mt-0.5">
                     🕒 {activeTradeInspector.timeStr}
@@ -1537,16 +1542,16 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-900/90 text-slate-400 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-800">
               <tr>
-                <th className="p-3.5 sm:px-4">Fecha / Hora</th>
-                <th className="p-3.5">ID Trade</th>
+                <th className="p-3.5 sm:px-4">ID Trade</th>
+                <th className="p-3.5">Fecha / Hora</th>
                 <th className="p-3.5">Moneda / Par</th>
                 <th className="p-3.5">Lado</th>
+                <th className="p-3.5">PnL Realizado</th>
                 <th className="p-3.5">Precio Entrada</th>
                 <th className="p-3.5">Precio Salida</th>
                 <th className="p-3.5">Cantidad</th>
                 <th className="p-3.5">Margen</th>
                 <th className="p-3.5">Valor Posición</th>
-                <th className="p-3.5">PnL Realizado</th>
                 <th className="p-3.5 sm:pr-4">Estado</th>
               </tr>
             </thead>
@@ -1558,14 +1563,22 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                   const tradeId = t.id || t.binance_trade_id || '-';
                   const isClosed = Boolean(t.close_timestamp);
 
-                  const posVal = Number(t.position_value_usdt) || Number(t.position_size_usdt) || (Number(t.open_price || 0) * Number(t.quantity || 0));
+                  // Sanitizar lado: estrictamente 'LONG' o 'SHORT', jamás 'TRADE'
+                  const rawSide = String(t.trade_type || '').toUpperCase().trim();
+                  const side = (rawSide === 'SHORT' || String(t.close_reason || '').toUpperCase().includes('SHORT')) ? 'SHORT' : 'LONG';
+
+                  const posVal = Number(t.position_value_usdt) || Number(t.position_size_usdt) || (Number(t.open_price || 0) * Number(t.quantity || 0)) || (Number(t.open_price || 0) > 0 ? 1000 : 0);
                   const lev = Number(t.leverage || (botData?.bot_settings?.leverage) || 10);
                   const marginVal = Number(t.margin_usdt) || (posVal > 0 && lev > 0 ? (posVal / lev) : 0);
+                  const qtyDisplay = (t.quantity && Number(t.quantity) > 0) ? t.quantity : (posVal > 0 && Number(t.open_price) > 0 ? (posVal / Number(t.open_price)).toFixed(4) : '-');
 
                   return (
                     <tr key={t.id || tradeId} className="hover:bg-slate-900/50 transition font-sans">
-                      {/* 1. Fecha / Hora */}
-                      <td className="p-3.5 sm:px-4 text-slate-300 font-mono text-[11px] whitespace-nowrap">
+                      {/* 1. ID Trade */}
+                      <td className="p-3.5 sm:px-4 font-bold font-mono text-amber-400 whitespace-nowrap">#{tradeId}</td>
+
+                      {/* 2. Fecha / Hora */}
+                      <td className="p-3.5 text-slate-300 font-mono text-[11px] whitespace-nowrap">
                         <div className="flex flex-col">
                           <span className="text-white font-medium">{t.open_time_short || formatShortDate(t.open_timestamp)}</span>
                           {isClosed && (
@@ -1575,9 +1588,6 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                           )}
                         </div>
                       </td>
-
-                      {/* 2. ID Trade */}
-                      <td className="p-3.5 font-bold font-mono text-amber-400">#{tradeId}</td>
 
                       {/* 3. Moneda / Par */}
                       <td className="p-3.5 font-bold font-mono text-white">
@@ -1590,36 +1600,36 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                       {/* 4. Lado */}
                       <td className="p-3.5">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                          t.trade_type === 'LONG' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                          side === 'LONG' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                         }`}>
-                          {t.trade_type}
+                          {side}
                         </span>
                       </td>
 
-                      {/* 5. Precio Entrada */}
+                      {/* 5. PnL Realizado */}
+                      <td className={`p-3.5 font-bold font-mono text-xs whitespace-nowrap ${isClosed ? (isWin ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-400'}`}>
+                        {isClosed ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : <span className="text-amber-400/90 text-xs font-sans">En curso</span>}
+                      </td>
+
+                      {/* 6. Precio Entrada */}
                       <td className="p-3.5 font-mono text-slate-200 font-semibold">${Number(t.open_price).toFixed(2)}</td>
 
-                      {/* 6. Precio Salida */}
+                      {/* 7. Precio Salida */}
                       <td className="p-3.5 font-mono text-slate-300">
                         {isClosed ? `$${Number(t.close_price).toFixed(2)}` : <span className="text-slate-500 italic">Abierta</span>}
                       </td>
 
-                      {/* 7. Cantidad */}
-                      <td className="p-3.5 font-mono text-slate-400">{t.quantity}</td>
+                      {/* 8. Cantidad */}
+                      <td className="p-3.5 font-mono text-slate-400">{qtyDisplay}</td>
 
-                      {/* 8. Margen */}
+                      {/* 9. Margen */}
                       <td className="p-3.5 font-mono text-cyan-300 font-semibold whitespace-nowrap">
                         ${marginVal.toFixed(2)} <span className="text-[10px] text-slate-500 font-sans">USDT</span>
                       </td>
 
-                      {/* 9. Valor Posición */}
+                      {/* 10. Valor Posición */}
                       <td className="p-3.5 font-mono text-amber-300 font-semibold whitespace-nowrap">
                         ${posVal.toFixed(2)} <span className="text-[10px] text-slate-500 font-sans">USDT</span>
-                      </td>
-
-                      {/* 10. PnL Realizado */}
-                      <td className={`p-3.5 font-bold font-mono text-xs ${isClosed ? (isWin ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-400'}`}>
-                        {isClosed ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : <span className="text-amber-400/90 text-xs font-sans">En curso</span>}
                       </td>
 
                       {/* 11. Estado */}

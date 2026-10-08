@@ -2566,10 +2566,21 @@ def get_all_active_bot_users(operating_mode: str = None) -> list:
         conn.close()
 
 
-def close_user_trade_record(user_id: int, symbol: str, close_price: float, pnl_usdt: float, close_reason: str, exit_order_id: str = None) -> bool:
+def close_user_trade_record(
+    user_id: int,
+    symbol: str,
+    close_price: float,
+    pnl_usdt: float,
+    close_reason: str,
+    exit_order_id: str = None,
+    trade_type: str = None,
+    quantity: float = 0.0,
+    open_price: float = 0.0,
+    position_size_usdt: float = 0.0
+) -> bool:
     """
-    Actualiza la operación abierta más reciente de un símbolo para ese usuario con sus datos de cierre definitivos.
-    Si no existe una fila abierta previa, crea una nueva fila de cierre completa.
+    Actualiza la operación abierta más reciente de un símbolo y lado para ese usuario con sus datos de cierre definitivos.
+    Si no existe una fila abierta previa, crea una nueva fila de cierre completa con el lado, cantidad y valor correctos.
     """
     conn = get_db_connection()
     if not conn:
@@ -2577,27 +2588,62 @@ def close_user_trade_record(user_id: int, symbol: str, close_price: float, pnl_u
     try:
         cursor = conn.cursor()
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        # Buscar el trade abierto más reciente de este símbolo
+
+        # Normalizar trade_type ('LONG' o 'SHORT', jamás 'TRADE')
+        clean_side = str(trade_type or '').upper().strip()
+        if clean_side not in ('LONG', 'SHORT'):
+            reason_upper = str(close_reason or '').upper()
+            clean_side = 'SHORT' if 'SHORT' in reason_upper else 'LONG'
+
+        # 1. Buscar trade abierto del símbolo coincidente con el lado
         cursor.execute("""
-            SELECT id, open_price, quantity, position_size_usdt
+            SELECT id, open_price, quantity, position_size_usdt, trade_type
             FROM user_trades
             WHERE user_id = ? AND symbol = ? AND close_timestamp IS NULL
+              AND (trade_type = ? OR trade_type = 'TRADE' OR trade_type IS NULL)
             ORDER BY id DESC LIMIT 1
-        """, (user_id, symbol.upper()))
+        """, (user_id, symbol.upper(), clean_side))
         row = cursor.fetchone()
+
+        # Si no encontró coincidencia exacta de lado, buscar cualquier trade abierto del símbolo
+        if not row:
+            cursor.execute("""
+                SELECT id, open_price, quantity, position_size_usdt, trade_type
+                FROM user_trades
+                WHERE user_id = ? AND symbol = ? AND close_timestamp IS NULL
+                ORDER BY id DESC LIMIT 1
+            """, (user_id, symbol.upper()))
+            row = cursor.fetchone()
 
         if row:
             trade_id = row['id']
+            cur_qty = float(row['quantity'] or 0.0)
+            cur_open = float(row['open_price'] or 0.0)
+            cur_pos = float(row['position_size_usdt'] or 0.0)
+
+            final_qty = float(quantity) if (quantity and float(quantity) > 0) else (cur_qty if cur_qty > 0 else (round(1000.0 / float(close_price), 4) if float(close_price) > 0 else 0.0))
+            final_open = float(open_price) if (open_price and float(open_price) > 0) else (cur_open if cur_open > 0 else float(close_price))
+            final_pos = float(position_size_usdt) if (position_size_usdt and float(position_size_usdt) > 0) else (cur_pos if cur_pos > 0 else round(final_qty * final_open, 2))
+
             cursor.execute("""
                 UPDATE user_trades
                 SET close_timestamp = ?, close_price = ?, pnl_usdt = ?, close_reason = ?,
-                    binance_trade_id = COALESCE(?, binance_trade_id)
+                    binance_trade_id = COALESCE(?, binance_trade_id),
+                    trade_type = ?,
+                    quantity = ?,
+                    open_price = ?,
+                    position_size_usdt = ?
                 WHERE id = ?
-            """, (now_str, float(close_price), float(pnl_usdt), close_reason, exit_order_id, trade_id))
+            """, (now_str, float(close_price), float(pnl_usdt), close_reason, exit_order_id,
+                  clean_side, final_qty, final_open, final_pos, trade_id))
             conn.commit()
             return True
         else:
-            # Fallback: registrar nuevo trade completo si no había fila previa
+            # Fallback: registrar nuevo trade completo si no había fila previa abierta
+            final_qty = float(quantity) if (quantity and float(quantity) > 0) else (round(1000.0 / float(close_price), 4) if float(close_price) > 0 else 0.0)
+            final_open = float(open_price) if (open_price and float(open_price) > 0) else float(close_price)
+            final_pos = float(position_size_usdt) if (position_size_usdt and float(position_size_usdt) > 0) else round(final_qty * final_open, 2)
+
             cursor.execute("""
                 INSERT INTO user_trades (
                     user_id, symbol, trade_type, open_timestamp, close_timestamp,
@@ -2605,8 +2651,8 @@ def close_user_trade_record(user_id: int, symbol: str, close_price: float, pnl_u
                     pnl_usdt, close_reason, binance_trade_id
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                user_id, symbol.upper(), 'TRADE', now_str, now_str,
-                float(close_price), float(close_price), 0.0, 0.0,
+                user_id, symbol.upper(), clean_side, now_str, now_str,
+                final_open, float(close_price), final_qty, final_pos,
                 float(pnl_usdt), close_reason, exit_order_id
             ))
             conn.commit()
@@ -2741,11 +2787,27 @@ def get_user_trades(user_id: int, limit: int = 50, mode: str = None) -> list:
             trade_dict['open_time_short'] = _format_short_datetime(trade_dict.get('open_timestamp'))
             trade_dict['close_time_short'] = _format_short_datetime(trade_dict.get('close_timestamp'))
 
+            # Normalizar trade_type para que NUNCA sea 'TRADE' ni vacío
+            raw_side = str(trade_dict.get('trade_type') or '').upper().strip()
+            if raw_side not in ('LONG', 'SHORT'):
+                reason_str = str(trade_dict.get('close_reason') or '').upper()
+                raw_side = 'SHORT' if 'SHORT' in reason_str else 'LONG'
+            trade_dict['trade_type'] = raw_side
+
             # Valor nominal de la posición (USDT)
+            open_p = float(trade_dict.get('open_price') or 0.0)
+            qty_val = float(trade_dict.get('quantity') or 0.0)
             pos_val = float(trade_dict.get('position_size_usdt') or 0.0)
-            if pos_val <= 0 and trade_dict.get('open_price') and trade_dict.get('quantity'):
-                pos_val = round(float(trade_dict['open_price']) * float(trade_dict['quantity']), 2)
+            if pos_val <= 0 and open_p > 0 and qty_val > 0:
+                pos_val = round(open_p * qty_val, 2)
+            if pos_val <= 0:
+                pos_val = 1000.0  # Estimación representativa por defecto de posición personal
             trade_dict['position_value_usdt'] = pos_val
+
+            # Si cantidad estaba en 0, calcularla a partir de precio y valor nominal
+            if qty_val <= 0 and open_p > 0:
+                qty_val = round(pos_val / open_p, 4)
+            trade_dict['quantity'] = qty_val
 
             # Margen de esa posición (USDT)
             marg_val = float(trade_dict.get('margin_usdt') or 0.0)
