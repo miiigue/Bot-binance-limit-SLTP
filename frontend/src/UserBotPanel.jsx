@@ -45,7 +45,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
   const [selectedStrategy, setSelectedStrategy] = useState('');
   const [isCatalogOpen, setIsCatalogOpen] = useState(true);
   const [allocatedUsdt, setAllocatedUsdt] = useState(100);
-  const [leverage, setLeverage] = useState(10);
+  const [leverage, setLeverage] = useState('default');
   const [marginType, setMarginType] = useState('ISOLATED');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
@@ -172,8 +172,10 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
         if (data.bot_settings.allocated_usdt !== undefined) {
           setAllocatedUsdt(Number(data.bot_settings.allocated_usdt));
         }
-        if (data.bot_settings.leverage !== undefined) {
-          setLeverage(Number(data.bot_settings.leverage));
+        if (data.bot_settings.leverage !== undefined && data.bot_settings.leverage !== null) {
+          setLeverage(String(data.bot_settings.leverage));
+        } else {
+          setLeverage('default');
         }
         if (data.bot_settings.margin_type) {
           setMarginType(data.bot_settings.margin_type);
@@ -312,6 +314,17 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
     });
   };
 
+  // Estrategia actualmente seleccionada y apalancamiento efectivo
+  const currentStrategyObj = catalogStrategies.find(s => s.name === selectedStrategy);
+  const strategyDefaultLeverage = Number(
+    currentStrategyObj?.parameters?.leverage ||
+    currentStrategyObj?.parameters?.leverage_str ||
+    10
+  );
+  const effectiveLeverage = (leverage === 'default' || !leverage) 
+    ? strategyDefaultLeverage 
+    : Number(leverage);
+
   // Guardar configuración de estrategia, margen por orden y apalancamiento
   const handleSaveBotSettings = async () => {
     if (!selectedStrategy) {
@@ -332,14 +345,17 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
         body: JSON.stringify({
           strategy_name: selectedStrategy,
           allocated_usdt: cap,
-          leverage: Number(leverage),
+          leverage: (leverage === 'default' || !leverage) ? 'default' : Number(leverage),
           margin_type: marginType,
           operating_mode: 'PERSONAL_BOT'
         })
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.message || 'Error al guardar parámetros.');
-      setFeedback({ type: 'success', text: `✅ Estrategia "${selectedStrategy}" guardada con Margen de $${cap} USDT por orden (${leverage}x).` });
+      const levLabel = (leverage === 'default' || !leverage)
+        ? `${strategyDefaultLeverage}x (por defecto de la estrategia)`
+        : `${leverage}x (personalizado)`;
+      setFeedback({ type: 'success', text: `✅ Estrategia "${selectedStrategy}" guardada con Margen de $${cap} USDT por orden (${levLabel}).` });
       fetchUserBotStatus();
     } catch (err) {
       setFeedback({ type: 'error', text: err.message });
@@ -383,7 +399,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
         : (isMarketplaceMode ? '¿Pausar tu Bot Personal?' : '¿Pausar Replicación de Trades?'),
       message: nextState 
         ? (isMarketplaceMode 
-            ? `Tu bot personal comenzará a operar en Binance Futures con la estrategia "${stratTitle}", con un margen de $${allocatedUsdt} USDT por orden y ${leverage}x de apalancamiento (Nocional: $${(Number(allocatedUsdt) * Number(leverage)).toFixed(2)} USDT por posición).`
+            ? `Tu bot personal comenzará a operar en Binance Futures con la estrategia "${stratTitle}", con un margen de $${allocatedUsdt} USDT por orden y ${effectiveLeverage}x de apalancamiento (${leverage === 'default' || !leverage ? 'por defecto de la estrategia' : 'personalizado'}, Nocional: $${(Number(allocatedUsdt) * effectiveLeverage).toFixed(2)} USDT por posición).`
             : 'El algoritmo cuantitativo comenzará a copiar en tiempo real cada orden de compra y venta en tu cuenta de Binance Futures (Modo Copy-Trading Espejo).')
         : 'Se pausará la operativa en tu cuenta de Binance. Las órdenes abiertas mantendrán sus Stop Loss en el exchange.',
       confirmText: nextState 
@@ -401,7 +417,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
               body: JSON.stringify({
                 strategy_name: selectedStrategy,
                 allocated_usdt: Number(allocatedUsdt),
-                leverage: Number(leverage),
+                leverage: (leverage === 'default' || !leverage) ? 'default' : Number(leverage),
                 margin_type: marginType,
                 operating_mode: 'PERSONAL_BOT'
               })
@@ -561,7 +577,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 <div className="text-xs">
                   <span className="text-slate-500 block uppercase font-semibold">Apalancamiento & Margen:</span>
                   <span className="font-extrabold text-sky-400 font-mono text-sm block mt-0.5">
-                    {leverage}x • {marginType}
+                    {effectiveLeverage}x {leverage === 'default' || !leverage ? '(Por Defecto)' : '(Personalizado)'} • {marginType}
                   </span>
                 </div>
               </div>
@@ -847,7 +863,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
                     <div>💼 Margen: <strong className="text-cyan-300 font-mono font-medium">${Number(allocatedUsdt || 0).toFixed(2)} USDT</strong></div>
-                    <div>⚡ Valor Nominal (Nocional): <strong className="text-amber-300 font-mono font-medium">${(Number(allocatedUsdt || 0) * (Number(leverage) || 1)).toFixed(2)} USDT</strong> <span className="text-slate-400">({leverage || 1}x)</span></div>
+                    <div>⚡ Valor Nominal (Nocional): <strong className="text-amber-300 font-mono font-medium">${(Number(allocatedUsdt || 0) * effectiveLeverage).toFixed(2)} USDT</strong> <span className="text-slate-400">({effectiveLeverage}x {leverage === 'default' || !leverage ? 'por defecto' : 'personalizado'})</span></div>
                     <div className="text-[10px] text-slate-500 pt-0.5">Saldo libre en Binance: ${balance.toFixed(2)} USDT</div>
                   </div>
                 </div>
@@ -858,10 +874,11 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                     Apalancamiento (Leverage):
                   </label>
                   <select
-                    value={leverage}
+                    value={leverage || 'default'}
                     onChange={(e) => setLeverage(e.target.value)}
                     className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-400"
                   >
+                    <option value="default">Por Defecto ({strategyDefaultLeverage}x de la Estrategia)</option>
                     <option value="1">1x (Sin Apalancamiento - Spot)</option>
                     <option value="2">2x (Muy Conservador)</option>
                     <option value="3">3x (Recomendado Institucional)</option>
@@ -870,7 +887,9 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                     <option value="20">20x (Dinámico)</option>
                   </select>
                   <span className="text-[10px] text-slate-500 mt-1 block">
-                    Multiplicador de tamaño de posición.
+                    {leverage === 'default' || !leverage 
+                      ? `Tomando ${strategyDefaultLeverage}x establecido en la estrategia "${selectedStrategy || 'activa'}"`
+                      : `Apalancamiento manual seleccionado: ${leverage}x`}
                   </span>
                 </div>
 

@@ -1345,7 +1345,11 @@ def user_bot_update_settings_endpoint():
                 pass
         if 'leverage' in data:
             try:
-                updates['leverage'] = min(50, max(1, int(data['leverage'])))
+                val = data['leverage']
+                if val in [None, '', 'default', 'DEFAULT', 'por_defecto', 0, '0']:
+                    updates['leverage'] = None
+                else:
+                    updates['leverage'] = min(50, max(1, int(val)))
             except (ValueError, TypeError):
                 pass
         if 'margin_type' in data:

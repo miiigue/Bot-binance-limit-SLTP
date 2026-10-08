@@ -279,15 +279,22 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
             logger.warning(f"⚠️ [{clean_sym}] Saldo libre en Binance ({available_balance:.2f} USDT) insuficiente para cubrir margen de orden ({order_margin:.2f} USDT).")
             return False
 
-        # Multiplicador: Apalancamiento de la estrategia definida por el administrador (o del usuario)
-        strat_lev = params.get('leverage')
-        if strat_lev is not None:
+        # Multiplicador / Apalancamiento:
+        # Si el usuario seleccionó un apalancamiento específico en su interfaz (> 0), usar ese número.
+        # Si seleccionó "Por Defecto" (None, 0 o 'default'), usar el apalancamiento establecido en la estrategia.
+        user_custom_lev = user.get('leverage')
+        if user_custom_lev is not None and str(user_custom_lev).strip() not in ('', '0', 'default', 'None'):
             try:
-                leverage = int(strat_lev)
+                leverage = int(user_custom_lev)
             except (ValueError, TypeError):
-                leverage = int(user.get('leverage', 10) or 10)
+                strat_lev = params.get('leverage')
+                leverage = int(strat_lev) if strat_lev is not None else 10
         else:
-            leverage = int(user.get('leverage', 10) or 10)
+            strat_lev = params.get('leverage')
+            try:
+                leverage = int(strat_lev) if strat_lev is not None else 10
+            except (ValueError, TypeError):
+                leverage = 10
 
         margin_type = str(user.get('margin_type', 'ISOLATED')).upper().strip()
 
