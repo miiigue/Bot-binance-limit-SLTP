@@ -868,6 +868,22 @@ def get_user_monitor_status(user_id: int) -> dict:
     ts_drop = float(params.get('pnl_trailing_stop_drop_usdt', 1.5) or 1.5)
     enable_ts = str(params.get('enable_pnl_trailing_stop', True)).lower() == 'true'
 
+    # Resolver apalancamiento activo: según selección del usuario o el de la estrategia
+    user_custom_lev = settings.get('leverage')
+    if user_custom_lev is not None and str(user_custom_lev).strip() not in ('', '0', 'default', 'None'):
+        try:
+            active_leverage = int(user_custom_lev)
+        except (ValueError, TypeError):
+            try:
+                active_leverage = int(params.get('leverage', 10) or 10)
+            except (ValueError, TypeError):
+                active_leverage = 10
+    else:
+        try:
+            active_leverage = int(params.get('leverage', 10) or 10)
+        except (ValueError, TypeError):
+            active_leverage = 10
+
     # Parámetros de indicadores para el radar
     rsi_interval = str(params.get('rsi_interval', '1m') or '1m')
     rsi_period = int(params.get('rsi_period', 7) or 7)
@@ -907,9 +923,21 @@ def get_user_monitor_status(user_id: int) -> dict:
             pnl_l = round(float(pos_long_raw.get('unRealizedProfit', 0.0) or 0.0), 2)
             entry_p_l = float(pos_long_raw.get('entryPrice', 0.0) or 0.0)
             mark_p_l = float(pos_long_raw.get('markPrice', entry_p_l) or entry_p_l)
-            lev_l = max(1, int(pos_long_raw.get('leverage', 10) or 10))
             notional_l = round(abs(amt_l) * mark_p_l, 2)
-            margin_l = round(float(pos_long_raw.get('initialMargin', 0.0) or (notional_l / lev_l)), 2)
+            margin_raw_l = float(pos_long_raw.get('initialMargin', 0.0) or 0.0)
+            lev_l = None
+            if pos_long_raw.get('leverage'):
+                try:
+                    lev_l = int(pos_long_raw['leverage'])
+                except (ValueError, TypeError):
+                    pass
+            if not lev_l and margin_raw_l > 0 and notional_l > 0:
+                calc_l = round(notional_l / margin_raw_l)
+                if 1 <= calc_l <= 125:
+                    lev_l = calc_l
+            if not lev_l:
+                lev_l = active_leverage
+            margin_l = round(margin_raw_l if margin_raw_l > 0 else (notional_l / lev_l), 2)
             tot_unrealized_pnl += pnl_l
 
             tp_prog_l = min(100.0, max(0.0, (pnl_l / tp_usdt) * 100.0)) if tp_usdt > 0 else 0.0
@@ -940,9 +968,21 @@ def get_user_monitor_status(user_id: int) -> dict:
             pnl_s = round(float(pos_short_raw.get('unRealizedProfit', 0.0) or 0.0), 2)
             entry_p_s = float(pos_short_raw.get('entryPrice', 0.0) or 0.0)
             mark_p_s = float(pos_short_raw.get('markPrice', entry_p_s) or entry_p_s)
-            lev_s = max(1, int(pos_short_raw.get('leverage', 10) or 10))
             notional_s = round(abs(amt_s) * mark_p_s, 2)
-            margin_s = round(float(pos_short_raw.get('initialMargin', 0.0) or (notional_s / lev_s)), 2)
+            margin_raw_s = float(pos_short_raw.get('initialMargin', 0.0) or 0.0)
+            lev_s = None
+            if pos_short_raw.get('leverage'):
+                try:
+                    lev_s = int(pos_short_raw['leverage'])
+                except (ValueError, TypeError):
+                    pass
+            if not lev_s and margin_raw_s > 0 and notional_s > 0:
+                calc_s = round(notional_s / margin_raw_s)
+                if 1 <= calc_s <= 125:
+                    lev_s = calc_s
+            if not lev_s:
+                lev_s = active_leverage
+            margin_s = round(margin_raw_s if margin_raw_s > 0 else (notional_s / lev_s), 2)
             tot_unrealized_pnl += pnl_s
 
             tp_prog_s = min(100.0, max(0.0, (pnl_s / tp_usdt) * 100.0)) if tp_usdt > 0 else 0.0
@@ -1053,6 +1093,7 @@ def get_user_monitor_status(user_id: int) -> dict:
             'historical_pnl': historical_pnls.get(sym, 0.0),
             'margin_usdt': tot_margin,
             'notional_usdt': tot_notional,
+            'leverage': lev_l if pos_long_raw else (lev_s if pos_short_raw else active_leverage),
             'cooldown_active': (cd_long or cd_short),
             'position': pos_long_info or pos_short_info,
             'long_position': pos_long_info,
@@ -1083,6 +1124,10 @@ def get_user_monitor_status(user_id: int) -> dict:
         'operating_mode': str(settings.get('operating_mode') or 'PERSONAL_BOT'),
         'is_running': bool(settings.get('is_running', False)),
         'is_hedge': is_hedge,
+        'active_leverage': active_leverage,
+        'effective_leverage': active_leverage,
+        'user_leverage': user_custom_lev,
+        'strategy_leverage': int(params.get('leverage', 10) or 10),
         'summary': {
             'total_unrealized_pnl': round(tot_unrealized_all, 4),
             'total_historical_pnl': round(tot_hist_all, 4),

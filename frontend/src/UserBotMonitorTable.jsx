@@ -11,7 +11,7 @@ import React, { useState, useEffect, useCallback } from 'react';
  * 4. Radar y Posición LONG (cuadritos tipo volumen en rojo/verde si no hay posición; barra TP/SL si está en posición)
  * 5. Radar y Posición SHORT (cuadritos tipo volumen en rojo/verde si no hay posición; barra TP/SL si está en posición)
  */
-export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
+export default function UserBotMonitorTable({ authFetch, isRunning = true, activeLeverage }) {
   const [monitorData, setMonitorData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -253,24 +253,25 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                     <td className="py-4 px-4 sm:px-6 font-mono text-xs">
                       {inPos ? (
                         (() => {
-                          const lev = longPos?.leverage || shortPos?.leverage;
+                          const lev = longPos?.leverage || shortPos?.leverage || item.leverage || monitorData?.effective_leverage || monitorData?.active_leverage || activeLeverage || 10;
                           return (
                             <div className="flex flex-col gap-1">
                               <div className="flex items-baseline justify-between gap-1 text-[11px]">
-                                <span className="text-[10px] font-sans text-slate-400 uppercase font-semibold flex items-center gap-1">
+                                <span className="text-[10px] font-sans text-slate-400 font-semibold flex items-center gap-1">
                                   <span>Valor</span>
                                   {lev && (
-                                    <span className="text-cyan-300 font-mono font-bold">
+                                    <span className="text-cyan-300 font-mono font-bold lowercase">
                                       {lev}x
                                     </span>
-                                  )}:
+                                  )}
+                                  <span>:</span>
                                 </span>
                                 <span className="font-bold text-slate-200">
                                   ${Number(item.notional_usdt || 0).toFixed(2)} <span className="text-[9px] text-slate-500 font-sans">USDT</span>
                                 </span>
                               </div>
                               <div className="flex items-baseline justify-between gap-1 text-[11px] pt-0.5 border-t border-slate-800/60">
-                                <span className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Margen:</span>
+                                <span className="text-[10px] font-sans text-slate-400 font-semibold">Margen:</span>
                                 <span className="font-black text-amber-300">
                                   ${Number(item.margin_usdt || 0).toFixed(2)} <span className="text-[9px] text-slate-500 font-sans">USDT</span>
                                 </span>

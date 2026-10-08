@@ -1028,7 +1028,11 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           </div>
 
           {/* Panel de Monitoreo en Vivo de tu Bot Personal (Posiciones Abiertas y Radar de Señales) */}
-          <UserBotMonitorTable authFetch={authFetch} isRunning={isPersonalBotActive} />
+          <UserBotMonitorTable 
+            authFetch={authFetch} 
+            isRunning={isPersonalBotActive} 
+            activeLeverage={effectiveLeverage} 
+          />
 
           {/* Catálogo de Estrategias Públicas Curadas */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
