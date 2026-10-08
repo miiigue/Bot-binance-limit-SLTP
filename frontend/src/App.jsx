@@ -787,6 +787,18 @@ function MainDashboard() {
 
                 <button
                   type="button"
+                  onClick={() => setActiveTab('performance')}
+                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
+                    activeTab === 'performance'
+                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
+                  }`}
+                >
+                  <span>📈</span> Rendimiento
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setActiveTab('chart')}
                   className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                     activeTab === 'chart'

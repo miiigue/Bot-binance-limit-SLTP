@@ -43,7 +43,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
   const [catalogStrategies, setCatalogStrategies] = useState([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState('');
-  const [isCatalogOpen, setIsCatalogOpen] = useState(true);
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [allocatedUsdt, setAllocatedUsdt] = useState(100);
   const [leverage, setLeverage] = useState('default');
   const [marginType, setMarginType] = useState('ISOLATED');
@@ -93,6 +93,30 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
       });
     });
     return pts;
+  }, [tradesData]);
+
+  // Rendimiento desglosado por criptomoneda de la cuenta del usuario
+  const userCoinPerformance = useMemo(() => {
+    const closedTrades = (tradesData || []).filter(t => Boolean(t.close_timestamp));
+    if (closedTrades.length === 0) return [];
+    const map = {};
+    closedTrades.forEach(t => {
+      const sym = (t.symbol || 'DESCONOCIDO').toUpperCase();
+      const pnl = Number(t.pnl_usdt || 0);
+      if (!map[sym]) {
+        map[sym] = { symbol: sym, totalPnL: 0, count: 0, wins: 0, losses: 0 };
+      }
+      map[sym].totalPnL += pnl;
+      map[sym].count += 1;
+      if (pnl > 0) map[sym].wins += 1;
+      if (pnl < 0) map[sym].losses += 1;
+    });
+    return Object.values(map)
+      .map(c => ({
+        ...c,
+        winRate: c.count > 0 ? ((c.wins / c.count) * 100).toFixed(1) : '0.0'
+      }))
+      .sort((a, b) => b.totalPnL - a.totalPnL);
   }, [tradesData]);
 
   const openConfirm = (opts) => {
@@ -825,31 +849,6 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                               {strat.description || 'Estrategia cuantitativa con gestión dinámica de riesgo y toma de ganancias inteligente.'}
                             </p>
                           </div>
-
-                          <div className="border-t border-slate-800/80 pt-3 flex items-center justify-between gap-2 mt-auto">
-                            <div>
-                              <span className="text-[10px] text-slate-500 block uppercase font-bold">Capital Sugerido</span>
-                              <span className="text-xs font-mono font-black text-amber-400">
-                                Min. ${strat.min_capital_usdt || 50} USDT
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedStrategy(strat.name);
-                                }}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                                  isSelected
-                                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow'
-                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                                }`}
-                              >
-                                {isSelected ? '✓ Seleccionada' : 'Seleccionar'}
-                              </button>
-                            </div>
-                          </div>
                         </div>
                       );
                     })}
@@ -1144,6 +1143,35 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
             </div>
           );
         })()}
+
+        {/* Rendimiento por Criptomoneda (Ranking de Pares) */}
+        {userCoinPerformance.length > 0 && (
+          <div className="p-4 sm:p-5 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-white flex items-center gap-1.5">
+                <span>🪙</span> Rendimiento por Criptomoneda ({userCoinPerformance.length} pares con operaciones)
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {userCoinPerformance.map((c) => (
+                <div key={c.symbol} className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="font-mono font-bold text-white text-xs">{c.symbol}</span>
+                    <span className="text-[10px] text-slate-400">
+                      {c.count} {c.count === 1 ? 'trade' : 'trades'} • Win Rate: {c.winRate}%
+                    </span>
+                  </div>
+                  <div className="text-right font-mono">
+                    <span className={`text-xs font-black ${c.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {c.totalPnL >= 0 ? '+' : ''}${c.totalPnL.toFixed(2)}
+                    </span>
+                    <span className="text-[9px] text-slate-500 block uppercase">USDT</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Tabla de Operaciones */}
         <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 shadow-inner">

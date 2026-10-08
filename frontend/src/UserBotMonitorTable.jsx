@@ -134,14 +134,15 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/60 shadow-inner">
-          <table className="w-full text-left border-collapse min-w-[900px]">
+          <table className="w-full text-left border-collapse min-w-[980px]">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/60 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                <th className="py-3.5 px-4 sm:px-6 w-[13%]">Símbolo</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[18%]">Estrategia y Estado</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[17%]">PnL Flotante / Hist</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[26%]">Radar & Posición LONG</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[26%]">Radar & Posición SHORT</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[11%]">Símbolo</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[15%]">Estrategia y Estado</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[14%]">PnL Flotante / Hist</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[24%]">Radar & Posición LONG</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[24%]">Radar & Posición SHORT</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[12%]">Valor & Margen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs font-sans">
@@ -216,32 +217,6 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                           </span>
                         </div>
 
-                        {/* Desglose por lado (L: / S:) cuando hay posición activa, tal como en Admin */}
-                        {inPos && (item.in_long || item.in_short) && (
-                          <div className="flex flex-col gap-0.5 pt-0.5 border-t border-slate-800/80 text-[10px]">
-                            {item.in_long && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-400 font-sans font-bold flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> L (Long):
-                                </span>
-                                <span className={`font-bold ${Number(item.long_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {Number(item.long_pnl || 0) >= 0 ? '+' : ''}{Number(item.long_pnl || 0).toFixed(2)} USDT
-                                </span>
-                              </div>
-                            )}
-                            {item.in_short && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-400 font-sans font-bold flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span> S (Short):
-                                </span>
-                                <span className={`font-bold ${Number(item.short_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {Number(item.short_pnl || 0) >= 0 ? '+' : ''}{Number(item.short_pnl || 0).toFixed(2)} USDT
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
                         {/* Histórico acumulado */}
                         <div className="flex items-center justify-between gap-1 text-[11px] pt-0.5 border-t border-slate-800/60">
                           <span className="text-[10px] font-sans text-slate-500 uppercase font-semibold">Histórico:</span>
@@ -271,6 +246,35 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                       ) : (
                         /* CUANDO NO ESTÁ EN POSICIÓN SHORT: CUADROS TIPO VOLUMEN */
                         <VolumeRadarBlocks radar={item.short_radar} side="SHORT" inOtherPos={inLong && !isHedge} />
+                      )}
+                    </td>
+
+                    {/* 6. VALOR & MARGEN DE LA POSICIÓN */}
+                    <td className="py-4 px-4 sm:px-6 font-mono text-xs">
+                      {inPos ? (
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-baseline justify-between gap-1 text-[11px]">
+                            <span className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Valor:</span>
+                            <span className="font-bold text-slate-200">
+                              ${Number(item.notional_usdt || 0).toFixed(2)} <span className="text-[9px] text-slate-500 font-sans">USDT</span>
+                            </span>
+                          </div>
+                          <div className="flex items-baseline justify-between gap-1 text-[11px] pt-0.5 border-t border-slate-800/60">
+                            <span className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Margen:</span>
+                            <span className="font-black text-amber-300">
+                              ${Number(item.margin_usdt || 0).toFixed(2)} <span className="text-[9px] text-slate-500 font-sans">USDT</span>
+                            </span>
+                          </div>
+                          {((longPos && longPos.leverage) || (shortPos && shortPos.leverage)) && (
+                            <div className="flex justify-end pt-0.5">
+                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-900 border border-slate-800 text-cyan-300 font-bold">
+                                {longPos?.leverage || shortPos?.leverage}x
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-600 font-mono text-[11px]">—</span>
                       )}
                     </td>
                   </tr>
@@ -308,25 +312,30 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                     </div>
                   </td>
 
-                  {/* 4: Métricas en vivo (Dual Hedge) & Margen total */}
+                  {/* 4: Métricas en vivo (Dual Hedge) */}
                   <td className="py-3.5 px-4 sm:px-6 text-center text-[11px] text-slate-400 font-sans">
-                    <div className="flex flex-col items-center justify-center gap-1">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700/60 text-slate-300">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Métricas en vivo (Dual Hedge)
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        Margen total: <strong className="text-white">${totalMarginCommitted.toFixed(2)} USDT</strong>
-                      </span>
-                    </div>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700/60 text-slate-300">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Métricas en vivo (Dual Hedge)
+                    </span>
                   </td>
 
                   {/* 5: Posiciones activas */}
                   <td className="py-3.5 px-4 sm:px-6 font-mono text-xs">
-                    <div className="flex flex-col items-end sm:items-start justify-center gap-1">
+                    <div className="flex flex-col items-center justify-center gap-1">
                       <span className="text-[10px] text-slate-400 font-sans font-semibold">En posición:</span>
                       <span className="font-black text-amber-300">
-                        {openPositionsCount} {openPositionsCount === 1 ? 'posición activa' : 'posiciones activas'}
+                        {openPositionsCount} {openPositionsCount === 1 ? 'activa' : 'activas'}
+                      </span>
+                    </div>
+                  </td>
+
+                  {/* 6: Margen total asignado */}
+                  <td className="py-3.5 px-4 sm:px-6 font-mono text-xs">
+                    <div className="flex flex-col items-start justify-center gap-0.5">
+                      <span className="text-[10px] text-slate-400 font-sans uppercase font-semibold">Margen Total:</span>
+                      <span className="font-black text-amber-300">
+                        ${totalMarginCommitted.toFixed(2)} <span className="text-[9px] text-slate-400 font-sans">USDT</span>
                       </span>
                     </div>
                   </td>
@@ -371,7 +380,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
 function PositionTpSlBar({ position }) {
   if (!position) return null;
 
-  const { tp, sl, ts, unrealized_pnl, margin_usdt, notional_usdt, leverage, side } = position;
+  const { tp, sl, ts, unrealized_pnl } = position;
   const pnlUsdt = Number(unrealized_pnl || 0);
   const isProfit = pnlUsdt >= 0;
   const tpProgress = Math.min(100, Math.max(0, Number(tp?.progress_pct || 0)));
@@ -380,43 +389,19 @@ function PositionTpSlBar({ position }) {
   const slTargetUsdt = Math.abs(Number(sl?.target_usdt || 400));
   const slFillPct = slTargetUsdt > 0 ? (lossUsdt / slTargetUsdt) * 100 : 0;
 
-  // Rango de riesgo dinámico según pérdida consumida del Stop Loss
+  // Rango de riesgo dinámico (solo porcentaje limpio sin texto redundante)
   let riskBadge = null;
   if (pnlUsdt >= 0) {
     riskBadge = <span className="font-medium text-emerald-400">🛡️ Seguro</span>;
-  } else if (slFillPct < 5) {
-    const pctStr = slFillPct < 1 ? slFillPct.toFixed(1) : Math.round(slFillPct);
-    riskBadge = <span className="font-mono font-bold text-amber-400 animate-pulse">⚠️ Riesgo Inicial ({pctStr}%)</span>;
-  } else if (slFillPct < 25) {
-    riskBadge = <span className="font-mono font-bold text-amber-400 animate-pulse">⚠️ Riesgo Bajo ({Math.round(slFillPct)}%)</span>;
-  } else if (slFillPct < 60) {
-    riskBadge = <span className="font-mono font-bold text-orange-400 animate-pulse">⚡ Riesgo Medio ({Math.round(slFillPct)}%)</span>;
   } else {
-    riskBadge = <span className="font-mono font-bold text-rose-400 animate-pulse">🚨 Riesgo Alto ({Math.round(slFillPct)}%)</span>;
+    const pctStr = slFillPct < 1 ? slFillPct.toFixed(1) : Math.round(slFillPct);
+    const color = slFillPct < 25 ? 'text-amber-400' : (slFillPct < 60 ? 'text-orange-400' : 'text-rose-400');
+    riskBadge = <span className={`font-mono font-bold ${color} animate-pulse`}>({pctStr}%)</span>;
   }
 
   return (
-    <div className="flex flex-col gap-1.5 w-full max-w-sm xl:max-w-md py-1.5 bg-slate-950/85 p-3 rounded-xl border border-slate-800/80 shadow-inner">
-      {/* CABECERA DE LA POSICIÓN: Lado, PnL en vivo y Margen (tal como en Admin) */}
-      <div className="flex items-center justify-between text-[11px] pb-1 border-b border-slate-800/80">
-        <div className="flex items-center gap-1.5">
-          <span className={`w-2 h-2 rounded-full ${isProfit ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse`}></span>
-          <span className="font-bold text-white font-mono">{side ? `POSICIÓN ${side}` : 'EN POSICIÓN'}</span>
-          {leverage && (
-            <span className="text-[10px] px-1 py-0.2 rounded bg-slate-900 border border-slate-700 font-mono text-cyan-300 font-bold">
-              {leverage}x
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-slate-400 font-sans font-semibold">PnL:</span>
-          <span className={`font-mono font-black text-xs ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {isProfit ? `+${pnlUsdt.toFixed(2)}` : pnlUsdt.toFixed(2)} USDT
-          </span>
-        </div>
-      </div>
-
-      {/* FILA 1: TAKE PROFIT (Muestra profit obtenido) */}
+    <div className="flex flex-col gap-1.5 w-full py-1 bg-slate-950/85 p-2.5 rounded-xl border border-slate-800/80 shadow-inner">
+      {/* FILA 1: TAKE PROFIT */}
       <div className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between text-[11px] leading-tight flex-wrap gap-1">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -426,7 +411,7 @@ function PositionTpSlBar({ position }) {
             </span>
             {pnlUsdt > 0 && (
               <span className="text-[10px] font-mono font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
-                Profit: +{pnlUsdt.toFixed(2)} USDT
+                +{pnlUsdt.toFixed(2)} USDT
               </span>
             )}
           </div>
@@ -457,7 +442,7 @@ function PositionTpSlBar({ position }) {
         </div>
       </div>
 
-      {/* FILA 2: STOP LOSS O TRAILING STOP (Muestra loss actual y rango de riesgo) */}
+      {/* FILA 2: STOP LOSS O TRAILING STOP */}
       {ts?.armed ? (
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center justify-between text-[11px] leading-tight">
@@ -486,7 +471,7 @@ function PositionTpSlBar({ position }) {
               </span>
               {pnlUsdt < 0 && (
                 <span className="text-[10px] font-mono font-black text-rose-300 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/40">
-                  Loss: {pnlUsdt.toFixed(2)} USDT
+                  {pnlUsdt.toFixed(2)} USDT
                 </span>
               )}
             </div>
@@ -507,14 +492,6 @@ function PositionTpSlBar({ position }) {
               style={{ width: `${Math.min(100, Math.max(slFillPct > 0 ? 3 : 0, slFillPct))}%` }}
             />
           </div>
-        </div>
-      )}
-
-      {/* PIE DE TARJETA: Valor Nominal y Margen Asignado */}
-      {(margin_usdt !== undefined || notional_usdt !== undefined) && (
-        <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-900 text-slate-400 font-mono">
-          <span>Valor: <strong className="text-slate-200">${notional_usdt || '0.00'} USDT</strong></span>
-          <span>Margen: <strong className="text-amber-300">${margin_usdt || '0.00'} USDT</strong></span>
         </div>
       )}
     </div>
