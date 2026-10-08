@@ -146,9 +146,10 @@ def load_strategy_params(strategy_name: str) -> dict:
     }
 
 
-def evaluate_strategy_signal(symbol: str, klines_df: pd.DataFrame, params: dict) -> str | None:
+def evaluate_strategy_signal(symbol: str, klines_df: pd.DataFrame, params: dict, check_side: str = None) -> str | None:
     """
     Evalúa las condiciones cuantitativas de la estrategia sobre el DataFrame de velas.
+    check_side: 'LONG', 'SHORT', o None (evalúa según trade_direction).
     Retorna 'LONG', 'SHORT', o None si no hay señal.
     """
     if klines_df is None or len(klines_df) < 15:
@@ -176,7 +177,8 @@ def evaluate_strategy_signal(symbol: str, klines_df: pd.DataFrame, params: dict)
         thresh_up = float(params.get('rsi_threshold_up', params.get('rsiThresholdUp', 2.0)) or 2.0)
 
         # 1. EVALUAR ENTRADA LONG
-        if trade_direction in ('LONG', 'BIDIRECTIONAL'):
+        should_eval_long = (check_side == 'LONG') or (check_side is None and trade_direction in ('LONG', 'BIDIRECTIONAL'))
+        if should_eval_long:
             long_ok = True
             if eval_range and not (low_long <= curr_rsi <= high_long):
                 long_ok = False
@@ -209,7 +211,8 @@ def evaluate_strategy_signal(symbol: str, klines_df: pd.DataFrame, params: dict)
                 return 'LONG'
 
         # 2. EVALUAR ENTRADA SHORT
-        if trade_direction in ('SHORT', 'BIDIRECTIONAL'):
+        should_eval_short = (check_side == 'SHORT') or (check_side is None and trade_direction in ('SHORT', 'BIDIRECTIONAL'))
+        if should_eval_short:
             short_ok = True
             low_short = float(params.get('rsi_short_entry_level_low', params.get('rsiShortEntryLevelLow', 55)) or 55)
             high_short = float(params.get('rsi_short_entry_level_high', params.get('rsiShortEntryLevelHigh', 70)) or 70)
@@ -221,7 +224,7 @@ def evaluate_strategy_signal(symbol: str, klines_df: pd.DataFrame, params: dict)
                 short_ok = False
 
             # Filtro de vela bajista
-            eval_trend = str(params.get('evaluate_required_uptrend', False)).lower() == 'true'
+            eval_trend = str(params.get('evaluate_required_uptrend', params.get('evaluateRequiredUptrend', False))).lower() == 'true'
             if short_ok and eval_trend:
                 last_c = float(klines_df['close'].iloc[-1])
                 last_o = float(klines_df['open'].iloc[-1])
@@ -371,7 +374,7 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
     return False
 
 
-def close_user_position(client, user: dict, symbol: str, pos_amt: float, current_price: float, unrealized_pnl: float, exit_reason: str, entry_price: float = 0.0) -> bool:
+def close_user_position(client, user: dict, symbol: str, pos_amt: float, current_price: float, unrealized_pnl: float, exit_reason: str, entry_price: float = 0.0, position_side: str = None) -> bool:
     """Cierra una posición abierta en la cuenta de Binance del usuario y registra el resultado."""
     logger = get_logger()
     user_id = user['user_id']
@@ -391,7 +394,10 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
         except Exception:
             is_hedge = False
 
-        pos_side = ('LONG' if pos_amt > 0 else 'SHORT') if is_hedge else 'BOTH'
+        if is_hedge:
+            pos_side = position_side if position_side in ('LONG', 'SHORT') else ('LONG' if pos_amt > 0 else 'SHORT')
+        else:
+            pos_side = 'BOTH'
 
         order_params = {
             'symbol': clean_sym,
@@ -417,6 +423,7 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
         )
         logger.info(f"🛑 [PersonalBot - {username} (ID: {user_id})] POSICIÓN CERRADA en {clean_sym} ({side} {qty}, PnL: ${unrealized_pnl:+.2f} USDT). Razón: {exit_reason}")
         # Limpiar peak de trailing stop
+        _user_peak_pnl.pop((user_id, clean_sym, pos_side), None)
         _user_peak_pnl.pop((user_id, clean_sym), None)
         return True
 
@@ -469,20 +476,45 @@ def run_personal_bot_cycle():
         if positions_data is None or not isinstance(positions_data, list):
             continue
 
-        # Mapear posiciones abiertas actualmente en Binance para este usuario
-        open_positions = {}
+        # 0. Detectar modo de cobertura (Hedge Mode) y asegurar Hedge si no hay posiciones abiertas
+        is_hedge = False
+        try:
+            pos_mode = client.get_position_mode()
+            if isinstance(pos_mode, dict):
+                is_hedge = bool(pos_mode.get('dualSidePosition', False))
+        except Exception:
+            is_hedge = False
+
+        has_any_open = any(abs(float(p.get('positionAmt', 0.0) or 0.0)) > 1e-6 for p in positions_data)
+        if not has_any_open and not is_hedge:
+            try:
+                client.change_position_mode(dualSidePosition='true')
+                is_hedge = True
+                logger.info(f"🛡️ [PersonalBotEngine - {username}] Modo Cobertura (Hedge Mode) activado automáticamente.")
+            except Exception as e_hm:
+                logger.debug(f"Aviso activando Hedge Mode para {username}: {e_hm}")
+
+        # Mapear posiciones abiertas actualmente en Binance para este usuario por lado
+        open_positions_long = {}
+        open_positions_short = {}
+        all_open_positions = []
+
         for p in positions_data:
             amt = float(p.get('positionAmt', 0.0) or 0.0)
             if abs(amt) > 1e-6:
-                open_positions[p.get('symbol')] = p
+                all_open_positions.append(p)
+                sym_p = p.get('symbol')
+                raw_ps = str(p.get('positionSide', 'BOTH')).upper()
+                if raw_ps == 'LONG' or (raw_ps == 'BOTH' and amt > 0):
+                    open_positions_long[sym_p] = p
+                elif raw_ps == 'SHORT' or (raw_ps == 'BOTH' and amt < 0):
+                    open_positions_short[sym_p] = p
 
         if do_heartbeat:
-            logger.info(f"🔍 [PersonalBotEngine - {username}] Posiciones abiertas: {len(open_positions)}. Estrategia: '{strat_name}'")
+            logger.info(f"🔍 [PersonalBotEngine - {username}] Posiciones abiertas: {len(all_open_positions)} (LONG: {len(open_positions_long)}, SHORT: {len(open_positions_short)}). Estrategia: '{strat_name}'. Hedge: {is_hedge}")
 
         # RECONCILIACIÓN AUTOMÁTICA SOBERANA CON user_trades:
-        # Si hay una fila en user_trades marcada como abierta (close_timestamp IS NULL)
-        # pero el símbolo YA NO está abierto en Binance, cerrarla en la base de datos
-        # para que nunca muestre trades "En curso" huérfanos.
+        all_open_symbols = set(open_positions_long.keys()).union(set(open_positions_short.keys()))
         try:
             from src.database import get_db_connection
             conn_recon = get_db_connection()
@@ -496,7 +528,7 @@ def run_personal_bot_cycle():
                 ghost_trades = cur_recon.fetchall()
                 for gt in ghost_trades:
                     gt_sym = str(gt['symbol']).upper()
-                    if gt_sym not in open_positions:
+                    if gt_sym not in all_open_symbols:
                         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         cur_recon.execute("""
                             UPDATE user_trades 
@@ -515,24 +547,27 @@ def run_personal_bot_cycle():
         # -------------------------------------------------------------
         # PASO A: EVALUAR SALIDAS EN POSICIONES ABIERTAS DEL USUARIO
         # -------------------------------------------------------------
-        for sym, p in list(open_positions.items()):
+        for p in all_open_positions:
+            sym = p.get('symbol')
             pos_amt = float(p.get('positionAmt', 0.0) or 0.0)
             entry_p = float(p.get('entryPrice', 0.0) or 0.0)
             mark_p = float(p.get('markPrice', 0.0) or entry_p)
             unrealized_pnl = float(p.get('unRealizedProfit', 0.0) or 0.0)
+            raw_side = str(p.get('positionSide', 'BOTH')).upper()
+            pos_side = ('LONG' if pos_amt > 0 else 'SHORT') if raw_side == 'BOTH' else raw_side
 
             # 1. Take Profit por PnL
             tp_usdt = float(params.get('take_profit_usdt', params.get('takeProfitUSDT', 50.0)) or 50.0)
             enable_tp = str(params.get('enable_take_profit_pnl', params.get('enableTakeProfitPnl', True))).lower() == 'true'
             if enable_tp and unrealized_pnl >= tp_usdt:
-                close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Take Profit (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p)
+                close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Take Profit (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
                 continue
 
             # 2. Stop Loss por PnL
             sl_usdt = float(params.get('stop_loss_usdt', params.get('stopLossUSDT', 400.0)) or 400.0)
             enable_sl = str(params.get('enable_stop_loss_pnl', params.get('enableStopLossPnl', True))).lower() == 'true'
             if enable_sl and unrealized_pnl <= -abs(sl_usdt):
-                close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Stop Loss ({unrealized_pnl:.2f} USDT)", entry_price=entry_p)
+                close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Stop Loss ({unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
                 continue
 
             # 3. Trailing Stop PnL
@@ -540,18 +575,20 @@ def run_personal_bot_cycle():
             if enable_trail:
                 act_usdt = float(params.get('pnl_trailing_stop_activation_usdt', params.get('pnlTrailingStopActivationUSDT', 3.5)) or 3.5)
                 drop_usdt = float(params.get('pnl_trailing_stop_drop_usdt', params.get('pnlTrailingStopDropUSDT', 1.5)) or 1.5)
-                peak_key = (user_id, sym)
+                peak_key = (user_id, sym, pos_side)
                 curr_peak = _user_peak_pnl.get(peak_key, 0.0)
                 if unrealized_pnl > curr_peak:
                     _user_peak_pnl[peak_key] = unrealized_pnl
                     curr_peak = unrealized_pnl
                 if curr_peak >= act_usdt and (curr_peak - unrealized_pnl) >= drop_usdt:
-                    close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Trailing Stop Asegurado (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p)
+                    close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Trailing Stop Asegurado (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
                     continue
 
         # -------------------------------------------------------------
         # PASO B: EVALUAR ENTRADAS EN SÍMBOLOS CANDIDATOS (PARIDAD CON ADMINISTRADOR)
         # -------------------------------------------------------------
+        trade_direction = str(params.get('trade_direction', 'BIDIRECTIONAL')).upper().strip()
+
         # Determinar lista de símbolos a evaluar
         raw_user_syms = str(user.get('symbols_to_trade', '')).strip()
         # Si tiene el valor por defecto restringido de 3 símbolos o está vacío, expandir a lista de mercado de alta liquidez
@@ -567,29 +604,48 @@ def run_personal_bot_cycle():
         interval = str(params.get('rsi_interval', params.get('rsiInterval', '1m')) or '1m')
 
         for sym in candidate_symbols:
-            if sym in open_positions:
+            has_long = (sym in open_positions_long)
+            has_short = (sym in open_positions_short)
+
+            # En Hedge Mode podemos tener LONG y SHORT simultáneos en el mismo par.
+            # En One-Way Mode, Binance prohíbe tener posiciones opuestas en el mismo par.
+            can_eval_long = (trade_direction in ('LONG', 'BIDIRECTIONAL')) and (not has_long) and (is_hedge or not has_short)
+            can_eval_short = (trade_direction in ('SHORT', 'BIDIRECTIONAL')) and (not has_short) and (is_hedge or not has_long)
+
+            if not can_eval_long and not can_eval_short:
                 continue
 
-            # Cooldown de 60 segundos por símbolo para el usuario
-            last_entry = _user_symbol_cooldown.get((user_id, sym), 0)
-            if time.time() - last_entry < 60:
-                continue
+            # Cooldown de 60 segundos por símbolo y dirección para el usuario
+            last_entry_long = _user_symbol_cooldown.get((user_id, sym, 'LONG'), 0)
+            last_entry_short = _user_symbol_cooldown.get((user_id, sym, 'SHORT'), 0)
 
             # Obtener velas históricas
             klines = get_cached_klines(sym, interval=interval, limit=100)
             if klines is None or len(klines) < 15:
                 continue
 
-            # Evaluar señal según la estrategia
-            signal = evaluate_strategy_signal(sym, klines, params)
-            if signal in ('LONG', 'SHORT'):
-                curr_price = float(klines['close'].iloc[-1])
-                logger.info(f"🎯 [PersonalBot - {username}] Señal {signal} detectada en {sym} (Precio: {curr_price}) para estrategia '{strat_name}'. Ejecutando orden...")
-                success = execute_user_entry(client, user, sym, signal, curr_price, params)
-                if success:
-                    _user_symbol_cooldown[(user_id, sym)] = time.time()
-                    current_open_count += 1
-                    open_positions[sym] = True
+            # 1. Evaluar LONG si procede
+            if can_eval_long and (time.time() - last_entry_long >= 60):
+                long_sig = evaluate_strategy_signal(sym, klines, params, check_side='LONG')
+                if long_sig == 'LONG':
+                    curr_price = float(klines['close'].iloc[-1])
+                    logger.info(f"🎯 [PersonalBot - {username}] Señal LONG detectada en {sym} (Precio: {curr_price}) para estrategia '{strat_name}'. Ejecutando orden...")
+                    success = execute_user_entry(client, user, sym, 'LONG', curr_price, params)
+                    if success:
+                        _user_symbol_cooldown[(user_id, sym, 'LONG')] = time.time()
+                        open_positions_long[sym] = True
+                        can_eval_short = False  # Evitar entrar en ambas direcciones en el mismo segundo
+
+            # 2. Evaluar SHORT si procede
+            if can_eval_short and (time.time() - last_entry_short >= 60):
+                short_sig = evaluate_strategy_signal(sym, klines, params, check_side='SHORT')
+                if short_sig == 'SHORT':
+                    curr_price = float(klines['close'].iloc[-1])
+                    logger.info(f"🎯 [PersonalBot - {username}] Señal SHORT detectada en {sym} (Precio: {curr_price}) para estrategia '{strat_name}'. Ejecutando orden...")
+                    success = execute_user_entry(client, user, sym, 'SHORT', curr_price, params)
+                    if success:
+                        _user_symbol_cooldown[(user_id, sym, 'SHORT')] = time.time()
+                        open_positions_short[sym] = True
 
 
 def _personal_bot_engine_loop():
@@ -721,17 +777,30 @@ def get_user_monitor_status(user_id: int) -> dict:
         'api_base_url': keys.get('api_base_url')
     }
     
-    open_positions = {}
+    open_positions_long = {}
+    open_positions_short = {}
+    is_hedge = False
     if user_dict['api_key'] and user_dict['api_secret']:
         try:
             client = get_cached_user_client(user_dict)
             if client:
+                try:
+                    pos_mode = client.get_position_mode()
+                    if isinstance(pos_mode, dict):
+                        is_hedge = bool(pos_mode.get('dualSidePosition', False))
+                except Exception:
+                    pass
                 pos_risk = client.get_position_risk()
                 if pos_risk and isinstance(pos_risk, list):
                     for p in pos_risk:
                         amt = float(p.get('positionAmt', 0.0) or 0.0)
                         if abs(amt) > 1e-6:
-                            open_positions[p.get('symbol')] = p
+                            sym_p = p.get('symbol')
+                            raw_ps = str(p.get('positionSide', 'BOTH')).upper()
+                            if raw_ps == 'LONG' or (raw_ps == 'BOTH' and amt > 0):
+                                open_positions_long[sym_p] = p
+                            elif raw_ps == 'SHORT' or (raw_ps == 'BOTH' and amt < 0):
+                                open_positions_short[sym_p] = p
         except Exception as e_pos:
             get_logger().debug(f"Aviso consultando posiciones de monitor para user {user_id}: {e_pos}")
 
@@ -765,7 +834,7 @@ def get_user_monitor_status(user_id: int) -> dict:
         symbols_list = [s.strip().upper() for s in raw_user_syms.split(',') if s.strip()]
 
     # Asegurar que todas las posiciones abiertas estén en la lista
-    for sym in open_positions.keys():
+    for sym in set(open_positions_long.keys()).union(set(open_positions_short.keys())):
         if sym not in symbols_list:
             symbols_list.append(sym)
 
@@ -797,57 +866,69 @@ def get_user_monitor_status(user_id: int) -> dict:
     symbols_data = []
 
     for sym in symbols_list:
-        pos_raw = open_positions.get(sym)
-        in_pos = pos_raw is not None
-        trade_side = None
-        unrealized_pnl = 0.0
-        pos_info = None
+        pos_long_raw = open_positions_long.get(sym)
+        pos_short_raw = open_positions_short.get(sym)
 
-        if in_pos:
-            amt = float(pos_raw.get('positionAmt', 0.0) or 0.0)
-            trade_side = 'LONG' if amt > 0 else 'SHORT'
-            unrealized_pnl = round(float(pos_raw.get('unRealizedProfit', 0.0) or 0.0), 2)
-            entry_p = float(pos_raw.get('entryPrice', 0.0) or 0.0)
-            mark_p = float(pos_raw.get('markPrice', entry_p) or entry_p)
+        pos_long_info = None
+        pos_short_info = None
+        tot_unrealized_pnl = 0.0
 
-            # Cálculo de TP
-            tp_progress = min(100.0, max(0.0, (unrealized_pnl / tp_usdt) * 100.0)) if tp_usdt > 0 else 0.0
-            tp_remaining = max(0.0, tp_usdt - unrealized_pnl)
+        if pos_long_raw:
+            amt_l = float(pos_long_raw.get('positionAmt', 0.0) or 0.0)
+            pnl_l = round(float(pos_long_raw.get('unRealizedProfit', 0.0) or 0.0), 2)
+            entry_p_l = float(pos_long_raw.get('entryPrice', 0.0) or 0.0)
+            mark_p_l = float(pos_long_raw.get('markPrice', entry_p_l) or entry_p_l)
+            tot_unrealized_pnl += pnl_l
 
-            # Trailing stop
-            peak_val = _user_peak_pnl.get((user_id, sym), 0.0)
-            if unrealized_pnl > peak_val:
-                peak_val = unrealized_pnl
-            ts_armed = enable_ts and (peak_val >= ts_act)
+            tp_prog_l = min(100.0, max(0.0, (pnl_l / tp_usdt) * 100.0)) if tp_usdt > 0 else 0.0
+            tp_rem_l = max(0.0, tp_usdt - pnl_l)
+            pk_l = _user_peak_pnl.get((user_id, sym, 'LONG'), _user_peak_pnl.get((user_id, sym), 0.0))
+            if pnl_l > pk_l:
+                pk_l = pnl_l
+            ts_armed_l = enable_ts and (pk_l >= ts_act)
+            sl_dist_l = round(abs(sl_usdt) - abs(min(0.0, pnl_l)), 2)
+            sl_fill_l = min(100.0, max(0.0, (abs(min(0.0, pnl_l)) / abs(sl_usdt)) * 100.0)) if sl_usdt > 0 else 0.0
 
-            # Cálculo de SL
-            sl_dist = round(abs(sl_usdt) - abs(min(0.0, unrealized_pnl)), 2)
-            sl_fill = min(100.0, max(0.0, (abs(min(0.0, unrealized_pnl)) / abs(sl_usdt)) * 100.0)) if sl_usdt > 0 else 0.0
-
-            pos_info = {
-                'side': trade_side,
-                'amt': amt,
-                'entry_price': entry_p,
-                'mark_price': mark_p,
-                'unrealized_pnl': unrealized_pnl,
-                'tp': {
-                    'target_usdt': tp_usdt,
-                    'progress_pct': round(tp_progress, 1),
-                    'remaining_usdt': round(tp_remaining, 2)
-                },
-                'sl': {
-                    'target_usdt': -abs(sl_usdt),
-                    'distance_usdt': sl_dist,
-                    'fill_pct': round(sl_fill, 1)
-                },
-                'ts': {
-                    'enabled': enable_ts,
-                    'armed': ts_armed,
-                    'act_threshold': ts_act,
-                    'drop_usdt': ts_drop,
-                    'peak_value': round(peak_val, 2)
-                }
+            pos_long_info = {
+                'side': 'LONG',
+                'amt': amt_l,
+                'entry_price': entry_p_l,
+                'mark_price': mark_p_l,
+                'unrealized_pnl': pnl_l,
+                'tp': {'target_usdt': tp_usdt, 'progress_pct': round(tp_prog_l, 1), 'remaining_usdt': round(tp_rem_l, 2)},
+                'sl': {'target_usdt': -abs(sl_usdt), 'distance_usdt': sl_dist_l, 'fill_pct': round(sl_fill_l, 1)},
+                'ts': {'enabled': enable_ts, 'armed': ts_armed_l, 'act_threshold': ts_act, 'drop_usdt': ts_drop, 'peak_value': round(pk_l, 2)}
             }
+
+        if pos_short_raw:
+            amt_s = float(pos_short_raw.get('positionAmt', 0.0) or 0.0)
+            pnl_s = round(float(pos_short_raw.get('unRealizedProfit', 0.0) or 0.0), 2)
+            entry_p_s = float(pos_short_raw.get('entryPrice', 0.0) or 0.0)
+            mark_p_s = float(pos_short_raw.get('markPrice', entry_p_s) or entry_p_s)
+            tot_unrealized_pnl += pnl_s
+
+            tp_prog_s = min(100.0, max(0.0, (pnl_s / tp_usdt) * 100.0)) if tp_usdt > 0 else 0.0
+            tp_rem_s = max(0.0, tp_usdt - pnl_s)
+            pk_s = _user_peak_pnl.get((user_id, sym, 'SHORT'), _user_peak_pnl.get((user_id, sym), 0.0))
+            if pnl_s > pk_s:
+                pk_s = pnl_s
+            ts_armed_s = enable_ts and (pk_s >= ts_act)
+            sl_dist_s = round(abs(sl_usdt) - abs(min(0.0, pnl_s)), 2)
+            sl_fill_s = min(100.0, max(0.0, (abs(min(0.0, pnl_s)) / abs(sl_usdt)) * 100.0)) if sl_usdt > 0 else 0.0
+
+            pos_short_info = {
+                'side': 'SHORT',
+                'amt': amt_s,
+                'entry_price': entry_p_s,
+                'mark_price': mark_p_s,
+                'unrealized_pnl': pnl_s,
+                'tp': {'target_usdt': tp_usdt, 'progress_pct': round(tp_prog_s, 1), 'remaining_usdt': round(tp_rem_s, 2)},
+                'sl': {'target_usdt': -abs(sl_usdt), 'distance_usdt': sl_dist_s, 'fill_pct': round(sl_fill_s, 1)},
+                'ts': {'enabled': enable_ts, 'armed': ts_armed_s, 'act_threshold': ts_act, 'drop_usdt': ts_drop, 'peak_value': round(pk_s, 2)}
+            }
+
+        in_pos = bool(pos_long_raw or pos_short_raw)
+        trade_side_label = 'BIDI' if (pos_long_raw and pos_short_raw) else ('LONG' if pos_long_raw else ('SHORT' if pos_short_raw else None))
 
         # 4. Calcular condiciones del radar (LONG y SHORT)
         klines = get_cached_klines(sym, interval=rsi_interval, limit=100)
@@ -875,8 +956,11 @@ def get_user_monitor_status(user_id: int) -> dict:
                 c_vol = max(vol_c, vol_f)
                 vol_ok = (c_vol >= v_factor * v_sma)
 
-        last_entry_ts = _user_symbol_cooldown.get((user_id, sym), 0)
-        cooldown_active = (time.time() - last_entry_ts < 60)
+        last_entry_l = _user_symbol_cooldown.get((user_id, sym, 'LONG'), _user_symbol_cooldown.get((user_id, sym), 0))
+        last_entry_s = _user_symbol_cooldown.get((user_id, sym, 'SHORT'), _user_symbol_cooldown.get((user_id, sym), 0))
+        cd_long = (time.time() - last_entry_l < 60)
+        cd_short = (time.time() - last_entry_s < 60)
+
         dir_allows_long = trade_dir in ('LONG', 'BIDIRECTIONAL')
         dir_allows_short = trade_dir in ('SHORT', 'BIDIRECTIONAL')
 
@@ -884,7 +968,7 @@ def get_user_monitor_status(user_id: int) -> dict:
         long_cond2 = (delta_rsi >= thresh_up)
         long_cond3 = is_green
         long_cond4 = vol_ok
-        long_cond5 = dir_allows_long and not cooldown_active
+        long_cond5 = dir_allows_long and not cd_long
 
         long_conditions = [
             {'id': 'rsi_range', 'name': 'RSI en Rango', 'desc': f'RSI [{low_long}-{high_long}]', 'value': f'{curr_rsi}', 'passed': bool(long_cond1)},
@@ -899,7 +983,7 @@ def get_user_monitor_status(user_id: int) -> dict:
         short_cond2 = (delta_rsi <= -abs(thresh_down))
         short_cond3 = not is_green
         short_cond4 = vol_ok
-        short_cond5 = dir_allows_short and not cooldown_active
+        short_cond5 = dir_allows_short and not cd_short
 
         short_conditions = [
             {'id': 'rsi_range', 'name': 'RSI en Rango', 'desc': f'RSI [{low_short}-{high_short}]', 'value': f'{curr_rsi}', 'passed': bool(short_cond1)},
@@ -910,18 +994,22 @@ def get_user_monitor_status(user_id: int) -> dict:
         ]
         short_met_count = sum(1 for c in short_conditions if c['passed'])
 
-        state_label = 'In Position' if in_pos else ('Cooldown' if cooldown_active else 'Buscando Entrada')
+        state_label = 'In Position' if in_pos else ('Cooldown' if (cd_long or cd_short) else 'Buscando Entrada')
 
         symbols_data.append({
             'symbol': sym,
             'strategy_name': strat_name,
             'state': state_label,
             'in_position': in_pos,
-            'trade_side': trade_side,
-            'unrealized_pnl': unrealized_pnl,
+            'in_long': bool(pos_long_raw),
+            'in_short': bool(pos_short_raw),
+            'trade_side': trade_side_label,
+            'unrealized_pnl': round(tot_unrealized_pnl, 2),
             'historical_pnl': historical_pnls.get(sym, 0.0),
-            'cooldown_active': cooldown_active,
-            'position': pos_info,
+            'cooldown_active': (cd_long or cd_short),
+            'position': pos_long_info or pos_short_info,
+            'long_position': pos_long_info,
+            'short_position': pos_short_info,
             'long_radar': {
                 'conditions': long_conditions,
                 'met_count': long_met_count,
@@ -941,5 +1029,6 @@ def get_user_monitor_status(user_id: int) -> dict:
         'strategy_name': strat_name,
         'operating_mode': str(settings.get('operating_mode') or 'PERSONAL_BOT'),
         'is_running': bool(settings.get('is_running', False)),
+        'is_hedge': is_hedge,
         'symbols': symbols_data
     }

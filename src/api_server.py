@@ -1162,6 +1162,21 @@ def user_keys_save_endpoint():
         if not saved:
             return jsonify({"status": "error", "message": "Error al persistir las credenciales en la base de datos."}), 500
 
+        # Asegurar Hedge Mode para el usuario si no tiene posiciones abiertas
+        try:
+            from src.multitenant_dispatcher import get_user_futures_client
+            u_cli = get_user_futures_client(api_key, api_secret, is_testnet=is_testnet, base_url=detected_base_url)
+            if u_cli:
+                p_mode = u_cli.get_position_mode()
+                if isinstance(p_mode, dict) and not p_mode.get('dualSidePosition', False):
+                    p_risks = u_cli.get_position_risk()
+                    has_pos = any(abs(float(p.get('positionAmt', 0))) > 1e-6 for p in (p_risks or []))
+                    if not has_pos:
+                        u_cli.change_position_mode(dualSidePosition="true")
+                        api_logger.info(f"Modo Hedge activado automáticamente para usuario {user_id} al guardar claves API.")
+        except Exception as e_hm:
+            api_logger.debug(f"Aviso al intentar activar Hedge Mode para usuario {user_id}: {e_hm}")
+
         api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) conectó con éxito sus claves de {network_name} (Testnet={is_testnet}, Saldo=${balance_usdt:,.2f})")
         return jsonify({
             "status": "success",
@@ -2529,6 +2544,15 @@ def reset_demo_account_endpoint():
                             logger.error(f"[{c_label}] Error al enviar orden de cierre para {sym}: {e_ord}")
             except Exception as e_cli:
                 logger.warning(f"Aviso al consultar posiciones para cliente {c_label}: {e_cli}")
+
+            # Tras cerrar todas las posiciones, asegurar Hedge Mode si la cuenta estaba en One-Way
+            try:
+                pos_mode = cli.get_position_mode()
+                if isinstance(pos_mode, dict) and not pos_mode.get('dualSidePosition', False):
+                    cli.change_position_mode(dualSidePosition="true")
+                    logger.info(f"[{c_label}] Modo Hedge (dualSidePosition=True) activado automáticamente tras reset demo.")
+            except Exception as e_hm:
+                logger.debug(f"[{c_label}] No se pudo cambiar a Hedge Mode tras reset demo: {e_hm}")
 
         # 2. Resetear base de datos (trades y cutoff)
         from src.database import clear_trade_history, clear_user_trades

@@ -47,7 +47,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
   }, [fetchMonitor]);
 
   const symbols = monitorData?.symbols || [];
-  const openPositionsCount = symbols.filter(s => s.in_position).length;
+  const openPositionsCount = symbols.reduce((acc, s) => acc + (s.in_long ? 1 : 0) + (s.in_short ? 1 : (s.in_position ? 1 : 0)), 0);
 
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-4 animate-fadeIn">
@@ -66,6 +66,15 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          <span className={`text-[11px] px-2.5 py-1 rounded-xl border font-mono ${
+            monitorData?.is_hedge 
+              ? "bg-purple-950/40 border-purple-800 text-purple-300"
+              : "bg-slate-950 border-slate-800 text-slate-400"
+          }`}>
+            Modo: <strong className={monitorData?.is_hedge ? "text-purple-300 font-bold" : "text-slate-300 font-bold"}>
+              {monitorData?.is_hedge ? 'Hedge (Bidireccional)' : 'One-Way'}
+            </strong>
+          </span>
           <span className="text-[11px] px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 font-mono text-slate-300">
             Posiciones: <strong className={openPositionsCount > 0 ? "text-emerald-400 font-extrabold" : "text-slate-400"}>{openPositionsCount} activas</strong>
           </span>
@@ -103,8 +112,11 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
             <tbody className="divide-y divide-slate-800/60 text-xs font-sans">
               {symbols.map((item) => {
                 const inPos = item.in_position;
-                const isLong = inPos && item.trade_side === 'LONG';
-                const isShort = inPos && item.trade_side === 'SHORT';
+                const isHedge = Boolean(monitorData?.is_hedge);
+                const inLong = Boolean(item.in_long || (inPos && item.trade_side === 'LONG'));
+                const inShort = Boolean(item.in_short || (inPos && item.trade_side === 'SHORT'));
+                const longPos = item.long_position || (inLong ? item.position : null);
+                const shortPos = item.short_position || (inShort ? item.position : null);
 
                 // Colores para PnL Flotante
                 const unPnl = Number(item.unrealized_pnl || 0);
@@ -112,6 +124,11 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
 
                 const unPnlColor = unPnl > 0.005 ? 'text-emerald-400' : (unPnl < -0.005 ? 'text-rose-400' : 'text-slate-400');
                 const histPnlColor = histPnl > 0.005 ? 'text-emerald-400' : (histPnl < -0.005 ? 'text-rose-400' : 'text-slate-400');
+
+                // Etiqueta de posición
+                const posBadgeText = inLong && inShort 
+                  ? 'In Position (LONG + SHORT)' 
+                  : (inLong ? 'In Position (LONG)' : (inShort ? 'In Position (SHORT)' : `In Position (${item.trade_side || 'ACTIVA'})`));
 
                 return (
                   <tr 
@@ -139,7 +156,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                         {inPos ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse shadow-sm shadow-emerald-500/10">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                            In Position ({item.trade_side})
+                            {posBadgeText}
                           </span>
                         ) : item.cooldown_active ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase bg-amber-500/15 text-amber-300 border border-amber-500/30">
@@ -173,23 +190,23 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
 
                     {/* 4. RADAR Y POSICIÓN LONG */}
                     <td className="py-4 px-4 sm:px-6">
-                      {isLong && item.position ? (
-                        /* CUANDO ABRE LA POSICIÓN: SOLO LA BARRA CON INFORMACIÓN DE TP Y SL */
-                        <PositionTpSlBar position={item.position} />
+                      {inLong && longPos ? (
+                        /* CUANDO ABRE LA POSICIÓN LONG: BARRA CON INFORMACIÓN DE TP Y SL */
+                        <PositionTpSlBar position={longPos} />
                       ) : (
-                        /* CUANDO NO ESTÁ EN POSICIÓN: CUADROS TIPO VOLUMEN (ROJO/VERDE) */
-                        <VolumeRadarBlocks radar={item.long_radar} side="LONG" inOtherPos={isShort} />
+                        /* CUANDO NO ESTÁ EN POSICIÓN LONG: CUADROS TIPO VOLUMEN */
+                        <VolumeRadarBlocks radar={item.long_radar} side="LONG" inOtherPos={inShort && !isHedge} />
                       )}
                     </td>
 
                     {/* 5. RADAR Y POSICIÓN SHORT */}
                     <td className="py-4 px-4 sm:px-6">
-                      {isShort && item.position ? (
-                        /* CUANDO ABRE LA POSICIÓN: SOLO LA BARRA CON INFORMACIÓN DE TP Y SL */
-                        <PositionTpSlBar position={item.position} />
+                      {inShort && shortPos ? (
+                        /* CUANDO ABRE LA POSICIÓN SHORT: BARRA CON INFORMACIÓN DE TP Y SL */
+                        <PositionTpSlBar position={shortPos} />
                       ) : (
-                        /* CUANDO NO ESTÁ EN POSICIÓN: CUADROS TIPO VOLUMEN (ROJO/VERDE) */
-                        <VolumeRadarBlocks radar={item.short_radar} side="SHORT" inOtherPos={isLong} />
+                        /* CUANDO NO ESTÁ EN POSICIÓN SHORT: CUADROS TIPO VOLUMEN */
+                        <VolumeRadarBlocks radar={item.short_radar} side="SHORT" inOtherPos={inLong && !isHedge} />
                       )}
                     </td>
                   </tr>
@@ -378,20 +395,13 @@ function VolumeRadarBlocks({ radar, side = 'LONG', inOtherPos = false }) {
 
       {/* Insignia cuando todas las condiciones se cumplen o estado alternativo */}
       {all_met ? (
-        <div className="flex flex-col items-start gap-1">
-          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider animate-pulse border shadow ${
-            side === 'LONG'
-              ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-emerald-500/40'
-              : 'bg-rose-500 text-slate-950 border-rose-300 shadow-rose-500/40'
-          }`}>
-            <span>⚡</span> LISTO ({met_count}/{total})
-          </span>
-          {inOtherPos && (
-            <span className="text-[10px] text-amber-400 font-sans font-bold flex items-center gap-1">
-              <span>⏳</span> En espera (Posición opuesta activa)
-            </span>
-          )}
-        </div>
+        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider animate-pulse border shadow ${
+          side === 'LONG'
+            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-emerald-500/40'
+            : 'bg-rose-500 text-slate-950 border-rose-300 shadow-rose-500/40'
+        }`}>
+          <span>⚡</span> LISTO ({met_count}/{total})
+        </span>
       ) : inOtherPos ? (
         <span className="text-[10px] text-slate-500 font-sans italic">
           (Posición opuesta activa)
