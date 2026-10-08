@@ -378,13 +378,20 @@ function VolumeRadarBlocks({ radar, side = 'LONG', inOtherPos = false }) {
 
       {/* Insignia cuando todas las condiciones se cumplen o estado alternativo */}
       {all_met ? (
-        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider animate-pulse border shadow ${
-          side === 'LONG'
-            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-emerald-500/40'
-            : 'bg-rose-500 text-slate-950 border-rose-300 shadow-rose-500/40'
-        }`}>
-          <span>⚡</span> LISTO ({met_count}/{total})
-        </span>
+        <div className="flex flex-col items-start gap-1">
+          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider animate-pulse border shadow ${
+            side === 'LONG'
+              ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-emerald-500/40'
+              : 'bg-rose-500 text-slate-950 border-rose-300 shadow-rose-500/40'
+          }`}>
+            <span>⚡</span> LISTO ({met_count}/{total})
+          </span>
+          {inOtherPos && (
+            <span className="text-[10px] text-amber-400 font-sans font-bold flex items-center gap-1">
+              <span>⏳</span> En espera (Posición opuesta activa)
+            </span>
+          )}
+        </div>
       ) : inOtherPos ? (
         <span className="text-[10px] text-slate-500 font-sans italic">
           (Posición opuesta activa)
