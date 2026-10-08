@@ -48,6 +48,8 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
   const [leverage, setLeverage] = useState('default');
   const [marginType, setMarginType] = useState('ISOLATED');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [activeTradeInspector, setActiveTradeInspector] = useState(null);
+  const [userCoinSortOrder, setUserCoinSortOrder] = useState('PNL_DESC');
 
   // Estados del Formulario de API Keys
   const [apiKey, setApiKey] = useState('');
@@ -95,7 +97,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
     return pts;
   }, [tradesData]);
 
-  // Rendimiento desglosado por criptomoneda de la cuenta del usuario
+  // Rendimiento desglosado por criptomoneda con historial cronológico de trades
   const userCoinPerformance = useMemo(() => {
     const closedTrades = (tradesData || []).filter(t => Boolean(t.close_timestamp));
     if (closedTrades.length === 0) return [];
@@ -104,20 +106,279 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
       const sym = (t.symbol || 'DESCONOCIDO').toUpperCase();
       const pnl = Number(t.pnl_usdt || 0);
       if (!map[sym]) {
-        map[sym] = { symbol: sym, totalPnL: 0, count: 0, wins: 0, losses: 0 };
+        map[sym] = { 
+          symbol: sym, 
+          totalPnL: 0, 
+          count: 0, 
+          wins: 0, 
+          losses: 0, 
+          bestTrade: -Infinity, 
+          worstTrade: Infinity, 
+          trades: [] 
+        };
       }
       map[sym].totalPnL += pnl;
       map[sym].count += 1;
+      map[sym].trades.push(t);
       if (pnl > 0) map[sym].wins += 1;
       if (pnl < 0) map[sym].losses += 1;
+      if (pnl > map[sym].bestTrade) map[sym].bestTrade = pnl;
+      if (pnl < map[sym].worstTrade) map[sym].worstTrade = pnl;
     });
-    return Object.values(map)
-      .map(c => ({
+
+    return Object.values(map).map(c => {
+      const sortedTrades = [...c.trades].sort((a, b) => {
+        const timeA = new Date(a.close_timestamp || a.open_timestamp || 0).getTime() || (a.id || 0);
+        const timeB = new Date(b.close_timestamp || b.open_timestamp || 0).getTime() || (b.id || 0);
+        return timeA - timeB;
+      });
+      return {
         ...c,
-        winRate: c.count > 0 ? ((c.wins / c.count) * 100).toFixed(1) : '0.0'
-      }))
-      .sort((a, b) => b.totalPnL - a.totalPnL);
+        trades: sortedTrades,
+        winRate: c.count > 0 ? ((c.wins / c.count) * 100).toFixed(1) : '0.0',
+        bestTrade: c.bestTrade === -Infinity ? 0 : c.bestTrade,
+        worstTrade: c.worstTrade === Infinity ? 0 : c.worstTrade
+      };
+    });
   }, [tradesData]);
+
+  const sortedUserCoinPerformance = useMemo(() => {
+    const list = [...userCoinPerformance];
+    list.sort((a, b) => {
+      if (userCoinSortOrder === 'PNL_DESC') return b.totalPnL - a.totalPnL;
+      if (userCoinSortOrder === 'PNL_ASC') return a.totalPnL - b.totalPnL;
+      if (userCoinSortOrder === 'WINRATE_DESC') return parseFloat(b.winRate) - parseFloat(a.winRate);
+      if (userCoinSortOrder === 'TRADES_DESC') return b.count - a.count;
+      return b.totalPnL - a.totalPnL;
+    });
+    return list;
+  }, [userCoinPerformance, userCoinSortOrder]);
+
+  // Renderizador del Gráfico de Barras por Posición/Trade Cerrado (Eje Cero con Ganancias Arriba y Pérdidas Abajo)
+  const renderCoinTradeSequenceChart = (tradesList, symbol) => {
+    if (!tradesList || tradesList.length === 0) {
+      return (
+        <div className="py-2.5 text-center text-[11px] text-slate-500 font-mono italic">
+          Sin operaciones cerradas registradas
+        </div>
+      );
+    }
+
+    const maxAbs = Math.max(0.05, ...tradesList.map(t => Math.abs(Number(t.pnl_usdt || 0))));
+    const barWidth = 12;
+    const colSpacing = 20;
+    const leftMargin = 45;
+    const rightMargin = 20;
+    const totalSvgWidth = Math.max(400, leftMargin + tradesList.length * colSpacing + rightMargin);
+    const svgHeight = 180;
+    const centerY = 90;
+    const maxBarHeight = 65;
+
+    const isThisCoinInspected = activeTradeInspector && activeTradeInspector.coin === symbol;
+
+    return (
+      <div className="mt-2.5 pt-2 border-t border-slate-800/80">
+        <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] text-slate-400 mb-1.5 px-1 font-mono">
+          <span className="text-[10px] text-slate-400 font-semibold">
+            {tradesList.length} {tradesList.length === 1 ? 'trade cerrado' : 'trades cerrados'} (cronológico ➔)
+          </span>
+        </div>
+
+        <div className="relative w-full bg-slate-950/90 rounded-xl p-2 border border-slate-800 shadow-inner min-h-[160px]">
+          <div className="relative w-full overflow-x-auto no-scrollbar">
+            {isThisCoinInspected && activeTradeInspector && (
+              <div
+                className="absolute z-30 pointer-events-none transition-all duration-150 -translate-x-1/2 bg-slate-900/95 backdrop-blur-md border border-amber-400/80 shadow-2xl rounded-xl px-3 py-2 text-left font-mono whitespace-nowrap"
+                style={{
+                  left: `${Math.max(75, Math.min(totalSvgWidth - 75, activeTradeInspector.x + barWidth / 2))}px`,
+                  top: `${Math.max(4, centerY - 68)}px`
+                }}
+              >
+                <div className="flex items-center gap-1.5 text-xs font-black">
+                  <span className="text-white">Trade #{activeTradeInspector.index}</span>
+                  <span className={activeTradeInspector.isWin ? 'text-emerald-400' : 'text-rose-400'}>
+                    {activeTradeInspector.isWin ? 'WIN 🎯' : 'LOSS 🛑'}
+                  </span>
+                </div>
+                <div className={`text-xs font-black mt-0.5 ${activeTradeInspector.isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {activeTradeInspector.isWin ? '+' : ''}${activeTradeInspector.pnl.toFixed(4)} USDT
+                </div>
+                <div className="text-[11px] text-slate-300 mt-0.5">
+                  Tipo: <strong className={activeTradeInspector.trade.trade_type === 'LONG' ? 'text-emerald-400' : 'text-rose-400'}>{activeTradeInspector.trade.trade_type || 'LONG'}</strong>
+                </div>
+                {activeTradeInspector.timeStr && (
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    🕒 {activeTradeInspector.timeStr}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <svg
+              width={totalSvgWidth}
+              height={svgHeight}
+              viewBox={`0 0 ${totalSvgWidth} ${svgHeight}`}
+              className="select-none block"
+              onMouseLeave={() => setActiveTradeInspector(null)}
+            >
+              <defs>
+                <linearGradient id={`winGrad_${symbol}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#34d399" />
+                  <stop offset="100%" stopColor="#10b981" />
+                </linearGradient>
+                <linearGradient id={`lossGrad_${symbol}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#f43f5e" />
+                  <stop offset="100%" stopColor="#e11d48" />
+                </linearGradient>
+                <filter id={`activeGlow_${symbol}`} x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#fbbf24" />
+                </filter>
+              </defs>
+
+              {/* 1. Línea Base Horizontal Eje Cero */}
+              <line
+                x1={leftMargin - 6}
+                y1={centerY}
+                x2={totalSvgWidth - rightMargin}
+                y2={centerY}
+                stroke="#64748b"
+                strokeWidth="1.5"
+                strokeDasharray="4 3"
+              />
+
+              {/* 2. Etiqueta 0.00 en el Eje a la Izquierda */}
+              <rect
+                x="6"
+                y={centerY - 9}
+                width="36"
+                height="18"
+                rx="4"
+                fill="#0f172a"
+                stroke="#475569"
+                strokeWidth="1"
+              />
+              <text
+                x="24"
+                y={centerY + 4}
+                textAnchor="middle"
+                fill="#94a3b8"
+                fontSize="10"
+                fontWeight="bold"
+                fontFamily="monospace"
+              >
+                0.00
+              </text>
+
+              {/* 3. Barras de cada Trade Cerrado */}
+              {tradesList.map((t, idx) => {
+                const pnl = Number(t.pnl_usdt || 0);
+                const isWin = pnl > 0.00001;
+                const isLoss = pnl < -0.00001;
+                const absPnl = Math.abs(pnl);
+                const barHeight = Math.max(8, Math.min(maxBarHeight, Math.round((absPnl / maxAbs) * maxBarHeight)));
+                const x = leftMargin + idx * colSpacing;
+
+                const isSelected = activeTradeInspector && 
+                  activeTradeInspector.coin === symbol && 
+                  activeTradeInspector.index === (idx + 1);
+
+                const timeStr = formatShortDate(t.close_timestamp);
+
+                const handleSelect = () => {
+                  setActiveTradeInspector({
+                    coin: symbol,
+                    trade: t,
+                    index: idx + 1,
+                    pnl,
+                    isWin,
+                    isLoss,
+                    timeStr,
+                    x
+                  });
+                };
+
+                return (
+                  <g key={t.id || idx} className="cursor-pointer">
+                    <rect
+                      x={x - 4}
+                      y="4"
+                      width={barWidth + 8}
+                      height={svgHeight - 8}
+                      fill="transparent"
+                      onClick={handleSelect}
+                      onMouseEnter={handleSelect}
+                    />
+
+                    {isWin && (
+                      <rect
+                        x={x}
+                        y={centerY - barHeight}
+                        width={barWidth}
+                        height={barHeight}
+                        rx="3"
+                        fill={`url(#winGrad_${symbol})`}
+                        stroke={isSelected ? "#fbbf24" : "#34d399"}
+                        strokeWidth={isSelected ? 2.5 : 1}
+                        filter={isSelected ? `url(#activeGlow_${symbol})` : undefined}
+                        onClick={handleSelect}
+                        onMouseEnter={handleSelect}
+                        className="transition-all hover:brightness-125"
+                      />
+                    )}
+
+                    {isLoss && (
+                      <rect
+                        x={x}
+                        y={centerY}
+                        width={barWidth}
+                        height={barHeight}
+                        rx="3"
+                        fill={`url(#lossGrad_${symbol})`}
+                        stroke={isSelected ? "#fbbf24" : "#fb7185"}
+                        strokeWidth={isSelected ? 2.5 : 1}
+                        filter={isSelected ? `url(#activeGlow_${symbol})` : undefined}
+                        onClick={handleSelect}
+                        onMouseEnter={handleSelect}
+                        className="transition-all hover:brightness-125"
+                      />
+                    )}
+
+                    {!isWin && !isLoss && (
+                      <circle
+                        cx={x + barWidth / 2}
+                        cy={centerY}
+                        r="3"
+                        fill="#94a3b8"
+                        onClick={handleSelect}
+                        onMouseEnter={handleSelect}
+                      />
+                    )}
+
+                    <text
+                      x={x + barWidth / 2}
+                      y={centerY + 34}
+                      textAnchor="middle"
+                      fill={isSelected ? "#fbbf24" : "#94a3b8"}
+                      fontSize="10"
+                      fontWeight={isSelected ? "bold" : "normal"}
+                      fontFamily="monospace"
+                      onClick={handleSelect}
+                      onMouseEnter={handleSelect}
+                    >
+                      #{idx + 1}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+          <div className="mt-1 text-center text-[10px] text-slate-500 font-sans">
+            Pasa el cursor o toca cualquier barra para ver el detalle del trade.
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const openConfirm = (opts) => {
     setConfirmModal({
@@ -1144,31 +1405,129 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           );
         })()}
 
-        {/* Rendimiento por Criptomoneda (Ranking de Pares) */}
-        {userCoinPerformance.length > 0 && (
-          <div className="p-4 sm:p-5 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-white flex items-center gap-1.5">
-                <span>🪙</span> Rendimiento por Criptomoneda ({userCoinPerformance.length} pares con operaciones)
-              </span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
-              {userCoinPerformance.map((c) => (
-                <div key={c.symbol} className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className="font-mono font-bold text-white text-xs">{c.symbol}</span>
-                    <span className="text-[10px] text-slate-400">
-                      {c.count} {c.count === 1 ? 'trade' : 'trades'} • Win Rate: {c.winRate}%
-                    </span>
-                  </div>
-                  <div className="text-right font-mono">
-                    <span className={`text-xs font-black ${c.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {c.totalPnL >= 0 ? '+' : ''}${c.totalPnL.toFixed(2)}
-                    </span>
-                    <span className="text-[9px] text-slate-500 block uppercase">USDT</span>
-                  </div>
+        {/* Rendimiento por Criptomoneda (Ranking de Pares con Gráfico de Barras por Posición) */}
+        {sortedUserCoinPerformance.length > 0 && (
+          <div className="p-4 sm:p-6 bg-slate-950 rounded-2xl border border-slate-800 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
+                  <span className="text-xl">📊</span>
                 </div>
-              ))}
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Ranking de Rendimiento por Criptomoneda</span>
+                    <span className="text-xs font-normal text-slate-400">
+                      ({sortedUserCoinPerformance.length} pares)
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Compara qué monedas son las más rentables y cuáles generan pérdidas para optimizar tu cesta de trading.
+                  </p>
+                </div>
+              </div>
+
+              {/* Botones de Ordenamiento */}
+              <div className="flex flex-wrap items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
+                <span className="text-[11px] font-bold text-slate-400 px-1.5">Orden:</span>
+                <button
+                  type="button"
+                  onClick={() => setUserCoinSortOrder('PNL_DESC')}
+                  className={`px-2 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                    userCoinSortOrder === 'PNL_DESC'
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                  title="Mayor ganancia primero"
+                >
+                  <span>⬇️</span> Mayor PnL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserCoinSortOrder('PNL_ASC')}
+                  className={`px-2 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                    userCoinSortOrder === 'PNL_ASC'
+                      ? 'bg-rose-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                  title="Menor ganancia primero"
+                >
+                  <span>⬆️</span> Menor PnL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserCoinSortOrder('WINRATE_DESC')}
+                  className={`px-2 py-1 rounded-lg text-xs font-bold transition ${
+                    userCoinSortOrder === 'WINRATE_DESC'
+                      ? 'bg-blue-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                  title="Mayor Win Rate"
+                >
+                  🎯 Win Rate
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserCoinSortOrder('TRADES_DESC')}
+                  className={`px-2 py-1 rounded-lg text-xs font-bold transition ${
+                    userCoinSortOrder === 'TRADES_DESC'
+                      ? 'bg-purple-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                  title="Mayor cantidad de trades"
+                >
+                  🔢 Trades
+                </button>
+              </div>
+            </div>
+
+            {/* Lista de Monedas con Gráfico de Barras de Cada Posición */}
+            <div className="space-y-3">
+              {sortedUserCoinPerformance.map((coin, index) => {
+                const isProfit = coin.totalPnL >= 0;
+                return (
+                  <div
+                    key={coin.symbol}
+                    className="p-3.5 rounded-xl border bg-slate-900/60 border-slate-800 transition-all hover:border-slate-700 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      {/* Identificación de la moneda */}
+                      <div className="flex items-center space-x-2.5 flex-wrap gap-1">
+                        <span className="w-6 h-6 rounded-lg bg-slate-800 text-slate-200 font-bold text-xs flex items-center justify-center font-mono">
+                          #{index + 1}
+                        </span>
+                        <span className="text-sm font-bold text-white font-mono">
+                          {coin.symbol}
+                        </span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-bold bg-slate-800 text-slate-300">
+                          {coin.count} {coin.count === 1 ? 'operación' : 'operaciones'}
+                        </span>
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                          parseFloat(coin.winRate) >= 50
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
+                            : 'bg-amber-950 text-amber-300 border border-amber-800/60'
+                        }`}>
+                          Win Rate: {coin.winRate}% ({coin.wins}W / {coin.losses}L)
+                        </span>
+                      </div>
+
+                      {/* Ganancia acumulada */}
+                      <div className="text-right font-mono">
+                        <span className={`text-base font-extrabold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {isProfit ? `+${coin.totalPnL.toFixed(4)}` : coin.totalPnL.toFixed(4)} <span className="text-xs">USDT</span>
+                        </span>
+                        <div className="text-[10px] text-slate-400 flex items-center justify-end gap-1">
+                          <span>Max: +{coin.bestTrade.toFixed(2)}</span>
+                          <span>•</span>
+                          <span>Min: {coin.worstTrade.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Gráfico de Barras por Trade Cerrado (Eje Cero con Ganancias Arriba y Pérdidas Abajo) */}
+                    {renderCoinTradeSequenceChart(coin.trades, coin.symbol)}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

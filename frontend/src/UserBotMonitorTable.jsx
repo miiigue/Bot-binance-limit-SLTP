@@ -252,27 +252,32 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true }) {
                     {/* 6. VALOR & MARGEN DE LA POSICIÓN */}
                     <td className="py-4 px-4 sm:px-6 font-mono text-xs">
                       {inPos ? (
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-baseline justify-between gap-1 text-[11px]">
-                            <span className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Valor:</span>
-                            <span className="font-bold text-slate-200">
-                              ${Number(item.notional_usdt || 0).toFixed(2)} <span className="text-[9px] text-slate-500 font-sans">USDT</span>
-                            </span>
-                          </div>
-                          <div className="flex items-baseline justify-between gap-1 text-[11px] pt-0.5 border-t border-slate-800/60">
-                            <span className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Margen:</span>
-                            <span className="font-black text-amber-300">
-                              ${Number(item.margin_usdt || 0).toFixed(2)} <span className="text-[9px] text-slate-500 font-sans">USDT</span>
-                            </span>
-                          </div>
-                          {((longPos && longPos.leverage) || (shortPos && shortPos.leverage)) && (
-                            <div className="flex justify-end pt-0.5">
-                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-900 border border-slate-800 text-cyan-300 font-bold">
-                                {longPos?.leverage || shortPos?.leverage}x
-                              </span>
+                        (() => {
+                          const lev = longPos?.leverage || shortPos?.leverage;
+                          return (
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-baseline justify-between gap-1 text-[11px]">
+                                <span className="text-[10px] font-sans text-slate-400 uppercase font-semibold flex items-center gap-1">
+                                  <span>Valor</span>
+                                  {lev && (
+                                    <span className="text-cyan-300 font-mono font-bold">
+                                      {lev}x
+                                    </span>
+                                  )}:
+                                </span>
+                                <span className="font-bold text-slate-200">
+                                  ${Number(item.notional_usdt || 0).toFixed(2)} <span className="text-[9px] text-slate-500 font-sans">USDT</span>
+                                </span>
+                              </div>
+                              <div className="flex items-baseline justify-between gap-1 text-[11px] pt-0.5 border-t border-slate-800/60">
+                                <span className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Margen:</span>
+                                <span className="font-black text-amber-300">
+                                  ${Number(item.margin_usdt || 0).toFixed(2)} <span className="text-[9px] text-slate-500 font-sans">USDT</span>
+                                </span>
+                              </div>
                             </div>
-                          )}
-                        </div>
+                          );
+                        })()
                       ) : (
                         <span className="text-slate-600 font-mono text-[11px]">—</span>
                       )}
