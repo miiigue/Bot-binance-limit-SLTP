@@ -1,29 +1,32 @@
-const CACHE_NAME = 'wtn-trading-cache-v1';
+const CACHE_NAME = 'wtn-trading-cache-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/favicon.ico',
+  '/apple-touch-icon.png',
   '/icon-192.png',
   '/icon-512.png'
 ];
 
-// Install event - precache app shell
+// Install event - precache app shell and skip waiting immediately
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
-// Activate event - cleanup old caches
+// Activate event - cleanup ALL old caches and claim clients
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
+            console.log('[SW] Deleting old cache:', key);
             return caches.delete(key);
           }
         })
@@ -32,7 +35,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - handle network requests
+// Fetch event - Network First for HTML / navigation / JS assets to ensure fresh UI
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
@@ -47,27 +50,25 @@ self.addEventListener('fetch', (event) => {
     return; // default browser network handling
   }
 
-  // Stale-while-revalidate for navigation and static assets
+  // Network-First strategy for HTML and JS assets so updates reflect instantly
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-          return networkResponse;
-        })
-        .catch(() => {
-          // If offline and request is HTML navigation, fallback to root /index.html
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
           if (event.request.mode === 'navigate') {
             return caches.match('/index.html');
           }
         });
-
-      return cachedResponse || fetchPromise;
-    })
+      })
   );
 });
