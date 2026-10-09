@@ -131,8 +131,8 @@ class PGCompatCursor:
                     if row:
                         self.lastrowid = row['id'] if (isinstance(row, dict) and 'id' in row) else row[0]
                     return self
-                except Exception:
-                    pass
+                except Exception as e_ret:
+                    raise e_ret
 
         if params:
             self._cur.execute(q, params)
