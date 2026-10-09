@@ -3962,7 +3962,7 @@ class SingleSideTradingBot:
                                              f"Actual Precio ({current_market_price:.{price_precision_log}f}) vs "
                                              f"Umbral Salida Techo ({trailing_stop_price_level:.{price_precision_log}f} = "
                                              f"Suelo {float(self.price_trough_since_entry):.{price_precision_log}f} + Dist {self.price_trailing_stop_distance_usdt})")
-                            if current_market_price >= trailing_stop_price_level:
+                            if trailing_stop_price_level > Decimal('0') and current_market_price >= trailing_stop_price_level:
                                 self.logger.warning(f"[{self.symbol}][{self.trade_side}] CONDICIÓN DE SALIDA (TRAILING STOP DE PRECIO SHORT) DETECTADA: "
                                                     f"Precio Actual ({current_market_price:.{price_precision_log}f}) >= Umbral ({trailing_stop_price_level:.{price_precision_log}f})")
                                 exit_signal = True
@@ -3988,7 +3988,7 @@ class SingleSideTradingBot:
                                              f"Actual Precio ({current_market_price:.{price_precision_log}f}) vs "
                                              f"Umbral Salida ({trailing_stop_price_level:.{price_precision_log}f} = "
                                              f"Pico {float(self.price_peak_since_entry):.{price_precision_log}f} - Dist {self.price_trailing_stop_distance_usdt})")
-                            if current_market_price <= trailing_stop_price_level:
+                            if trailing_stop_price_level > Decimal('0') and current_market_price <= trailing_stop_price_level:
                                 self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING STOP DE PRECIO) DETECTADA (Habilitado): "
                                                     f"Precio Actual ({current_market_price:.{price_precision_log}f}) <= Umbral ({trailing_stop_price_level:.{price_precision_log}f})")
                                 exit_signal = True
@@ -4088,12 +4088,12 @@ class SingleSideTradingBot:
                             self.exit_reason = f"Trailing_RSI_Stop_SHORT (Actual={self.last_rsi_value:.2f}, Suelo={self.rsi_trough_since_target:.2f}, Rebote={rsi_rebound_threshold})"
                 else:
                     if self.rsi_objetivo_activado and self.rsi_peak_since_target is not None and self.last_rsi_value is not None:
-                        trailing_rsi_exit_level = self.rsi_peak_since_target + self.rsi_threshold_down
-                        self.logger.info(f"[{self.symbol}] Chequeo Salida TRAILING RSI (Habilitado): Actual RSI ({self.last_rsi_value:.2f}) vs Umbral Salida Dinámico ({trailing_rsi_exit_level:.2f} = Pico {self.rsi_peak_since_target:.2f} + Drop {self.rsi_threshold_down})")
+                        trailing_rsi_exit_level = self.rsi_peak_since_target - abs(self.rsi_threshold_down)
+                        self.logger.info(f"[{self.symbol}] Chequeo Salida TRAILING RSI (Habilitado): Actual RSI ({self.last_rsi_value:.2f}) vs Umbral Salida Dinámico ({trailing_rsi_exit_level:.2f} = Pico {self.rsi_peak_since_target:.2f} - Drop {abs(self.rsi_threshold_down):.2f})")
                         if self.last_rsi_value <= trailing_rsi_exit_level:
                             self.logger.warning(f"[{self.symbol}] CONDICIÓN DE SALIDA (TRAILING RSI STOP) DETECTADA (Habilitado): RSI Actual ({self.last_rsi_value:.2f}) <= Umbral ({trailing_rsi_exit_level:.2f})")
                             exit_signal = True
-                            self.exit_reason = f"Trailing_RSI_Stop (Actual={self.last_rsi_value:.2f}, Pico={self.rsi_peak_since_target:.2f}, Drop={self.rsi_threshold_down})"
+                            self.exit_reason = f"Trailing_RSI_Stop (Actual={self.last_rsi_value:.2f}, Pico={self.rsi_peak_since_target:.2f}, Drop={abs(self.rsi_threshold_down):.2f})"
             elif not exit_signal:
                  self.logger.info(f"[{self.symbol}] Salida por Trailing RSI Stop DESHABILITADA.")
 
@@ -4920,7 +4920,24 @@ class SingleSideTradingBot:
             status = order_info.get('status')
             if status == 'FILLED':
                 self.reentries_done += 1
+                self.last_dca_time = time.time()
                 self.logger.info(f"[{self.symbol}] 🎉 RE-ENTRADA DCA #{self.reentries_done} EJECUTADA exitosamente @ {self.pending_reentry_price}. Posición promediada.")
+                try:
+                    from .multitenant_dispatcher import dispatch_dca_order_to_users
+                    threading.Thread(
+                        target=dispatch_dca_order_to_users,
+                        kwargs={
+                            'symbol': self.symbol,
+                            'signal_side': self.trade_side,
+                            'reentry_side': 'BUY' if self.trade_side == 'LONG' else 'SELL',
+                            'entry_price': float(self.pending_reentry_price) if self.pending_reentry_price else 0.0,
+                            'dca_index': self.reentries_done,
+                            'strategy_name': getattr(self, 'strategy_name', '')
+                        },
+                        daemon=True
+                    ).start()
+                except Exception as e_dca_disp:
+                    self.logger.warning(f"[{self.symbol}] Multi-tenant limit DCA dispatch warning: {e_dca_disp}")
                 self.pending_reentry_order_id = None
                 self.pending_reentry_price = None
                 self.pending_reentry_qty = None
@@ -4987,6 +5004,10 @@ class SingleSideTradingBot:
             self._check_pending_reentry_order()
             return
 
+        # Cooldown de 30 segundos entre re-entradas DCA en el mismo bot
+        if hasattr(self, 'last_dca_time') and (time.time() - self.last_dca_time < 30.0):
+            return
+
         entry_price = self.current_position.get('entry_price', Decimal('0'))
         if entry_price <= Decimal('0'):
             return
@@ -5004,8 +5025,9 @@ class SingleSideTradingBot:
                 target_reentry_price = max(lower_supports)
                 self.logger.info(f"[{self.symbol}][{self.trade_side}] Re-entrada DCA por Soporte: detectado soporte en {target_reentry_price}")
         elif self.dca_reentry_mode == 'loss_usdt':
-            # Modo: Por Pérdida en USDT (Pérdida flotante acumulada)
-            trigger_loss = Decimal(str(getattr(self, 'dca_trigger_loss_usdt', 15.0)))
+            # Modo: Por Pérdida en USDT (Pérdida flotante acumulada escalada por nivel de re-entrada)
+            base_trigger = Decimal(str(getattr(self, 'dca_trigger_loss_usdt', 15.0)))
+            trigger_loss = base_trigger * Decimal(str(self.reentries_done + 1))
             pos_qty = Decimal(str(self.current_position.get('quantity', 0)))
             if pos_qty <= Decimal('0'):
                 pos_qty = Decimal(str(getattr(self, 'last_known_position_size', 0)))
@@ -5016,7 +5038,7 @@ class SingleSideTradingBot:
                     target_reentry_price = entry_price + loss_dist_per_unit
                 else:
                     target_reentry_price = entry_price - loss_dist_per_unit
-                self.logger.debug(f"[{self.symbol}][{self.trade_side}] DCA por Pérdida ({trigger_loss} USDT): Entrada={entry_price}, Cant={pos_qty}, Target Price={target_reentry_price:.6f}")
+                self.logger.debug(f"[{self.symbol}][{self.trade_side}] DCA por Pérdida ({trigger_loss} USDT escalado para DCA #{self.reentries_done + 1}): Entrada={entry_price}, Cant={pos_qty}, Target Price={target_reentry_price:.6f}")
         else:
             # Modo: Porcentaje Fijo (Caída para LONG, Subida para SHORT)
             if is_short:
@@ -5031,7 +5053,8 @@ class SingleSideTradingBot:
             if getattr(self, 'entry_order_type', 'MARKET') == 'MARKET':
                 should_trigger_dca_market = False
                 if self.dca_reentry_mode == 'loss_usdt':
-                    trigger_loss = Decimal(str(getattr(self, 'dca_trigger_loss_usdt', 15.0)))
+                    base_trigger = Decimal(str(getattr(self, 'dca_trigger_loss_usdt', 15.0)))
+                    trigger_loss = base_trigger * Decimal(str(self.reentries_done + 1))
                     curr_pnl = getattr(self, 'last_known_pnl', Decimal('0'))
                     if curr_pnl <= -trigger_loss:
                         should_trigger_dca_market = True
@@ -5048,7 +5071,7 @@ class SingleSideTradingBot:
                 if not should_trigger_dca_market:
                     if self.dca_reentry_mode == 'loss_usdt':
                         curr_pnl = getattr(self, 'last_known_pnl', Decimal('0'))
-                        self.logger.debug(f"[{self.symbol}][{self.trade_side}] DCA por Pérdida: PnL actual={curr_pnl:.2f} USDT (Umbral: -{getattr(self, 'dca_trigger_loss_usdt', 15.0)} USDT), Target Price: {target_reentry_price:.4f} (Actual: {current_market_price:.4f}). En espera...")
+                        self.logger.debug(f"[{self.symbol}][{self.trade_side}] DCA por Pérdida: PnL actual={curr_pnl:.2f} USDT (Umbral: -{trigger_loss:.2f} USDT), Target Price: {target_reentry_price:.4f} (Actual: {current_market_price:.4f}). En espera...")
                     else:
                         self.logger.debug(f"[{self.symbol}][{self.trade_side}] DCA Nivel Target: {target_reentry_price:.4f} (Precio Actual: {current_market_price:.4f}). En espera de disparo a Mercado...")
                     return
@@ -5071,7 +5094,24 @@ class SingleSideTradingBot:
                     m_result = create_futures_market_order(self.symbol, reentry_side, adj_qty, position_side=self.trade_side)
                     if m_result and m_result.get('orderId'):
                         self.reentries_done += 1
+                        self.last_dca_time = time.time()
                         self.logger.info(f"[{self.symbol}][{self.trade_side}] 🛡️ Re-entrada DCA MARKET #{self.reentries_done} ejecutada exitosamente con ID {m_result.get('orderId')}.")
+                        try:
+                            from .multitenant_dispatcher import dispatch_dca_order_to_users
+                            threading.Thread(
+                                target=dispatch_dca_order_to_users,
+                                kwargs={
+                                    'symbol': self.symbol,
+                                    'signal_side': self.trade_side,
+                                    'reentry_side': reentry_side,
+                                    'entry_price': float(current_market_price),
+                                    'dca_index': self.reentries_done,
+                                    'strategy_name': getattr(self, 'strategy_name', '')
+                                },
+                                daemon=True
+                            ).start()
+                        except Exception as e_dca_disp:
+                            self.logger.warning(f"[{self.symbol}] Multi-tenant DCA dispatch warning: {e_dca_disp}")
                         try:
                             import time as _t
                             _t.sleep(0.3)

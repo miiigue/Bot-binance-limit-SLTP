@@ -2451,8 +2451,8 @@ def get_user_bot_settings(user_id: int) -> dict:
         cursor.execute("""
             INSERT INTO user_bot_settings (
                 user_id, is_running, allocated_usdt, leverage, margin_type,
-                symbols_to_trade, strategy_name, operating_mode, max_open_positions, updated_at
-            ) VALUES (?, ?, 100.0, 10, 'ISOLATED', 'BTCUSDT,ETHUSDT,SOLUSDT', 'WTN Scalper Pro', 'COPY_TRADING', 3, ?)
+                symbols_to_trade, strategy_name, operating_mode, updated_at
+            ) VALUES (?, ?, 100.0, 10, 'ISOLATED', 'BTCUSDT,ETHUSDT,SOLUSDT', 'WTN Scalper Pro', 'COPY_TRADING', ?)
         """, (user_id, False, now_str))
         conn.commit()
 
@@ -2484,7 +2484,7 @@ def update_user_bot_settings(user_id: int, **kwargs) -> bool:
 
         allowed_fields = [
             'is_running', 'allocated_usdt', 'leverage', 'margin_type',
-            'symbols_to_trade', 'strategy_name', 'operating_mode', 'max_open_positions',
+            'symbols_to_trade', 'strategy_name', 'operating_mode',
             'last_started_at', 'last_stopped_at', 'error_message'
         ]
 
@@ -2531,7 +2531,6 @@ def get_all_active_bot_users(operating_mode: str = None) -> list:
             SELECT u.id as user_id, u.username, u.email, u.status as user_status,
                    b.is_running, b.allocated_usdt, b.leverage, b.margin_type,
                    b.symbols_to_trade, b.strategy_name, COALESCE(b.operating_mode, 'COPY_TRADING') as operating_mode,
-                   b.max_open_positions,
                    k.api_key_encrypted, k.api_secret_encrypted, k.api_key_masked,
                    k.is_testnet, k.is_valid, k.balance_detected, k.api_base_url
             FROM users u

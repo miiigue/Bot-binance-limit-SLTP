@@ -1355,7 +1355,7 @@ def user_bot_update_settings_endpoint():
         updates = {}
         if 'allocated_usdt' in data:
             try:
-                updates['allocated_usdt'] = max(10.0, float(data['allocated_usdt']))
+                updates['allocated_usdt'] = max(5.0, float(data['allocated_usdt']))
             except (ValueError, TypeError):
                 pass
         if 'leverage' in data:
@@ -3460,6 +3460,15 @@ class RiskManager:
 
     def can_open_position_detailed(self, position_size_usdt: Decimal) -> tuple[bool, str]:
         with self.lock:
+            # Sincronizar periódicamente el saldo real de Binance cada 30 segundos
+            if time.time() - getattr(self, '_last_balance_update', 0) > 30.0:
+                try:
+                    self.total_balance = get_account_balance_usdt() or self.total_balance
+                    self.max_exposure = self.total_balance * self.risk_percentage
+                    self._last_balance_update = time.time()
+                except Exception:
+                    pass
+
             current_exp = self.get_current_exposure()
             if current_exp + position_size_usdt <= self.max_exposure:
                 return True, ""

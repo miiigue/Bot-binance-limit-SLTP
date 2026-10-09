@@ -26,7 +26,8 @@ from src.database import (
     get_strategies_catalog, close_user_trade_record
 )
 from src.binance_client import (
-    get_user_futures_client, adjust_quantity_for_symbol, get_historical_klines
+    get_user_futures_client, adjust_quantity_for_symbol, get_historical_klines,
+    get_min_notional_for_symbol
 )
 from src.rsi_calculator import calculate_rsi
 
@@ -36,6 +37,8 @@ _user_clients_cache = {}      # { user_id: { "client": UMFutures, "timestamp": f
 _klines_cache = {}            # { (symbol, interval): { "data": DataFrame, "timestamp": float } }
 _user_peak_pnl = {}           # { (user_id, symbol): float } -> Para Trailing Stop PnL
 _user_symbol_cooldown = {}    # { (user_id, symbol): float } -> Evitar re-entradas en ráfaga
+_user_reentries_done = {}     # { (user_id, symbol, pos_side): int } -> Conteo de re-entradas DCA ejecutadas
+_user_dca_cooldown = {}       # { (user_id, symbol, pos_side): float } -> Cooldown entre DCAs (30s)
 _engine_started = False
 _engine_lock = threading.Lock()
 _last_heartbeat_time = 0
@@ -316,6 +319,10 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
         if entry_price <= 0:
             return False
 
+        min_notional = get_min_notional_for_symbol(clean_sym)
+        if notional < min_notional:
+            notional = min_notional
+
         raw_qty = notional / entry_price
         qty = adjust_quantity_for_symbol(clean_sym, raw_qty)
         if not qty or qty <= 0:
@@ -443,9 +450,12 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
             position_size_usdt=eff_notional
         )
         logger.info(f"🛑 [PersonalBot - {username} (ID: {user_id})] POSICIÓN CERRADA en {clean_sym} ({actual_side} {qty}, PnL: ${unrealized_pnl:+.2f} USDT). Razón: {exit_reason}")
-        # Limpiar peak de trailing stop
+        # Limpiar peak de trailing stop y contador de DCA
         _user_peak_pnl.pop((user_id, clean_sym, pos_side), None)
         _user_peak_pnl.pop((user_id, clean_sym), None)
+        _user_reentries_done.pop((user_id, clean_sym, pos_side), None)
+        _user_reentries_done.pop((user_id, clean_sym), None)
+        _user_dca_cooldown.pop((user_id, clean_sym, pos_side), None)
         return True
 
     except Exception as e:
@@ -565,6 +575,14 @@ def run_personal_bot_cycle():
         except Exception as e_recon:
             logger.debug(f"Aviso en reconciliación de trades huérfanos: {e_recon}")
 
+        # Factor de escala proporcional: preserva el ROE (%) exacto de la estrategia
+        # adaptándolo al margen por orden personalizado del usuario vs el margen base de la estrategia
+        user_margin = float(user.get('allocated_usdt') or 50.0)
+        strat_margin = float(params.get('position_size_usdt') or params.get('positionSizeUSDT') or 50.0)
+        if strat_margin <= 0:
+            strat_margin = 50.0
+        scale_factor = user_margin / strat_margin
+
         # -------------------------------------------------------------
         # PASO A: EVALUAR SALIDAS EN POSICIONES ABIERTAS DEL USUARIO
         # -------------------------------------------------------------
@@ -577,25 +595,48 @@ def run_personal_bot_cycle():
             raw_side = str(p.get('positionSide', 'BOTH')).upper()
             pos_side = ('LONG' if pos_amt > 0 else 'SHORT') if raw_side == 'BOTH' else raw_side
 
-            # 1. Take Profit por PnL
-            tp_usdt = float(params.get('take_profit_usdt', params.get('takeProfitUSDT', 50.0)) or 50.0)
+            # 1. Take Profit (proporcional por PnL o por porcentaje)
+            tp_usdt_base = float(params.get('take_profit_usdt', params.get('takeProfitUSDT', 50.0)) or 50.0)
+            tp_usdt = tp_usdt_base * scale_factor
             enable_tp = str(params.get('enable_take_profit_pnl', params.get('enableTakeProfitPnl', True))).lower() == 'true'
-            if enable_tp and unrealized_pnl >= tp_usdt:
+
+            tp_pct = float(params.get('support_order_take_profit_percent', params.get('supportOrderTakeProfitPercent', 0.0)) or 0.0)
+            tp_by_pct = False
+            if tp_pct > 0 and entry_p > 0:
+                if pos_side == 'LONG' and mark_p >= entry_p * (1.0 + tp_pct / 100.0):
+                    tp_by_pct = True
+                elif pos_side == 'SHORT' and mark_p <= entry_p * (1.0 - tp_pct / 100.0):
+                    tp_by_pct = True
+
+            if (enable_tp and unrealized_pnl >= tp_usdt) or tp_by_pct:
                 close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Take Profit (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
                 continue
 
-            # 2. Stop Loss por PnL
-            sl_usdt = float(params.get('stop_loss_usdt', params.get('stopLossUSDT', 400.0)) or 400.0)
+            # 2. Stop Loss (proporcional por PnL o por porcentaje)
+            sl_usdt_base = float(params.get('stop_loss_usdt', params.get('stopLossUSDT', 400.0)) or 400.0)
+            sl_usdt = sl_usdt_base * scale_factor
             enable_sl = str(params.get('enable_stop_loss_pnl', params.get('enableStopLossPnl', True))).lower() == 'true'
-            if enable_sl and unrealized_pnl <= -abs(sl_usdt):
+
+            sl_pct = float(params.get('support_order_stop_loss_percent', params.get('supportOrderStopLossPercent', 0.0)) or 0.0)
+            sl_by_pct = False
+            if sl_pct > 0 and entry_p > 0:
+                if pos_side == 'LONG' and mark_p <= entry_p * (1.0 - sl_pct / 100.0):
+                    sl_by_pct = True
+                elif pos_side == 'SHORT' and mark_p >= entry_p * (1.0 + sl_pct / 100.0):
+                    sl_by_pct = True
+
+            if (enable_sl and unrealized_pnl <= -abs(sl_usdt)) or sl_by_pct:
                 close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Stop Loss ({unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
                 continue
 
-            # 3. Trailing Stop PnL
+            # 3. Trailing Stop PnL (proporcional al capital del usuario)
             enable_trail = str(params.get('enable_pnl_trailing_stop', params.get('enablePnlTrailingStop', True))).lower() == 'true'
             if enable_trail:
-                act_usdt = float(params.get('pnl_trailing_stop_activation_usdt', params.get('pnlTrailingStopActivationUSDT', 3.5)) or 3.5)
-                drop_usdt = float(params.get('pnl_trailing_stop_drop_usdt', params.get('pnlTrailingStopDropUSDT', 1.5)) or 1.5)
+                act_usdt_base = float(params.get('pnl_trailing_stop_activation_usdt', params.get('pnlTrailingStopActivationUSDT', 3.5)) or 3.5)
+                drop_usdt_base = float(params.get('pnl_trailing_stop_drop_usdt', params.get('pnlTrailingStopDropUSDT', 1.5)) or 1.5)
+                act_usdt = act_usdt_base * scale_factor
+                drop_usdt = drop_usdt_base * scale_factor
+
                 peak_key = (user_id, sym, pos_side)
                 curr_peak = _user_peak_pnl.get(peak_key, 0.0)
                 if unrealized_pnl > curr_peak:
@@ -604,6 +645,85 @@ def run_personal_bot_cycle():
                 if curr_peak >= act_usdt and (curr_peak - unrealized_pnl) >= drop_usdt:
                     close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Trailing Stop Asegurado (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
                     continue
+
+            # 4. Evaluación de Re-entradas DCA Autónomas para el Bot Personal
+            enable_dca = str(params.get('enable_dca_reentry', params.get('enableDcaReentry', False))).lower() == 'true'
+            if enable_dca:
+                dca_key = (user_id, sym, pos_side)
+                curr_reentries = _user_reentries_done.get(dca_key, 0)
+                max_reentries = int(params.get('dca_max_reentries', params.get('dcaMaxReentries', 2)) or 2)
+                last_dca_ts = _user_dca_cooldown.get(dca_key, 0.0)
+
+                if curr_reentries < max_reentries and (now_ts - last_dca_ts >= 30.0):
+                    dca_mode = str(params.get('dca_reentry_mode', params.get('dcaReentryMode', 'fixed_percent'))).lower()
+                    should_dca = False
+
+                    if 'loss' in dca_mode:
+                        base_trig = float(params.get('dca_trigger_loss_usdt', params.get('dcaTriggerLossUsdt', 15.0)) or 15.0)
+                        scaled_loss_thresh = base_trig * scale_factor * (curr_reentries + 1)
+                        if unrealized_pnl <= -abs(scaled_loss_thresh):
+                            should_dca = True
+                    else:
+                        drop_pct = float(params.get('dca_price_drop_percent', params.get('dcaPriceDropPercent', 1.5)) or 1.5) / 100.0
+                        if pos_side == 'LONG' and entry_p > 0:
+                            target_dca_p = entry_p * (1.0 - drop_pct)
+                            if mark_p <= target_dca_p:
+                                should_dca = True
+                        elif pos_side == 'SHORT' and entry_p > 0:
+                            target_dca_p = entry_p * (1.0 + drop_pct)
+                            if mark_p >= target_dca_p:
+                                should_dca = True
+
+                    if should_dca and mark_p > 0:
+                        vol_mult = float(params.get('dca_volume_multiplier', params.get('dcaVolumeMultiplier', 1.0)) or 1.0)
+                        dca_margin = user_margin * (vol_mult ** (curr_reentries + 1))
+
+                        # Obtener balance disponible en Binance
+                        user_avail = 0.0
+                        try:
+                            b_list = client.balance()
+                            if isinstance(b_list, list):
+                                for b in b_list:
+                                    if str(b.get('asset', '')).upper() == 'USDT':
+                                        user_avail = float(b.get('availableBalance', 0.0) or b.get('balance', 0.0) or 0.0)
+                                        break
+                        except Exception:
+                            pass
+
+                        if user_avail >= dca_margin:
+                            user_custom_lev = user.get('leverage')
+                            if user_custom_lev is not None and str(user_custom_lev).strip() not in ('', '0', 'default', 'None'):
+                                try:
+                                    dca_lev = int(user_custom_lev)
+                                except Exception:
+                                    dca_lev = int(params.get('leverage') or 10)
+                            else:
+                                dca_lev = int(params.get('leverage') or 10)
+
+                            dca_notional = dca_margin * dca_lev
+                            min_notional = get_min_notional_for_symbol(sym)
+                            if dca_notional < min_notional:
+                                dca_notional = min_notional
+
+                            dca_qty_raw = dca_notional / mark_p
+                            dca_qty = adjust_quantity_for_symbol(sym, dca_qty_raw)
+                            if dca_qty and dca_qty > 0:
+                                dca_order_side = 'BUY' if pos_side == 'LONG' else 'SELL'
+                                dca_order_pos_side = pos_side if is_hedge else 'BOTH'
+                                try:
+                                    dca_res = client.new_order(
+                                        symbol=sym,
+                                        side=dca_order_side,
+                                        type='MARKET',
+                                        quantity=dca_qty,
+                                        positionSide=dca_order_pos_side
+                                    )
+                                    if dca_res and isinstance(dca_res, dict) and dca_res.get('orderId'):
+                                        _user_reentries_done[dca_key] = curr_reentries + 1
+                                        _user_dca_cooldown[dca_key] = now_ts
+                                        logger.info(f"🛡️ [PersonalBot DCA - {username}] RE-ENTRADA DCA #{curr_reentries + 1} ejecutada en {sym} ({pos_side} Qty={dca_qty}, Margen=${dca_margin:.2f})")
+                                except Exception as e_dca_exec:
+                                    logger.warning(f"Error ejecutando re-entrada DCA en {sym} para {username}: {e_dca_exec}")
 
         # -------------------------------------------------------------
         # PASO B: EVALUAR ENTRADAS EN SÍMBOLOS CANDIDATOS (PARIDAD CON ADMINISTRADOR)
@@ -695,11 +815,11 @@ def start_personal_bot_engine():
 
 def dispatch_entry_order_to_users(symbol: str, signal_side: str, entry_price: float, reason: str = 'RSI Oversold Signal', strategy_name: str = '') -> dict:
     """
-    Despacha la orden de entrada a todos los usuarios activos (COPY_TRADING y PERSONAL_BOT).
-    Se llama inmediatamente cuando se detecta una señal técnica en el bot central.
+    Despacha la orden de entrada a los usuarios activos en COPY_TRADING.
+    (Los usuarios en PERSONAL_BOT operan de forma 100% aislada e independiente en run_personal_bot_cycle).
     """
     logger = get_logger()
-    active_users = get_all_active_bot_users(operating_mode=None)
+    active_users = get_all_active_bot_users(operating_mode='COPY_TRADING')
     if not active_users:
         return {"dispatched": 0, "success": 0, "errors": 0}
 
@@ -709,20 +829,14 @@ def dispatch_entry_order_to_users(symbol: str, signal_side: str, entry_price: fl
     for user in active_users:
         user_id = user['user_id']
         username = user['username']
-        op_mode = str(user.get('operating_mode', 'COPY_TRADING')).upper().strip()
         user_strategy = str(user.get('strategy_name', '')).strip()
-
-        # Si el usuario es PERSONAL_BOT y eligió una estrategia distinta a la de la señal, omitir
-        if op_mode in ['PERSONAL_BOT', 'MY_BOT'] and user_strategy and strategy_name:
-            if user_strategy.lower() != strategy_name.lower() and user_strategy != 'WTN Scalper Pro':
-                continue
 
         try:
             client = get_cached_user_client(user)
             if not client:
                 continue
 
-            # Verificar si ya está en posición
+            # Verificar si ya está en posición en este símbolo
             positions = client.get_position_risk(symbol=clean_sym)
             if positions and isinstance(positions, list):
                 if any(abs(float(p.get('positionAmt', 0.0) or 0.0)) > 1e-6 for p in positions):
@@ -741,9 +855,12 @@ def dispatch_entry_order_to_users(symbol: str, signal_side: str, entry_price: fl
 
 
 def dispatch_exit_order_to_users(symbol: str, exit_reason: str, exit_price: float) -> dict:
-    """Cierra las posiciones de los usuarios activos cuando el bot central cierra una posición."""
+    """
+    Cierra las posiciones de los usuarios activos en COPY_TRADING cuando el Master cierra una posición.
+    (Los usuarios en PERSONAL_BOT no son afectados; gestionan sus salidas independientemente).
+    """
     logger = get_logger()
-    active_users = get_all_active_bot_users(operating_mode=None)
+    active_users = get_all_active_bot_users(operating_mode='COPY_TRADING')
     if not active_users:
         return {"dispatched": 0, "closed": 0}
 
@@ -773,7 +890,131 @@ def dispatch_exit_order_to_users(symbol: str, exit_reason: str, exit_price: floa
                 results["closed"] += 1
 
         except Exception as e:
-            logger.warning(f"Aviso al cerrar posición para {username}: {e}")
+            logger.warning(f"Aviso al cerrar posición en copy trading para {username}: {e}")
+
+    return results
+
+
+def dispatch_dca_order_to_users(symbol: str, signal_side: str, reentry_side: str, entry_price: float, dca_index: int, strategy_name: str = '') -> dict:
+    """
+    Despacha la orden de re-entrada DCA a los usuarios activos en COPY_TRADING que tengan posición abierta en el símbolo.
+    (Los usuarios en PERSONAL_BOT evalúan y ejecutan su propio DCA autónomo en run_personal_bot_cycle).
+    """
+    logger = get_logger()
+    active_users = get_all_active_bot_users(operating_mode='COPY_TRADING')
+    if not active_users:
+        return {"dispatched": 0, "success": 0, "errors": 0}
+
+    results = {"dispatched": len(active_users), "success": 0, "errors": 0}
+    clean_sym = symbol.upper().strip()
+
+    for user in active_users:
+        user_id = user['user_id']
+        username = user['username']
+
+        try:
+            client = get_cached_user_client(user)
+            if not client:
+                continue
+
+            # 1. Verificar si el usuario tiene una posición abierta en la misma dirección
+            positions = client.get_position_risk(symbol=clean_sym)
+            if not positions or not isinstance(positions, list):
+                continue
+
+            user_pos = None
+            for p in positions:
+                amt = float(p.get('positionAmt', 0.0) or 0.0)
+                raw_ps = str(p.get('positionSide', 'BOTH')).upper()
+                if abs(amt) > 1e-6:
+                    pos_side = ('LONG' if amt > 0 else 'SHORT') if raw_ps == 'BOTH' else raw_ps
+                    if pos_side == signal_side:
+                        user_pos = p
+                        break
+
+            if not user_pos:
+                # El usuario no tiene posición abierta en este símbolo/lado, no aplica DCA
+                continue
+
+            # 2. Cargar parámetros de la estrategia para calcular multiplicador de volumen
+            user_strategy = str(user.get('strategy_name', '')).strip()
+            params = load_strategy_params(strategy_name or user_strategy)
+
+            user_margin = float(user.get('allocated_margin_usdt', 10.0) or 10.0)
+            vol_mult = float(params.get('dca_volume_multiplier', params.get('dcaVolumeMultiplier', 1.0)) or 1.0)
+            dca_margin = user_margin * (vol_mult ** dca_index)
+
+            # Verificar balance disponible en Binance
+            user_avail = 0.0
+            try:
+                b_list = client.balance()
+                if isinstance(b_list, list):
+                    for b in b_list:
+                        if str(b.get('asset', '')).upper() == 'USDT':
+                            user_avail = float(b.get('availableBalance', 0.0) or b.get('balance', 0.0) or 0.0)
+                            break
+            except Exception:
+                pass
+
+            if user_avail < dca_margin:
+                logger.warning(f"⚠️ [Dispatch DCA - {username}] Balance insuficiente (${user_avail:.2f} < ${dca_margin:.2f}) en {clean_sym}")
+                continue
+
+            user_custom_lev = user.get('leverage')
+            if user_custom_lev is not None and str(user_custom_lev).strip() not in ('', '0', 'default', 'None'):
+                try:
+                    dca_lev = int(user_custom_lev)
+                except Exception:
+                    dca_lev = int(params.get('leverage') or 10)
+            else:
+                dca_lev = int(params.get('leverage') or 10)
+
+            dca_notional = dca_margin * dca_lev
+            min_notional = get_min_notional_for_symbol(clean_sym)
+            if dca_notional < min_notional:
+                dca_notional = min_notional
+
+            mark_p = entry_price
+            if mark_p <= 0:
+                ticker = client.ticker_price(symbol=clean_sym)
+                mark_p = float(ticker.get('price', 0.0)) if isinstance(ticker, dict) else 0.0
+
+            if mark_p <= 0:
+                continue
+
+            dca_qty_raw = dca_notional / mark_p
+            dca_qty = adjust_quantity_for_symbol(clean_sym, dca_qty_raw)
+            if not dca_qty or dca_qty <= 0:
+                continue
+
+            is_hedge = False
+            try:
+                pos_mode = client.get_position_mode()
+                if isinstance(pos_mode, dict):
+                    is_hedge = bool(pos_mode.get('dualSidePosition', False))
+            except Exception:
+                is_hedge = False
+
+            dca_order_pos_side = signal_side if is_hedge else 'BOTH'
+            dca_order_side = reentry_side.upper()
+
+            dca_res = client.new_order(
+                symbol=clean_sym,
+                side=dca_order_side,
+                type='MARKET',
+                quantity=dca_qty,
+                positionSide=dca_order_pos_side
+            )
+
+            if dca_res and isinstance(dca_res, dict) and dca_res.get('orderId'):
+                results["success"] += 1
+                _user_reentries_done[(user_id, clean_sym, signal_side)] = dca_index
+                _user_dca_cooldown[(user_id, clean_sym, signal_side)] = time.time()
+                logger.info(f"🛡️ [CopyTrading DCA - {username}] RE-ENTRADA DCA #{dca_index} ejecutada en {clean_sym} ({signal_side} Qty={dca_qty}, Margen=${dca_margin:.2f})")
+
+        except Exception as e:
+            results["errors"] += 1
+            logger.error(f"❌ [Dispatch DCA - {username}] Error: {e}")
 
     return results
 

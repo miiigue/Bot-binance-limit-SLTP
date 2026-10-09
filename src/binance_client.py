@@ -577,6 +577,23 @@ def adjust_quantity_for_symbol(symbol: str, quantity: float | Decimal) -> float 
     return float(qty_dec)
 
 
+def get_min_notional_for_symbol(symbol: str) -> float:
+    """
+    Retorna el notional mínimo requerido por Binance Futures para el símbolo (por defecto 5.0 USDT).
+    Previene rechazos de órdenes por filtro MIN_NOTIONAL (-4164).
+    """
+    sym_info = get_futures_symbol_info(symbol)
+    if not sym_info:
+        return 5.0
+    for f in sym_info.get('filters', []):
+        if f.get('filterType') in ('MIN_NOTIONAL', 'NOTIONAL'):
+            try:
+                return float(f.get('notional') or f.get('minNotional') or 5.0)
+            except Exception:
+                return 5.0
+    return 5.0
+
+
 def get_futures_position(symbol: str, position_side: str | None = None):
     """
     Obtiene la información de la posición actual para un símbolo de futuros específico.
