@@ -235,9 +235,7 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
               <span className="font-mono font-medium text-rose-200">{Number(slTarget).toFixed(2)} USDT</span>
             </span>
             <div className="flex items-center gap-1.5 text-[10px]">
-              <span className="text-slate-400 font-sans font-normal">
-                Colchón: <span className="font-mono font-medium text-slate-300">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
-              </span>
+              <span className="font-mono font-medium text-slate-300">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
               {pnlUsdt >= 0 ? (
                 <span className="font-sans font-medium text-emerald-400">
                   🛡️ Seguro
@@ -977,8 +975,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
         <table className="min-w-full divide-y divide-slate-700">
           <thead className="bg-slate-950 border-b-2 border-slate-700">
             <tr>
-              <BinanceSortHeader label="Symbol" sortKey="symbol" currentSort={statusSort} onSort={handleStatusSort} />
-              <BinanceSortHeader label="Estrategia & Estado" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[170px]" tooltipInfo={{ title: "Estrategia & Estado", desc: "Estrategia asignada arriba y control de pausa/estado del bot con órdenes pendientes abajo." }} />
+              <BinanceSortHeader label="Estrategia & Estado" sortKey="strategy_name" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[170px]" tooltipInfo={{ title: "Estrategia & Estado", desc: "Símbolo arriba, estrategia asignada al centro y control de estado abajo." }} />
               <BinanceSortHeader label="PnL (Flotante / Hist.)" sortKey="current_pnl" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[150px]" tooltipInfo={{ title: "PnL Consolidado", desc: "Flotante actual (no realizado) arriba / Histórico acumulado de trades cerrados abajo." }} />
               <BinanceSortHeader label="Radar & Posición LONG" sortKey="diagnostics_long" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[340px]" tooltipInfo={{ title: "Radar & Telemetría LONG", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones LONG." }} />
               <BinanceSortHeader label="Radar & Posición SHORT" sortKey="diagnostics_short" currentSort={statusSort} onSort={handleStatusSort} className="min-w-[340px]" tooltipInfo={{ title: "Radar & Telemetría SHORT", desc: "Reglas de entrada y telemetría de Take Profit / Stop Loss para posiciones SHORT en Hedge Mode." }} />
@@ -1015,36 +1012,10 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                       className={`transition-colors duration-150 cursor-pointer ${rowBgClass}`}
                       onClick={() => toggleRow(status.symbol)}
                     >
-                    {/* --- Símbolo y badges de dirección --- */}
-                    <td className="px-3 py-3 whitespace-nowrap text-sm font-bold text-white">
-                      <div className="flex items-center space-x-2">
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-sm">{status.symbol}</span>
-                          </div>
-                          {/* Badge de Modalidad Operativa */}
-                          <div className="mt-0.5">
-                            {(!status.trade_direction || status.trade_direction === 'BIDIRECTIONAL') ? (
-                              <span className="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-purple-950/80 text-purple-300 border border-purple-500/40" title="Modo Cobertura Bidireccional (LONG y SHORT simultáneos)">
-                                🔄 BIDI
-                              </span>
-                            ) : status.trade_direction === 'SHORT' ? (
-                              <span className="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-rose-950/80 text-rose-300 border border-rose-500/40" title="Operando exclusivamente en SHORT">
-                                🔴 SHORT
-                              </span>
-                            ) : (
-                              <span className="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40" title="Operando exclusivamente en LONG">
-                                🟢 LONG
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* --- ESTRATEGIA & ESTADO UNIFICADOS --- */}
+                    {/* --- ESTRATEGIA & ESTADO UNIFICADOS (Con Símbolo arriba) --- */}
                     <td className="px-3 py-3 whitespace-nowrap text-xs min-w-[170px]">
-                      <div className="flex flex-col gap-1.5 items-start">
+                      <div className="flex flex-col gap-1 items-start">
+                        <span className="font-mono font-black text-sm text-white">{status.symbol}</span>
                         {(() => {
                           const rawStrat = status.strategy_name && status.strategy_name.toLowerCase() !== 'global' ? status.strategy_name : 'v3_RSI-SNIPER-MOMENTUM_v3';
                           const shortStrat = rawStrat.length > 20 ? `${rawStrat.slice(0, 20)}…` : rawStrat;

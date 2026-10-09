@@ -863,20 +863,6 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
               ? 'bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/50 shadow-emerald-500/10' 
               : 'bg-slate-900/90 border-slate-800'
           }`}>
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <span>⚡</span> Panel Operativo de tu Bot Personal
-                </h3>
-                <span className={`text-[10px] px-2.5 py-0.5 rounded-lg border font-bold ${
-                  isPersonalBotActive
-                    ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
-                    : 'text-amber-400 bg-amber-400/10 border-amber-400/30'
-                }`}>
-                  {isPersonalBotActive ? 'EN VIVO' : 'LISTO'}
-                </span>
-              </div>
-
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-slate-950/80 rounded-2xl border border-slate-800 mb-4">
                 <div className="text-xs">
                   <span className="text-slate-500 block uppercase font-semibold">Estrategia Asignada:</span>
@@ -903,13 +889,6 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                   ℹ️ Tu cuenta está actualmente en <strong>Modo Copy-Trading Espejo</strong>. Al presionar <strong>"INICIAR MI BOT CON ESTA ESTRATEGIA"</strong>, se pausará la replicación de Copy-Trading y tu cuenta operará de forma autónoma con tu estrategia seleccionada.
                 </div>
               )}
-
-              <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                {isPersonalBotActive 
-                  ? '🟢 Tu bot personal está operando en vivo en Binance Futures con la estrategia asignada. Para cambiar de estrategia o parámetros, pausa primero el bot.'
-                  : '⏸️ Bot personal pausado. Selecciona tu estrategia favorita en el catálogo de abajo, define tu capital y presiona el botón para comenzar a operar.'}
-              </p>
-            </div>
 
             <button
               onClick={handleToggleSync}

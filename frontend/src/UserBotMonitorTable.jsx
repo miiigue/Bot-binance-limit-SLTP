@@ -78,15 +78,14 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-4 animate-fadeIn">
       {/* Encabezado del Monitor */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-bold">
-          <span>📡</span> RADAR Y POSICIONES EN VIVO
-        </div>
-
-        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-          <span className="text-[11px] px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 font-mono text-slate-300">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 pb-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-xs px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 font-mono text-slate-300">
             Posiciones: <strong className={openPositionsCount > 0 ? "text-emerald-400 font-extrabold" : "text-slate-400"}>{openPositionsCount} activas</strong>
           </span>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={fetchMonitor}
             className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95"
@@ -117,14 +116,14 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/60 shadow-inner">
-          <table className="w-full text-left border-collapse min-w-[980px]">
+          <table className="w-full text-left border-collapse min-w-[850px]">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/60 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                <th className="py-3.5 px-4 sm:px-6 w-[20%]">Estrategia y Estado</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[16%]">PnL Flotante / Hist</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[27%]">Radar & Posición LONG</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[27%]">Radar & Posición SHORT</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[10%]">Valor & Margen</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[18%]">Estrategia y Estado</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[14%]">PnL Flotante / Hist</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[28%]">Radar & Posición LONG</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[28%]">Radar & Posición SHORT</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[12%]">Valor & Margen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs font-sans">
@@ -155,10 +154,10 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
                       inPos ? 'bg-indigo-950/15' : ''
                     }`}
                   >
-                    {/* 1. ESTRATEGIA Y ESTADO */}
+                    {/* 1. ESTRATEGIA Y ESTADO (Con Símbolo arriba) */}
                     <td className="py-4 px-4 sm:px-6">
                       <div className="flex flex-col gap-1 items-start">
-                        <span className="font-mono text-sm sm:text-base font-black text-white tracking-tight">
+                        <span className="font-mono font-black text-sm text-white tracking-tight">
                           {item.symbol}
                         </span>
                         <span className="font-mono text-[11px] font-bold text-amber-300 truncate max-w-[240px]">
@@ -181,7 +180,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
                       </div>
                     </td>
 
-                    {/* 3. PNL FLOTANTE / HIST */}
+                    {/* 2. PNL FLOTANTE / HIST */}
                     <td className="py-4 px-4 sm:px-6 font-mono">
                       <div className="flex flex-col gap-1 text-xs">
                         {/* Flotante global del par */}
@@ -202,7 +201,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
                       </div>
                     </td>
 
-                    {/* 4. RADAR Y POSICIÓN LONG */}
+                    {/* 3. RADAR Y POSICIÓN LONG */}
                     <td className="py-4 px-4 sm:px-6">
                       {inLong && longPos ? (
                         /* CUANDO ABRE LA POSICIÓN LONG: BARRA CON INFORMACIÓN DE TP Y SL */
@@ -213,7 +212,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
                       )}
                     </td>
 
-                    {/* 5. RADAR Y POSICIÓN SHORT */}
+                    {/* 4. RADAR Y POSICIÓN SHORT */}
                     <td className="py-4 px-4 sm:px-6">
                       {inShort && shortPos ? (
                         /* CUANDO ABRE LA POSICIÓN SHORT: BARRA CON INFORMACIÓN DE TP Y SL */
@@ -224,7 +223,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
                       )}
                     </td>
 
-                    {/* 6. VALOR & MARGEN DE LA POSICIÓN */}
+                    {/* 5. VALOR & MARGEN DE LA POSICIÓN */}
                     <td className="py-4 px-4 sm:px-6 font-mono text-xs">
                       {inPos ? (
                         (() => {
@@ -263,15 +262,15 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
               })}
             </tbody>
 
-            {/* TOTALES CONSOLIDADOS (TAL COMO SE VE EN ADMIN) */}
+            {/* TOTALES CONSOLIDADOS */}
             {symbols.length > 0 && (
               <tfoot className="bg-slate-950 border-t-2 border-slate-700 font-mono text-xs">
                 <tr className="divide-x divide-slate-800/80">
                   {/* 1: Estrategia & Estado */}
-                  <td colSpan="1" className="py-3.5 px-4 sm:px-6 text-left font-sans font-bold text-slate-200">
+                  <td className="py-3.5 px-4 sm:px-6 text-left font-sans font-bold text-slate-200">
                     <div className="flex items-center gap-2">
                       <span className="text-base">📊</span>
-                      <span>TOTALES CONSOLIDADOS ({symbols.length} pares)</span>
+                      <span>TOTALES ({symbols.length} pares)</span>
                     </div>
                   </td>
 
@@ -452,6 +451,7 @@ function PositionTpSlBar({ position }) {
               )}
             </div>
             <div className="flex items-center gap-1.5 text-[10px]">
+              <span className="font-mono font-medium text-slate-200">+{Number(sl?.distance_usdt || 0).toFixed(2)}</span>
               {riskBadge}
             </div>
           </div>
