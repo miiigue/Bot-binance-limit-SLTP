@@ -79,28 +79,11 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
     <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-4 animate-fadeIn">
       {/* Encabezado del Monitor */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-        <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-bold mb-2">
-            <span>📡</span> RADAR Y POSICIONES EN VIVO
-          </div>
-          <h3 className="text-lg sm:text-xl font-black text-white tracking-tight flex items-center gap-2">
-            Monitoreo en Tiempo Real de tu Bot Personal
-          </h3>
-          <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
-            Supervisa tus posiciones abiertas en Binance Futures y el radar cuantitativo de condiciones para cada par.
-          </p>
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-bold">
+          <span>📡</span> RADAR Y POSICIONES EN VIVO
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-          <span className={`text-[11px] px-2.5 py-1 rounded-xl border font-mono ${
-            monitorData?.is_hedge 
-              ? "bg-purple-950/40 border-purple-800 text-purple-300"
-              : "bg-slate-950 border-slate-800 text-slate-400"
-          }`}>
-            Modo: <strong className={monitorData?.is_hedge ? "text-purple-300 font-bold" : "text-slate-300 font-bold"}>
-              {monitorData?.is_hedge ? 'Hedge (Bidireccional)' : 'One-Way'}
-            </strong>
-          </span>
           <span className="text-[11px] px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 font-mono text-slate-300">
             Posiciones: <strong className={openPositionsCount > 0 ? "text-emerald-400 font-extrabold" : "text-slate-400"}>{openPositionsCount} activas</strong>
           </span>
@@ -137,12 +120,11 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
           <table className="w-full text-left border-collapse min-w-[980px]">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/60 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                <th className="py-3.5 px-4 sm:px-6 w-[11%]">Símbolo</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[15%]">Estrategia y Estado</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[14%]">PnL Flotante / Hist</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[24%]">Radar & Posición LONG</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[24%]">Radar & Posición SHORT</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[12%]">Valor & Margen</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[20%]">Estrategia y Estado</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[16%]">PnL Flotante / Hist</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[27%]">Radar & Posición LONG</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[27%]">Radar & Posición SHORT</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[10%]">Valor & Margen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs font-sans">
@@ -173,19 +155,12 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
                       inPos ? 'bg-indigo-950/15' : ''
                     }`}
                   >
-                    {/* 1. SÍMBOLO */}
-                    <td className="py-4 px-4 sm:px-6 font-mono font-black text-sm text-white">
-                      <div className="flex items-center gap-2">
-                        <span className="tracking-tight">{item.symbol}</span>
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700/80 font-bold">
-                          BIDI
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* 2. ESTRATEGIA Y ESTADO */}
+                    {/* 1. ESTRATEGIA Y ESTADO */}
                     <td className="py-4 px-4 sm:px-6">
                       <div className="flex flex-col gap-1 items-start">
+                        <span className="font-mono text-sm sm:text-base font-black text-white tracking-tight">
+                          {item.symbol}
+                        </span>
                         <span className="font-mono text-[11px] font-bold text-amber-300 truncate max-w-[240px]">
                           {item.strategy_name}
                         </span>
@@ -292,8 +267,8 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
             {symbols.length > 0 && (
               <tfoot className="bg-slate-950 border-t-2 border-slate-700 font-mono text-xs">
                 <tr className="divide-x divide-slate-800/80">
-                  {/* 1 y 2: Símbolo, Estrategia & Estado */}
-                  <td colSpan="2" className="py-3.5 px-4 sm:px-6 text-left font-sans font-bold text-slate-200">
+                  {/* 1: Estrategia & Estado */}
+                  <td colSpan="1" className="py-3.5 px-4 sm:px-6 text-left font-sans font-bold text-slate-200">
                     <div className="flex items-center gap-2">
                       <span className="text-base">📊</span>
                       <span>TOTALES CONSOLIDADOS ({symbols.length} pares)</span>
@@ -422,11 +397,6 @@ function PositionTpSlBar({ position }) {
             )}
           </div>
           <div className="flex items-center gap-1.5 text-[10px]">
-            {tp?.remaining_usdt !== undefined && tp.remaining_usdt > 0 && (
-              <span className="text-slate-400 font-sans hidden sm:inline">
-                (Falta: +{Number(tp.remaining_usdt).toFixed(2)})
-              </span>
-            )}
             <span className={`font-mono font-black ${isProfit ? 'text-emerald-400' : 'text-slate-500'}`}>
               {Math.round(tpProgress)}%
             </span>
@@ -482,9 +452,6 @@ function PositionTpSlBar({ position }) {
               )}
             </div>
             <div className="flex items-center gap-1.5 text-[10px]">
-              <span className="text-slate-400 font-sans">
-                Colchón: <span className="font-mono font-medium text-slate-200">+{Number(sl?.distance_usdt || 0).toFixed(2)}</span>
-              </span>
               {riskBadge}
             </div>
           </div>
