@@ -436,7 +436,10 @@ def init_db_schema():
             terms_accepted INTEGER DEFAULT 0,
             terms_accepted_version TEXT,
             terms_accepted_at DATETIME,
-            terms_accepted_ip TEXT
+            terms_accepted_ip TEXT,
+            country TEXT,
+            city TEXT,
+            birth_date TEXT
         )
         """)
         conn.commit()
@@ -447,7 +450,10 @@ def init_db_schema():
             ("terms_accepted", "INTEGER DEFAULT 0"),
             ("terms_accepted_version", "TEXT"),
             ("terms_accepted_at", "DATETIME"),
-            ("terms_accepted_ip", "TEXT")
+            ("terms_accepted_ip", "TEXT"),
+            ("country", "TEXT"),
+            ("city", "TEXT"),
+            ("birth_date", "TEXT")
         ]:
             try:
                 cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
@@ -1784,7 +1790,7 @@ def count_users() -> int:
     finally:
         conn.close()
 
-def create_user(username: str, email: str, password_hash: str, role: str = 'investor', status: str = 'pending', requested_capital: float = 0.0) -> int:
+def create_user(username: str, email: str, password_hash: str, role: str = 'investor', status: str = 'pending', requested_capital: float = 0.0, country: str = None, city: str = None, birth_date: str = None) -> int:
     """Crea un nuevo usuario en la base de datos y retorna su ID."""
     conn = get_db_connection()
     if not conn:
@@ -1793,9 +1799,20 @@ def create_user(username: str, email: str, password_hash: str, role: str = 'inve
         cursor = conn.cursor()
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute("""
-            INSERT INTO users (username, email, password_hash, role, status, created_at, requested_capital)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (username.strip(), email.strip().lower() if email else None, password_hash, role, status, now_str, float(requested_capital or 0.0)))
+            INSERT INTO users (username, email, password_hash, role, status, created_at, requested_capital, country, city, birth_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            username.strip(), 
+            email.strip().lower() if email else None, 
+            password_hash, 
+            role, 
+            status, 
+            now_str, 
+            float(requested_capital or 0.0),
+            country.strip() if country else None,
+            city.strip() if city else None,
+            birth_date.strip() if birth_date else None
+        ))
         conn.commit()
         return cursor.lastrowid
     except sqlite3.IntegrityError as ie:
@@ -2060,7 +2077,7 @@ def get_all_investors_summary(live_pool_balance: float = None) -> dict:
         return {"investors": [], "pending_users": [], "pool_stats": {}}
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, email, role, status, created_at, last_login, requested_capital FROM users ORDER BY id ASC")
+        cursor.execute("SELECT id, username, email, role, status, created_at, last_login, requested_capital, country, city, birth_date, terms_accepted, terms_accepted_version, terms_accepted_at, terms_accepted_ip FROM users ORDER BY id ASC")
         all_users = [dict(r) for r in cursor.fetchall()]
 
         cursor.execute("""

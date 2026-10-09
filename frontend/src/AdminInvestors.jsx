@@ -665,8 +665,12 @@ export default function AdminInvestors({ addToast }) {
                     <span>👤</span> {pUser.username}
                     <span className="text-[11px] text-slate-400 font-normal">({pUser.email || 'Sin correo'})</span>
                   </div>
-                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                    Registrado el: {pUser.created_at || '-'}
+                  <div className="text-[11px] text-slate-400 font-mono mt-0.5 flex flex-wrap items-center gap-3">
+                    <span>Registrado: {pUser.created_at || '-'}</span>
+                    {(pUser.country || pUser.city) && (
+                      <span className="text-amber-300 font-sans font-semibold">📍 {pUser.city ? `${pUser.city}, ` : ''}{pUser.country}</span>
+                    )}
+                    {pUser.birth_date && <span className="text-slate-300 font-sans">🎂 {pUser.birth_date}</span>}
                   </div>
                   {pUser.requested_capital > 0 ? (
                     <div className="mt-1.5 flex items-center gap-2">
@@ -676,8 +680,8 @@ export default function AdminInvestors({ addToast }) {
                       </span>
                     </div>
                   ) : (
-                    <div className="mt-1 text-[11px] text-slate-500 italic">
-                      Monto a invertir no especificado
+                    <div className="mt-1 text-[11px] text-slate-400 font-sans italic">
+                      Monto a invertir: <strong className="text-slate-200 font-mono font-bold">$0.00 USDT</strong> (Sin capital inicial)
                     </div>
                   )}
                 </div>

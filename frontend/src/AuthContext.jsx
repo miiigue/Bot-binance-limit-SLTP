@@ -94,7 +94,7 @@ export function AuthProvider({ children }) {
   };
 
   // Registro de Usuario (Primer usuario = Admin, siguientes = Inversionista pendiente)
-  const register = async (username, email, password, investmentAmount = 0) => {
+  const register = async (username, email, password, investmentAmount = 0, country = '', city = '', birthDate = '') => {
     try {
       const resp = await fetch('/api/auth/register', {
         method: 'POST',
@@ -103,7 +103,10 @@ export function AuthProvider({ children }) {
           username, 
           email, 
           password,
-          investment_amount: parseFloat(investmentAmount) || 0
+          investment_amount: parseFloat(investmentAmount) || 0,
+          country,
+          city,
+          birth_date: birthDate
         })
       });
 

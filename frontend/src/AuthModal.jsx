@@ -8,7 +8,10 @@ export default function AuthModal() {
   const [mode, setMode] = useState(needsInitialAdmin ? 'setup' : 'login'); // 'setup', 'login', 'register', 'pending_notice'
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [investmentAmount, setInvestmentAmount] = useState('');
+  const [country, setCountry] = useState('');
+  const [city, setCity] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [investmentAmount, setInvestmentAmount] = useState('0');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -16,6 +19,20 @@ export default function AuthModal() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
+
+  // Validación en tiempo real del formulario de registro
+  const isRegisterFormValid = 
+    Boolean(acceptedTerms) &&
+    Boolean(username.trim()) &&
+    Boolean(email.trim()) &&
+    Boolean(country.trim()) &&
+    Boolean(city.trim()) &&
+    Boolean(birthDate.trim()) &&
+    investmentAmount !== '' &&
+    !isNaN(parseFloat(investmentAmount)) &&
+    parseFloat(investmentAmount) >= 0 &&
+    password.length >= 6 &&
+    password === confirmPassword;
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
@@ -39,15 +56,20 @@ export default function AuthModal() {
     e.preventDefault();
     setErrorMessage(null);
 
-    if (!username.trim() || !password) {
+    if (!username.trim() || !email.trim() || !password) {
       setErrorMessage('Todos los campos obligatorios deben ser completados.');
       return;
     }
 
     if (mode === 'register') {
+      if (!country.trim() || !city.trim() || !birthDate.trim()) {
+        setErrorMessage('Por favor completa tu país, ciudad y fecha de nacimiento.');
+        return;
+      }
+
       const parsedAmount = parseFloat(investmentAmount);
-      if (!investmentAmount || isNaN(parsedAmount) || parsedAmount <= 0) {
-        setErrorMessage('Por favor ingresa un monto válido a invertir (mínimo 1 USDT).');
+      if (investmentAmount === '' || isNaN(parsedAmount) || parsedAmount < 0) {
+        setErrorMessage('Por favor ingresa un monto válido igual o mayor a 0 USDT.');
         return;
       }
     }
@@ -63,7 +85,7 @@ export default function AuthModal() {
     }
 
     if (!acceptedTerms) {
-      setErrorMessage('Debes aceptar los Términos de Servicio y el Aviso de Riesgo de Acceso Privado para registrarte.');
+      setErrorMessage('Debes aceptar los Términos de Servicio y el Descargo de Riesgo para registrarte.');
       return;
     }
 
@@ -73,10 +95,13 @@ export default function AuthModal() {
         username.trim(), 
         email.trim(), 
         password,
-        mode === 'register' ? (parseFloat(investmentAmount) || 0) : 0
+        mode === 'register' ? (parseFloat(investmentAmount) || 0) : 0,
+        country.trim(),
+        city.trim(),
+        birthDate.trim()
       );
       if (res.pending_approval) {
-        setSuccessNotice('Tu solicitud de cuenta ha sido registrada con éxito. Está en espera de aprobación por el Super Administrador.');
+        setSuccessNotice('Tu solicitud de cuenta ha sido registrada con éxito. Está en espera de aprobación por el Administrador.');
         setMode('pending_notice');
       }
     } catch (err) {
@@ -273,7 +298,7 @@ export default function AuthModal() {
             {mode === 'register' && (
               <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl mb-1 text-xs text-slate-400">
-                  <span>💼</span> Las cuentas de nuevos inversionistas ingresan en estado de <strong className="text-amber-300">solo lectura</strong> una vez aprobadas por el Administrador.
+                  <span>💼</span> Las cuentas de nuevos inversionistas ingresan en estado de <strong className="text-amber-300">pendiente de aprobación</strong> hasta ser autorizadas por el Administrador.
                 </div>
 
                 <div>
@@ -300,6 +325,42 @@ export default function AuthModal() {
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">País *</label>
+                    <input
+                      type="text"
+                      required
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      placeholder="ej: México"
+                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Ciudad *</label>
+                    <input
+                      type="text"
+                      required
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      placeholder="ej: Ciudad de México"
+                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Fecha de Nacimiento *</label>
+                  <input
+                    type="date"
+                    required
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                  />
+                </div>
+
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-bold text-slate-300">
@@ -314,11 +375,11 @@ export default function AuthModal() {
                     <input
                       type="number"
                       step="any"
-                      min="1"
+                      min="0"
                       required
                       value={investmentAmount}
                       onChange={(e) => setInvestmentAmount(e.target.value)}
-                      placeholder="ej: 1000"
+                      placeholder="0"
                       className="w-full pl-8 pr-16 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm font-mono font-bold text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
                     />
                     <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-xs font-bold text-slate-400">
@@ -326,7 +387,7 @@ export default function AuthModal() {
                     </div>
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    Capital con el que deseas ingresar al pool algorítmico institucional.
+                    Puedes ingresar 0 si por el momento deseas registrarte sin capital de inversión inicial.
                   </p>
                 </div>
 
@@ -340,6 +401,28 @@ export default function AuthModal() {
                     placeholder="Mínimo 6 caracteres"
                     className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Confirmar Contraseña *</label>
+                  <input
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repite la contraseña"
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                  />
+                  {confirmPassword !== '' && confirmPassword !== password && (
+                    <p className="text-[11px] text-rose-400 mt-1 font-semibold flex items-center gap-1">
+                      <span>⚠️</span> Las contraseñas no coinciden.
+                    </p>
+                  )}
+                  {confirmPassword !== '' && confirmPassword === password && password.length >= 6 && (
+                    <p className="text-[11px] text-emerald-400 mt-1 font-semibold flex items-center gap-1">
+                      <span>✓</span> Las contraseñas coinciden correctamente.
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-1">
@@ -366,7 +449,7 @@ export default function AuthModal() {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || !acceptedTerms}
+                  disabled={isSubmitting || !isRegisterFormValid}
                   className="w-full mt-2 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-black text-sm rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (

@@ -792,14 +792,17 @@ def auth_setup_status_endpoint():
 def auth_register_endpoint():
     """
     Registro de usuarios:
-    - Esquema A: Si es el primer usuario, se crea como 'admin' activo automáticamente.
-    - Esquema C: Si ya existe un admin, se crea como 'investor' en estado 'pending' (requiere aprobación).
+    - Si es el primer usuario, se crea como 'admin' activo automáticamente.
+    - Si ya existe un admin, se crea como 'investor' en estado 'pending' (requiere aprobación por el Super Admin).
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
         username = str(data.get('username', '')).strip()
         password = str(data.get('password', '')).strip()
         email = str(data.get('email', '')).strip().lower()
+        country = str(data.get('country', '')).strip()
+        city = str(data.get('city', '')).strip()
+        birth_date = str(data.get('birth_date', '')).strip()
 
         if not username or not password:
             return jsonify({"status": "error", "message": "Nombre de usuario y contraseña son obligatorios."}), 400
@@ -825,7 +828,17 @@ def auth_register_endpoint():
 
         if total_users == 0:
             # Esquema A: Primer usuario se convierte en Super Admin activo
-            user_id = create_user(username=username, email=email, password_hash=pwd_hash, role='admin', status='active', requested_capital=investment_amount)
+            user_id = create_user(
+                username=username, 
+                email=email, 
+                password_hash=pwd_hash, 
+                role='admin', 
+                status='active', 
+                requested_capital=investment_amount,
+                country=country,
+                city=city,
+                birth_date=birth_date
+            )
             if not user_id:
                 return jsonify({"status": "error", "message": "Error al registrar el Super Administrador."}), 500
 
@@ -844,6 +857,9 @@ def auth_register_endpoint():
                 "role": "admin",
                 "status": "active",
                 "requested_capital": investment_amount,
+                "country": country,
+                "city": city,
+                "birth_date": birth_date,
                 "terms_accepted": 1,
                 "terms_accepted_version": "v1.0-2026"
             }
@@ -856,12 +872,22 @@ def auth_register_endpoint():
                 "is_first_user": True
             })
         else:
-            # Usuarios quedan activos para acceder de inmediato, configurar sus claves API de Binance y operar su bot
-            user_id = create_user(username=username, email=email, password_hash=pwd_hash, role='investor', status='active', requested_capital=investment_amount)
+            # Esquema B: Nuevos usuarios se registran en estado 'pending' (requieren aprobación explícita del Admin)
+            user_id = create_user(
+                username=username, 
+                email=email, 
+                password_hash=pwd_hash, 
+                role='investor', 
+                status='pending', 
+                requested_capital=investment_amount,
+                country=country,
+                city=city,
+                birth_date=birth_date
+            )
             if not user_id:
-                return jsonify({"status": "error", "message": "Error al registrar la cuenta."}), 500
+                return jsonify({"status": "error", "message": "Error al registrar la cuenta de inversionista."}), 500
 
-            # Registrar la aceptación de términos firmada en el modal de registro
+            # Registrar la aceptación de términos firmada digitalmente
             try:
                 from src.database import record_terms_acceptance
                 record_terms_acceptance(user_id, 'v1.0-2026', ip_address=request.remote_addr, user_agent=request.headers.get('User-Agent'))
@@ -871,26 +897,14 @@ def auth_register_endpoint():
             # Inicializar configuración de bot por defecto
             get_user_bot_settings(user_id)
 
-            token = generate_jwt(user_id=user_id, username=username, role='investor')
-            user_data = {
-                "id": user_id,
-                "username": username,
-                "email": email,
-                "role": 'investor',
-                "status": 'active',
-                "account_number": format_account_number(user_id),
-                "terms_accepted": 1,
-                "terms_accepted_version": "v1.0-2026"
-            }
-            api_logger.info(f"Nuevo usuario SaaS registrado y activo: {username} (ID: {user_id})")
+            api_logger.info(f"Nueva solicitud de cuenta de inversionista registrada (pendiente de aprobación): {username} (ID: {user_id}, Capital: ${investment_amount})")
             return jsonify({
                 "status": "success",
-                "message": "¡Cuenta creada exitosamente! Ya puedes ingresar tus claves API de Binance y activar tu bot.",
-                "token": token,
-                "user": user_data,
-                "pending_approval": False,
+                "message": "¡Solicitud registrada con éxito! Tu cuenta está en espera de aprobación por el Administrador.",
+                "pending_approval": True,
+                "user_id": user_id,
                 "requested_capital": investment_amount
-            })
+            }), 201
     except Exception as e:
         api_logger.error(f"Error en endpoint de registro: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
