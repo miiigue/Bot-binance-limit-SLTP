@@ -4,6 +4,7 @@ import AuthModal from './AuthModal';
 import UserBotPanel from './UserBotPanel';
 import InvestorPortfolio from './InvestorPortfolio';
 import AdminInvestors from './AdminInvestors';
+import AdminUsersOverview from './AdminUsersOverview';
 import ConfigForm from './ConfigForm';
 import StatusDisplay from './StatusDisplay';
 import TradingViewChart from './TradingViewChart';
@@ -99,9 +100,14 @@ function MainDashboard() {
       setActiveTab('performance');
     };
 
+    const handleOpenUsersOverviewTab = () => {
+      setActiveTab('users_overview');
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
     window.addEventListener('wtn-install-ready', handleReady);
     window.addEventListener('open-performance-tab', handleOpenPerfTab);
+    window.addEventListener('open-users-overview-tab', handleOpenUsersOverviewTab);
 
     if (window.__wtn_install_prompt) {
       setDeferredPrompt(window.__wtn_install_prompt);
@@ -111,6 +117,7 @@ function MainDashboard() {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       window.removeEventListener('wtn-install-ready', handleReady);
       window.removeEventListener('open-performance-tab', handleOpenPerfTab);
+      window.removeEventListener('open-users-overview-tab', handleOpenUsersOverviewTab);
     };
   }, []);
 
@@ -686,6 +693,18 @@ function MainDashboard() {
 
                 <button
                   type="button"
+                  onClick={() => setActiveTab('users_overview')}
+                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
+                    activeTab === 'users_overview'
+                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
+                  }`}
+                >
+                  <span>🤖</span> Usuarios & Bots
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setActiveTab('chart')}
                   className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                     activeTab === 'chart'
@@ -863,6 +882,11 @@ function MainDashboard() {
             {/* PESTAÑA: Gestión de Inversionistas & Fondos (Super Admin) */}
             {activeTab === 'investors' && isAdmin && (
               <AdminInvestors addToast={addToast} />
+            )}
+
+            {/* PESTAÑA: Monitor en Tiempo Real de Usuarios y Bots (Super Admin) */}
+            {activeTab === 'users_overview' && isAdmin && (
+              <AdminUsersOverview addToast={addToast} onSelectUserForDossier={() => setActiveTab('investors')} />
             )}
 
             {/* PESTAÑA: Monitor en Vivo (Solo Admin) */}

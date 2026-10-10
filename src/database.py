@@ -2295,6 +2295,118 @@ def get_investor_portfolio(user_id: int, live_pool_balance: float = None) -> dic
     except Exception as e:
         get_logger().error(f"Error al obtener portafolio del inversionista {user_id}: {e}", exc_info=True)
         return None
+
+def get_all_users_admin_overview() -> list:
+    """
+    Retorna un reporte unificado de todos los usuarios registrados para el Administrador:
+    - Datos personales y cuenta (ID, usuario, email, rol, estado, país, ciudad, fecha nac.)
+    - Estado de bot (Activo/Pausado, estrategia, capital asignado, apalancamiento, modo)
+    - Claves API (Conectadas/Válidas, Testnet/Real, enmascarada)
+    - Inversión aportada y capital solicitado
+    - Métricas de trading (Trades totales, PnL realizado neto/bruto, comisiones, win rate)
+    - Balance Binance detectado / saldo en custodia
+    """
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, username, email, role, status, created_at, last_login,
+                   requested_capital, country, city, birth_date
+            FROM users
+            ORDER BY id ASC
+        """)
+        users_rows = cursor.fetchall()
+        if not users_rows:
+            return []
+
+        # Mapa de transacciones de capital invertido por usuario
+        cursor.execute("""
+            SELECT user_id,
+                   SUM(CASE WHEN transaction_type IN ('INITIAL', 'DEPOSIT') THEN amount_usdt ELSE 0 END) as total_dep,
+                   SUM(CASE WHEN transaction_type = 'WITHDRAWAL' THEN amount_usdt ELSE 0 END) as total_wd
+            FROM investor_transactions
+            GROUP BY user_id
+        """)
+        tx_rows = cursor.fetchall()
+        net_capital_map = {}
+        for r in tx_rows:
+            u_id = r['user_id']
+            net_c = float(r['total_dep'] or 0.0) - float(r['total_wd'] or 0.0)
+            net_capital_map[u_id] = max(0.0, net_c)
+
+        # Mapa de claves API por usuario
+        cursor.execute("""
+            SELECT user_id, is_valid, is_testnet, api_key_masked, balance_detected, last_verified_at
+            FROM user_api_keys
+            WHERE exchange = 'binance'
+        """)
+        keys_rows = cursor.fetchall()
+        keys_map = {}
+        for r in keys_rows:
+            keys_map[r['user_id']] = dict(r)
+
+        # Mapa de configuración de bot por usuario
+        cursor.execute("SELECT * FROM user_bot_settings")
+        settings_rows = cursor.fetchall()
+        settings_map = {}
+        for r in settings_rows:
+            settings_map[r['user_id']] = dict(r)
+
+        result = []
+        for u_row in users_rows:
+            u = dict(u_row)
+            u_id = u['id']
+            u['account_number'] = format_account_number(u_id)
+            u['requested_capital'] = float(u.get('requested_capital') or 0.0)
+            u['invested_capital'] = net_capital_map.get(u_id, 0.0)
+
+            # Info de claves API
+            k_info = keys_map.get(u_id, {})
+            u['has_api_keys'] = bool(k_info)
+            u['is_api_valid'] = bool(k_info.get('is_valid', False))
+            u['is_testnet'] = bool(k_info.get('is_testnet', False))
+            u['api_key_masked'] = k_info.get('api_key_masked')
+            u['balance_detected'] = float(k_info.get('balance_detected', 0.0) or 0.0)
+
+            # Info de configuración de bot
+            b_info = settings_map.get(u_id, {})
+            u['is_bot_running'] = bool(b_info.get('is_running', False))
+            u['allocated_usdt'] = float(b_info.get('allocated_usdt', 100.0) or 100.0)
+            u['leverage'] = b_info.get('leverage')
+            u['margin_type'] = b_info.get('margin_type', 'ISOLATED')
+            u['symbols_to_trade'] = b_info.get('symbols_to_trade', 'BTCUSDT,ETHUSDT,SOLUSDT')
+            u['strategy_name'] = b_info.get('strategy_name', 'WTN Scalper Pro')
+            u['operating_mode'] = b_info.get('operating_mode', 'COPY_TRADING')
+            u['last_started_at'] = b_info.get('last_started_at')
+            u['bot_error'] = b_info.get('error_message')
+
+            # Obtener métricas de trading del usuario
+            m = get_user_trading_metrics(u_id)
+            u['total_trades'] = m.get('total_trades', 0)
+            u['winning_trades'] = m.get('winning_trades', 0)
+            u['losing_trades'] = m.get('losing_trades', 0)
+            u['win_rate'] = m.get('win_rate', 0.0)
+            u['net_pnl'] = m.get('total_pnl', 0.0)
+            u['gross_pnl'] = m.get('gross_pnl', 0.0)
+            u['total_commission'] = m.get('total_commission', 0.0)
+
+            # Por defecto balance en billetera es el detectado y PnL flotante es 0.0
+            u['wallet_balance'] = u['balance_detected']
+            u['unrealized_pnl'] = 0.0
+            u['equity'] = u['balance_detected']
+            u['open_positions_count'] = 0
+
+            result.append(u)
+
+        return result
+    except Exception as e:
+        get_logger().error(f"Error al obtener visión general de usuarios para admin: {e}", exc_info=True)
+        return []
+    finally:
+        conn.close()
+
 # =====================================================================
 # --- FUNCIONES MULTI-TENANT (SaaS): CLAVES API, CONFIGURACIÓN & TRADES ---
 # =====================================================================

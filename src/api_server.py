@@ -1664,6 +1664,94 @@ def admin_investor_dossier_endpoint(user_id):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/admin/users_overview', methods=['GET'])
+@admin_required
+def admin_users_overview_endpoint():
+    """Retorna el panel integral de monitoreo en tiempo real de todos los usuarios y sus bots para el Administrador."""
+    try:
+        from src.database import get_all_users_admin_overview, get_user_api_keys
+        users_list = get_all_users_admin_overview()
+
+        # Para los usuarios que tienen claves API válidas, consultar su balance y PnL flotante en tiempo real en Binance
+        for user_data in users_list:
+            u_id = user_data['id']
+            if user_data.get('is_api_valid'):
+                try:
+                    keys = get_user_api_keys(user_id=u_id, decrypt=True)
+                    if keys and keys.get('api_key') and keys.get('api_secret'):
+                        from src.binance_client import get_user_futures_client
+                        u_client = get_user_futures_client(
+                            api_key=keys['api_key'],
+                            api_secret=keys['api_secret'],
+                            is_testnet=bool(keys.get('is_testnet', False)),
+                            base_url=keys.get('api_base_url')
+                        )
+                        acc = u_client.account()
+                        if isinstance(acc, dict):
+                            wb = round(float(acc.get('totalWalletBalance', 0.0) or 0.0), 2)
+                            ab = round(float(acc.get('availableBalance', 0.0) or 0.0), 2)
+                            im = round(float(acc.get('totalInitialMargin', 0.0) or 0.0), 2)
+                            upnl = round(float(acc.get('totalUnrealizedProfit', 0.0) or 0.0), 2)
+                            eq = round(float(acc.get('totalMarginBalance', 0.0) or 0.0), 2)
+                            positions = acc.get('positions', [])
+                            pos_count = sum(1 for p in positions if abs(float(p.get('positionAmt', 0.0) or 0.0)) > 1e-6)
+
+                            user_data['wallet_balance'] = wb
+                            user_data['available_balance'] = ab
+                            user_data['margin_in_positions'] = im
+                            user_data['unrealized_pnl'] = upnl
+                            user_data['equity'] = eq
+                            user_data['open_positions_count'] = pos_count
+                except Exception as e_live:
+                    api_logger.debug(f"Aviso al consultar balance en vivo para usuario {u_id} en overview de admin: {e_live}")
+
+        return jsonify({
+            "status": "success",
+            "users": users_list,
+            "generated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        })
+    except Exception as e:
+        api_logger.error(f"Error en admin_users_overview_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/user_bot/toggle', methods=['POST'])
+@admin_required
+def admin_user_bot_toggle_endpoint():
+    """Permite al Administrador activar o pausar remotamente el bot de cualquier usuario."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        target_user_id = data.get('user_id')
+        if not target_user_id:
+            return jsonify({"status": "error", "message": "El campo user_id es requerido."}), 400
+
+        from src.database import get_user_bot_settings, update_user_bot_settings
+        settings = get_user_bot_settings(user_id=int(target_user_id))
+        current_state = bool(settings.get('is_running', False))
+        target_state = bool(data.get('is_running', not current_state))
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        kwargs = {'is_running': target_state, 'error_message': None}
+        if target_state:
+            kwargs['last_started_at'] = now_str
+        else:
+            kwargs['last_stopped_at'] = now_str
+
+        ok = update_user_bot_settings(user_id=int(target_user_id), **kwargs)
+        if ok:
+            action_name = "activado" if target_state else "pausado"
+            api_logger.info(f"Super Admin {action_name} remotamente el bot del usuario ID={target_user_id}")
+            return jsonify({
+                "status": "success",
+                "message": f"Bot del usuario {action_name} exitosamente.",
+                "is_running": target_state
+            })
+        return jsonify({"status": "error", "message": "No se pudo actualizar el estado del bot."}), 500
+    except Exception as e:
+        api_logger.error(f"Error en admin_user_bot_toggle_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 
 @app.route('/api/config', methods=['GET'])
 def get_config_endpoint():
