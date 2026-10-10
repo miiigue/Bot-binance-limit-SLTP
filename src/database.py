@@ -556,10 +556,19 @@ def init_db_schema():
             binance_trade_id TEXT,
             strategy_name TEXT,
             is_testnet BOOLEAN DEFAULT 0,
+            leverage REAL DEFAULT 10.0,
+            margin_usdt REAL DEFAULT 0.0,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
         """)
         conn.commit()
+
+        for col_name, col_type in [("leverage", "REAL DEFAULT 10.0"), ("margin_usdt", "REAL DEFAULT 0.0")]:
+            try:
+                cursor.execute(f"ALTER TABLE user_trades ADD COLUMN {col_name} {col_type}")
+                conn.commit()
+            except Exception:
+                pass
 
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS strategies_catalog (
@@ -2797,7 +2806,8 @@ def record_user_trade(user_id: int, symbol: str, trade_type: str, open_timestamp
                       close_timestamp=None, close_price=None, pnl_usdt=None, 
                       gross_pnl_usdt: float = 0.0, commission_usdt: float = 0.0, 
                       close_reason: str = None, binance_trade_id: str = None, 
-                      strategy_name: str = 'WTN Scalper Pro', is_testnet: bool = False) -> int:
+                      strategy_name: str = 'WTN Scalper Pro', is_testnet: bool = False,
+                      leverage: float = None, margin_usdt: float = None) -> int:
     """Registra una operación ejecutada en la cuenta personal de un usuario."""
     conn = get_db_connection()
     if not conn:
@@ -2809,21 +2819,25 @@ def record_user_trade(user_id: int, symbol: str, trade_type: str, open_timestamp
                 return ts.strftime('%Y-%m-%d %H:%M:%S')
             return str(ts) if ts else None
 
+        lev_val = float(leverage) if leverage and float(leverage) > 0 else 10.0
+        pos_val = float(position_size_usdt or 0.0)
+        marg_val = float(margin_usdt) if margin_usdt and float(margin_usdt) > 0 else (round(pos_val / lev_val, 2) if (pos_val > 0 and lev_val > 0) else 0.0)
+
         cursor.execute("""
             INSERT INTO user_trades (
                 user_id, symbol, trade_type, open_timestamp, close_timestamp,
                 open_price, close_price, quantity, position_size_usdt,
                 pnl_usdt, gross_pnl_usdt, commission_usdt, close_reason,
-                binance_trade_id, strategy_name, is_testnet
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                binance_trade_id, strategy_name, is_testnet, leverage, margin_usdt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             user_id, symbol.upper(), trade_type.upper(), _fmt(open_timestamp), _fmt(close_timestamp),
             float(open_price or 0.0), float(close_price) if close_price is not None else None,
-            float(quantity or 0.0), float(position_size_usdt or 0.0),
+            float(quantity or 0.0), pos_val,
             float(pnl_usdt) if pnl_usdt is not None else None,
             float(gross_pnl_usdt or 0.0), float(commission_usdt or 0.0),
             close_reason, str(binance_trade_id or '') if binance_trade_id else None,
-            strategy_name, bool(is_testnet)
+            strategy_name, bool(is_testnet), lev_val, marg_val
         ))
         conn.commit()
         return cursor.lastrowid
@@ -3000,27 +3014,48 @@ def get_user_trading_metrics(user_id: int, mode: str = None) -> dict:
         """, tuple(params))
 
         row = cursor.fetchone()
-        if not row:
-            return {}
 
-        total = row['total'] or 0
-        wins = row['wins'] or 0
-        losses = row['losses'] or 0
-        net_pnl = round(float(row['net_pnl'] or 0.0), 4)
-        gross_pnl_db = float(row['gross_pnl'] or 0.0)
-        comm_db = float(row['total_comm'] or 0.0)
-        volume = float(row['total_volume'] or 0.0)
-        gross_win = float(row['gross_win'] or 0.0)
-        gross_loss = float(row['gross_loss'] or 0.0)
+        total = (row['total'] or 0) if row else 0
+        wins = (row['wins'] or 0) if row else 0
+        losses = (row['losses'] or 0) if row else 0
+        net_pnl = round(float(row['net_pnl'] or 0.0), 4) if row else 0.0
+        gross_pnl_db = float(row['gross_pnl'] or 0.0) if row else 0.0
+        comm_db = float(row['total_comm'] or 0.0) if row else 0.0
+        volume = float(row['total_volume'] or 0.0) if row else 0.0
+        gross_win = float(row['gross_win'] or 0.0) if row else 0.0
+        gross_loss = float(row['gross_loss'] or 0.0) if row else 0.0
 
-        # Si las comisiones guardadas son 0 pero hay volumen operado, calcular la tarifa real estándar de Binance Futures (0.04% por lado = 0.08% ida y vuelta)
-        if comm_db <= 0 and volume > 0:
-            comm = round(volume * 0.0008, 4)
-        else:
-            comm = round(comm_db, 4)
+        # Query secundaria para comisiones y volumen acumulado de TODAS las operaciones de la sesión (abiertas y cerradas)
+        where_all_conds = ["user_id = ?"]
+        all_params = [user_id]
+        if last_started_at:
+            where_all_conds.append("open_timestamp >= ?")
+            all_params.append(last_started_at)
+        if current_op_mode:
+            clean_mode = str(current_op_mode).upper().strip()
+            if clean_mode in ['COPY_TRADING', 'COPYTRADING']:
+                where_all_conds.append("(close_reason LIKE '%Copy%' OR close_reason LIKE '%Espejo%' OR strategy_name LIKE '%Copy%' OR strategy_name = 'WTN Scalper Pro' OR close_reason IS NULL)")
+            elif clean_mode in ['PERSONAL_BOT', 'MY_BOT']:
+                where_all_conds.append("(close_reason LIKE '%Personal%' OR close_reason LIKE '%Bot%' OR strategy_name NOT LIKE '%Copy%')")
 
-        # Estimación de tasa de financiamiento (Funding Rate): Binance Futures promedia ~0.01% cada 8h por volumen
-        total_funding = round(volume * 0.0001, 4) if volume > 0 else 0.0
+        where_all_sql = " AND ".join(where_all_conds)
+        cursor.execute(f"""
+            SELECT SUM(COALESCE(commission_usdt, 0.0)) as all_comm,
+                   SUM(CASE WHEN close_timestamp IS NULL THEN COALESCE(position_size_usdt, 0.0) * 0.0004 ELSE COALESCE(position_size_usdt, 0.0) * 0.0008 END) as est_comm,
+                   SUM(COALESCE(position_size_usdt, 0.0)) as all_vol
+            FROM user_trades
+            WHERE {where_all_sql}
+        """, tuple(all_params))
+        all_row = cursor.fetchone()
+        all_comm_val = float(all_row['all_comm'] or 0.0) if all_row else 0.0
+        est_comm_val = float(all_row['est_comm'] or 0.0) if all_row else 0.0
+        all_vol = float(all_row['all_vol'] or 0.0) if all_row else volume
+
+        # Usar la comisión real acumulada o la estimación según volumen total abierto/cerrado
+        comm = round(all_comm_val if all_comm_val > 0 else (est_comm_val if est_comm_val > 0 else comm_db), 4)
+
+        # Estimación de tasa de financiamiento (Funding Rate): ~0.01% por volumen total
+        total_funding = round(all_vol * 0.0001, 4) if all_vol > 0 else 0.0
 
         if gross_pnl_db != 0.0:
             gross_pnl = round(gross_pnl_db, 4)

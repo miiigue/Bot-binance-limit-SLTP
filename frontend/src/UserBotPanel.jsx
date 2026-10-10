@@ -1629,7 +1629,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                   const side = (rawSide === 'SHORT' || String(t.close_reason || '').toUpperCase().includes('SHORT')) ? 'SHORT' : 'LONG';
 
                   const posVal = Number(t.position_value_usdt) || Number(t.position_size_usdt) || (Number(t.open_price || 0) * Number(t.quantity || 0)) || (Number(t.open_price || 0) > 0 ? 1000 : 0);
-                  const lev = Number(t.leverage || (botData?.bot_settings?.leverage) || 10);
+                  const lev = Number(t.leverage) || Number(botData?.bot_settings?.leverage) || 5;
                   const marginVal = Number(t.margin_usdt) || (posVal > 0 && lev > 0 ? (posVal / lev) : 0);
                   const qtyDisplay = (t.quantity && Number(t.quantity) > 0) ? t.quantity : (posVal > 0 && Number(t.open_price) > 0 ? (posVal / Number(t.open_price)).toFixed(4) : '-');
 
@@ -1667,9 +1667,20 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                         </span>
                       </td>
 
-                      {/* 5. PnL Realizado */}
+                      {/* 5. PnL Realizado / Flotante */}
                       <td className={`p-3.5 font-bold font-mono text-xs whitespace-nowrap ${isClosed ? (isWin ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-400'}`}>
-                        {isClosed ? `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT` : <span className="text-amber-400/90 text-xs font-sans">En curso</span>}
+                        {isClosed ? (
+                          `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT`
+                        ) : t.unrealized_pnl !== undefined && t.unrealized_pnl !== null ? (
+                          <div className="flex flex-col">
+                            <span className={`font-bold font-mono text-xs ${Number(t.unrealized_pnl) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {Number(t.unrealized_pnl) >= 0 ? '+' : ''}${Number(t.unrealized_pnl).toFixed(4)} USDT
+                            </span>
+                            <span className="text-[9px] text-amber-400/90 font-mono font-semibold uppercase tracking-tight">Flotante</span>
+                          </div>
+                        ) : (
+                          <span className="text-amber-400/90 text-xs font-sans">En curso</span>
+                        )}
                       </td>
 
                       {/* 6. Precio Entrada */}

@@ -367,7 +367,9 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
                 close_reason=f"Estrategia {strat_name} (Bot Personal)",
                 binance_trade_id=order_id,
                 strategy_name=strat_name,
-                is_testnet=bool(user.get('is_testnet', False))
+                is_testnet=bool(user.get('is_testnet', False)),
+                leverage=leverage,
+                margin_usdt=round(order_margin, 2)
             )
             logger.info(f"🚀 [PersonalBot - {username} (ID: {user_id})] ORDEN ENTRADA {signal_side} EJECUTADA en {clean_sym} (Qty={qty}, Ref=${executed_price:.4f}, Notional=${notional:,.2f})")
             return True

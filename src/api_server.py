@@ -1426,6 +1426,32 @@ def user_trades_endpoint():
         mode = request.args.get('mode')
         trades = get_user_trades(user_id=user_id, limit=limit, mode=mode)
         metrics = get_user_trading_metrics(user_id=user_id, mode=mode)
+
+        # Adjuntar PnL Flotante en vivo para operaciones en curso (abiertas)
+        try:
+            from src.multitenant_dispatcher import get_user_monitor_status
+            mon_data = get_user_monitor_status(user_id)
+            open_pos_list = (mon_data.get('open_positions') or mon_data.get('positions') or []) if isinstance(mon_data, dict) else []
+            pos_map = {}
+            for pos in open_pos_list:
+                if isinstance(pos, dict):
+                    sym = str(pos.get('symbol', '')).upper()
+                    side = str(pos.get('side', '')).upper()
+                    upnl = float(pos.get('unrealized_pnl') if pos.get('unrealized_pnl') is not None else pos.get('unrealizedProfit', 0.0))
+                    pos_map[(sym, side)] = upnl
+                    pos_map[sym] = upnl
+
+            for t in trades:
+                if not t.get('close_timestamp'):
+                    sym = str(t.get('symbol', '')).upper()
+                    side = str(t.get('trade_type', '')).upper()
+                    if (sym, side) in pos_map:
+                        t['unrealized_pnl'] = pos_map[(sym, side)]
+                    elif sym in pos_map:
+                        t['unrealized_pnl'] = pos_map[sym]
+        except Exception as e_mon:
+            api_logger.debug(f"Aviso al adjuntar PnL flotante a trades de usuario {user_id}: {e_mon}")
+
         return jsonify({
             "status": "success",
             "trades": trades,
