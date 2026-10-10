@@ -1017,15 +1017,9 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold mb-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold mb-1">
                   <span>🛒</span> MARKETPLACE DE ESTRATEGIAS CUANTITATIVAS
                 </div>
-                <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
-                  Catálogo de Estrategias Públicas Disponibles
-                </h3>
-                <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                  Elige la estrategia que prefieras para tu bot. Todas han sido curadas y optimizadas institucionalmente por el Administrador.
-                </p>
               </div>
               <div className="flex items-center gap-2 self-start sm:self-auto">
                 <button
@@ -1108,13 +1102,24 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
 
             {/* Asignación de Capital y Apalancamiento */}
             <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
-                <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <span>⚙️</span> Personaliza tu Capital y Apalancamiento
-                </h4>
-                <span className="text-xs text-slate-400">
-                  Estrategia activa a configurar: <strong className="text-amber-300 font-mono">{selectedStrategy || 'Ninguna'}</strong>
-                </span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <span>⚙️</span> Personaliza tu Capital y Apalancamiento
+                  </h4>
+                  <span className="text-xs text-slate-400">
+                    ({selectedStrategy || 'Ninguna'})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveBotSettings}
+                  disabled={isSavingSettings}
+                  className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center gap-1.5 self-start sm:self-auto"
+                >
+                  <span>💾</span>
+                  <span>{isSavingSettings ? 'Guardando...' : 'Guardar Parámetros de Mi Bot'}</span>
+                </button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1184,18 +1189,6 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                     Aislado limita el riesgo exclusivamente a la orden.
                   </span>
                 </div>
-              </div>
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={handleSaveBotSettings}
-                  disabled={isSavingSettings}
-                  className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2"
-                >
-                  <span>💾</span>
-                  <span>{isSavingSettings ? 'Guardando...' : 'Guardar Parámetros de Mi Bot'}</span>
-                </button>
               </div>
             </div>
           </div>
@@ -1333,13 +1326,6 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
             </span>
             <span className="text-lg font-black font-mono text-white">
               {metricsData?.total_trades || 0}
-            </span>
-          </div>
-
-          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
-            <span className="text-[10px] text-slate-500 uppercase block tracking-wider font-semibold">Profit Factor</span>
-            <span className="text-lg font-black font-mono text-teal-400">
-              {(metricsData?.profit_factor || 1.0).toFixed(2)}
             </span>
           </div>
         </div>

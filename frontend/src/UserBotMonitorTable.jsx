@@ -116,14 +116,14 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/60 shadow-inner">
-          <table className="w-full text-left border-collapse min-w-[850px]">
+          <table className="w-full text-left border-collapse min-w-[1150px]">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/60 text-[11px] font-black uppercase tracking-wider text-slate-400">
-                <th className="py-3.5 px-4 sm:px-6 w-[18%]">Estrategia y Estado</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[14%]">PnL Flotante / Hist</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[28%]">Radar & Posición LONG</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[28%]">Radar & Posición SHORT</th>
-                <th className="py-3.5 px-4 sm:px-6 w-[12%]">Valor & Margen</th>
+                <th className="py-3.5 px-3 sm:px-4 w-[12%] min-w-[130px]">Estrategia y Estado</th>
+                <th className="py-3.5 px-3 sm:px-4 w-[13%] min-w-[130px]">PnL Flotante / Hist</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[32%] min-w-[350px]">Radar & Posición LONG</th>
+                <th className="py-3.5 px-4 sm:px-6 w-[32%] min-w-[350px]">Radar & Posición SHORT</th>
+                <th className="py-3.5 px-3 sm:px-4 w-[11%] min-w-[120px]">Valor & Margen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs font-sans">
@@ -142,10 +142,8 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
                 const unPnlColor = unPnl > 0.005 ? 'text-emerald-400' : (unPnl < -0.005 ? 'text-rose-400' : 'text-slate-400');
                 const histPnlColor = histPnl > 0.005 ? 'text-emerald-400' : (histPnl < -0.005 ? 'text-rose-400' : 'text-slate-400');
 
-                // Etiqueta de posición
-                const posBadgeText = inLong && inShort 
-                  ? 'In Position (LONG + SHORT)' 
-                  : (inLong ? 'In Position (LONG)' : (inShort ? 'In Position (SHORT)' : `In Position (${item.trade_side || 'ACTIVA'})`));
+                // Etiqueta de posición (Sin palabras LONG o SHORT)
+                const posBadgeText = 'IN POSITION';
 
                 return (
                   <tr 
@@ -155,12 +153,12 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
                     }`}
                   >
                     {/* 1. ESTRATEGIA Y ESTADO (Con Símbolo arriba) */}
-                    <td className="py-4 px-4 sm:px-6">
+                    <td className="py-4 px-3 sm:px-4">
                       <div className="flex flex-col gap-1 items-start">
                         <span className="font-mono font-black text-sm text-white tracking-tight">
                           {item.symbol}
                         </span>
-                        <span className="font-mono text-[11px] font-bold text-amber-300 truncate max-w-[240px]">
+                        <span className="font-mono text-[11px] font-bold text-amber-300 truncate max-w-[110px]" title={item.strategy_name}>
                           {item.strategy_name}
                         </span>
                         {inPos ? (

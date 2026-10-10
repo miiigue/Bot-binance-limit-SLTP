@@ -1313,20 +1313,6 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
             </span>
           </div>
 
-          {/* 3. Factor de Beneficio */}
-          <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
-              <span>⚖️ Profit Factor</span>
-              <Tooltip title="Factor de Beneficio" text="Relación entre la ganancia bruta y la pérdida bruta. Un valor superior a 1.0 indica un sistema rentable." />
-            </span>
-            <span className={`text-xl font-bold font-mono ${parseFloat(profitFactor) >= 1.0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {profitFactor}
-            </span>
-            <span className="text-[10px] text-gray-400 block mt-0.5 font-mono">
-              Ratio de Rentabilidad
-            </span>
-          </div>
-
           {/* 4. Mejor / Peor */}
           <div className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700/80">
             <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between">
