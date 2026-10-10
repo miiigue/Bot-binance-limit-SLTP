@@ -324,28 +324,12 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
         </div>
       )}
 
-      {/* Leyenda explicativa de los cuadros tipo volumen */}
-      <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-400">
-        <div className="flex items-center gap-4 flex-wrap">
-          <span className="font-bold text-slate-300 flex items-center gap-1">
-            <span>ℹ️</span> Cuadros tipo volumen:
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded bg-emerald-500 border border-emerald-300 shadow-sm shadow-emerald-500/50 inline-block"></span>
-            <span>Verde = Condición Cumplida</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded bg-rose-950/80 border border-rose-600/70 inline-block"></span>
-            <span>Rojo = Condición Pendiente</span>
-          </span>
+      {/* Pie de actualización */}
+      {lastUpdated && (
+        <div className="pt-2 border-t border-slate-800/80 flex justify-end text-[10px] text-slate-500 font-mono">
+          Actualizado: {lastUpdated.toLocaleTimeString()}
         </div>
-
-        {lastUpdated && (
-          <span className="text-slate-500 font-mono text-[10px]">
-            Actualizado: {lastUpdated.toLocaleTimeString()}
-          </span>
-        )}
-      </div>
+      )}
     </div>
   );
 }

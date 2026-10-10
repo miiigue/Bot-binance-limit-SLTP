@@ -53,7 +53,7 @@ function MainDashboard() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [countdown, setCountdown] = useState(0);
 
-  const [activeTab, setActiveTab] = useState(isInvestor ? 'my_investment' : 'monitor');
+  const [activeTab, setActiveTab] = useState('my_bot');
   const [availableStrategies, setAvailableStrategies] = useState([]);
   const [isLoadingStrategies, setIsLoadingStrategies] = useState(false);
   const [strategyError, setStrategyError] = useState(null);
@@ -75,8 +75,8 @@ function MainDashboard() {
 
   // Asegurar que si el rol es Inversionista, nunca esté en una pestaña de Admin
   useEffect(() => {
-    if (isInvestor && !['my_investment', 'copy_trading', 'my_bot', 'performance', 'chart'].includes(activeTab)) {
-      setActiveTab('my_investment');
+    if (isInvestor && !['my_bot', 'my_investment', 'copy_trading', 'performance', 'chart'].includes(activeTab)) {
+      setActiveTab('my_bot');
     }
   }, [isInvestor, activeTab]);
 

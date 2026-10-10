@@ -21,31 +21,17 @@
         window.dispatchEvent(new CustomEvent('wtn-install-ready'));
       });
 
-      // 3. Registrar Service Worker de inmediato con recarga en actualizacion
+      // 3. Registrar Service Worker de inmediato
       if ('serviceWorker' in navigator) {
-        let refreshing = false;
-        navigator.serviceWorker.addEventListener('controllerchange', function () {
-          if (!refreshing) {
-            refreshing = true;
-            window.location.reload();
-          }
-        });
-
         navigator.serviceWorker.register('/sw.js', { scope: '/' })
           .then(function (reg) {
             console.log('[WTN] Service Worker activo:', reg.scope);
-            if (reg.waiting) {
-              reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-            }
           })
           .catch(function (err) {
             console.warn('[WTN] Service Worker error:', err);
           });
       }
     </script>
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
