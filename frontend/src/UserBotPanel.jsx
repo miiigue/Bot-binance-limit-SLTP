@@ -1630,7 +1630,8 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
 
                   const posVal = Number(t.position_value_usdt) || Number(t.position_size_usdt) || (Number(t.open_price || 0) * Number(t.quantity || 0)) || (Number(t.open_price || 0) > 0 ? 1000 : 0);
                   const lev = Number(t.leverage) || Number(botData?.bot_settings?.leverage) || 5;
-                  const marginVal = Number(t.margin_usdt) || (posVal > 0 && lev > 0 ? (posVal / lev) : 0);
+                  const rawMargin = Number(t.margin_usdt || 0);
+                  const marginVal = (rawMargin > 0 && Math.abs(rawMargin - (posVal / 10.0)) > 1.0) ? rawMargin : (posVal > 0 && lev > 0 ? (posVal / lev) : 0);
                   const qtyDisplay = (t.quantity && Number(t.quantity) > 0) ? t.quantity : (posVal > 0 && Number(t.open_price) > 0 ? (posVal / Number(t.open_price)).toFixed(4) : '-');
 
                   return (

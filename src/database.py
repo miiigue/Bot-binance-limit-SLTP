@@ -563,12 +563,24 @@ def init_db_schema():
         """)
         conn.commit()
 
-        for col_name, col_type in [("leverage", "REAL DEFAULT 10.0"), ("margin_usdt", "REAL DEFAULT 0.0")]:
+        for col_name, col_type in [("leverage", "REAL DEFAULT 5.0"), ("margin_usdt", "REAL DEFAULT 0.0")]:
             try:
                 cursor.execute(f"ALTER TABLE user_trades ADD COLUMN {col_name} {col_type}")
                 conn.commit()
             except Exception:
                 pass
+
+        try:
+            cursor.execute("""
+                UPDATE user_trades 
+                SET leverage = 5.0, 
+                    margin_usdt = ROUND(position_size_usdt / 5.0, 2)
+                WHERE position_size_usdt IS NOT NULL AND position_size_usdt > 0
+                  AND (margin_usdt IS NULL OR margin_usdt <= 0 OR ABS(margin_usdt - (position_size_usdt / 10.0)) < 1.0)
+            """)
+            conn.commit()
+        except Exception:
+            pass
 
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS strategies_catalog (
@@ -2898,11 +2910,16 @@ def get_user_trades(user_id: int, limit: int = 50, mode: str = None) -> list:
         return []
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT last_started_at, operating_mode, leverage FROM user_bot_settings WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT last_started_at, operating_mode, leverage, allocated_usdt FROM user_bot_settings WHERE user_id = ?", (user_id,))
         settings_row = cursor.fetchone()
         last_started_at = settings_row['last_started_at'] if settings_row and settings_row['last_started_at'] else None
         current_op_mode = mode or (settings_row['operating_mode'] if settings_row and settings_row.get('operating_mode') else None)
-        user_lev = float(settings_row['leverage'] if settings_row and settings_row.get('leverage') else 10)
+
+        raw_user_lev = settings_row.get('leverage') if settings_row else None
+        if raw_user_lev is not None and str(raw_user_lev).strip() not in ('', '0', 'default', 'None'):
+            user_lev = float(raw_user_lev)
+        else:
+            user_lev = 5.0
 
         query = "SELECT * FROM user_trades WHERE user_id = ?"
         params = [user_id]
@@ -2951,11 +2968,20 @@ def get_user_trades(user_id: int, limit: int = 50, mode: str = None) -> list:
                 qty_val = round(pos_val / open_p, 4)
             trade_dict['quantity'] = qty_val
 
-            # Margen de esa posición (USDT)
+            # Margen y apalancamiento de esa posición (USDT)
+            raw_trade_lev = trade_dict.get('leverage')
+            if raw_trade_lev and float(raw_trade_lev) > 0 and float(raw_trade_lev) != 10.0:
+                trade_lev = float(raw_trade_lev)
+            else:
+                trade_lev = user_lev if (user_lev > 0 and user_lev != 10.0) else 5.0
+
+            trade_dict['leverage'] = trade_lev
             marg_val = float(trade_dict.get('margin_usdt') or 0.0)
-            if marg_val <= 0:
-                trade_lev = float(trade_dict.get('leverage') or user_lev or 10)
+
+            # Si el margen estaba en 0 o fue calculado previamente con 10x (~pos_val / 10)
+            if marg_val <= 0 or (pos_val > 0 and abs(marg_val - (pos_val / 10.0)) < 1.0 and trade_lev == 5.0):
                 marg_val = round(pos_val / trade_lev, 2) if (pos_val > 0 and trade_lev > 0) else 0.0
+
             trade_dict['margin_usdt'] = marg_val
 
             result.append(trade_dict)
