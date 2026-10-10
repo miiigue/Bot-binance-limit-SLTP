@@ -991,20 +991,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
                 const activePositions = getActivePositions(status);
                 const hasActivePos = activePositions.length > 0 || Boolean(status.in_position);
 
-                let rowBgClass = 'hover:bg-slate-800/60';
-                if (hasActivePos) {
-                  const hasLong = activePositions.some(p => p.trade_side === 'LONG') || (!activePositions.some(p => p.trade_side === 'SHORT') && status.trade_side !== 'SHORT');
-                  const hasShort = activePositions.some(p => p.trade_side === 'SHORT') || (!activePositions.some(p => p.trade_side === 'LONG') && status.trade_side === 'SHORT');
-                  const isBoth = hasLong && hasShort;
-
-                  if (isBoth) {
-                    rowBgClass = 'bg-cyan-950/75 hover:bg-cyan-900/40 border-l-4 border-l-cyan-400';
-                  } else if (hasShort) {
-                    rowBgClass = 'bg-rose-950/75 hover:bg-rose-900/40 border-l-4 border-l-rose-500';
-                  } else {
-                    rowBgClass = 'bg-emerald-950/75 hover:bg-emerald-900/40 border-l-4 border-l-emerald-400';
-                  }
-                }
+                const rowBgClass = 'hover:bg-slate-800/60';
 
                 return (
                   <React.Fragment key={status.symbol}>

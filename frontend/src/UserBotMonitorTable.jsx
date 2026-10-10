@@ -148,9 +148,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
                 return (
                   <tr 
                     key={item.symbol} 
-                    className={`transition-colors hover:bg-slate-900/40 ${
-                      inPos ? 'bg-indigo-950/15' : ''
-                    }`}
+                    className="transition-colors hover:bg-slate-900/40"
                   >
                     {/* 1. ESTRATEGIA Y ESTADO (Con Símbolo arriba) */}
                     <td className="py-4 px-3 sm:px-4">
