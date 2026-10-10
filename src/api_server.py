@@ -1282,7 +1282,11 @@ def user_bot_status_endpoint():
                 "margin_in_positions": initial_margin,
                 "unrealized_pnl": unrealized_pnl,
                 "equity": equity,
-                "open_positions_count": open_positions_count
+                "open_positions_count": open_positions_count,
+                "total_commission": (metrics.get('total_commission') if metrics else 0.0) or 0.0,
+                "total_funding": (metrics.get('total_funding') if metrics else 0.0) or 0.0,
+                "gross_pnl": (metrics.get('gross_pnl') if metrics else 0.0) or 0.0,
+                "net_pnl": (metrics.get('total_pnl') if metrics else 0.0) or 0.0
             },
             "active_strategy": active_strategy,
             "metrics": metrics

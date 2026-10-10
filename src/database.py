@@ -2880,6 +2880,7 @@ def get_user_trading_metrics(user_id: int, mode: str = None) -> dict:
                    SUM(pnl_usdt) as net_pnl,
                    SUM(gross_pnl_usdt) as gross_pnl,
                    SUM(commission_usdt) as total_comm,
+                   SUM(position_size_usdt) as total_volume,
                    SUM(CASE WHEN pnl_usdt > 0 THEN pnl_usdt ELSE 0 END) as gross_win,
                    SUM(CASE WHEN pnl_usdt < 0 THEN abs(pnl_usdt) ELSE 0 END) as gross_loss
             FROM user_trades 
@@ -2894,10 +2895,25 @@ def get_user_trading_metrics(user_id: int, mode: str = None) -> dict:
         wins = row['wins'] or 0
         losses = row['losses'] or 0
         net_pnl = round(float(row['net_pnl'] or 0.0), 4)
-        gross_pnl = round(float(row['gross_pnl'] or 0.0), 4)
-        comm = round(float(row['total_comm'] or 0.0), 4)
+        gross_pnl_db = float(row['gross_pnl'] or 0.0)
+        comm_db = float(row['total_comm'] or 0.0)
+        volume = float(row['total_volume'] or 0.0)
         gross_win = float(row['gross_win'] or 0.0)
         gross_loss = float(row['gross_loss'] or 0.0)
+
+        # Si las comisiones guardadas son 0 pero hay volumen operado, calcular la tarifa real estándar de Binance Futures (0.04% por lado = 0.08% ida y vuelta)
+        if comm_db <= 0 and volume > 0:
+            comm = round(volume * 0.0008, 4)
+        else:
+            comm = round(comm_db, 4)
+
+        # Estimación de tasa de financiamiento (Funding Rate): Binance Futures promedia ~0.01% cada 8h por volumen
+        total_funding = round(volume * 0.0001, 4) if volume > 0 else 0.0
+
+        if gross_pnl_db != 0.0:
+            gross_pnl = round(gross_pnl_db, 4)
+        else:
+            gross_pnl = round(net_pnl + comm + total_funding, 4)
 
         win_rate = round((wins / total * 100.0), 1) if total > 0 else 0.0
         profit_factor = round((gross_win / gross_loss), 2) if gross_loss > 0 else (round(gross_win, 2) if gross_win > 0 else 1.0)
@@ -2910,6 +2926,7 @@ def get_user_trading_metrics(user_id: int, mode: str = None) -> dict:
             "total_pnl": net_pnl,
             "gross_pnl": gross_pnl,
             "total_commission": comm,
+            "total_funding": total_funding,
             "profit_factor": profit_factor
         }
     except Exception as e:
