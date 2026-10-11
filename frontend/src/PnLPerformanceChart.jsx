@@ -2,32 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import Tooltip from './Tooltip';
 import BinanceSortHeader, { sortTableData } from './BinanceSortHeader';
 
-// Helper para formato de fecha corto DD/MM/YY HH:mm:ss
-const formatShortDate = (dateVal) => {
-  if (!dateVal) return 'N/A';
-  try {
-    const raw = String(dateVal).trim();
-    let parsed = new Date(raw);
-    if (isNaN(parsed.getTime())) {
-      const isoString = (raw.includes('T') || raw.includes('Z') || raw.includes('+')) 
-        ? (raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z')
-        : raw.replace(' ', 'T') + 'Z';
-      parsed = new Date(isoString);
-    }
-    if (isNaN(parsed.getTime())) return String(dateVal);
-
-    const day = String(parsed.getDate()).padStart(2, '0');
-    const month = String(parsed.getMonth() + 1).padStart(2, '0');
-    const year = String(parsed.getFullYear()).slice(-2);
-    const hours = String(parsed.getHours()).padStart(2, '0');
-    const mins = String(parsed.getMinutes()).padStart(2, '0');
-    const secs = String(parsed.getSeconds()).padStart(2, '0');
-
-    return `${day}/${month}/${year} ${hours}:${mins}:${secs}`;
-  } catch (e) {
-    return String(dateVal);
-  }
-};
+import { formatShortDate } from './dateUtils';
 
 // Helper robusto para parsear fechas de diversas fuentes y formatos (ISO, timestamp numérico, SQLite)
 const parseDate = (val) => {

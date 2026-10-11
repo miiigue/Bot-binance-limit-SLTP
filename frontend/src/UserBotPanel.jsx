@@ -3,20 +3,7 @@ import { useAuth } from './AuthContext';
 import ConfirmModal from './ConfirmModal';
 import UserBotMonitorTable from './UserBotMonitorTable';
 
-const formatShortDate = (dateStr) => {
-  if (!dateStr) return 'N/A';
-  try {
-    const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T'));
-    if (isNaN(d.getTime())) return dateStr;
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const hours = String(d.getHours()).padStart(2, '0');
-    const mins = String(d.getMinutes()).padStart(2, '0');
-    return `${day}/${month} ${hours}:${mins}`;
-  } catch (e) {
-    return dateStr;
-  }
-};
+import { formatShortDate } from './dateUtils';
 
 export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_bot' }) {
   const { authFetch, user } = useAuth();
@@ -1642,10 +1629,10 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                       {/* 2. Fecha / Hora */}
                       <td className="p-3.5 text-slate-300 font-mono text-[11px] whitespace-nowrap">
                         <div className="flex flex-col">
-                          <span className="text-white font-medium">{t.open_time_short || formatShortDate(t.open_timestamp)}</span>
+                          <span className="text-white font-medium">{formatShortDate(t.open_timestamp, user?.country) || t.open_time_short}</span>
                           {isClosed && (
                             <span className="text-[10px] text-slate-500">
-                              Fin: {t.close_time_short || formatShortDate(t.close_timestamp)}
+                              Fin: {formatShortDate(t.close_timestamp, user?.country) || t.close_time_short}
                             </span>
                           )}
                         </div>

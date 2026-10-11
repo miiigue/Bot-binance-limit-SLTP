@@ -143,35 +143,7 @@ export default function AdminUsersOverview({ addToast, onSelectUserForDossier })
   return (
     <div className="space-y-6 animate-fadeIn pb-10">
       
-      {/* 1. Encabezado de la Sección de Administración */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-black uppercase tracking-wider">
-              🛡️ PANEL SUPER ADMINISTRADOR
-            </span>
-            {lastUpdated && (
-              <span className="text-[11px] text-slate-400 font-mono">
-                Actualizado: {lastUpdated}
-              </span>
-            )}
-          </div>
-          <h2 className="text-xl sm:text-2xl font-black text-white mt-1.5 flex items-center gap-2">
-            <span>🤖</span> Monitor de Usuarios y Bots en Tiempo Real
-          </h2>
-          <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
-            Supervisión integral multi-tenant: Consulta en vivo si tus usuarios están operando con bot activo, su capital invertido, su estrategia asignada, su PnL flotante y sus saldos en Binance.
-          </p>
-        </div>
 
-        <button
-          onClick={fetchUsersOverview}
-          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 rounded-2xl text-xs font-bold transition flex items-center gap-2 self-start md:self-auto active:scale-95 shadow"
-        >
-          <span>↻</span>
-          <span>Refrescar Datos</span>
-        </button>
-      </div>
 
       {error && (
         <div className="p-4 bg-rose-500/15 border border-rose-500/30 rounded-2xl text-rose-300 text-xs flex items-center justify-between">

@@ -1,17 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from './AuthContext';
+import { formatFullDateTime } from './dateUtils';
 
-/**
- * Componente: UserBotMonitorTable
- * Tabla de Monitoreo en Vivo para la sesión del usuario en "Mi Bot".
- * 
- * Columnas:
- * 1. Símbolo
- * 2. Estrategia y Estado
- * 3. PnL Flotante / Histórico
- * 4. Radar y Posición LONG (cuadritos tipo volumen en rojo/verde si no hay posición; barra TP/SL si está en posición)
- * 5. Radar y Posición SHORT (cuadritos tipo volumen en rojo/verde si no hay posición; barra TP/SL si está en posición)
- */
 export default function UserBotMonitorTable({ authFetch, isRunning = true, activeLeverage }) {
+  const { user } = useAuth();
   const [monitorData, setMonitorData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -325,7 +317,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
       {/* Pie de actualización */}
       {lastUpdated && (
         <div className="pt-2 border-t border-slate-800/80 flex justify-end text-[10px] text-slate-500 font-mono">
-          Actualizado: {lastUpdated.toLocaleTimeString()}
+          Actualizado: {formatFullDateTime(lastUpdated, user?.country)}
         </div>
       )}
     </div>
