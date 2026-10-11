@@ -430,6 +430,12 @@ function MainDashboard() {
 
   const isCopyTradeActiveTab = isInvestor && (activeTab === 'my_bot' || activeTab === 'copy_trading');
   const userBinanceBalance = Number(userBotHeader?.balance_usdt || 0);
+  const userInitialCapital = Number(userBotHeader?.initial_capital || 5000);
+  const userWalletPnl = (userBotHeader?.wallet_pnl !== undefined && userBotHeader?.wallet_pnl !== null)
+    ? Number(userBotHeader.wallet_pnl)
+    : (userBinanceBalance - userInitialCapital);
+  const userUnrealizedPnl = Number(userBotHeader?.wallet_breakdown?.unrealized_pnl || 0);
+  const userOpenPositionsCount = Number(userBotHeader?.wallet_breakdown?.open_positions_count || 0);
   const isUserBotRunningRaw = Boolean(userBotHeader?.bot_settings?.is_running);
   const userOpMode = userBotHeader?.bot_settings?.operating_mode || 'COPY_TRADING';
   
@@ -490,17 +496,22 @@ function MainDashboard() {
             <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-amber-500/30 text-xs">
               {isCopyTradeActiveTab ? (
                 <>
-                  <div className="flex items-center gap-1 font-bold text-slate-950 truncate">
-                    <span className="text-[10px]">{headerModeLabel}</span>
-                    <span className={`text-xs font-bold ${headerModeActive ? 'text-emerald-950' : 'text-amber-950'}`}>
-                      {headerModeActive ? '● ACTIVO' : '○ PAUSADO'}
-                    </span>
-                  </div>
+                  {userUnrealizedPnl !== 0 ? (
+                    <div className="flex items-center gap-1 font-bold text-slate-950 truncate">
+                      <span className="text-[10px]">Flotante ({userOpenPositionsCount}p):</span>
+                      <span className={`text-xs font-mono font-black ${userUnrealizedPnl < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
+                        {userUnrealizedPnl >= 0 ? `+${userUnrealizedPnl.toFixed(2)}` : userUnrealizedPnl.toFixed(2)} USDT
+                      </span>
+                    </div>
+                  ) : <div />}
 
-                  <div className="flex items-baseline gap-1 font-mono text-slate-950 font-bold">
+                  <div className="flex items-baseline gap-1.5 font-mono text-slate-950 font-bold ml-auto">
                     <span className="text-[11px] font-extrabold uppercase text-slate-900">Tu Saldo:</span>
                     <span className="text-base font-black">
-                      ${userBinanceBalance.toFixed(2)} USDT
+                      ${userBinanceBalance.toFixed(2)}
+                    </span>
+                    <span className={`text-xs font-black ${userWalletPnl < 0 ? 'text-rose-900' : 'text-emerald-950'}`}>
+                      ({userWalletPnl >= 0 ? `+${userWalletPnl.toFixed(2)}` : userWalletPnl.toFixed(2)} USDT)
                     </span>
                   </div>
                 </>
@@ -549,26 +560,25 @@ function MainDashboard() {
                 {isCopyTradeActiveTab ? (
                   /* Modo Copy Trade / Bot Personal: Mostrar Datos Propios del Usuario */
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border border-slate-800 px-3 py-1 rounded-xl shadow-sm">
-                      <span className="text-xs text-slate-400">{headerModeLabel}</span>
-                      <span className={`text-xs font-bold flex items-center gap-1.5 ${headerModeActive ? 'text-emerald-400' : 'text-amber-400'}`}>
-                        {headerModeActive ? (
-                          <>
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                            ACTIVO
-                          </>
-                        ) : (
-                          '⏸️ PAUSADO'
-                        )}
-                      </span>
-                    </div>
+                    {/* Flotante en vivo del usuario si tiene posiciones */}
+                    {userUnrealizedPnl !== 0 && (
+                      <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border border-slate-800 px-3 py-1 rounded-xl shadow-sm">
+                        <span className="text-xs text-slate-400">Flotante ({userOpenPositionsCount} pos):</span>
+                        <span className={`text-base font-mono font-black ${userUnrealizedPnl < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          {userUnrealizedPnl >= 0 ? `+${userUnrealizedPnl.toFixed(2)}` : userUnrealizedPnl.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-slate-400">USDT</span>
+                      </div>
+                    )}
 
-                    <div className="flex items-baseline gap-2 text-slate-950">
+                    <div className="flex items-baseline gap-2.5 text-slate-950">
                       <span className="text-sm font-extrabold uppercase tracking-wide text-slate-900">Tu Saldo Binance:</span>
                       <span className="text-2xl sm:text-3xl font-mono font-black tracking-tight text-slate-950">
                         ${userBinanceBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
-                      <span className="text-xs font-bold text-slate-800 uppercase">USDT</span>
+                      <span className={`text-2xl sm:text-3xl font-mono font-black tracking-tight ${userWalletPnl < 0 ? 'text-rose-900' : 'text-emerald-950'}`} title="Rendimiento neto de cartera (Balance Binance - Inversión Inicial)">
+                        ({userWalletPnl >= 0 ? `+${userWalletPnl.toFixed(2)}` : userWalletPnl.toFixed(2)} USDT)
+                      </span>
                     </div>
                   </div>
                 ) : (

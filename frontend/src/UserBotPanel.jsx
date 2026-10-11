@@ -947,193 +947,282 @@ export default function UserBotPanel({
           </div>
 
           {/* Tarjeta de Conciliación Contable y Balance en Binance (Estándar Profesional Institucional) */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-5">
-            
-            {/* Encabezado Principal de Auditoría Contable */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-              <div>
-                <h4 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                  <span>🏦</span> Conciliación de Balance & Patrimonio Neto (Binance)
-                </h4>
-                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                  Auditoría transparente de tu capital: Depósitos, PnL Bruto, deducción de Comisiones de Trading (Maker/Taker) y Tasas de Financiamiento (Funding Rates).
-                </p>
-              </div>
-              
-              {/* Badge Patrimonio Neto Total */}
-              <div className="flex items-center gap-2 self-start sm:self-auto">
-                <div className="bg-slate-950/90 border border-amber-500/40 rounded-2xl px-4 py-2 text-right shadow-inner">
-                  <span className="text-[10px] text-slate-400 font-sans uppercase font-bold block">Patrimonio Total (Equity)</span>
-                  <span className="text-base sm:text-lg font-black font-mono text-amber-300">
-                    ${((walletBreakdown?.wallet_balance ?? balance) + (walletBreakdown?.unrealized_pnl || 0)).toFixed(2)} USDT
-                  </span>
-                </div>
-              </div>
-            </div>
+          {/* Conciliación Contable y Ecuación Financiera Institucional (Estándar Binance / Hedge Funds) */}
+          {(() => {
+            const currentWalletBalance = Number(walletBreakdown?.wallet_balance ?? balance);
+            const initialCap = Number(walletBreakdown?.initial_capital ?? botData?.initial_capital ?? 5000.0);
+            const realizedNetPnL = Number(metricsData?.total_pnl ?? walletBreakdown?.net_pnl ?? 0);
+            const tradingFees = Number(metricsData?.total_commission ?? walletBreakdown?.total_commission ?? 0);
+            const fundingFees = Number(metricsData?.total_funding ?? walletBreakdown?.total_funding ?? 0);
+            const realizedGrossPnL = Number(metricsData?.gross_pnl ?? (realizedNetPnL + tradingFees + fundingFees));
+            const currentUnrealizedPnL = Number(walletBreakdown?.unrealized_pnl ?? 0);
+            const committedMargin = Number(walletBreakdown?.margin_in_positions ?? 0);
+            const freeAvailableBalance = Number(walletBreakdown?.available_balance ?? Math.max(0, currentWalletBalance - committedMargin));
+            const currentEquity = currentWalletBalance + currentUnrealizedPnL;
+            const portfolioPerformance = currentWalletBalance - initialCap;
+            const marginPct = currentWalletBalance > 0 ? (committedMargin / currentWalletBalance * 100) : 0;
+            const freePct = currentWalletBalance > 0 ? (freeAvailableBalance / currentWalletBalance * 100) : 100;
 
-            {/* Bloque 1: Desglose de Billetera y Auditoría de Gastos (Fees & Funding) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono">
-              
-              {/* 1. Saldo en Billetera Base */}
-              <div className="p-4 bg-slate-950/90 rounded-2xl border border-slate-800 flex flex-col justify-between hover:border-slate-700 transition">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 uppercase font-sans font-bold flex items-center gap-1.5">
-                    <span>💳</span> Saldo Billetera
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-sans">Fondos Base</span>
+            return (
+              <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-6 animate-fadeIn">
+                
+                {/* 1. Encabezado Principal */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+                  <div>
+                    <h4 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                      <span>🏦</span> Auditoría de Capital & Conciliación Financiera (Binance Futures)
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                      Transparencia matemática total: Conoce con exactitud de dónde proviene tu saldo, dónde está distribuido cada centavo y cuál es tu patrimonio neto liquidable en vivo.
+                    </p>
+                  </div>
+                  
+                  {/* Badge Destacado de Patrimonio Total */}
+                  <div className="bg-slate-950/90 border border-amber-500/40 rounded-2xl px-4 py-2.5 text-right shadow-inner flex items-center gap-3 self-start sm:self-auto">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-sans uppercase font-bold block">Patrimonio Neto (Equity)</span>
+                      <span className="text-lg sm:text-xl font-black font-mono text-amber-300">
+                        ${currentEquity.toFixed(2)} USDT
+                      </span>
+                    </div>
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                      {currentUnrealizedPnL >= 0 ? '+' : ''}${currentUnrealizedPnL.toFixed(2)} Flotante
+                    </span>
+                  </div>
                 </div>
-                <div className="mt-2">
-                  <span className="text-xl font-black font-mono text-white">
-                    ${(walletBreakdown?.wallet_balance ?? balance).toFixed(2)} <span className="text-[10px] text-slate-400 font-sans">USDT</span>
-                  </span>
-                </div>
-                <span className="text-[10px] text-slate-500 font-sans mt-1">
-                  Saldo en custodia en Binance
-                </span>
-              </div>
 
-              {/* 2. PnL Realizado Neto & Auditoría de Comisiones */}
-              <div className="p-4 bg-slate-950/90 rounded-2xl border border-slate-800 flex flex-col justify-between hover:border-slate-700 transition">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 uppercase font-sans font-bold flex items-center gap-1.5">
-                    <span>📊</span> PnL Realizado Neto
-                  </span>
-                  <span className={`text-[10px] font-sans font-bold px-1.5 py-0.5 rounded ${
-                    (metricsData?.total_pnl || walletBreakdown?.net_pnl || 0) >= 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
-                  }`}>
-                    {(metricsData?.total_pnl || walletBreakdown?.net_pnl || 0) >= 0 ? 'Ganancia' : 'Pérdida'}
-                  </span>
-                </div>
-                <div className="mt-2">
-                  <span className={`text-xl font-black font-mono ${
-                    (metricsData?.total_pnl || walletBreakdown?.net_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                  }`}>
-                    {(metricsData?.total_pnl || walletBreakdown?.net_pnl || 0) >= 0 ? '+' : ''}
-                    ${(metricsData?.total_pnl || walletBreakdown?.net_pnl || 0).toFixed(2)} <span className="text-[10px] text-slate-400 font-sans">USDT</span>
-                  </span>
-                </div>
-                <span className="text-[10px] text-slate-400 font-sans mt-1">
-                  Neto de Comisiones & Funding
-                </span>
-              </div>
+                {/* ============================================================== */}
+                {/* FÓRMULA 1: ¿CÓMO SE FORMÓ TU SALDO EN BILLETERA?              */}
+                {/* ============================================================== */}
+                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-800/60 pb-2.5">
+                    <span className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black flex items-center justify-center">1</span>
+                      Génesis del Balance: ¿Cómo se generó tu Saldo en Billetera?
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400 font-semibold">
+                      Capital Inicial + PnL Bruto - Comisiones - Funding = Saldo Billetera
+                    </span>
+                  </div>
 
-              {/* 3. Comisiones de Trading (Maker / Taker) */}
-              <div className="p-4 bg-slate-950/90 rounded-2xl border border-rose-500/20 flex flex-col justify-between hover:border-rose-500/40 transition">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-rose-300 uppercase font-sans font-bold flex items-center gap-1.5">
-                    <span>💸</span> Comisiones Trading
-                  </span>
-                  <span className="text-[10px] text-rose-400/80 font-sans font-semibold">Exchange Fees</span>
-                </div>
-                <div className="mt-2">
-                  <span className="text-xl font-black font-mono text-rose-400">
-                    -${(metricsData?.total_commission || walletBreakdown?.total_commission || 0.00).toFixed(2)} <span className="text-[10px] text-rose-500/70 font-sans">USDT</span>
-                  </span>
-                </div>
-                <span className="text-[10px] text-slate-500 font-sans mt-1">
-                  Tarifas de compra/venta Binance
-                </span>
-              </div>
+                  {/* Fila Matemática Interactiva con Operadores */}
+                  <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 pt-1 font-mono text-xs">
+                    
+                    {/* Término 1: Capital Inicial */}
+                    <div className="flex-1 min-w-[130px] p-3 bg-slate-900/90 rounded-xl border border-slate-800 text-center">
+                      <span className="text-[10px] text-slate-400 font-sans uppercase font-bold block">Capital Inicial</span>
+                      <span className="text-base font-black text-white mt-1 block">
+                        ${initialCap.toFixed(2)}
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-sans mt-0.5 block">Depósito base</span>
+                    </div>
 
-              {/* 4. Tasas de Financiamiento (Funding Rates) */}
-              <div className="p-4 bg-slate-950/90 rounded-2xl border border-amber-500/20 flex flex-col justify-between hover:border-amber-500/40 transition">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-amber-300 uppercase font-sans font-bold flex items-center gap-1.5">
-                    <span>⚡</span> Financiamiento (Funding)
-                  </span>
-                  <span className="text-[10px] text-amber-400/80 font-sans font-semibold">Tasa Nocturna 8h</span>
-                </div>
-                <div className="mt-2">
-                  <span className="text-xl font-black font-mono text-amber-300">
-                    -${(metricsData?.total_funding || walletBreakdown?.total_funding || 0.00).toFixed(2)} <span className="text-[10px] text-amber-500/70 font-sans">USDT</span>
-                  </span>
-                </div>
-                <span className="text-[10px] text-slate-500 font-sans mt-1">
-                  Cobros/Acreditaciones cada 8h
-                </span>
-              </div>
-            </div>
+                    {/* Operador + */}
+                    <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-black text-sm flex-shrink-0">
+                      +
+                    </div>
 
-            {/* Bloque 2: Garantía de Posición y Saldo Libre Disponible */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
-              
-              {/* PnL Flotante (Abierto) */}
-              <div className="p-3.5 bg-slate-950/90 rounded-2xl border border-slate-800 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-sans font-bold block">
-                    📈 PnL Flotante (En Posición)
-                  </span>
-                  <span className={`text-base font-black font-mono mt-0.5 block ${
-                    (walletBreakdown?.unrealized_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                  }`}>
-                    {(walletBreakdown?.unrealized_pnl || 0) >= 0 ? '+' : ''}${(walletBreakdown?.unrealized_pnl || 0).toFixed(2)} USDT
-                  </span>
-                </div>
-                <span className="text-[10px] text-slate-500 font-sans text-right">
-                  {walletBreakdown?.open_positions_count || 0} pos. activas
-                </span>
-              </div>
+                    {/* Término 2: PnL Bruto */}
+                    <div className="flex-1 min-w-[130px] p-3 bg-slate-900/90 rounded-xl border border-emerald-500/20 text-center">
+                      <span className="text-[10px] text-emerald-300 font-sans uppercase font-bold block">PnL Bruto Trades</span>
+                      <span className={`text-base font-black mt-1 block ${realizedGrossPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {realizedGrossPnL >= 0 ? '+' : ''}${realizedGrossPnL.toFixed(2)}
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-sans mt-0.5 block">Ganancia antes de costos</span>
+                    </div>
 
-              {/* Margen Comprometido */}
-              <div className="p-3.5 bg-slate-950/90 rounded-2xl border border-slate-800 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-sans font-bold block">
-                    🔒 Margen en Operaciones
-                  </span>
-                  <span className="text-base font-black font-mono text-amber-400 mt-0.5 block">
-                    ${(walletBreakdown?.margin_in_positions || 0).toFixed(2)} USDT
-                  </span>
-                </div>
-                <span className="text-[10px] text-slate-500 font-sans text-right">
-                  Garantía retenida
-                </span>
-              </div>
+                    {/* Operador - */}
+                    <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-rose-300 font-black text-sm flex-shrink-0">
+                      −
+                    </div>
 
-              {/* Saldo Libre Disponible */}
-              <div className="p-3.5 bg-gradient-to-r from-emerald-950/40 to-slate-950 rounded-2xl border border-emerald-500/40 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-emerald-300 uppercase font-sans font-bold block">
-                    🟢 Saldo Libre Disponible
-                  </span>
-                  <span className="text-base font-black font-mono text-emerald-400 mt-0.5 block">
-                    ${(walletBreakdown?.available_balance ?? (balance - (walletBreakdown?.margin_in_positions || 0))).toFixed(2)} USDT
-                  </span>
-                </div>
-                <span className="text-[10px] text-emerald-400/70 font-sans text-right font-semibold">
-                  Libre para operar
-                </span>
-              </div>
-            </div>
+                    {/* Término 3: Comisiones Trading */}
+                    <div className="flex-1 min-w-[130px] p-3 bg-slate-900/90 rounded-xl border border-rose-500/20 text-center">
+                      <span className="text-[10px] text-rose-300 font-sans uppercase font-bold block">Comisiones Binance</span>
+                      <span className="text-base font-black text-rose-400 mt-1 block">
+                        ${tradingFees.toFixed(2)}
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-sans mt-0.5 block">Tarifas Maker/Taker</span>
+                    </div>
 
-            {/* Bloque 3: Desglose Matemático Transparente y Fórmula Institucional */}
-            <div className="p-4 bg-slate-950/80 rounded-2xl border border-slate-800/80 text-[11px] text-slate-300 space-y-2 font-mono">
-              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2 flex-wrap gap-2">
-                <span className="font-bold text-amber-300 flex items-center gap-1.5">
-                  <span>🧮</span> Ecuación Contable del Balance (Estándar Binance Futures)
-                </span>
-                <span className="text-[10px] text-slate-400 font-sans">
-                  Fórmula: Billetera + Flotante = Patrimonio Total
-                </span>
-              </div>
+                    {/* Operador - */}
+                    <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-amber-300 font-black text-sm flex-shrink-0">
+                      −
+                    </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] leading-relaxed">
-                <div>
-                  • <strong>PnL Bruto Trades:</strong> <span className="text-emerald-400">+${(metricsData?.gross_pnl || (metricsData?.total_pnl || 0) + (metricsData?.total_commission || 0) + (metricsData?.total_funding || 0)).toFixed(2)} USDT</span>
-                  <br />
-                  • <strong>Comisiones de Trading:</strong> <span className="text-rose-400">-${(metricsData?.total_commission || walletBreakdown?.total_commission || 0.00).toFixed(2)} USDT</span>
-                  <br />
-                  • <strong>Financiamiento (Funding):</strong> <span className="text-amber-300">-${(metricsData?.total_funding || walletBreakdown?.total_funding || 0.00).toFixed(2)} USDT</span>
+                    {/* Término 4: Financiamiento (Funding) */}
+                    <div className="flex-1 min-w-[130px] p-3 bg-slate-900/90 rounded-xl border border-amber-500/20 text-center">
+                      <span className="text-[10px] text-amber-300 font-sans uppercase font-bold block">Financiamiento</span>
+                      <span className="text-base font-black text-amber-300 mt-1 block">
+                        ${fundingFees.toFixed(2)}
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-sans mt-0.5 block">Funding cada 8h</span>
+                    </div>
+
+                    {/* Operador = */}
+                    <div className="w-7 h-7 rounded-full bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300 font-black text-sm flex-shrink-0">
+                      =
+                    </div>
+
+                    {/* Resultado 1: Saldo Billetera */}
+                    <div className="flex-1 min-w-[150px] p-3 bg-gradient-to-b from-slate-900 to-slate-950 rounded-xl border-2 border-emerald-500/50 text-center shadow-lg">
+                      <span className="text-[10px] text-emerald-300 font-sans uppercase font-black block">Saldo en Billetera</span>
+                      <span className="text-lg font-black text-emerald-400 mt-1 block">
+                        ${currentWalletBalance.toFixed(2)}
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-sans mt-0.5 block">En custodia en Binance</span>
+                    </div>
+
+                  </div>
+
+                  {/* Sub-resumen explicativo de rendimiento neto */}
+                  <div className="pt-2 border-t border-slate-850 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 font-sans">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-white">Resultado Operativo Neto:</span>
+                      <span className={`font-mono font-black ${realizedNetPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {realizedNetPnL >= 0 ? '+' : ''}${realizedNetPnL.toFixed(2)} USDT
+                      </span>
+                      <span className="text-slate-500 text-[10px]">(PnL Bruto − Comisiones − Funding)</span>
+                    </div>
+                    <div className="flex items-center gap-2 font-mono">
+                      <span className="text-slate-400">Diferencia vs Capital Inicial:</span>
+                      <span className={`font-bold ${portfolioPerformance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {portfolioPerformance >= 0 ? '+' : ''}${portfolioPerformance.toFixed(2)} USDT
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  • <strong>PnL Neto Realizado:</strong> <span className={(metricsData?.total_pnl || 0) >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>{(metricsData?.total_pnl || 0) >= 0 ? '+' : ''}${(metricsData?.total_pnl || 0).toFixed(2)} USDT</span>
-                  <br />
-                  • <strong>PnL Flotante (En Posición):</strong> <span className={(walletBreakdown?.unrealized_pnl || 0) >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>{(walletBreakdown?.unrealized_pnl || 0) >= 0 ? '+' : ''}${(walletBreakdown?.unrealized_pnl || 0).toFixed(2)} USDT</span>
-                  <br />
-                  • <strong>Patrimonio Total Binance:</strong> <strong className="text-amber-300">${((walletBreakdown?.wallet_balance ?? balance) + (walletBreakdown?.unrealized_pnl || 0)).toFixed(2)} USDT</strong>
+
+                {/* ============================================================== */}
+                {/* FÓRMULA 2: ¿DÓNDE ESTÁ TU DINERO EN ESTE SEGUNDO?             */}
+                {/* ============================================================== */}
+                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-800/60 pb-2.5">
+                    <span className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-sky-400 text-slate-950 text-[11px] font-black flex items-center justify-center">2</span>
+                      Distribución en Vivo: ¿Dónde está tu dinero ahora mismo?
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400 font-semibold">
+                      Saldo en Billetera (${currentWalletBalance.toFixed(2)}) = Margen Comprometido + Saldo Libre
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1 font-mono text-xs">
+                    
+                    {/* Tarjeta 1: Margen Comprometido */}
+                    <div className="p-4 bg-slate-900/90 rounded-2xl border border-amber-500/30 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-amber-300 font-sans flex items-center gap-1.5">
+                            <span>🔒</span> Margen en Operaciones (Garantía Retenida)
+                          </span>
+                          <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/30">
+                            {marginPct.toFixed(1)}% del saldo
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-amber-300">
+                            ${committedMargin.toFixed(2)}
+                          </span>
+                          <span className="text-xs text-slate-400 font-sans">USDT</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-sans mt-1.5 leading-relaxed">
+                          Capital reservado como garantía de margen que respalda las <strong>{walletBreakdown?.open_positions_count || 0} operaciones abiertas</strong> en Binance Futures.
+                        </p>
+                      </div>
+                      <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden mt-3 border border-slate-800">
+                        <div className="bg-amber-400 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Math.max(0, marginPct))}%` }}></div>
+                      </div>
+                    </div>
+
+                    {/* Tarjeta 2: Saldo Libre Disponible */}
+                    <div className="p-4 bg-slate-900/90 rounded-2xl border border-emerald-500/30 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-emerald-300 font-sans flex items-center gap-1.5">
+                            <span>🟢</span> Saldo Libre Disponible (Liquidez Inmediata)
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded border border-emerald-400/30">
+                            {freePct.toFixed(1)}% del saldo
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-emerald-400">
+                            ${freeAvailableBalance.toFixed(2)}
+                          </span>
+                          <span className="text-xs text-slate-400 font-sans">USDT</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-sans mt-1.5 leading-relaxed">
+                          Capital no comprometido y 100% líquido en tu cuenta, disponible inmediatamente para abrir nuevas oportunidades o retiros.
+                        </p>
+                      </div>
+                      <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden mt-3 border border-slate-800">
+                        <div className="bg-emerald-400 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Math.max(0, freePct))}%` }}></div>
+                      </div>
+                    </div>
+
+                  </div>
                 </div>
+
+                {/* ============================================================== */}
+                {/* FÓRMULA 3: VALORACIÓN EN TIEMPO REAL (PATRIMONIO / EQUITY)     */}
+                {/* ============================================================== */}
+                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-800/60 pb-2.5">
+                    <span className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-emerald-400 text-slate-950 text-[11px] font-black flex items-center justify-center">3</span>
+                      Valoración en Tiempo Real: ¿Cuánto vale tu cuenta hoy si cerraras todo?
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400 font-semibold">
+                      Saldo en Billetera + PnL Flotante = Patrimonio Total (Equity)
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-3 pt-1 font-mono text-xs">
+                    
+                    {/* Billetera */}
+                    <div className="flex-1 min-w-[160px] p-3.5 bg-slate-900/90 rounded-xl border border-slate-800 text-center">
+                      <span className="text-[10px] text-slate-400 font-sans uppercase font-bold block">Saldo en Billetera</span>
+                      <span className="text-lg font-black text-white mt-1 block">
+                        ${currentWalletBalance.toFixed(2)} USDT
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-sans mt-0.5 block">Capital consolidado</span>
+                    </div>
+
+                    {/* Operador + */}
+                    <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 font-black text-base flex-shrink-0">
+                      +
+                    </div>
+
+                    {/* Flotante */}
+                    <div className="flex-1 min-w-[160px] p-3.5 bg-slate-900/90 rounded-xl border border-slate-800 text-center">
+                      <span className="text-[10px] text-slate-400 font-sans uppercase font-bold block">PnL Flotante ({walletBreakdown?.open_positions_count || 0} pos.)</span>
+                      <span className={`text-lg font-black mt-1 block ${currentUnrealizedPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {currentUnrealizedPnL >= 0 ? '+' : ''}${currentUnrealizedPnL.toFixed(2)} USDT
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-sans mt-0.5 block">Ganancia/Pérdida en curso</span>
+                    </div>
+
+                    {/* Operador = */}
+                    <div className="w-8 h-8 rounded-full bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300 font-black text-base flex-shrink-0">
+                      =
+                    </div>
+
+                    {/* Patrimonio Total (Equity) */}
+                    <div className="flex-1 min-w-[200px] p-4 bg-gradient-to-r from-amber-500/15 via-slate-900 to-amber-500/10 rounded-2xl border-2 border-amber-400/60 text-center shadow-xl">
+                      <span className="text-xs text-amber-300 font-sans uppercase font-black tracking-wider block">PATRIMONIO TOTAL (EQUITY)</span>
+                      <span className="text-2xl font-black text-amber-300 mt-1 block">
+                        ${currentEquity.toFixed(2)} USDT
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-sans mt-0.5 block">Valor liquidable neto de la cuenta</span>
+                    </div>
+
+                  </div>
+                </div>
+
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Panel de Monitoreo en Vivo de tu Bot Personal (Posiciones Abiertas y Radar de Señales) */}
           <UserBotMonitorTable 

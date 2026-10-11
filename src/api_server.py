@@ -1238,7 +1238,22 @@ def user_bot_status_endpoint():
 
         settings = get_user_bot_settings(user_id=user_id)
         keys = get_user_api_keys(user_id=user_id, decrypt=True)
-        metrics = get_user_trading_metrics(user_id=user_id)
+        if is_target_admin:
+            from src.database import get_total_database_metrics
+            m_db = get_total_database_metrics()
+            metrics = {
+                "total_trades": m_db.get('total_trades', 0),
+                "winning_trades": m_db.get('winning_trades', 0),
+                "losing_trades": m_db.get('losing_trades', 0),
+                "win_rate": m_db.get('win_rate', 0.0),
+                "total_pnl": m_db.get('total_pnl', 0.0),
+                "total_commission": m_db.get('total_commission_usdt', 0.0),
+                "total_funding": 0.0,
+                "gross_pnl": m_db.get('total_gross_pnl', 0.0),
+                "profit_factor": m_db.get('profit_factor', '1.00')
+            }
+        else:
+            metrics = get_user_trading_metrics(user_id=user_id)
 
         live_balance = float(keys.get('balance_detected', 0.0)) if keys else 0.0
 
@@ -1294,6 +1309,31 @@ def user_bot_status_endpoint():
             except Exception as e_live:
                 api_logger.debug(f"Aviso al consultar desglose de cuenta para usuario {user_id}: {e_live}")
 
+        # Determinar Capital Inicial / Depósito Base para conciliar PnL de cartera (Balance - Capital Inicial)
+        initial_capital = 5000.0  # Base estándar por defecto
+        try:
+            from src.database import get_db_connection
+            conn_u = get_db_connection()
+            if conn_u:
+                cur_u = conn_u.cursor()
+                cur_u.execute("""
+                    SELECT 
+                        SUM(CASE WHEN transaction_type IN ('INITIAL', 'DEPOSIT') THEN amount_usdt ELSE 0 END) as total_dep,
+                        SUM(CASE WHEN transaction_type = 'WITHDRAWAL' THEN amount_usdt ELSE 0 END) as total_wd
+                    FROM investor_transactions
+                    WHERE user_id = %s
+                """, (user_id,))
+                row_u = cur_u.fetchone()
+                if row_u and row_u['total_dep'] and float(row_u['total_dep']) > 0:
+                    net_u = float(row_u['total_dep']) - float(row_u['total_wd'] or 0.0)
+                    if net_u > 0 and not bool(keys.get('is_testnet', False) if keys else False):
+                        initial_capital = net_u
+                conn_u.close()
+        except Exception:
+            pass
+
+        wallet_pnl = round((live_balance or wallet_balance) - initial_capital, 2)
+
         cfg_temp = load_config()
         if is_target_admin:
             active_strategy = cfg_temp.get('STRATEGY_CATALOG', 'active_strategy_name', fallback='v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5').strip()
@@ -1310,6 +1350,8 @@ def user_bot_status_endpoint():
             "is_testnet": True if is_target_admin else bool(keys.get('is_testnet', False)) if keys else False,
             "api_key_masked": "🏛️ Sistema Maestro Binance" if is_target_admin else (keys.get('api_key_masked') if keys else None),
             "balance_usdt": live_balance,
+            "initial_capital": initial_capital,
+            "wallet_pnl": wallet_pnl,
             "wallet_breakdown": {
                 "wallet_balance": wallet_balance,
                 "available_balance": available_balance,
@@ -1317,6 +1359,8 @@ def user_bot_status_endpoint():
                 "unrealized_pnl": unrealized_pnl,
                 "equity": equity,
                 "open_positions_count": open_positions_count,
+                "initial_capital": initial_capital,
+                "wallet_pnl": wallet_pnl,
                 "total_commission": (metrics.get('total_commission') if metrics else 0.0) or 0.0,
                 "total_funding": (metrics.get('total_funding') if metrics else 0.0) or 0.0,
                 "gross_pnl": (metrics.get('gross_pnl') if metrics else 0.0) or 0.0,
@@ -1481,8 +1525,35 @@ def user_trades_endpoint():
 
         limit = min(200, int(request.args.get('limit', 50)))
         mode = request.args.get('mode')
-        trades = get_user_trades(user_id=user_id, limit=limit, mode=mode)
-        metrics = get_user_trading_metrics(user_id=user_id, mode=mode)
+
+        # Si el usuario objetivo es el Administrador, sus trades y métricas provienen del bot maestro (tabla 'trades')
+        is_target_admin = False
+        try:
+            from src.database import get_user_by_id
+            u_obj = get_user_by_id(user_id)
+            if u_obj and u_obj.get('role') == 'admin':
+                is_target_admin = True
+        except Exception:
+            pass
+
+        if is_target_admin:
+            from src.database import get_all_recent_trades, get_total_database_metrics
+            trades = get_all_recent_trades(limit=limit)
+            m_db = get_total_database_metrics()
+            metrics = {
+                "total_trades": m_db.get('total_trades', 0),
+                "winning_trades": m_db.get('winning_trades', 0),
+                "losing_trades": m_db.get('losing_trades', 0),
+                "win_rate": m_db.get('win_rate', 0.0),
+                "total_pnl": m_db.get('total_pnl', 0.0),
+                "total_commission": m_db.get('total_commission_usdt', 0.0),
+                "total_funding": 0.0,
+                "gross_pnl": m_db.get('total_gross_pnl', 0.0),
+                "profit_factor": m_db.get('profit_factor', '1.00')
+            }
+        else:
+            trades = get_user_trades(user_id=user_id, limit=limit, mode=mode)
+            metrics = get_user_trading_metrics(user_id=user_id, mode=mode)
 
         # Adjuntar PnL Flotante en vivo para operaciones en curso (abiertas)
         try:
@@ -1774,6 +1845,20 @@ def admin_users_overview_endpoint():
                     user_data['strategy_name'] = master_strat
                 except Exception:
                     user_data['strategy_name'] = 'v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5'
+
+                # Obtener métricas consolidadas del Bot Maestro desde la base de datos
+                try:
+                    from src.database import get_total_database_metrics
+                    master_m = get_total_database_metrics()
+                    user_data['total_trades'] = master_m.get('total_trades', 0)
+                    user_data['winning_trades'] = master_m.get('winning_trades', 0)
+                    user_data['losing_trades'] = master_m.get('losing_trades', 0)
+                    user_data['win_rate'] = master_m.get('win_rate', 0.0)
+                    user_data['net_pnl'] = master_m.get('total_pnl', 0.0)
+                    user_data['gross_pnl'] = master_m.get('total_gross_pnl', 0.0)
+                    user_data['total_commission'] = master_m.get('total_commission_usdt', 0.0)
+                except Exception as e_mm:
+                    api_logger.debug(f"Aviso al obtener metricas de Bot Maestro: {e_mm}")
 
                 try:
                     from src.binance_client import get_futures_client
