@@ -1698,10 +1698,49 @@ def admin_users_overview_endpoint():
         from src.database import get_all_users_admin_overview, get_user_api_keys
         users_list = get_all_users_admin_overview()
 
-        # Para los usuarios que tienen claves API válidas, consultar su balance y PnL flotante en tiempo real en Binance
+        # Para los usuarios que tienen claves API válidas o son Administrador, consultar su balance y PnL flotante en tiempo real en Binance
         for user_data in users_list:
             u_id = user_data['id']
-            if user_data.get('is_api_valid'):
+            u_role = user_data.get('role')
+
+            if u_role == 'admin':
+                user_data['is_api_valid'] = True
+                user_data['is_bot_running'] = True
+                user_data['operating_mode'] = 'BOT_MAESTRO_FONDO'
+                user_data['is_testnet'] = True
+
+                # Obtener la estrategia activa real del bot maestro/fondo desde config_loader
+                try:
+                    from src.config_loader import load_config
+                    cfg = load_config()
+                    master_strat = cfg.get('STRATEGY_CATALOG', 'active_strategy_name', fallback='v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5')
+                    user_data['strategy_name'] = master_strat
+                except Exception:
+                    user_data['strategy_name'] = 'v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5'
+
+                try:
+                    from src.binance_client import get_futures_client
+                    master_client = get_futures_client()
+                    if master_client:
+                        acc = master_client.account()
+                        if isinstance(acc, dict):
+                            wb = round(float(acc.get('totalWalletBalance', 0.0) or 0.0), 2)
+                            ab = round(float(acc.get('availableBalance', 0.0) or 0.0), 2)
+                            im = round(float(acc.get('totalInitialMargin', 0.0) or 0.0), 2)
+                            upnl = round(float(acc.get('totalUnrealizedProfit', 0.0) or 0.0), 2)
+                            eq = round(float(acc.get('totalMarginBalance', 0.0) or 0.0), 2)
+                            positions = acc.get('positions', [])
+                            pos_count = sum(1 for p in positions if abs(float(p.get('positionAmt', 0.0) or 0.0)) > 1e-6)
+
+                            user_data['wallet_balance'] = wb
+                            user_data['available_balance'] = ab
+                            user_data['margin_in_positions'] = im
+                            user_data['unrealized_pnl'] = upnl
+                            user_data['equity'] = eq
+                            user_data['open_positions_count'] = pos_count
+                except Exception as e_master:
+                    api_logger.debug(f"Aviso al consultar balance de Bot Maestro Admin en overview: {e_master}")
+            elif user_data.get('is_api_valid'):
                 try:
                     keys = get_user_api_keys(user_id=u_id, decrypt=True)
                     if keys and keys.get('api_key') and keys.get('api_secret'):

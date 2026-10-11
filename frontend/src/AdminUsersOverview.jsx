@@ -362,7 +362,7 @@ export default function AdminUsersOverview({ addToast, onSelectUserForDossier })
                           <span className="text-rose-400/80 font-semibold text-[10px]">SIN CLAVES API</span>
                         )}
                         <div className="text-[9px] text-slate-500 font-mono mt-0.5">
-                          {u.is_testnet ? '🧪 Binance Testnet' : (u.is_api_valid ? '⚡ Binance Real' : 'No Conectado')}
+                          {u.role === 'admin' ? '🏛️ Bot Maestro del Fondo' : (u.is_testnet ? '🧪 Binance Testnet' : (u.is_api_valid ? '⚡ Binance Real' : 'No Conectado'))}
                         </div>
                       </td>
 
@@ -373,7 +373,7 @@ export default function AdminUsersOverview({ addToast, onSelectUserForDossier })
                             {u.strategy_name || 'WTN Scalper Pro'}
                           </span>
                           <span className="text-[10px] text-slate-400">
-                            {u.operating_mode === 'PERSONAL_BOT' ? 'Bot Personal' : 'Copy-Trading Espejo'} • {u.leverage || 10}x
+                            {u.role === 'admin' ? 'Bot Maestro (Fondo)' : (u.operating_mode === 'PERSONAL_BOT' ? 'Bot Personal' : 'Copy-Trading Espejo')} • {u.leverage || 10}x
                           </span>
                         </div>
                       </td>
