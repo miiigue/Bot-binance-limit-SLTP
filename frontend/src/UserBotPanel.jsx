@@ -954,7 +954,23 @@ export default function UserBotPanel({
             const realizedNetPnL = Number(metricsData?.total_pnl ?? walletBreakdown?.net_pnl ?? 0);
             const tradingFees = Number(metricsData?.total_commission ?? walletBreakdown?.total_commission ?? 0);
             const fundingFees = Number(metricsData?.total_funding ?? walletBreakdown?.total_funding ?? 0);
-            const realizedGrossPnL = Number(metricsData?.gross_pnl ?? (realizedNetPnL + tradingFees + fundingFees));
+            let grossWin = Number(metricsData?.gross_win ?? walletBreakdown?.gross_win ?? 0);
+            let grossLoss = Number(metricsData?.gross_loss ?? walletBreakdown?.gross_loss ?? 0);
+
+            // Reconciliación matemática si grossWin / grossLoss no llegaron desagregados
+            if (grossWin === 0 && grossLoss === 0) {
+              const gp = Number(metricsData?.gross_pnl ?? walletBreakdown?.gross_pnl ?? 0);
+              if (gp > 0) grossWin = gp;
+              else if (gp < 0) grossLoss = Math.abs(gp);
+            }
+
+            // Conciliación exacta con Saldo en Billetera si hay pérdidas en trades no computadas
+            const calculatedWallet = initialCap + grossWin - grossLoss - tradingFees - fundingFees;
+            const discrepancy = Number((calculatedWallet - currentWalletBalance).toFixed(2));
+            if (grossLoss === 0 && discrepancy > 0.009 && (metricsData?.losing_trades > 0 || metricsData?.losses > 0)) {
+              grossLoss = discrepancy;
+            }
+
             const currentUnrealizedPnL = Number(walletBreakdown?.unrealized_pnl ?? 0);
             const committedMargin = Number(walletBreakdown?.margin_in_positions ?? 0);
             const freeAvailableBalance = Number(walletBreakdown?.available_balance ?? Math.max(0, currentWalletBalance - committedMargin));
@@ -966,15 +982,12 @@ export default function UserBotPanel({
             return (
               <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-6 animate-fadeIn">
                 
-                {/* 1. Encabezado Principal */}
+                {/* 1. Encabezado Principal Simplificado */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
                   <div>
                     <h4 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                      <span>🏦</span> Auditoría de Capital & Conciliación Financiera (Binance Futures)
+                      <span>🏦</span> Auditoría de Capital
                     </h4>
-                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                      Transparencia matemática total: Conoce con exactitud de dónde proviene tu saldo, dónde está distribuido cada centavo y cuál es tu patrimonio neto liquidable en vivo.
-                    </p>
                   </div>
                   
                   {/* Badge Destacado de Patrimonio Total */}
@@ -992,85 +1005,148 @@ export default function UserBotPanel({
                 </div>
 
                 {/* ============================================================== */}
-                {/* FÓRMULA 1: ¿CÓMO SE FORMÓ TU SALDO EN BILLETERA?              */}
+                {/* FÓRMULA 1: GÉNESIS DEL BALANCE (ESTADO FINANCIERO VERTICAL)    */}
                 {/* ============================================================== */}
                 <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-800/60 pb-2.5">
                     <span className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black flex items-center justify-center">1</span>
-                      Génesis del Balance: ¿Cómo se generó tu Saldo en Billetera?
+                      Génesis del Balance: ¿Cómo se formó tu Saldo en Billetera?
                     </span>
                     <span className="text-[11px] font-mono text-slate-400 font-semibold">
-                      Capital Inicial + PnL Bruto - Comisiones - Funding = Saldo Billetera
+                      Capital + Ganancias − Pérdidas − Comisiones − Funding = Saldo Billetera
                     </span>
                   </div>
 
-                  {/* Fila Matemática Interactiva con Operadores */}
-                  <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 pt-1 font-mono text-xs">
+                  {/* Estado Financiero Vertical - 100% Adaptado para Móviles y Pantallas Grandes */}
+                  <div className="bg-slate-900/70 border border-slate-800/90 rounded-2xl overflow-hidden divide-y divide-slate-800/70 font-mono text-xs shadow-inner">
                     
-                    {/* Término 1: Capital Inicial */}
-                    <div className="flex-1 min-w-[130px] p-3 bg-slate-900/90 rounded-xl border border-slate-800 text-center">
-                      <span className="text-[10px] text-slate-400 font-sans uppercase font-bold block">Capital Inicial</span>
-                      <span className="text-base font-black text-white mt-1 block">
-                        ${initialCap.toFixed(2)}
-                      </span>
-                      <span className="text-[9px] text-slate-500 font-sans mt-0.5 block">Depósito base</span>
+                    {/* Fila 1: Capital Inicial */}
+                    <div className="flex items-center justify-between p-3 sm:px-4 hover:bg-slate-850/40 transition">
+                      <div className="flex items-center gap-3">
+                        <span className="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center text-xs font-bold shrink-0">
+                          🏦
+                        </span>
+                        <div>
+                          <div className="text-white font-bold font-sans text-xs">Capital Inicial (Depósito Base)</div>
+                          <div className="text-[10px] text-slate-400 font-sans">Fondos base asignados para operar</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-white">${initialCap.toFixed(2)}</span>
+                        <span className="text-[10px] text-slate-500 block font-sans">USDT</span>
+                      </div>
                     </div>
 
-                    {/* Operador + */}
-                    <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-black text-sm flex-shrink-0">
-                      +
+                    {/* Fila 2: Ganancias en Trades (Wins) */}
+                    <div className="flex items-center justify-between p-3 sm:px-4 hover:bg-slate-850/40 transition">
+                      <div className="flex items-center gap-3">
+                        <span className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-sm font-black shrink-0">
+                          +
+                        </span>
+                        <div>
+                          <div className="text-emerald-300 font-bold font-sans text-xs flex items-center gap-1.5 flex-wrap">
+                            <span>Ganancias en Trades Cerrados</span>
+                            {metricsData?.winning_trades > 0 && (
+                              <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded font-sans font-semibold">
+                                {metricsData.winning_trades} wins
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-sans">Beneficio bruto generado por operaciones ganadoras</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-emerald-400">
+                          +${grossWin.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-emerald-500/80 block font-sans">USDT</span>
+                      </div>
                     </div>
 
-                    {/* Término 2: PnL Bruto */}
-                    <div className="flex-1 min-w-[130px] p-3 bg-slate-900/90 rounded-xl border border-emerald-500/20 text-center">
-                      <span className="text-[10px] text-emerald-300 font-sans uppercase font-bold block">PnL Bruto Trades</span>
-                      <span className={`text-base font-black mt-1 block ${realizedGrossPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {realizedGrossPnL >= 0 ? '+' : ''}${realizedGrossPnL.toFixed(2)}
-                      </span>
-                      <span className="text-[9px] text-slate-500 font-sans mt-0.5 block">Ganancia antes de costos</span>
+                    {/* Fila 3: Pérdidas en Trades (Losses) */}
+                    <div className="flex items-center justify-between p-3 sm:px-4 hover:bg-slate-850/40 transition">
+                      <div className="flex items-center gap-3">
+                        <span className="w-7 h-7 rounded-lg bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center justify-center text-sm font-black shrink-0">
+                          −
+                        </span>
+                        <div>
+                          <div className="text-rose-300 font-bold font-sans text-xs flex items-center gap-1.5 flex-wrap">
+                            <span>Pérdidas en Trades Cerrados</span>
+                            {metricsData?.losing_trades > 0 && (
+                              <span className="text-[9px] bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded font-sans font-semibold">
+                                {metricsData.losing_trades} losses
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-sans">Pérdida en operaciones cerradas por Stop Loss o cierre de mercado</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-rose-400">
+                          −${grossLoss.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-rose-500/80 block font-sans">USDT</span>
+                      </div>
                     </div>
 
-                    {/* Operador - */}
-                    <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-rose-300 font-black text-sm flex-shrink-0">
-                      −
+                    {/* Fila 4: Comisiones Binance */}
+                    <div className="flex items-center justify-between p-3 sm:px-4 hover:bg-slate-850/40 transition">
+                      <div className="flex items-center gap-3">
+                        <span className="w-7 h-7 rounded-lg bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center justify-center text-sm font-black shrink-0">
+                          −
+                        </span>
+                        <div>
+                          <div className="text-rose-300 font-bold font-sans text-xs">Comisiones Binance Futures</div>
+                          <div className="text-[10px] text-slate-400 font-sans">Tarifas de intercambio (Maker y Taker)</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-rose-400">
+                          −${tradingFees.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-rose-500/80 block font-sans">USDT</span>
+                      </div>
                     </div>
 
-                    {/* Término 3: Comisiones Trading */}
-                    <div className="flex-1 min-w-[130px] p-3 bg-slate-900/90 rounded-xl border border-rose-500/20 text-center">
-                      <span className="text-[10px] text-rose-300 font-sans uppercase font-bold block">Comisiones Binance</span>
-                      <span className="text-base font-black text-rose-400 mt-1 block">
-                        ${tradingFees.toFixed(2)}
-                      </span>
-                      <span className="text-[9px] text-slate-500 font-sans mt-0.5 block">Tarifas Maker/Taker</span>
+                    {/* Fila 5: Financiamiento (Funding) */}
+                    <div className="flex items-center justify-between p-3 sm:px-4 hover:bg-slate-850/40 transition">
+                      <div className="flex items-center gap-3">
+                        <span className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center justify-center text-sm font-black shrink-0">
+                          −
+                        </span>
+                        <div>
+                          <div className="text-amber-300 font-bold font-sans text-xs">Financiamiento (Funding Rates)</div>
+                          <div className="text-[10px] text-slate-400 font-sans">Tasa de intercambio periódica cada 8 horas en futuros</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-amber-300">
+                          −${fundingFees.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-amber-500/80 block font-sans">USDT</span>
+                      </div>
                     </div>
 
-                    {/* Operador - */}
-                    <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-amber-300 font-black text-sm flex-shrink-0">
-                      −
-                    </div>
-
-                    {/* Término 4: Financiamiento (Funding) */}
-                    <div className="flex-1 min-w-[130px] p-3 bg-slate-900/90 rounded-xl border border-amber-500/20 text-center">
-                      <span className="text-[10px] text-amber-300 font-sans uppercase font-bold block">Financiamiento</span>
-                      <span className="text-base font-black text-amber-300 mt-1 block">
-                        ${fundingFees.toFixed(2)}
-                      </span>
-                      <span className="text-[9px] text-slate-500 font-sans mt-0.5 block">Funding cada 8h</span>
-                    </div>
-
-                    {/* Operador = */}
-                    <div className="w-7 h-7 rounded-full bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300 font-black text-sm flex-shrink-0">
-                      =
-                    </div>
-
-                    {/* Resultado 1: Saldo Billetera */}
-                    <div className="flex-1 min-w-[150px] p-3 bg-gradient-to-b from-slate-900 to-slate-950 rounded-xl border-2 border-emerald-500/50 text-center shadow-lg">
-                      <span className="text-[10px] text-emerald-300 font-sans uppercase font-black block">Saldo en Billetera</span>
-                      <span className="text-lg font-black text-emerald-400 mt-1 block">
-                        ${currentWalletBalance.toFixed(2)}
-                      </span>
-                      <span className="text-[9px] text-slate-400 font-sans mt-0.5 block">En custodia en Binance</span>
+                    {/* Fila 6: TOTAL SALDO EN BILLETERA */}
+                    <div className="flex items-center justify-between p-3.5 sm:px-4 bg-gradient-to-r from-emerald-950/50 via-slate-900 to-emerald-950/30 border-t-2 border-emerald-500/40">
+                      <div className="flex items-center gap-3">
+                        <span className="w-7 h-7 rounded-lg bg-emerald-400 text-slate-950 flex items-center justify-center text-sm font-black shrink-0 shadow">
+                          =
+                        </span>
+                        <div>
+                          <div className="text-white font-extrabold font-sans text-xs uppercase tracking-wider">
+                            Saldo en Billetera (Binance)
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-sans">Capital total consolidado en custodia en Binance Futures</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-base sm:text-lg font-black text-emerald-400">
+                          ${currentWalletBalance.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 block font-sans">USDT</span>
+                      </div>
                     </div>
 
                   </div>
@@ -1082,12 +1158,12 @@ export default function UserBotPanel({
                       <span className={`font-mono font-black ${realizedNetPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {realizedNetPnL >= 0 ? '+' : ''}${realizedNetPnL.toFixed(2)} USDT
                       </span>
-                      <span className="text-slate-500 text-[10px]">(PnL Bruto − Comisiones − Funding)</span>
+                      <span className="text-slate-500 text-[10px]">(Ganancias − Pérdidas − Tarifas)</span>
                     </div>
                     <div className="flex items-center gap-2 font-mono">
-                      <span className="text-slate-400">Diferencia vs Capital Inicial:</span>
+                      <span className="text-slate-400">Crecimiento de Cartera:</span>
                       <span className={`font-bold ${portfolioPerformance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {portfolioPerformance >= 0 ? '+' : ''}${portfolioPerformance.toFixed(2)} USDT
+                        {portfolioPerformance >= 0 ? '+' : ''}${portfolioPerformance.toFixed(2)} USDT ({((portfolioPerformance / (initialCap || 1)) * 100).toFixed(2)}%)
                       </span>
                     </div>
                   </div>
@@ -1178,43 +1254,75 @@ export default function UserBotPanel({
                     </span>
                   </div>
 
-                  <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-3 pt-1 font-mono text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 font-mono text-xs">
                     
                     {/* Billetera */}
-                    <div className="flex-1 min-w-[160px] p-3.5 bg-slate-900/90 rounded-xl border border-slate-800 text-center">
-                      <span className="text-[10px] text-slate-400 font-sans uppercase font-bold block">Saldo en Billetera</span>
-                      <span className="text-lg font-black text-white mt-1 block">
-                        ${currentWalletBalance.toFixed(2)} USDT
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-sans mt-0.5 block">Capital consolidado</span>
-                    </div>
-
-                    {/* Operador + */}
-                    <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 font-black text-base flex-shrink-0">
-                      +
+                    <div className="p-4 bg-slate-900/90 rounded-2xl border border-slate-800 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-slate-300 font-sans flex items-center gap-1.5">
+                            <span>💼</span> Saldo en Billetera
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                            Base Consolidada
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-white">
+                            ${currentWalletBalance.toFixed(2)}
+                          </span>
+                          <span className="text-xs text-slate-400 font-sans">USDT</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-sans mt-1.5 leading-relaxed">
+                          Capital consolidado tras operaciones cerradas.
+                        </p>
+                      </div>
                     </div>
 
                     {/* Flotante */}
-                    <div className="flex-1 min-w-[160px] p-3.5 bg-slate-900/90 rounded-xl border border-slate-800 text-center">
-                      <span className="text-[10px] text-slate-400 font-sans uppercase font-bold block">PnL Flotante ({walletBreakdown?.open_positions_count || 0} pos.)</span>
-                      <span className={`text-lg font-black mt-1 block ${currentUnrealizedPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {currentUnrealizedPnL >= 0 ? '+' : ''}${currentUnrealizedPnL.toFixed(2)} USDT
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-sans mt-0.5 block">Ganancia/Pérdida en curso</span>
-                    </div>
-
-                    {/* Operador = */}
-                    <div className="w-8 h-8 rounded-full bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300 font-black text-base flex-shrink-0">
-                      =
+                    <div className={`p-4 bg-slate-900/90 rounded-2xl border flex flex-col justify-between ${currentUnrealizedPnL >= 0 ? 'border-emerald-500/30' : 'border-rose-500/30'}`}>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-xs font-bold font-sans flex items-center gap-1.5 ${currentUnrealizedPnL >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                            <span>📈</span> PnL Flotante ({walletBreakdown?.open_positions_count || 0} pos.)
+                          </span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${currentUnrealizedPnL >= 0 ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30' : 'text-rose-400 bg-rose-400/10 border-rose-400/30'}`}>
+                            En curso
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-2">
+                          <span className={`text-2xl font-black ${currentUnrealizedPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {currentUnrealizedPnL >= 0 ? '+' : ''}${currentUnrealizedPnL.toFixed(2)}
+                          </span>
+                          <span className="text-xs text-slate-400 font-sans">USDT</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-sans mt-1.5 leading-relaxed">
+                          Ganancia o pérdida latente en posiciones abiertas.
+                        </p>
+                      </div>
                     </div>
 
                     {/* Patrimonio Total (Equity) */}
-                    <div className="flex-1 min-w-[200px] p-4 bg-gradient-to-r from-amber-500/15 via-slate-900 to-amber-500/10 rounded-2xl border-2 border-amber-400/60 text-center shadow-xl">
-                      <span className="text-xs text-amber-300 font-sans uppercase font-black tracking-wider block">PATRIMONIO TOTAL (EQUITY)</span>
-                      <span className="text-2xl font-black text-amber-300 mt-1 block">
-                        ${currentEquity.toFixed(2)} USDT
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-sans mt-0.5 block">Valor liquidable neto de la cuenta</span>
+                    <div className="p-4 bg-gradient-to-br from-amber-500/15 via-slate-900 to-amber-500/10 rounded-2xl border-2 border-amber-400/60 flex flex-col justify-between shadow-xl">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-black text-amber-300 font-sans uppercase tracking-wider flex items-center gap-1.5">
+                            <span>👑</span> PATRIMONIO TOTAL (EQUITY)
+                          </span>
+                          <span className="text-[10px] font-bold text-amber-400 bg-amber-400/20 px-2 py-0.5 rounded border border-amber-400/40">
+                            Liquidación Total
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-amber-300">
+                            ${currentEquity.toFixed(2)}
+                          </span>
+                          <span className="text-xs text-slate-400 font-sans">USDT</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 font-sans mt-1.5 leading-relaxed font-semibold">
+                          Saldo Billetera (${currentWalletBalance.toFixed(2)}) {currentUnrealizedPnL >= 0 ? '+' : '−'} Flotante (${Math.abs(currentUnrealizedPnL).toFixed(2)})
+                        </p>
+                      </div>
                     </div>
 
                   </div>

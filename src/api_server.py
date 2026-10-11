@@ -1250,6 +1250,8 @@ def user_bot_status_endpoint():
                 "total_commission": m_db.get('total_commission_usdt', 0.0),
                 "total_funding": 0.0,
                 "gross_pnl": m_db.get('total_gross_pnl', 0.0),
+                "gross_win": m_db.get('gross_profit', 0.0),
+                "gross_loss": m_db.get('gross_loss', 0.0),
                 "profit_factor": m_db.get('profit_factor', '1.00')
             }
         else:
@@ -1364,6 +1366,8 @@ def user_bot_status_endpoint():
                 "total_commission": (metrics.get('total_commission') if metrics else 0.0) or 0.0,
                 "total_funding": (metrics.get('total_funding') if metrics else 0.0) or 0.0,
                 "gross_pnl": (metrics.get('gross_pnl') if metrics else 0.0) or 0.0,
+                "gross_win": (metrics.get('gross_win') if metrics else 0.0) or 0.0,
+                "gross_loss": (metrics.get('gross_loss') if metrics else 0.0) or 0.0,
                 "net_pnl": (metrics.get('total_pnl') if metrics else 0.0) or 0.0
             },
             "active_strategy": active_strategy,
@@ -1549,6 +1553,8 @@ def user_trades_endpoint():
                 "total_commission": m_db.get('total_commission_usdt', 0.0),
                 "total_funding": 0.0,
                 "gross_pnl": m_db.get('total_gross_pnl', 0.0),
+                "gross_win": m_db.get('gross_profit', 0.0),
+                "gross_loss": m_db.get('gross_loss', 0.0),
                 "profit_factor": m_db.get('profit_factor', '1.00')
             }
         else:
