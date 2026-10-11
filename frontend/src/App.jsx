@@ -55,6 +55,11 @@ function MainDashboard() {
   const [countdown, setCountdown] = useState(0);
 
   const [activeTab, setActiveTab] = useState('my_bot');
+  const [inspectingUser, setInspectingUser] = useState(null);
+
+  useEffect(() => {
+    setInspectingUser(null);
+  }, [activeTab]);
   const [availableStrategies, setAvailableStrategies] = useState([]);
   const [isLoadingStrategies, setIsLoadingStrategies] = useState(false);
   const [strategyError, setStrategyError] = useState(null);
@@ -693,7 +698,10 @@ function MainDashboard() {
 
                 <button
                   type="button"
-                  onClick={() => setActiveTab('users_overview')}
+                  onClick={() => {
+                    setActiveTab('users_overview');
+                    setInspectingUser(null);
+                  }}
                   className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
                     activeTab === 'users_overview'
                       ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
@@ -886,7 +894,21 @@ function MainDashboard() {
 
             {/* PESTAÑA: Monitor en Tiempo Real de Usuarios y Bots (Super Admin) */}
             {activeTab === 'users_overview' && isAdmin && (
-              <AdminUsersOverview addToast={addToast} onSelectUserForDossier={() => setActiveTab('investors')} />
+              inspectingUser ? (
+                <UserBotPanel 
+                  activeStrategyName={activeStrategyDisplay} 
+                  initialSubTab="my_bot"
+                  readOnly={true}
+                  inspectionUser={inspectingUser}
+                  onBackToUsersList={() => setInspectingUser(null)}
+                />
+              ) : (
+                <AdminUsersOverview 
+                  addToast={addToast} 
+                  onSelectUserForBot={(targetUser) => setInspectingUser(targetUser)}
+                  onSelectUserForDossier={() => setActiveTab('investors')} 
+                />
+              )
             )}
 
             {/* PESTAÑA: Monitor en Vivo (Solo Admin) */}

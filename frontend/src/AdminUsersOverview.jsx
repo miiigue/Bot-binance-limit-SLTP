@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 
-export default function AdminUsersOverview({ addToast, onSelectUserForDossier }) {
+export default function AdminUsersOverview({ addToast, onSelectUserForDossier, onSelectUserForBot }) {
   const { authFetch } = useAuth();
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -316,7 +316,14 @@ export default function AdminUsersOverview({ addToast, onSelectUserForDossier })
                         <div className="flex flex-col">
                           <div className="flex items-center gap-1.5 font-bold text-white">
                             <span className="font-mono text-amber-300 text-[11px]">{u.account_number}</span>
-                            <span>{u.username}</span>
+                            <button
+                              type="button"
+                              onClick={() => onSelectUserForBot && onSelectUserForBot(u)}
+                              className="hover:underline hover:text-amber-400 text-left font-bold text-white transition cursor-pointer"
+                              title={`Ver actividad del bot de ${u.username}`}
+                            >
+                              {u.username}
+                            </button>
                             {u.role === 'admin' && (
                               <span className="px-1.5 py-0.2 rounded text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold uppercase">
                                 ADMIN
@@ -466,15 +473,16 @@ export default function AdminUsersOverview({ addToast, onSelectUserForDossier })
                             {actionLoading[`status_${u.id}`] ? '⏳' : isBlocked ? '🔓' : '🔒'}
                           </button>
 
-                          {/* Ficha Técnica 360° / Dossier */}
-                          {onSelectUserForDossier && (
+                          {/* Ver Actividad del Bot (Modo Solo Ver) */}
+                          {onSelectUserForBot && (
                             <button
                               type="button"
-                              onClick={() => onSelectUserForDossier(u.id)}
-                              className="p-1.5 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-700/60 rounded-lg text-xs transition"
-                              title="Ver Dossier 360° del usuario"
+                              onClick={() => onSelectUserForBot(u)}
+                              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-white border border-amber-500/40 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow cursor-pointer active:scale-95 whitespace-nowrap"
+                              title={`Ver actividad del bot de ${u.username} (Modo solo ver)`}
                             >
-                              📋
+                              <span>👁️</span>
+                              <span>Ver Actividad</span>
                             </button>
                           )}
                         </div>

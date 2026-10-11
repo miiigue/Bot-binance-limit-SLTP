@@ -5,8 +5,15 @@ import UserBotMonitorTable from './UserBotMonitorTable';
 
 import { formatShortDate } from './dateUtils';
 
-export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_bot' }) {
+export default function UserBotPanel({ 
+  activeStrategyName, 
+  initialSubTab = 'my_bot',
+  readOnly = false,
+  inspectionUser = null,
+  onBackToUsersList = null
+}) {
   const { authFetch, user } = useAuth();
+  const inspectionUserId = inspectionUser?.id || null;
   const hasLoadedInitialSettings = useRef(false);
 
   // Sub-pestaña activa dentro del panel (Mi Bot Personal vs Copy-Trading Espejo)
@@ -463,7 +470,8 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
   // Cargar estado del bot y balance del usuario
   const fetchUserBotStatus = useCallback(async () => {
     try {
-      const resp = await authFetch('/api/user/bot');
+      const url = inspectionUserId ? `/api/user/bot?user_id=${inspectionUserId}` : '/api/user/bot';
+      const resp = await authFetch(url);
       if (!resp.ok) return;
       const data = await resp.json();
       setBotData(data);
@@ -489,13 +497,14 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
     } finally {
       setIsLoading(false);
     }
-  }, [authFetch]);
+  }, [authFetch, inspectionUserId]);
 
   // Cargar trades personales del usuario
   const fetchUserTrades = useCallback(async () => {
     try {
       const modeParam = currentSubTab === 'my_bot' ? 'PERSONAL_BOT' : 'COPY_TRADING';
-      const resp = await authFetch(`/api/user/trades?limit=50&mode=${modeParam}`);
+      const userParam = inspectionUserId ? `&user_id=${inspectionUserId}` : '';
+      const resp = await authFetch(`/api/user/trades?limit=50&mode=${modeParam}${userParam}`);
       if (!resp.ok) return;
       const data = await resp.json();
       setTradesData(data.trades || []);
@@ -503,7 +512,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
     } catch (err) {
       console.error("Error al obtener operaciones del usuario:", err);
     }
-  }, [authFetch, currentSubTab]);
+  }, [authFetch, currentSubTab, inspectionUserId]);
 
   useEffect(() => {
     fetchStrategiesCatalog();
@@ -523,7 +532,7 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
       clearInterval(interval);
       window.removeEventListener('open-api-modal', handleOpenApiModal);
     };
-  }, [fetchStrategiesCatalog, fetchUserBotStatus, fetchUserTrades]);
+  }, [fetchStrategiesCatalog, fetchUserBotStatus, fetchUserTrades, inspectionUserId]);
 
   // Guardar / Conectar API Keys
   const handleSaveApiKeys = async (e) => {
@@ -767,6 +776,39 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
   return (
     <div className="w-full max-w-[1920px] mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6 space-y-6">
 
+      {/* Barra de Supervisión de Administrador (Modo Solo Lectura) */}
+      {readOnly && (
+        <div className="bg-slate-900 border-2 border-indigo-500/60 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fadeIn">
+          <div className="flex items-center gap-3.5">
+            <button
+              type="button"
+              onClick={onBackToUsersList}
+              className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs sm:text-sm flex items-center gap-2 transition shadow-lg active:scale-95 cursor-pointer"
+            >
+              <span>⬅</span> Volver a Usuarios & Bots
+            </button>
+            <div>
+              <div className="text-white font-black text-sm sm:text-base flex flex-wrap items-center gap-2">
+                <span>👁️</span> 
+                <span>Bot del usuario:</span>
+                <span className="text-amber-300 underline font-mono text-base font-black">
+                  {inspectionUser?.username || botData?.target_user?.username || 'Usuario'}
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  ({inspectionUser?.account_number || botData?.target_user?.account_number || ''})
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 uppercase font-black tracking-wider">
+                  Modo Solo Ver
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Supervisión administrativa en vivo. Sin botones de configuración, activación, pausa ni borrado para proteger la operativa del usuario.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Banner Superior de Estado Institucional */}
       <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl">
         <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -774,14 +816,18 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              {currentSubTab === 'my_bot' ? '🤖 Mi Bot Personal' : '👥 Copy-Trading Binance'}
+              {readOnly 
+                ? `🤖 Bot Personal de ${inspectionUser?.username || botData?.target_user?.username || 'Usuario'}` 
+                : (currentSubTab === 'my_bot' ? '🤖 Mi Bot Personal' : '👥 Copy-Trading Binance')}
             </h1>
           </div>
 
           {/* Tarjeta de Saldo Binance y Estado */}
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-4 bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 shadow-inner">
             <div className="pr-4 border-r border-slate-800">
-              <span className="text-[10px] text-slate-500 block uppercase tracking-wider font-semibold">Tu Balance Binance</span>
+              <span className="text-[10px] text-slate-500 block uppercase tracking-wider font-semibold">
+                {readOnly ? 'Balance Binance del Usuario' : 'Tu Balance Binance'}
+              </span>
               <span className="text-xl font-black font-mono text-emerald-400">${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs text-slate-400 font-sans">USDT</span></span>
             </div>
             <div>
@@ -807,19 +853,21 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
               </div>
             </div>
 
-            {/* Botón Acción: Reiniciar Demo Binance */}
-            <div className="pl-4 border-l border-slate-800 flex items-center">
-              <button
-                type="button"
-                onClick={handleResetDemoAccount}
-                disabled={actionLoading}
-                className="px-3.5 py-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-700/60 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow active:scale-95 disabled:opacity-50"
-                title="Cierra posiciones, cancela órdenes en Testnet y restablece el PnL a $0.00 USDT (con confirmación previa)"
-              >
-                <span>🔄</span>
-                <span>Reiniciar Demo Binance</span>
-              </button>
-            </div>
+            {/* Botón Acción: Reiniciar Demo Binance (Oculto en modo readOnly) */}
+            {!readOnly && (
+              <div className="pl-4 border-l border-slate-800 flex items-center">
+                <button
+                  type="button"
+                  onClick={handleResetDemoAccount}
+                  disabled={actionLoading}
+                  className="px-3.5 py-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-700/60 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow active:scale-95 disabled:opacity-50"
+                  title="Cierra posiciones, cancela órdenes en Testnet y restablece el PnL a $0.00 USDT (con confirmación previa)"
+                >
+                  <span>🔄</span>
+                  <span>Reiniciar Demo Binance</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -877,23 +925,25 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
                 </div>
               )}
 
-            <button
-              onClick={handleToggleSync}
-              disabled={actionLoading}
-              className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
-                isPersonalBotActive
-                  ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
-                  : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
-              }`}
-            >
-              {actionLoading ? (
-                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-              ) : isPersonalBotActive ? (
-                <><span>⏸️</span> PAUSAR MI BOT PERSONAL</>
-              ) : (
-                <><span>⚡</span> INICIAR MI BOT CON ESTA ESTRATEGIA</>
-              )}
-            </button>
+            {!readOnly && (
+              <button
+                onClick={handleToggleSync}
+                disabled={actionLoading}
+                className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer ${
+                  isPersonalBotActive
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
+                    : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
+                }`}
+              >
+                {actionLoading ? (
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                ) : isPersonalBotActive ? (
+                  <><span>⏸️</span> PAUSAR MI BOT PERSONAL</>
+                ) : (
+                  <><span>⚡</span> INICIAR MI BOT CON ESTA ESTRATEGIA</>
+                )}
+              </button>
+            )}
           </div>
 
           {/* Tarjeta de Conciliación Contable y Balance en Binance (Estándar Profesional Institucional) */}
@@ -1090,10 +1140,13 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
             authFetch={authFetch} 
             isRunning={isPersonalBotActive} 
             activeLeverage={effectiveLeverage} 
+            targetUserId={inspectionUserId}
+            readOnly={readOnly}
           />
 
-          {/* Catálogo de Estrategias Públicas Curadas */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+          {/* Catálogo de Estrategias Públicas Curadas (Oculto en modo solo lectura) */}
+          {!readOnly && (
+            <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
               <div>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold mb-1">
@@ -1271,8 +1324,9 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+    )}
 
       {/* ============================================================== */}
       {/* VISTA 2: COPY-TRADING ESPEJO (MODO 1:1 REPLICACIÓN MAESTRA)    */}
@@ -1331,23 +1385,25 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
               </p>
             </div>
 
-            <button
-              onClick={handleToggleSync}
-              disabled={actionLoading}
-              className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
-                isCopyTradingActive
-                  ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
-                  : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
-              }`}
-            >
-              {actionLoading ? (
-                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-              ) : isCopyTradingActive ? (
-                <><span>⏸️</span> PAUSAR REPLICACIÓN DE TRADES</>
-              ) : (
-                <><span>⚡</span> ACTIVAR REPLICACIÓN AUTOMÁTICA</>
-              )}
-            </button>
+            {!readOnly && (
+              <button
+                onClick={handleToggleSync}
+                disabled={actionLoading}
+                className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer ${
+                  isCopyTradingActive
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
+                    : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
+                }`}
+              >
+                {actionLoading ? (
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                ) : isCopyTradingActive ? (
+                  <><span>⏸️</span> PAUSAR REPLICACIÓN DE TRADES</>
+                ) : (
+                  <><span>⚡</span> ACTIVAR REPLICACIÓN AUTOMÁTICA</>
+                )}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1368,18 +1424,20 @@ export default function UserBotPanel({ activeStrategyName, initialSubTab = 'my_b
           <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
             <button
               onClick={fetchUserTrades}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95 cursor-pointer"
             >
               ↻ Actualizar Historial
             </button>
-            <button
-              onClick={handleResetUserTrades}
-              disabled={actionLoading}
-              className="px-3 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-800/60 rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95 disabled:opacity-50"
-              title="Reiniciar el historial de operaciones personales y poner el PnL a 0.00 USDT"
-            >
-              <span>🗑️</span> Vaciar Historial & PnL
-            </button>
+            {!readOnly && (
+              <button
+                onClick={handleResetUserTrades}
+                disabled={actionLoading}
+                className="px-3 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-800/60 rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95 disabled:opacity-50 cursor-pointer"
+                title="Reiniciar el historial de operaciones personales y poner el PnL a 0.00 USDT"
+              >
+                <span>🗑️</span> Vaciar Historial & PnL
+              </button>
+            )}
           </div>
         </div>
 

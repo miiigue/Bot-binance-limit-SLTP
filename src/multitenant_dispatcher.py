@@ -1026,11 +1026,23 @@ def get_user_monitor_status(user_id: int) -> dict:
     Retorna el estado en vivo de todas las posiciones abiertas y el radar cuantitativo
     de cada símbolo para el usuario específico.
     """
-    from src.database import get_user_bot_settings, get_user_api_keys, get_db_connection
+    from src.database import get_user_bot_settings, get_user_api_keys, get_db_connection, get_user_by_id
     settings = get_user_bot_settings(user_id) or {}
     keys = get_user_api_keys(user_id, decrypt=True) or {}
     
-    strat_name = str(settings.get('strategy_name') or 'BOT_PARAPRUEBAS').strip()
+    user_db_info = get_user_by_id(user_id) if user_id else None
+    is_admin_user = bool(user_db_info and user_db_info.get('role') == 'admin')
+
+    if is_admin_user and not settings.get('strategy_name'):
+        try:
+            from src.config_loader import load_config
+            cfg = load_config()
+            strat_name = cfg.get('STRATEGY_CATALOG', 'active_strategy_name', fallback='v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5').strip()
+        except Exception:
+            strat_name = 'v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5'
+    else:
+        strat_name = str(settings.get('strategy_name') or 'BOT_PARAPRUEBAS').strip()
+
     params = load_strategy_params(strat_name)
     
     # 1. Obtener cliente y posiciones reales en Binance
@@ -1046,7 +1058,30 @@ def get_user_monitor_status(user_id: int) -> dict:
     open_positions_long = {}
     open_positions_short = {}
     is_hedge = False
-    if user_dict['api_key'] and user_dict['api_secret']:
+
+    if is_admin_user and not (user_dict['api_key'] and user_dict['api_secret']):
+        try:
+            from src.binance_client import get_futures_client, is_hedge_mode
+            client = get_futures_client()
+            if client:
+                try:
+                    is_hedge = is_hedge_mode()
+                except Exception:
+                    is_hedge = True
+                pos_risk = client.get_position_risk()
+                if pos_risk and isinstance(pos_risk, list):
+                    for p in pos_risk:
+                        amt = float(p.get('positionAmt', 0.0) or 0.0)
+                        if abs(amt) > 1e-6:
+                            sym_p = p.get('symbol')
+                            raw_ps = str(p.get('positionSide', 'BOTH')).upper()
+                            if raw_ps == 'LONG' or (raw_ps == 'BOTH' and amt > 0):
+                                open_positions_long[sym_p] = p
+                            elif raw_ps == 'SHORT' or (raw_ps == 'BOTH' and amt < 0):
+                                open_positions_short[sym_p] = p
+        except Exception as e_pos_admin:
+            get_logger().debug(f"Aviso consultando posiciones de admin en monitor: {e_pos_admin}")
+    elif user_dict['api_key'] and user_dict['api_secret']:
         try:
             client = get_cached_user_client(user_dict)
             if client:

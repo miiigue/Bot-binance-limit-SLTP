@@ -1225,6 +1225,17 @@ def user_bot_status_endpoint():
     """Retorna el estado operativo, parámetros de trading y métricas del bot del usuario con balance en vivo de Binance."""
     try:
         user_id = request.current_user['user_id']
+        is_admin_requester = request.current_user.get('role') == 'admin'
+        if is_admin_requester and request.args.get('user_id'):
+            try:
+                user_id = int(request.args.get('user_id'))
+            except (ValueError, TypeError):
+                pass
+
+        from src.database import get_user_by_id, format_account_number
+        target_user = get_user_by_id(user_id) if user_id else None
+        is_target_admin = bool(target_user and target_user.get('role') == 'admin')
+
         settings = get_user_bot_settings(user_id=user_id)
         keys = get_user_api_keys(user_id=user_id, decrypt=True)
         metrics = get_user_trading_metrics(user_id=user_id)
@@ -1239,7 +1250,24 @@ def user_bot_status_endpoint():
         equity = live_balance
         open_positions_count = 0
 
-        if keys and keys.get('is_valid') and keys.get('api_key') and keys.get('api_secret'):
+        if is_target_admin:
+            try:
+                from src.binance_client import get_futures_client
+                master_client = get_futures_client()
+                if master_client:
+                    acc = master_client.account()
+                    if isinstance(acc, dict):
+                        wallet_balance = round(float(acc.get('totalWalletBalance', 0.0) or 0.0), 2)
+                        available_balance = round(float(acc.get('availableBalance', 0.0) or 0.0), 2)
+                        initial_margin = round(float(acc.get('totalInitialMargin', 0.0) or 0.0), 2)
+                        unrealized_pnl = round(float(acc.get('totalUnrealizedProfit', 0.0) or 0.0), 2)
+                        equity = round(float(acc.get('totalMarginBalance', 0.0) or 0.0), 2)
+                        positions = acc.get('positions', [])
+                        open_positions_count = sum(1 for p in positions if abs(float(p.get('positionAmt', 0.0) or 0.0)) > 1e-6)
+                        live_balance = wallet_balance
+            except Exception as e_master:
+                api_logger.debug(f"Aviso al consultar master account para user_bot: {e_master}")
+        elif keys and keys.get('is_valid') and keys.get('api_key') and keys.get('api_secret'):
             try:
                 from src.binance_client import get_user_futures_client
                 u_client = get_user_futures_client(
@@ -1267,14 +1295,20 @@ def user_bot_status_endpoint():
                 api_logger.debug(f"Aviso al consultar desglose de cuenta para usuario {user_id}: {e_live}")
 
         cfg_temp = load_config()
-        active_strategy = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip() or 'v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_sinSL_3DCA0c8_ReDi5c5'
+        if is_target_admin:
+            active_strategy = cfg_temp.get('STRATEGY_CATALOG', 'active_strategy_name', fallback='v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5').strip()
+            settings['strategy_name'] = active_strategy
+            settings['is_running'] = True
+            settings['operating_mode'] = 'BOT_MAESTRO_FONDO'
+        else:
+            active_strategy = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip() or 'v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_sinSL_3DCA0c8_ReDi5c5'
 
         return jsonify({
             "status": "success",
             "bot_settings": settings,
-            "has_valid_keys": bool(keys and keys.get('is_valid')),
-            "is_testnet": bool(keys.get('is_testnet', False)) if keys else False,
-            "api_key_masked": keys.get('api_key_masked') if keys else None,
+            "has_valid_keys": True if is_target_admin else bool(keys and keys.get('is_valid')),
+            "is_testnet": True if is_target_admin else bool(keys.get('is_testnet', False)) if keys else False,
+            "api_key_masked": "🏛️ Sistema Maestro Binance" if is_target_admin else (keys.get('api_key_masked') if keys else None),
             "balance_usdt": live_balance,
             "wallet_breakdown": {
                 "wallet_balance": wallet_balance,
@@ -1289,7 +1323,14 @@ def user_bot_status_endpoint():
                 "net_pnl": (metrics.get('total_pnl') if metrics else 0.0) or 0.0
             },
             "active_strategy": active_strategy,
-            "metrics": metrics
+            "metrics": metrics,
+            "target_user": {
+                "id": user_id,
+                "username": target_user.get('username') if target_user else f"Usuario #{user_id}",
+                "account_number": format_account_number(user_id) if target_user else f"WTN-{user_id}",
+                "email": target_user.get('email') if target_user else None,
+                "role": target_user.get('role') if target_user else 'investor'
+            }
         })
     except Exception as e:
         api_logger.error(f"Error al consultar estado de bot de usuario: {e}")
@@ -1302,9 +1343,18 @@ def user_bot_monitor_endpoint():
     """Retorna el monitoreo en vivo de posiciones abiertas y radar cuantitativo para el bot personal del usuario."""
     try:
         user_id = request.current_user['user_id']
+        is_admin_requester = request.current_user.get('role') == 'admin'
+        if is_admin_requester and request.args.get('user_id'):
+            try:
+                user_id = int(request.args.get('user_id'))
+            except (ValueError, TypeError):
+                pass
         from src.multitenant_dispatcher import get_user_monitor_status
         data = get_user_monitor_status(user_id)
         return jsonify(data)
+    except Exception as e:
+        api_logger.error(f"Error al consultar monitoreo de bot personal para usuario {user_id}: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
     except Exception as e:
         api_logger.error(f"Error al consultar monitoreo de bot personal para usuario {user_id}: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1422,6 +1472,13 @@ def user_trades_endpoint():
     """Retorna las operaciones personales y métricas de rendimiento del usuario."""
     try:
         user_id = request.current_user['user_id']
+        is_admin_requester = request.current_user.get('role') == 'admin'
+        if is_admin_requester and request.args.get('user_id'):
+            try:
+                user_id = int(request.args.get('user_id'))
+            except (ValueError, TypeError):
+                pass
+
         limit = min(200, int(request.args.get('limit', 50)))
         mode = request.args.get('mode')
         trades = get_user_trades(user_id=user_id, limit=limit, mode=mode)

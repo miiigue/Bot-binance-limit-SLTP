@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { formatFullDateTime } from './dateUtils';
 
-export default function UserBotMonitorTable({ authFetch, isRunning = true, activeLeverage }) {
+export default function UserBotMonitorTable({ authFetch, isRunning = true, activeLeverage, targetUserId = null, readOnly = false }) {
   const { user } = useAuth();
   const [monitorData, setMonitorData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -12,7 +12,8 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
 
   const fetchMonitor = useCallback(async () => {
     try {
-      const resp = await authFetch('/api/user/bot/monitor');
+      const url = targetUserId ? `/api/user/bot/monitor?user_id=${targetUserId}` : '/api/user/bot/monitor';
+      const resp = await authFetch(url);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
@@ -28,7 +29,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
     } finally {
       setIsLoading(false);
     }
-  }, [authFetch]);
+  }, [authFetch, targetUserId]);
 
   useEffect(() => {
     fetchMonitor();
@@ -80,19 +81,21 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={fetchMonitor}
-            className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95"
+            className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95 cursor-pointer"
             title="Actualizar datos en vivo"
           >
             <span>↻</span> Refrescar
           </button>
-          <button
-            onClick={handleResetTrades}
-            disabled={isResettingTrades}
-            className="px-3 py-1 bg-rose-950/80 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-800/60 rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95 disabled:opacity-50"
-            title="Reiniciar el historial de operaciones personales y poner el PnL histórico a 0.00 USDT"
-          >
-            <span>🗑️</span> {isResettingTrades ? 'Reiniciando...' : 'Vaciar Historial & PnL'}
-          </button>
+          {!readOnly && (
+            <button
+              onClick={handleResetTrades}
+              disabled={isResettingTrades}
+              className="px-3 py-1 bg-rose-950/80 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-800/60 rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95 disabled:opacity-50 cursor-pointer"
+              title="Reiniciar el historial de operaciones personales y poner el PnL histórico a 0.00 USDT"
+            >
+              <span>🗑️</span> {isResettingTrades ? 'Reiniciando...' : 'Vaciar Historial & PnL'}
+            </button>
+          )}
         </div>
       </div>
 
