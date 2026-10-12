@@ -927,8 +927,8 @@ def get_total_database_metrics() -> dict:
                 SUM(COALESCE(gross_pnl_usdt, COALESCE(pnl_usdt, 0))) as total_gross_pnl,
                 SUM(CASE WHEN pnl_usdt > 0.00001 THEN 1 ELSE 0 END) as wins,
                 SUM(CASE WHEN pnl_usdt < -0.00001 THEN 1 ELSE 0 END) as losses,
-                SUM(CASE WHEN COALESCE(gross_pnl_usdt, pnl_usdt) > 0.00001 THEN COALESCE(gross_pnl_usdt, pnl_usdt) ELSE 0 END) as gross_profit,
-                SUM(CASE WHEN COALESCE(gross_pnl_usdt, pnl_usdt) < -0.00001 THEN ABS(COALESCE(gross_pnl_usdt, pnl_usdt)) ELSE 0 END) as gross_loss
+                SUM(CASE WHEN pnl_usdt > 0.00001 THEN pnl_usdt ELSE 0 END) as gross_profit,
+                SUM(CASE WHEN pnl_usdt < -0.00001 THEN ABS(pnl_usdt) ELSE 0 END) as gross_loss
             FROM trades
             {where_clause}
         """, params)
@@ -3034,8 +3034,8 @@ def get_user_trading_metrics(user_id: int, mode: str = None) -> dict:
                    SUM(gross_pnl_usdt) as gross_pnl,
                    SUM(commission_usdt) as total_comm,
                    SUM(position_size_usdt) as total_volume,
-                   SUM(CASE WHEN COALESCE(gross_pnl_usdt, pnl_usdt) > 0.00001 THEN COALESCE(gross_pnl_usdt, pnl_usdt) ELSE 0 END) as gross_win,
-                   SUM(CASE WHEN COALESCE(gross_pnl_usdt, pnl_usdt) < -0.00001 THEN abs(COALESCE(gross_pnl_usdt, pnl_usdt)) ELSE 0 END) as gross_loss
+                   SUM(CASE WHEN pnl_usdt > 0.00001 THEN pnl_usdt ELSE 0 END) as gross_win,
+                   SUM(CASE WHEN pnl_usdt < -0.00001 THEN abs(pnl_usdt) ELSE 0 END) as gross_loss
             FROM user_trades 
             WHERE {where_sql}
         """, tuple(params))
