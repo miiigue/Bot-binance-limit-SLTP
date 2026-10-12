@@ -985,6 +985,8 @@ export default function UserBotPanel({
             const freeAvailableBalance = Number(walletBreakdown?.available_balance ?? Math.max(0, currentWalletBalance - committedMargin));
             const marginPct = currentWalletBalance > 0 ? (committedMargin / currentWalletBalance * 100) : 0;
             const freePct = currentWalletBalance > 0 ? (freeAvailableBalance / currentWalletBalance * 100) : 100;
+            const currentUnrealizedPnL = Number(walletBreakdown?.unrealized_pnl ?? 0);
+            const currentEquity = currentWalletBalance + currentUnrealizedPnL;
 
             return (
               <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-6 animate-fadeIn">
