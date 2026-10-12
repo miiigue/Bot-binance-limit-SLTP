@@ -40,6 +40,8 @@ _user_peak_pnl = {}           # { (user_id, symbol): float } -> Para Trailing St
 _user_symbol_cooldown = {}    # { (user_id, symbol): float } -> Evitar re-entradas en ráfaga
 _user_reentries_done = {}     # { (user_id, symbol, pos_side): int } -> Conteo de re-entradas DCA ejecutadas
 _user_dca_cooldown = {}       # { (user_id, symbol, pos_side): float } -> Cooldown entre DCAs (30s)
+_user_last_cycle = {}         # { user_id: float } -> Timestamp del último ciclo ejecutado por usuario
+_user_pos_cache = {}          # { user_id: { "positions": list, "timestamp": float } } -> Caché de posiciones
 _engine_started = False
 _engine_lock = threading.Lock()
 _last_heartbeat_time = 0
@@ -83,11 +85,11 @@ def get_cached_user_client(user_info: dict):
 
 
 def get_cached_klines(symbol: str, interval: str = '1m', limit: int = 100) -> pd.DataFrame | None:
-    """Obtiene velas klines con caché compartida de 3 segundos para no saturar Binance API."""
+    """Obtiene velas klines con caché compartida de 15 segundos para no saturar Binance API."""
     key = (symbol.upper(), interval)
     now = time.time()
     cached = _klines_cache.get(key)
-    if cached and (now - cached['timestamp'] < 3.0):
+    if cached and (now - cached['timestamp'] < 15.0):
         return cached['data'].copy()
 
     try:
@@ -495,12 +497,25 @@ def run_personal_bot_cycle():
         strat_name = str(user.get('strategy_name') or 'BOT_PARAPRUEBAS').strip()
         params = load_strategy_params(strat_name)
 
+        # Respetar estrictamente el ciclo de ejecución configurado en la estrategia (ej. 30 segundos)
+        cycle_sleep = float(params.get('cycle_sleep_seconds') or params.get('cycleSleepSeconds') or 30.0)
+        if cycle_sleep < 5.0:
+            cycle_sleep = 5.0  # Mínimo defensivo para no saturar API
+
+        last_cycle = _user_last_cycle.get(user_id, 0.0)
+        if (now_ts - last_cycle) < cycle_sleep:
+            continue  # Aún no le corresponde ejecutar ciclo a este usuario
+
+        _user_last_cycle[user_id] = now_ts
+
         client = get_cached_user_client(user)
         if not client:
             continue
 
         try:
             positions_data = client.get_position_risk()
+            if positions_data is not None and isinstance(positions_data, list):
+                _user_pos_cache[user_id] = {'positions': positions_data, 'timestamp': now_ts}
         except Exception as e_pos:
             logger.debug(f"Aviso al consultar posiciones para {username}: {e_pos}")
             continue
@@ -801,7 +816,7 @@ def _personal_bot_engine_loop():
             run_personal_bot_cycle()
         except Exception as e:
             logger.error(f"[PersonalBotEngine] Excepción en ciclo: {e}", exc_info=True)
-        time.sleep(3.0)  # Ciclo de evaluación cada 3 segundos
+        time.sleep(1.0)  # Chequea en memoria cada segundo qué usuarios deben correr según su cycle_sleep_seconds personal
 
 
 def start_personal_bot_engine():
@@ -1094,7 +1109,15 @@ def get_user_monitor_status(user_id: int) -> dict:
                         is_hedge = bool(pos_mode.get('dualSidePosition', False))
                 except Exception:
                     pass
-                pos_risk = client.get_position_risk()
+                cached_pos_info = _user_pos_cache.get(user_id)
+                now_pos_ts = time.time()
+                if cached_pos_info and (now_pos_ts - cached_pos_info.get('timestamp', 0) < 5.0):
+                    pos_risk = cached_pos_info.get('positions', [])
+                else:
+                    pos_risk = client.get_position_risk()
+                    if pos_risk is not None and isinstance(pos_risk, list):
+                        _user_pos_cache[user_id] = {'positions': pos_risk, 'timestamp': now_pos_ts}
+
                 if pos_risk and isinstance(pos_risk, list):
                     for p in pos_risk:
                         amt = float(p.get('positionAmt', 0.0) or 0.0)
