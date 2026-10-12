@@ -2904,7 +2904,7 @@ def clear_user_trades(user_id: int, stop_bot: bool = False) -> bool:
         conn.close()
 
 
-def get_user_trades(user_id: int, limit: int = 50, mode: str = None) -> list:
+def get_user_trades(user_id: int, limit: int = 2000, mode: str = None) -> list:
     """Retorna el historial de operaciones de la cuenta personal del usuario ejecutadas durante su sesión activa."""
     conn = get_db_connection()
     if not conn:

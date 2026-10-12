@@ -1556,7 +1556,7 @@ def user_trades_endpoint():
             except (ValueError, TypeError):
                 pass
 
-        limit = min(200, int(request.args.get('limit', 50)))
+        limit = min(5000, int(request.args.get('limit', 1000)))
         mode = request.args.get('mode')
 
         # Si el usuario objetivo es el Administrador, sus trades y métricas provienen del bot maestro (tabla 'trades')

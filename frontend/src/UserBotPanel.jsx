@@ -114,8 +114,8 @@ export default function UserBotPanel({
       map[sym].totalPnL += pnl;
       map[sym].count += 1;
       map[sym].trades.push(t);
-      if (pnl > 0) map[sym].wins += 1;
-      if (pnl < 0) map[sym].losses += 1;
+      if (pnl > 0.00001) map[sym].wins += 1;
+      else if (pnl < -0.00001) map[sym].losses += 1;
       if (pnl > map[sym].bestTrade) map[sym].bestTrade = pnl;
       if (pnl < map[sym].worstTrade) map[sym].worstTrade = pnl;
     });
@@ -504,7 +504,7 @@ export default function UserBotPanel({
     try {
       const modeParam = currentSubTab === 'my_bot' ? 'PERSONAL_BOT' : 'COPY_TRADING';
       const userParam = inspectionUserId ? `&user_id=${inspectionUserId}` : '';
-      const resp = await authFetch(`/api/user/trades?limit=50&mode=${modeParam}${userParam}`);
+      const resp = await authFetch(`/api/user/trades?limit=1000&mode=${modeParam}${userParam}`);
       if (!resp.ok) return;
       const data = await resp.json();
       setTradesData(data.trades || []);
@@ -1609,7 +1609,7 @@ export default function UserBotPanel({
             <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-white flex items-center gap-1.5">
-                  <span>📈 Curva de Capital ({currentSubTab === 'my_bot' ? 'Bot Personal' : 'Copy-Trading'})</span>
+                  <span>{lastPnl >= 0 ? '📈' : '📉'} Curva de Capital ({currentSubTab === 'my_bot' ? 'Bot Personal' : 'Copy-Trading'})</span>
                 </span>
                 <span className={`font-mono font-black ${lastPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {lastPnl >= 0 ? '+' : ''}${lastPnl.toFixed(4)} USDT Acumulados
@@ -1619,8 +1619,8 @@ export default function UserBotPanel({
                 <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-auto max-h-40 select-none">
                   <defs>
                     <linearGradient id="userEquityGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
-                      <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                      <stop offset="0%" stopColor={lastPnl >= 0 ? "#10b981" : "#f43f5e"} stopOpacity="0.35" />
+                      <stop offset="100%" stopColor={lastPnl >= 0 ? "#10b981" : "#f43f5e"} stopOpacity="0.0" />
                     </linearGradient>
                   </defs>
                   <line x1={pad.left} y1={zeroY} x2={svgW - pad.right} y2={zeroY} stroke="#334155" strokeDasharray="3 3" strokeWidth="1" />
