@@ -195,8 +195,8 @@ class SingleSideTradingBot:
         self.enable_trailing_rsi_stop = str(trading_params.get('enable_trailing_rsi_stop', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_trailing_rsi_stop'), str) else bool(trading_params.get('enable_trailing_rsi_stop', True))
         # --- AÑADIDO: Parámetros para Filtro de Media Móvil ---
         self.evaluate_ma_filter = str(trading_params.get('evaluate_ma_filter', 'False')).lower() == 'true'
-        self.ma_type = 'EMA' # Hardcodeado a EMA como default
-        self.ma_period = _safe_int(trading_params.get('ma_period'), 200)
+        self.ma_type = str(trading_params.get('ma_type') or trading_params.get('maType') or 'EMA').upper().strip()
+        self.ma_period = _safe_int(trading_params.get('ma_period') or trading_params.get('maPeriod'), 38)
         # ----------------------------------------------------
         # --- NUEVOS PARÁMETROS Y ESTADO PARA TRAILING STOP DE PRECIO ---
         self.enable_price_trailing_stop = str(trading_params.get('enable_price_trailing_stop', 'True')).lower() == 'true' if isinstance(trading_params.get('enable_price_trailing_stop'), str) else bool(trading_params.get('enable_price_trailing_stop', True))
@@ -462,7 +462,8 @@ class SingleSideTradingBot:
         self.enable_stop_loss_pnl = str(new_params.get('enable_stop_loss_pnl', self.enable_stop_loss_pnl)).lower() == 'true' if isinstance(new_params.get('enable_stop_loss_pnl'), str) else bool(new_params.get('enable_stop_loss_pnl', self.enable_stop_loss_pnl))
         self.enable_trailing_rsi_stop = str(new_params.get('enable_trailing_rsi_stop', self.enable_trailing_rsi_stop)).lower() == 'true' if isinstance(new_params.get('enable_trailing_rsi_stop'), str) else bool(new_params.get('enable_trailing_rsi_stop', self.enable_trailing_rsi_stop))
         self.evaluate_ma_filter = str(new_params.get('evaluate_ma_filter', self.evaluate_ma_filter)).lower() == 'true'
-        self.ma_period = _safe_int(new_params.get('ma_period'), self.ma_period)
+        self.ma_type = str(new_params.get('ma_type') or new_params.get('maType') or getattr(self, 'ma_type', 'EMA')).upper().strip()
+        self.ma_period = _safe_int(new_params.get('ma_period') or new_params.get('maPeriod'), self.ma_period)
         self.enable_price_trailing_stop = str(new_params.get('enable_price_trailing_stop', self.enable_price_trailing_stop)).lower() == 'true' if isinstance(new_params.get('enable_price_trailing_stop'), str) else bool(new_params.get('enable_price_trailing_stop', self.enable_price_trailing_stop))
         self.price_trailing_stop_distance_usdt = _safe_decimal(new_params.get('price_trailing_stop_distance_usdt'), str(self.price_trailing_stop_distance_usdt))
         self.price_trailing_stop_activation_pnl_usdt = _safe_decimal(new_params.get('price_trailing_stop_activation_pnl_usdt'), str(self.price_trailing_stop_activation_pnl_usdt))
@@ -2926,13 +2927,13 @@ class SingleSideTradingBot:
             },
             {
                 "id": "ma_filter",
-                "name": "Filtro MA",
-                "short_name": "MA",
+                "name": f"Filtro {getattr(self, 'ma_type', 'EMA')}",
+                "short_name": f"{getattr(self, 'ma_type', 'EMA')}({getattr(self, 'ma_period', 38)})",
                 "active": bool(getattr(self, 'evaluate_ma_filter', True)),
                 "passed": not bool(getattr(self, 'evaluate_ma_filter', True)),
                 "value": "...",
-                "target": f"{'<' if is_short else '>'} MA({getattr(self, 'ma_period', 50)})",
-                "detail": "Filtro Media Móvil"
+                "target": f"{'<' if is_short else '>'} {getattr(self, 'ma_type', 'EMA')}({getattr(self, 'ma_period', 38)})",
+                "detail": f"Filtro Media Móvil ({getattr(self, 'ma_type', 'EMA')} {getattr(self, 'ma_period', 38)})"
             },
             {
                 "id": "downtrend_candles",
@@ -2947,12 +2948,12 @@ class SingleSideTradingBot:
             {
                 "id": "downtrend_levels",
                 "name": "Nivel Caída",
-                "short_name": "Caída",
+                "short_name": "Nivel",
                 "active": bool(not is_short and getattr(self, 'evaluate_downtrend_levels_block', True)),
                 "passed": True,
                 "value": "Normal",
-                "target": f"Sin cascada ({getattr(self, 'downtrend_level_check', 0)}v)",
-                "detail": "Filtro niveles de caída"
+                "target": f"< {getattr(self, 'downtrend_level_check', 7)} niveles",
+                "detail": f"Filtro niveles de caída (< {getattr(self, 'downtrend_level_check', 7)} para permitir entrada)"
             },
             {
                 "id": "market_regime",
@@ -3393,15 +3394,17 @@ class SingleSideTradingBot:
                 })
 
                 # 6. Filtro Media Móvil
+                ma_lbl = getattr(self, 'ma_type', 'EMA')
+                ma_per = getattr(self, 'ma_period', 38)
                 cond_list.append({
                     "id": "ma_filter",
-                    "name": "Filtro MA",
-                    "short_name": "MA",
+                    "name": f"Filtro {ma_lbl}",
+                    "short_name": f"{ma_lbl}({ma_per})",
                     "active": bool(self.evaluate_ma_filter),
                     "passed": bool(condition_ma_filter_passed),
                     "value": f"{price_for_log}",
-                    "target": f"{'<' if is_short else '>'} {ma_value_for_log}",
-                    "detail": f"Precio: {price_for_log} {'<' if is_short else '>'} MA: {ma_value_for_log}"
+                    "target": f"{'<' if is_short else '>'} {ma_lbl}({ma_per}) [{ma_value_for_log}]",
+                    "detail": f"Precio: {price_for_log} {'<' if is_short else '>'} {ma_lbl}({ma_per}): {ma_value_for_log}"
                 })
 
                 # 7. Filtro Anti-Cascada / Anti-Pump
@@ -3417,15 +3420,16 @@ class SingleSideTradingBot:
                 })
 
                 # 8. Filtro Niveles Caída
+                dt_lvl_target = getattr(self, 'downtrend_level_check', 7)
                 cond_list.append({
                     "id": "downtrend_levels",
                     "name": "Nivel Caída",
-                    "short_name": "Caída",
+                    "short_name": "Nivel",
                     "active": bool(not is_short and getattr(self, 'evaluate_downtrend_levels_block', True)),
                     "passed": bool(condition_downtrend_levels_passed),
                     "value": "Cascada" if dt_levels_detected else "Normal",
-                    "target": f"Sin cascada ({getattr(self, 'downtrend_level_check', 0)}v)",
-                    "detail": f"Caída escalonada detectada en {getattr(self, 'downtrend_level_check', 0)} velas" if dt_levels_detected else "Sin caída escalonada"
+                    "target": f"< {dt_lvl_target} niveles",
+                    "detail": f"Caída escalonada detectada en paso de {dt_lvl_target} velas" if dt_levels_detected else f"Sin caída escalonada (< {dt_lvl_target} niveles)"
                 })
 
                 # 9. Filtro Régimen de Mercado (Tendencia Macro HTF)
