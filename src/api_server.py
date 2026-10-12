@@ -1612,6 +1612,9 @@ def user_trades_endpoint():
                         t['unrealized_pnl'] = pos_map[(sym, side)]
                     elif sym in pos_map:
                         t['unrealized_pnl'] = pos_map[sym]
+        except Exception as e_mon:
+            api_logger.debug(f"Aviso al adjuntar PnL flotante a trades de usuario {user_id}: {e_mon}")
+
         # Conciliación de comisiones y financiamientos con el balance detectado de Binance
         if metrics and not is_target_admin:
             try:
