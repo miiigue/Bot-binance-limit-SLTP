@@ -2994,7 +2994,7 @@ def get_user_trades(user_id: int, limit: int = 50, mode: str = None) -> list:
         conn.close()
 
 
-def get_user_trading_metrics(user_id: int, mode: str = None) -> dict:
+def get_user_trading_metrics(user_id: int, mode: str = None, current_op_mode: str = None) -> dict:
     """Calcula las métricas de rendimiento del bot personal del usuario durante la sesión activa."""
     conn = get_db_connection()
     if not conn:
@@ -3008,7 +3008,7 @@ def get_user_trading_metrics(user_id: int, mode: str = None) -> dict:
         cursor.execute("SELECT last_started_at, operating_mode FROM user_bot_settings WHERE user_id = ?", (user_id,))
         settings_row = cursor.fetchone()
         last_started_at = settings_row['last_started_at'] if settings_row and settings_row['last_started_at'] else None
-        current_op_mode = mode or (settings_row['operating_mode'] if settings_row and settings_row.get('operating_mode') else None)
+        current_op_mode = current_op_mode or mode or (settings_row['operating_mode'] if settings_row and settings_row.get('operating_mode') else None)
 
         where_conds = ["user_id = ?", "close_timestamp IS NOT NULL"]
         params = [user_id]

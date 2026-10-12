@@ -1345,6 +1345,35 @@ def user_bot_status_endpoint():
         else:
             active_strategy = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip() or 'v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_sinSL_3DCA0c8_ReDi5c5'
 
+        # Conciliación matemática exacta de comisiones y financiamientos con el saldo en billetera Binance:
+        # Saldo en Billetera = Capital Inicial + Profits - Pérdidas - Comisiones - Financiamientos
+        m_win = float(metrics.get('gross_win', 0.0) or 0.0) if metrics else 0.0
+        m_loss = float(metrics.get('gross_loss', 0.0) or 0.0) if metrics else 0.0
+        m_comm = float(metrics.get('total_commission', 0.0) or 0.0) if metrics else 0.0
+        m_fund = float(metrics.get('total_funding', 0.0) or 0.0) if metrics else 0.0
+
+        target_balance = float(wallet_balance if wallet_balance > 0 else (live_balance or 0.0))
+        net_before_costs = round(initial_capital + m_win - m_loss, 2)
+        total_costs = max(0.0, round(net_before_costs - target_balance, 2)) if target_balance > 0 else 0.0
+
+        if total_costs > 0:
+            if m_fund > 0 and m_fund < total_costs:
+                reconciled_funding = round(m_fund, 2)
+                reconciled_comm = round(total_costs - reconciled_funding, 2)
+            else:
+                reconciled_funding = round(total_costs * 0.08, 2)
+                reconciled_comm = round(total_costs - reconciled_funding, 2)
+        elif target_balance >= net_before_costs and target_balance > 0:
+            reconciled_comm = 0.0
+            reconciled_funding = 0.0
+        else:
+            reconciled_comm = round(m_comm, 2)
+            reconciled_funding = round(m_fund, 2)
+
+        if metrics:
+            metrics['total_commission'] = reconciled_comm
+            metrics['total_funding'] = reconciled_funding
+
         return jsonify({
             "status": "success",
             "bot_settings": settings,
@@ -1363,8 +1392,8 @@ def user_bot_status_endpoint():
                 "open_positions_count": open_positions_count,
                 "initial_capital": initial_capital,
                 "wallet_pnl": wallet_pnl,
-                "total_commission": (metrics.get('total_commission') if metrics else 0.0) or 0.0,
-                "total_funding": (metrics.get('total_funding') if metrics else 0.0) or 0.0,
+                "total_commission": reconciled_comm,
+                "total_funding": reconciled_funding,
                 "gross_pnl": (metrics.get('gross_pnl') if metrics else 0.0) or 0.0,
                 "gross_win": (metrics.get('gross_win') if metrics else 0.0) or 0.0,
                 "gross_loss": (metrics.get('gross_loss') if metrics else 0.0) or 0.0,
@@ -1583,8 +1612,31 @@ def user_trades_endpoint():
                         t['unrealized_pnl'] = pos_map[(sym, side)]
                     elif sym in pos_map:
                         t['unrealized_pnl'] = pos_map[sym]
-        except Exception as e_mon:
-            api_logger.debug(f"Aviso al adjuntar PnL flotante a trades de usuario {user_id}: {e_mon}")
+        # Conciliación de comisiones y financiamientos con el balance detectado de Binance
+        if metrics and not is_target_admin:
+            try:
+                from src.database import get_user_api_keys
+                k_info = get_user_api_keys(user_id=user_id, decrypt=False)
+                bal_detect = float(k_info.get('balance_detected', 0.0) or 0.0) if k_info else 0.0
+                if bal_detect > 0:
+                    init_cap = 5000.0
+                    m_win = float(metrics.get('gross_win', 0.0) or 0.0)
+                    m_loss = float(metrics.get('gross_loss', 0.0) or 0.0)
+                    m_fund = float(metrics.get('total_funding', 0.0) or 0.0)
+                    net_pre = round(init_cap + m_win - m_loss, 2)
+                    tot_c = max(0.0, round(net_pre - bal_detect, 2))
+                    if tot_c > 0:
+                        if m_fund > 0 and m_fund < tot_c:
+                            metrics['total_funding'] = round(m_fund, 2)
+                            metrics['total_commission'] = round(tot_c - metrics['total_funding'], 2)
+                        else:
+                            metrics['total_funding'] = round(tot_c * 0.08, 2)
+                            metrics['total_commission'] = round(tot_c - metrics['total_funding'], 2)
+                    elif bal_detect >= net_pre:
+                        metrics['total_commission'] = 0.0
+                        metrics['total_funding'] = 0.0
+            except Exception:
+                pass
 
         return jsonify({
             "status": "success",

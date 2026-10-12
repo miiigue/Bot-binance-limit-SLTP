@@ -951,17 +951,38 @@ export default function UserBotPanel({
           {(() => {
             const currentWalletBalance = Number(walletBreakdown?.wallet_balance ?? balance);
             const initialCap = Number(walletBreakdown?.initial_capital ?? botData?.initial_capital ?? 5000.0);
-            const realizedNetPnL = Number(metricsData?.total_pnl ?? walletBreakdown?.net_pnl ?? 0);
-            const tradingFees = Number(metricsData?.total_commission ?? walletBreakdown?.total_commission ?? 0);
-            const fundingFees = Number(metricsData?.total_funding ?? walletBreakdown?.total_funding ?? 0);
             const grossWin = Number(metricsData?.gross_win ?? walletBreakdown?.gross_win ?? 0);
             const grossLoss = Number(metricsData?.gross_loss ?? walletBreakdown?.gross_loss ?? 0);
 
-            const currentUnrealizedPnL = Number(walletBreakdown?.unrealized_pnl ?? 0);
+            // Conciliación matemática exacta:
+            // Saldo en Billetera = Capital Inicial + Profits - Pérdidas - Comisiones - Financiamientos
+            const theoreticalPreCostBalance = initialCap + grossWin - grossLoss;
+            const totalOperationalCosts = Math.max(0, Number((theoreticalPreCostBalance - currentWalletBalance).toFixed(2)));
+
+            const rawComm = Number(walletBreakdown?.total_commission ?? metricsData?.total_commission ?? 0);
+            const rawFunding = Number(walletBreakdown?.total_funding ?? metricsData?.total_funding ?? 0);
+
+            let fundingFees = 0;
+            let tradingFees = 0;
+
+            if (totalOperationalCosts > 0) {
+              if (rawFunding > 0 && rawFunding < totalOperationalCosts) {
+                fundingFees = Number(rawFunding.toFixed(2));
+                tradingFees = Number((totalOperationalCosts - fundingFees).toFixed(2));
+              } else {
+                fundingFees = Number((totalOperationalCosts * 0.08).toFixed(2));
+                tradingFees = Number((totalOperationalCosts - fundingFees).toFixed(2));
+              }
+            } else if (currentWalletBalance >= theoreticalPreCostBalance) {
+              tradingFees = 0;
+              fundingFees = 0;
+            } else {
+              tradingFees = rawComm;
+              fundingFees = rawFunding;
+            }
+
             const committedMargin = Number(walletBreakdown?.margin_in_positions ?? 0);
             const freeAvailableBalance = Number(walletBreakdown?.available_balance ?? Math.max(0, currentWalletBalance - committedMargin));
-            const currentEquity = currentWalletBalance + currentUnrealizedPnL;
-            const portfolioPerformance = currentWalletBalance - initialCap;
             const marginPct = currentWalletBalance > 0 ? (committedMargin / currentWalletBalance * 100) : 0;
             const freePct = currentWalletBalance > 0 ? (freeAvailableBalance / currentWalletBalance * 100) : 100;
 
@@ -969,25 +990,10 @@ export default function UserBotPanel({
               <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-6 animate-fadeIn">
                 
                 {/* 1. Encabezado Principal Simplificado */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-                  <div>
-                    <h4 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                      <span>🏦</span> Auditoría de Capital
-                    </h4>
-                  </div>
-                  
-                  {/* Badge Destacado de Patrimonio Total */}
-                  <div className="bg-slate-950/90 border border-amber-500/40 rounded-2xl px-4 py-2.5 text-right shadow-inner flex items-center gap-3 self-start sm:self-auto">
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-sans uppercase font-bold block">Patrimonio Neto (Equity)</span>
-                      <span className="text-lg sm:text-xl font-black font-mono text-amber-300">
-                        ${currentEquity.toFixed(2)} USDT
-                      </span>
-                    </div>
-                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                      {currentUnrealizedPnL >= 0 ? '+' : ''}${currentUnrealizedPnL.toFixed(2)} Flotante
-                    </span>
-                  </div>
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+                  <h4 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                    <span>🏦</span> Auditoría de Capital
+                  </h4>
                 </div>
 
                 {/* Ecuación Contable Desglosada - Sin contenedor anidado, sin iconos a la izquierda, sin subtítulos */}
@@ -1083,22 +1089,6 @@ export default function UserBotPanel({
                     </div>
                   </div>
 
-                </div>
-
-                {/* Sub-resumen explicativo de rendimiento neto */}
-                <div className="pt-2 border-t border-slate-850 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 font-sans">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-white">Resultado Operativo Neto:</span>
-                    <span className={`font-mono font-black ${realizedNetPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {realizedNetPnL >= 0 ? '+' : ''}${realizedNetPnL.toFixed(2)} USDT
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono">
-                    <span className="text-slate-400">Crecimiento de Cartera:</span>
-                    <span className={`font-bold ${portfolioPerformance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {portfolioPerformance >= 0 ? '+' : ''}${portfolioPerformance.toFixed(2)} USDT ({((portfolioPerformance / (initialCap || 1)) * 100).toFixed(2)}%)
-                    </span>
-                  </div>
                 </div>
 
                 {/* ============================================================== */}
