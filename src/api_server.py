@@ -21,7 +21,7 @@ from datetime import datetime
 #     sys.path.insert(0, project_root)
 
 # Importar funciones y variables usando importaciones ABSOLUTAS (desde src)
-from src.config_loader import load_config, reload_config, get_trading_symbols, CONFIG_FILE_PATH
+from src.config_loader import load_config, reload_config, get_trading_symbols, CONFIG_FILE_PATH, normalize_strategy_dict
 from src.logger_setup import setup_logging, get_logger
 from src.database import (
     get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, clear_trade_history, get_all_recent_trades,
@@ -1337,13 +1337,20 @@ def user_bot_status_endpoint():
         wallet_pnl = round((live_balance or wallet_balance) - initial_capital, 2)
 
         cfg_temp = load_config()
+        db_strat = None
+        try:
+            from src.database import get_active_strategy_from_db
+            db_strat = get_active_strategy_from_db()
+        except Exception:
+            pass
+        active_strategy = (db_strat or cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='')).strip() or '22_AGRESIVA_TOLERANTE_30S'
+
         if is_target_admin:
-            active_strategy = cfg_temp.get('STRATEGY_CATALOG', 'active_strategy_name', fallback='v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5').strip()
             settings['strategy_name'] = active_strategy
             settings['is_running'] = True
             settings['operating_mode'] = 'BOT_MAESTRO_FONDO'
         else:
-            active_strategy = cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip() or 'v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_sinSL_3DCA0c8_ReDi5c5'
+            settings['strategy_name'] = str(settings.get('strategy_name') or active_strategy).strip()
 
         # Conciliación matemática exacta de comisiones y financiamientos con el saldo en billetera Binance:
         # Saldo en Billetera = Capital Inicial + Profits - Pérdidas - Comisiones - Financiamientos
@@ -1898,14 +1905,16 @@ def admin_users_overview_endpoint():
                 user_data['operating_mode'] = 'BOT_MAESTRO_FONDO'
                 user_data['is_testnet'] = True
 
-                # Obtener la estrategia activa real del bot maestro/fondo desde config_loader
+                # Obtener la estrategia activa real del bot maestro/fondo desde DB y config_loader
                 try:
+                    from src.database import get_active_strategy_from_db
                     from src.config_loader import load_config
+                    db_strat = get_active_strategy_from_db()
                     cfg = load_config()
-                    master_strat = cfg.get('STRATEGY_CATALOG', 'active_strategy_name', fallback='v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5')
+                    master_strat = (db_strat or cfg.get('STRATEGY_INFO', 'active_strategy_name', fallback='')).strip() or '22_AGRESIVA_TOLERANTE_30S'
                     user_data['strategy_name'] = master_strat
                 except Exception:
-                    user_data['strategy_name'] = 'v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5'
+                    user_data['strategy_name'] = '22_AGRESIVA_TOLERANTE_30S'
 
                 # Obtener métricas consolidadas del Bot Maestro desde la base de datos
                 try:
@@ -2093,25 +2102,38 @@ def update_config_endpoint():
         # 5.1 Guardar configuración MULTI_STRATEGY en config.ini
         if not config.has_section('MULTI_STRATEGY'):
             config.add_section('MULTI_STRATEGY')
-        if 'multiStrategyEnabled' in frontend_data:
-            config.set('MULTI_STRATEGY', 'enabled', str(frontend_data['multiStrategyEnabled']).lower())
-        if 'strategyAssignments' in frontend_data and isinstance(frontend_data['strategyAssignments'], dict):
+        is_multi_from_frontend = bool(frontend_data.get('multiStrategyEnabled', False))
+        config.set('MULTI_STRATEGY', 'enabled', str(is_multi_from_frontend).lower())
+
+        if not is_multi_from_frontend:
+            # En modo global, limpiar y asignar todos los símbolos a la estrategia activa global
             for opt in list(config.options('MULTI_STRATEGY')):
                 if opt.lower() != 'enabled':
                     config.remove_option('MULTI_STRATEGY', opt)
-            for sym, s_name in frontend_data['strategyAssignments'].items():
-                if sym and s_name and str(s_name).strip().lower() != 'global':
-                    config.set('MULTI_STRATEGY', sym.strip().lower(), str(s_name).strip())
+            if actual_name_to_save_in_ini:
+                for sym in symbols_list:
+                    config.set('MULTI_STRATEGY', sym.lower(), actual_name_to_save_in_ini)
+                if 'strategyAssignments' in frontend_data and isinstance(frontend_data['strategyAssignments'], dict):
+                    for sym in symbols_list:
+                        frontend_data['strategyAssignments'][sym] = actual_name_to_save_in_ini
+        else:
+            if 'strategyAssignments' in frontend_data and isinstance(frontend_data['strategyAssignments'], dict):
+                for opt in list(config.options('MULTI_STRATEGY')):
+                    if opt.lower() != 'enabled':
+                        config.remove_option('MULTI_STRATEGY', opt)
+                for sym, s_name in frontend_data['strategyAssignments'].items():
+                    if sym and s_name and str(s_name).strip().lower() != 'global':
+                        config.set('MULTI_STRATEGY', sym.strip().lower(), str(s_name).strip())
 
-            # Garantizar que todos los símbolos en symbols_list tengan su asignación explícita
-            from src.config_loader import get_strategy_for_symbol
-            fallback_strat = actual_name_to_save_in_ini or config.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
-            if not fallback_strat or fallback_strat.lower() == 'global':
-                fallback_strat = get_strategy_for_symbol(symbols_list[0] if symbols_list else 'BTCUSDT')
-            for sym in symbols_list:
-                sym_lower = sym.lower()
-                if not config.has_option('MULTI_STRATEGY', sym_lower) or config.get('MULTI_STRATEGY', sym_lower).strip().lower() == 'global':
-                    config.set('MULTI_STRATEGY', sym_lower, fallback_strat)
+                # Garantizar que todos los símbolos en symbols_list tengan su asignación explícita
+                from src.config_loader import get_strategy_for_symbol
+                fallback_strat = actual_name_to_save_in_ini or config.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
+                if not fallback_strat or fallback_strat.lower() == 'global':
+                    fallback_strat = get_strategy_for_symbol(symbols_list[0] if symbols_list else 'BTCUSDT')
+                for sym in symbols_list:
+                    sym_lower = sym.lower()
+                    if not config.has_option('MULTI_STRATEGY', sym_lower) or config.get('MULTI_STRATEGY', sym_lower).strip().lower() == 'global':
+                        config.set('MULTI_STRATEGY', sym_lower, fallback_strat)
 
         # 6. Escribir cambios a config.ini
         with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as configfile:
@@ -2192,21 +2214,38 @@ def update_config_endpoint():
                         try:
                             if is_multi and sym.upper() in assignments:
                                 s_name = assignments[sym.upper()]
+                                s_data = None
                                 s_file = os.path.join(STRATEGIES_PATH, f"{s_name}.json")
                                 if os.path.exists(s_file):
-                                    with open(s_file, 'r', encoding='utf-8') as f_s:
-                                        s_data = json.load(f_s)
+                                    try:
+                                        with open(s_file, 'r', encoding='utf-8') as f_s:
+                                            s_data = json.load(f_s)
+                                    except Exception:
+                                        s_data = None
+                                if not s_data:
+                                    try:
+                                        from src.database import get_strategies_catalog
+                                        cat = get_strategies_catalog(only_public=False)
+                                        for c_item in cat:
+                                            if c_item.get('name') == s_name:
+                                                s_data = c_item.get('parameters', {})
+                                                break
+                                    except Exception:
+                                        pass
+                                if s_data:
                                     s_params = map_frontend_trading_binance(s_data).get('TRADING', loaded_trading_params.copy())
                                     s_params['strategy_name'] = s_name
                                     bot_inst.update_trading_params(s_params)
                                     logger.info(f"-> Hot-reload multi-estrategia exitoso para {sym} con '{s_name}'")
                                     continue
                             params_to_use = loaded_trading_params.copy()
+                            if 'TRADING' in ini_other_data:
+                                params_to_use.update(ini_other_data['TRADING'])
                             params_to_use['entry_order_type'] = ini_other_data['TRADING']['entry_order_type']
                             params_to_use['entryOrderType'] = ini_other_data['TRADING']['entry_order_type']
                             params_to_use['strategy_name'] = actual_name_to_save_in_ini or get_strategy_for_symbol(sym)
                             bot_inst.update_trading_params(params_to_use)
-                            logger.info(f"-> Hot-reload exitoso para bot {sym}")
+                            logger.info(f"-> Hot-reload exitoso para bot {sym} con '{params_to_use['strategy_name']}'")
                         except Exception as e_hot:
                             logger.error(f"Error al actualizar parámetros en caliente para {sym}: {e_hot}")
 
@@ -3103,6 +3142,9 @@ def _save_strategy_logic(strategy_name: str, data: dict):
     logger = get_logger()
     strategy_file_path = os.path.join(STRATEGIES_PATH, f"{strategy_name}.json")
     try:
+        # Normalizar bidireccionalmente todos los parámetros (camelCase <-> snake_case)
+        data = normalize_strategy_dict(data)
+
         ot = str(data.get('entryOrderType') or data.get('entry_order_type') or 'MARKET').upper().strip()
         if ot not in ('LIMIT', 'MARKET'):
             ot = 'MARKET'
@@ -3181,6 +3223,9 @@ def _load_strategy_logic(strategy_name: str):
         return jsonify({"error": f"Estrategia '{strategy_name}' no encontrada."}), 404
 
     try:
+        # Normalizar para garantizar que estén presentes todas las claves camelCase y snake_case
+        strategy_data = normalize_strategy_dict(strategy_data)
+
         ot = str(strategy_data.get('entryOrderType') or strategy_data.get('entry_order_type') or 'MARKET').upper().strip()
         if ot not in ('LIMIT', 'MARKET'):
             ot = 'MARKET'

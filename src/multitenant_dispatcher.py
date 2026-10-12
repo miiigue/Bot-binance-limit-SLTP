@@ -30,6 +30,7 @@ from src.binance_client import (
     get_min_notional_for_symbol
 )
 from src.rsi_calculator import calculate_rsi
+from src.config_loader import normalize_strategy_dict
 
 
 # --- ESTRUCTURAS DE CACHÉ EN MEMORIA ---
@@ -103,14 +104,14 @@ def load_strategy_params(strategy_name: str) -> dict:
     """Carga los parámetros completos de una estrategia desde BD o archivo JSON."""
     clean_name = str(strategy_name or '').strip()
     if not clean_name:
-        clean_name = 'BOT_PARAPRUEBAS'
+        clean_name = '22_AGRESIVA_TOLERANTE_30S'
 
     # 1. Intentar desde catálogo de BD
     try:
         catalog = get_strategies_catalog(only_public=False)
         for item in catalog:
             if item.get('name') == clean_name and item.get('parameters'):
-                return item['parameters']
+                return normalize_strategy_dict(item['parameters'])
     except Exception:
         pass
 
@@ -119,12 +120,12 @@ def load_strategy_params(strategy_name: str) -> dict:
     if os.path.exists(strat_file):
         try:
             with open(strat_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                return normalize_strategy_dict(json.load(f))
         except Exception:
             pass
 
     # 3. Parámetros por defecto defensivos
-    return {
+    return normalize_strategy_dict({
         'strategy_name': clean_name,
         'trade_direction': 'BIDIRECTIONAL',
         'rsi_interval': '1m',
@@ -146,7 +147,7 @@ def load_strategy_params(strategy_name: str) -> dict:
         'enable_pnl_trailing_stop': True,
         'pnl_trailing_stop_activation_usdt': 3.5,
         'pnl_trailing_stop_drop_usdt': 1.5
-    }
+    })
 
 
 def evaluate_strategy_signal(symbol: str, klines_df: pd.DataFrame, params: dict, check_side: str = None) -> str | None:
@@ -1035,13 +1036,15 @@ def get_user_monitor_status(user_id: int) -> dict:
 
     if is_admin_user and not settings.get('strategy_name'):
         try:
+            from src.database import get_active_strategy_from_db
             from src.config_loader import load_config
+            db_strat = get_active_strategy_from_db()
             cfg = load_config()
-            strat_name = cfg.get('STRATEGY_CATALOG', 'active_strategy_name', fallback='v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5').strip()
+            strat_name = (db_strat or cfg.get('STRATEGY_INFO', 'active_strategy_name', fallback='')).strip() or '22_AGRESIVA_TOLERANTE_30S'
         except Exception:
-            strat_name = 'v21_RSI_con8xyTS5c3_SL400_3DCA2_ReDi5c5'
+            strat_name = '22_AGRESIVA_TOLERANTE_30S'
     else:
-        strat_name = str(settings.get('strategy_name') or 'BOT_PARAPRUEBAS').strip()
+        strat_name = str(settings.get('strategy_name') or '22_AGRESIVA_TOLERANTE_30S').strip()
 
     params = load_strategy_params(strat_name)
     

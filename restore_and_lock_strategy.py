@@ -87,7 +87,7 @@ def main():
             from src.config_loader import get_strategy_for_symbol
             strat_name = get_strategy_for_symbol('BTCUSDT')
         except Exception:
-            strat_name = 'v18_v17_RSI-SNIPER-MOMENTUM_con12xyTS5c3_SL500_3DCA2_ReDi5c5'
+            strat_name = '22_AGRESIVA_TOLERANTE_30S'
 
     print(f"✅ Estrategia activa soberana preservada: '{strat_name}'")
 

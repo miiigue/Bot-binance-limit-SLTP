@@ -206,6 +206,130 @@ const defaultConfigValues = {
   enableHedgeBreakoutRequirement: true,
 };
 
+// Sincroniza bidireccionalmente los nombres en camelCase y snake_case para asegurar que ningún parámetro se pierda
+const normalizeToFrontend = (data) => {
+  if (!data || typeof data !== 'object') return {};
+  const res = { ...data };
+  const mappings = [
+    ['take_profit_usdt', 'takeProfitUSDT'],
+    ['stop_loss_usdt', 'stopLossUSDT'],
+    ['position_size_usdt', 'positionSizeUSDT'],
+    ['leverage', 'leverage'],
+    ['rsi_type', 'rsiType'],
+    ['rsi_interval', 'rsiInterval'],
+    ['rsi_period', 'rsiPeriod'],
+    ['rsi_threshold_up', 'rsiThresholdUp'],
+    ['rsi_candles_window', 'rsiCandlesWindow'],
+    ['rsi_positive_candles_required', 'rsiPositiveCandlesRequired'],
+    ['rsi_positive_delta_min', 'rsiPositiveDeltaMin'],
+    ['rsi_threshold_down', 'rsiThresholdDown'],
+    ['rsi_entry_level_low', 'rsiEntryLevelLow'],
+    ['rsi_entry_level_high', 'rsiEntryLevelHigh'],
+    ['rsi_target', 'rsiTarget'],
+    ['volume_sma_period', 'volumeSmaPeriod'],
+    ['volume_factor', 'volumeFactor'],
+    ['downtrend_check_candles', 'downtrendCheckCandles'],
+    ['downtrend_candles_window', 'downtrendCandlesWindow'],
+    ['downtrend_level_check', 'downtrendLevelCheck'],
+    ['required_uptrend_candles', 'requiredUptrendCandles'],
+    ['cycle_sleep_seconds', 'cycleSleepSeconds'],
+    ['order_timeout_seconds', 'orderTimeoutSeconds'],
+    ['entry_order_type', 'entryOrderType'],
+    ['evaluate_rsi_delta', 'evaluateRsiDelta'],
+    ['evaluate_volume_filter', 'evaluateVolumeFilter'],
+    ['evaluate_rsi_range', 'evaluateRsiRange'],
+    ['evaluate_downtrend_candles_block', 'evaluateDowntrendCandlesBlock'],
+    ['evaluate_downtrend_levels_block', 'evaluateDowntrendLevelsBlock'],
+    ['evaluate_required_uptrend', 'evaluateRequiredUptrend'],
+    ['enable_take_profit_pnl', 'enableTakeProfitPnl'],
+    ['enable_stop_loss_pnl', 'enableStopLossPnl'],
+    ['stop_loss_order_type', 'stopLossOrderType'],
+    ['stop_loss_trigger_type', 'stopLossTriggerType'],
+    ['enable_emergency_software_sl', 'enableEmergencySoftwareSl'],
+    ['stop_loss_execution_mode', 'stopLossExecutionMode'],
+    ['enable_trailing_rsi_stop', 'enableTrailingRsiStop'],
+    ['enable_price_trailing_stop', 'enablePriceTrailingStop'],
+    ['price_trailing_stop_distance_usdt', 'priceTrailingStopDistanceUSDT'],
+    ['price_trailing_stop_activation_pnl_usdt', 'priceTrailingStopActivationPnlUSDT'],
+    ['enable_pnl_trailing_stop', 'enablePnlTrailingStop'],
+    ['pnl_trailing_stop_activation_usdt', 'pnlTrailingStopActivationUSDT'],
+    ['pnl_trailing_stop_drop_usdt', 'pnlTrailingStopDropUSDT'],
+    ['evaluate_open_interest_increase', 'evaluateOpenInterestIncrease'],
+    ['open_interest_period', 'openInterestPeriod'],
+    ['evaluate_ma_filter', 'evaluateMaFilter'],
+    ['ma_period', 'maPeriod'],
+    ['ma_type', 'maType'],
+    ['evaluate_support_strategy', 'evaluateSupportStrategy'],
+    ['support_history_candles', 'supportHistoryCandles'],
+    ['support_pivot_window', 'supportPivotWindow'],
+    ['support_confirmations', 'supportConfirmations'],
+    ['support_level_tolerance_percent', 'supportLevelTolerancePercent'],
+    ['support_order_stop_loss_percent', 'supportOrderStopLossPercent'],
+    ['support_order_take_profit_percent', 'supportOrderTakeProfitPercent'],
+    ['enable_dca_reentry', 'enableDcaReentry'],
+    ['dca_reentry_mode', 'dcaReentryMode'],
+    ['dca_price_drop_percent', 'dcaPriceDropPercent'],
+    ['dca_trigger_loss_usdt', 'dcaTriggerLossUsdt'],
+    ['dca_max_reentries', 'dcaMaxReentries'],
+    ['dca_volume_multiplier', 'dcaVolumeMultiplier'],
+    ['risk_percentage', 'riskPercentage'],
+    ['enable_max_loss_per_symbol', 'enableMaxLossPerSymbol'],
+    ['max_loss_per_symbol_usdt', 'maxLossPerSymbolUSDT'],
+    ['enable_consecutive_losses_cooldown', 'enableConsecutiveLossesCooldown'],
+    ['max_consecutive_losses', 'maxConsecutiveLosses'],
+    ['consecutive_losses_cooldown_minutes', 'consecutiveLossesCooldownMinutes'],
+    ['enable_rolling_performance_filter', 'enableRollingPerformanceFilter'],
+    ['rolling_trades_window', 'rollingTradesWindow'],
+    ['rolling_max_losses', 'rollingMaxLosses'],
+    ['rolling_filter_cooldown_minutes', 'rollingFilterCooldownMinutes'],
+    ['enable_btc_crash_shield', 'enableBtcCrashShield'],
+    ['btc_crash_timeframe', 'btcCrashTimeframe'],
+    ['btc_crash_drop_percent', 'btcCrashDropPercent'],
+    ['btc_crash_shield_cooldown_minutes', 'btcCrashShieldCooldownMinutes'],
+    ['enable_market_regime_filter', 'enableMarketRegimeFilter'],
+    ['market_regime_mode', 'marketRegimeMode'],
+    ['market_regime_indicator', 'marketRegimeIndicator'],
+    ['market_regime_timeframe', 'marketRegimeTimeframe'],
+    ['market_regime_ema_period', 'marketRegimeEmaPeriod'],
+    ['market_regime_supertrend_period', 'marketRegimeSupertrendPeriod'],
+    ['market_regime_supertrend_multiplier', 'marketRegimeSupertrendMultiplier'],
+    ['enable_emergency_crash_exit', 'enableEmergencyCrashExit'],
+    ['enable_crash_rsi_drop', 'enableCrashRsiDrop'],
+    ['crash_rsi_drop_threshold', 'crashRsiDropThreshold'],
+    ['enable_crash_price_drop', 'enableCrashPriceDrop'],
+    ['crash_price_drop_percent', 'crashPriceDropPercent'],
+    ['enable_crash_pnl_drop', 'enableCrashPnlDrop'],
+    ['crash_pnl_drop_threshold_usdt', 'crashPnlDropThresholdUSDT'],
+    ['trade_direction', 'tradeDirection'],
+    ['auto_mirror_short', 'autoMirrorShort'],
+    ['enable_hedge_protection', 'enableHedgeProtection'],
+    ['hedge_trigger_type', 'hedgeTriggerType'],
+    ['hedge_trigger_value', 'hedgeTriggerValue'],
+    ['hedge_size_multiplier', 'hedgeSizeMultiplier'],
+    ['enable_hedge_trailing_stop', 'enableHedgeTrailingStop'],
+    ['hedge_trailing_activation_usdt', 'hedgeTrailingActivationUSDT'],
+    ['hedge_trailing_drop_usdt', 'hedgeTrailingDropUSDT'],
+    ['enable_hedge_basket_exit', 'enableHedgeBasketExit'],
+    ['hedge_basket_target_usdt', 'hedgeBasketTargetUSDT'],
+    ['hedge_reentry_cooldown_seconds', 'hedgeReentryCooldownSeconds'],
+    ['enable_hedge_recovery_protection', 'enableHedgeRecoveryProtection'],
+    ['hedge_max_bounce_percent', 'hedgeMaxBouncePercent'],
+    ['hedge_recovery_candles_window', 'hedgeRecoveryCandlesWindow'],
+    ['hedge_recovery_candles_threshold', 'hedgeRecoveryCandlesThreshold'],
+    ['enable_hedge_breakout_requirement', 'enableHedgeBreakoutRequirement'],
+    ['symbols_to_trade', 'symbolsToTrade'],
+    ['active_strategy_name', 'activeStrategyName']
+  ];
+  mappings.forEach(([snake, camel]) => {
+    if (res[snake] !== undefined && res[camel] === undefined) {
+      res[camel] = res[snake];
+    } else if (res[camel] !== undefined && res[snake] === undefined) {
+      res[snake] = res[camel];
+    }
+  });
+  return res;
+};
+
 // --- Diccionario profesional con Explicación y Ejemplo Práctico para cada Parámetro ---
 const tooltipTexts = {
   // General & Riesgo
@@ -971,10 +1095,11 @@ function ConfigForm({
   const handleInspectStrategy = (stratName) => {
     const stratObj = (availableStrategies || []).find(s => s.name === stratName);
     if (stratObj && stratObj.config) {
-      const cardOrderType = String(stratObj.config.entryOrderType || stratObj.config.entry_order_type || formData.entryOrderType || 'MARKET').toUpperCase().trim();
+      const normalizedCfg = normalizeToFrontend(stratObj.config);
+      const cardOrderType = String(normalizedCfg.entryOrderType || normalizedCfg.entry_order_type || formData.entryOrderType || 'MARKET').toUpperCase().trim();
       setFormData(prev => ({
         ...prev,
-        ...stratObj.config,
+        ...normalizedCfg,
         entryOrderType: cardOrderType,
         entry_order_type: cardOrderType,
         activeStrategyName: stratName
@@ -1019,14 +1144,21 @@ function ConfigForm({
       // Saneamiento de asignaciones: Garantizar que NINGÚN par quede sin estrategia ni tenga 'Global'
       const sanitizedAssignments = { ...strategyAssignments };
       const fallbackForPairs = nameToSave || (availableStrategies[0]?.name) || 'v3_RSI-SNIPER-MOMENTUM_v3';
-      symbolsList.forEach(sym => {
-        const cur = sanitizedAssignments[sym];
-        if (!cur || String(cur).trim().toLowerCase() === 'global') {
-          sanitizedAssignments[sym] = fallbackForPairs;
-        }
-      });
+      if (!multiStrategyEnabled) {
+        // En modo Global, TODOS los pares operan con la estrategia activa seleccionada
+        symbolsList.forEach(sym => {
+          sanitizedAssignments[sym] = nameToSave;
+        });
+      } else {
+        symbolsList.forEach(sym => {
+          const cur = sanitizedAssignments[sym];
+          if (!cur || String(cur).trim().toLowerCase() === 'global') {
+            sanitizedAssignments[sym] = fallbackForPairs;
+          }
+        });
+      }
 
-      const dataToSend = {
+      const dataToSend = normalizeToFrontend({
         ...formData,
         activeStrategyName: nameToSave,
         symbolsToTrade: symbols,
@@ -1034,7 +1166,7 @@ function ConfigForm({
         risk_percentage: currentRisk,
         multiStrategyEnabled: multiStrategyEnabled,
         strategyAssignments: sanitizedAssignments,
-      };
+      });
 
       if (dataToSend.rsiCandlesWindow !== undefined) dataToSend.rsi_candles_window = dataToSend.rsiCandlesWindow;
       if (dataToSend.rsiPositiveCandlesRequired !== undefined) dataToSend.rsi_positive_candles_required = dataToSend.rsiPositiveCandlesRequired;
@@ -1354,7 +1486,7 @@ function ConfigForm({
 
     try {
       const currentRisk = Number(formData.riskPercentage ?? riskPercentage ?? 50);
-      const dataToSave = {
+      const dataToSave = normalizeToFrontend({
         ...formData,
         riskPercentage: currentRisk,
         risk_percentage: currentRisk,
@@ -1367,7 +1499,7 @@ function ConfigForm({
         description: strategyDescription || '',
         display_name: strategyDisplayName || strategyNameInput,
         displayName: strategyDisplayName || strategyNameInput
-      };
+      });
       const response = await fetch(`/api/strategies/${encodeURIComponent(strategyNameInput)}`, {
         method: 'POST',
         headers: {
@@ -1542,11 +1674,12 @@ function ConfigForm({
       if (!response.ok) {
         throw new Error(strategyData.error || `Error HTTP ${response.status}`);
       }
-      const newFormData = { ...defaultConfigValues, ...strategyData }; 
-      const stratOrderType = String(strategyData.entryOrderType || strategyData.entry_order_type || 'MARKET').toUpperCase().trim();
+      const normalizedData = normalizeToFrontend(strategyData);
+      const newFormData = { ...defaultConfigValues, ...normalizedData }; 
+      const stratOrderType = String(normalizedData.entryOrderType || normalizedData.entry_order_type || 'MARKET').toUpperCase().trim();
       newFormData.entryOrderType = stratOrderType;
       newFormData.entry_order_type = stratOrderType;
-      const stratRisk = strategyData.riskPercentage ?? strategyData.risk_percentage;
+      const stratRisk = normalizedData.riskPercentage ?? normalizedData.risk_percentage;
       if (stratRisk !== undefined) {
         const rp = Number(stratRisk);
         setRiskPercentage(rp);

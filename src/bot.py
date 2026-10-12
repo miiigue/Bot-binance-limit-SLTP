@@ -152,8 +152,8 @@ class SingleSideTradingBot:
         self.entry_diagnostics = {}
         self.position_diagnostics = {}
 
-        self.logger = get_logger()
-        self.params = trading_params
+        from src.config_loader import normalize_strategy_dict
+        self.params = normalize_strategy_dict(trading_params or {})
         self.logger.info(f"[{self.symbol}] Inicializando worker con parámetros RECIBIDOS: {self.params}")
         self.logger.info(f"[{self.symbol}] Inicializando worker con parámetros: {self.params}")
 
@@ -437,10 +437,10 @@ class SingleSideTradingBot:
 
     def update_trading_params(self, new_params: dict):
         """Actualiza los parámetros de trading en caliente para el bot en ejecución."""
-        self.logger.info(f"[{self.symbol}] Recibida solicitud de actualización de parámetros en caliente.")
         if not new_params:
             return
-
+        from src.config_loader import normalize_strategy_dict
+        new_params = normalize_strategy_dict(new_params)
         self.params = {**self.params, **new_params}
         if 'strategy_name' in new_params and new_params['strategy_name']:
             self.strategy_name = str(new_params['strategy_name'])
@@ -596,7 +596,12 @@ class SingleSideTradingBot:
         if 'enable_crash_pnl_drop' in new_params:
             self.enable_crash_pnl_drop = str(new_params['enable_crash_pnl_drop']).lower() == 'true' if isinstance(new_params['enable_crash_pnl_drop'], str) else bool(new_params['enable_crash_pnl_drop'])
         self.crash_pnl_drop_threshold_usdt = _safe_float(new_params.get('crash_pnl_drop_threshold_usdt'), getattr(self, 'crash_pnl_drop_threshold_usdt', 5.0))
-        # ------------------------------------------------
+        # Recalcular inmediatamente diagnóstico de posición con nuevos parámetros de TP/SL/Trailing
+        if getattr(self, 'in_position', False):
+            try:
+                self.position_diagnostics = self._calculate_position_diagnostics()
+            except Exception as e_pdiag:
+                self.logger.warning(f"[{self.symbol}] Error recalculando diagnóstico tras hot-reload: {e_pdiag}")
 
         self.logger.info(f"[{self.symbol}] Parámetros de trading actualizados en caliente exitosamente.")
 
@@ -5197,7 +5202,9 @@ class TradingBot:
             symbol = trading_params.get('symbol', 'ADAUSDT')
             
         self.symbol = symbol
-        self.params = trading_params
+        from src.config_loader import normalize_strategy_dict
+        self.params = normalize_strategy_dict(trading_params or {})
+        self.strategy_name = self.params.get('strategy_name') or self.params.get('active_strategy_name') or ''
         self.risk_manager = risk_manager
         self.trade_direction = str(self.params.get('trade_direction', 'BIDIRECTIONAL')).upper().strip()
         self.auto_mirror_short = str(self.params.get('auto_mirror_short', 'true')).lower() == 'true'
@@ -5635,7 +5642,11 @@ class TradingBot:
     def update_trading_params(self, new_params: dict):
         if not new_params:
             return
+        from src.config_loader import normalize_strategy_dict
+        new_params = normalize_strategy_dict(new_params)
         self.params = {**self.params, **new_params}
+        if 'strategy_name' in new_params and new_params['strategy_name']:
+            self.strategy_name = str(new_params['strategy_name'])
         if 'trade_direction' in new_params:
             self.trade_direction = str(new_params['trade_direction']).upper().strip()
         if 'auto_mirror_short' in new_params:
@@ -5899,6 +5910,7 @@ class TradingBot:
 
         st_copy.update({
             "symbol": self.symbol,
+            "strategy_name": getattr(self, 'strategy_name', None) or st_copy.get('strategy_name', ''),
             "trade_direction": self.trade_direction,
             "auto_mirror_short": self.auto_mirror_short,
             "state": unified_state,
