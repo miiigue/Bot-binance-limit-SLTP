@@ -150,6 +150,38 @@ def main():
         except Exception as e_cat_sync:
             print(f"ℹ️ Aviso al sincronizar parámetros de catálogo: {e_cat_sync}")
 
+        # Sincronizar parámetros de la estrategia activa en config.ini y en DB
+        try:
+            strat_file = os.path.join(PROJECT_ROOT, "strategies", f"{strat_name}.json")
+            if os.path.exists(strat_file):
+                import json as _j
+                from src.config_loader import normalize_strategy_dict
+                from src.database import set_saved_trading_params_in_db
+                with open(strat_file, 'r', encoding='utf-8') as f_st:
+                    st_data = _j.load(f_st)
+                
+                # Corregir si cycleSleepSeconds era 30 pero cycle_sleep_seconds era 5
+                if st_data.get('cycleSleepSeconds') in (30, '30') or '30' in str(strat_name):
+                    st_data['cycleSleepSeconds'] = '30'
+                    st_data['cycle_sleep_seconds'] = 30
+                    with open(strat_file, 'w', encoding='utf-8') as f_st_w:
+                        _j.dump(st_data, f_st_w, indent=4)
+                
+                norm_strat = normalize_strategy_dict(st_data)
+                set_saved_trading_params_in_db(norm_strat)
+                
+                if cp is not None and os.path.exists(config_file):
+                    from src.api_server import map_frontend_trading_binance
+                    mapped_sec = map_frontend_trading_binance(norm_strat)
+                    if 'TRADING' in mapped_sec:
+                        for k_t, v_t in mapped_sec['TRADING'].items():
+                            cp.set('TRADING', k_t, str(v_t))
+                    with open(config_file, 'w', encoding='utf-8') as f_cfg_w:
+                        cp.write(f_cfg_w)
+                print(f"✅ Parámetros de '{strat_name}' sincronizados exhaustivamente en config.ini y base de datos (cycle_sleep_seconds=30).")
+        except Exception as e_sync_st:
+            print(f"ℹ️ Aviso al sincronizar parámetros de '{strat_name}': {e_sync_st}")
+
         print("✅ BASE DE DATOS SOBERANA ASEGURADA:")
         print(f"   -> Estrategia Activa: {strat_name}")
         print("   -> Parámetros de Trading: 100% Preservados del panel de usuario")

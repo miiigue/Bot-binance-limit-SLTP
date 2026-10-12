@@ -758,11 +758,28 @@ def _build_frontend_config_dict():
         if db_syms:
             frontend_config['symbolsToTrade'] = db_syms
 
-        db_params = get_saved_trading_params_from_db()
-        if db_params and isinstance(db_params, dict):
-            for k, v in db_params.items():
-                if k not in ('activeStrategyName', 'symbolsToTrade') or not frontend_config.get(k):
-                    frontend_config[k] = v
+        # PRIORIDAD SOBERANA: Cargar los parámetros de la estrategia activa directamente
+        strat_loaded_in_cfg = False
+        if db_strat and db_strat.lower() != 'global':
+            s_file = os.path.join(STRATEGIES_PATH, f"{db_strat}.json")
+            if os.path.exists(s_file):
+                try:
+                    with open(s_file, 'r', encoding='utf-8') as sf:
+                        s_data = json.load(sf)
+                    from src.config_loader import normalize_strategy_dict
+                    norm_s = normalize_strategy_dict(s_data)
+                    for k, v in norm_s.items():
+                        frontend_config[k] = v
+                    strat_loaded_in_cfg = True
+                except Exception:
+                    pass
+
+        if not strat_loaded_in_cfg:
+            db_params = get_saved_trading_params_from_db()
+            if db_params and isinstance(db_params, dict):
+                for k, v in db_params.items():
+                    if k not in ('activeStrategyName', 'symbolsToTrade') or not frontend_config.get(k):
+                        frontend_config[k] = v
     except Exception as e_db_f:
         api_logger.warning(f"Error cargando ajustes soberanos desde DB en frontend_config: {e_db_f}")
 
@@ -2367,7 +2384,13 @@ def get_worker_status():
         api_usage = None
         try:
             from src.binance_client import get_api_usage_stats
-            api_usage = get_api_usage_stats(loaded_trading_params, len(loaded_symbols_to_trade))
+            active_params = dict(loaded_trading_params)
+            if worker_statuses:
+                for w in worker_statuses.values():
+                    if hasattr(w, 'params') and w.params:
+                        active_params.update(w.params)
+                        break
+            api_usage = get_api_usage_stats(active_params, len(loaded_symbols_to_trade))
         except Exception as e_api:
             logger.debug(f"Error obteniendo telemetría de API: {e_api}")
 
@@ -2793,6 +2816,21 @@ def load_initial_config():
             if 'TRADING' in mapped_db:
                 loaded_trading_params.update(mapped_db['TRADING'])
                 logger.info("✅ SOBERANÍA DB: Configuración de TRADING inicial sobreescrita con soberanía desde Base de Datos.")
+
+        from src.database import get_active_strategy_from_db
+        db_act_strat = get_active_strategy_from_db()
+        if db_act_strat and db_act_strat.lower() != 'global':
+            s_file = os.path.join(STRATEGIES_PATH, f"{db_act_strat}.json")
+            if os.path.exists(s_file):
+                try:
+                    with open(s_file, 'r', encoding='utf-8') as sf:
+                        s_data = json.load(sf)
+                    mapped_strat = map_frontend_trading_binance(s_data)
+                    if 'TRADING' in mapped_strat:
+                        loaded_trading_params.update(mapped_strat['TRADING'])
+                        logger.info(f"✅ SOBERANÍA ESTRATEGIA: Parámetros de '{db_act_strat}' aplicados a loaded_trading_params (cycle_sleep_seconds={loaded_trading_params.get('cycle_sleep_seconds')}).")
+                except Exception:
+                    pass
     except Exception as e_init_db:
         logger.warning(f"Aviso al cargar configuración soberana desde DB al iniciar: {e_init_db}")
 
