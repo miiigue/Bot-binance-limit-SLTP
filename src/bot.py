@@ -109,9 +109,11 @@ class SingleSideTradingBot:
         """
         Inicializa el bot para un símbolo y lado específico.
         """
+        self.logger = get_logger()
         self.symbol = symbol.upper()
         self.trade_side = str(trade_side).upper() # 'LONG' o 'SHORT'
         self.risk_manager = risk_manager # <-- Guardar referencia al gestor de riesgo
+        self.current_state = BotState.INITIALIZING
         self.state = BotState.INITIALIZING
         self.in_position = False
         self.is_running = False

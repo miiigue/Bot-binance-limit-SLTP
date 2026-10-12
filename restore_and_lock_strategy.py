@@ -82,12 +82,8 @@ def main():
         except Exception as e_cfg_rd:
             print(f"ℹ️ Aviso al leer config.ini: {e_cfg_rd}")
 
-    if not strat_name or strat_name.lower() == 'global':
-        try:
-            from src.config_loader import get_strategy_for_symbol
-            strat_name = get_strategy_for_symbol('BTCUSDT')
-        except Exception:
-            strat_name = '22_AGRESIVA_TOLERANTE_30S'
+    if not strat_name or strat_name.lower() == 'global' or strat_name.startswith('V21_'):
+        strat_name = '22_AGRESIVA_TOLERANTE_30S'
 
     print(f"✅ Estrategia activa soberana preservada: '{strat_name}'")
 
@@ -126,6 +122,33 @@ def main():
             print("✅ Catálogo soberano de estrategias sincronizado y blindado en base de datos.")
         except Exception as e_seed:
             print(f"ℹ️ Aviso al sembrar catálogo: {e_seed}")
+
+        # Asegurar que todas las estrategias en el catálogo tengan sus parámetros reales cargados
+        try:
+            from src.database import get_strategies_catalog, upsert_strategy_catalog
+            import json as _json_sync
+            cat_list = get_strategies_catalog(only_public=False)
+            strat_dir = os.path.join(PROJECT_ROOT, "strategies")
+            for item in cat_list:
+                s_name = item.get('name')
+                s_params = item.get('parameters') or {}
+                if not s_params:
+                    f_path = os.path.join(strat_dir, f"{s_name}.json")
+                    if os.path.exists(f_path):
+                        with open(f_path, 'r', encoding='utf-8') as f_in:
+                            loaded_p = _json_sync.load(f_in)
+                        upsert_strategy_catalog(
+                            name=s_name,
+                            display_name=item.get('display_name') or s_name,
+                            description=item.get('description') or '',
+                            risk_level=item.get('risk_level') or 'MODERADO',
+                            is_public=item.get('is_public', False),
+                            min_capital_usdt=item.get('min_capital_usdt', 50.0),
+                            parameters=loaded_p
+                        )
+                        print(f"✅ Parámetros de '{s_name}' sincronizados desde archivo a strategies_catalog.")
+        except Exception as e_cat_sync:
+            print(f"ℹ️ Aviso al sincronizar parámetros de catálogo: {e_cat_sync}")
 
         print("✅ BASE DE DATOS SOBERANA ASEGURADA:")
         print(f"   -> Estrategia Activa: {strat_name}")

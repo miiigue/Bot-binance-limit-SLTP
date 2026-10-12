@@ -1356,6 +1356,19 @@ def get_strategies_catalog(only_public: bool = False) -> list[dict]:
                     params = json.loads(p_json)
                 except Exception:
                     params = {}
+            if not params:
+                strat_file = os.path.join(STRATEGIES_PATH, f"{name}.json")
+                if os.path.exists(strat_file):
+                    try:
+                        with open(strat_file, 'r', encoding='utf-8') as f_sf:
+                            params = json.load(f_sf)
+                        try:
+                            cursor.execute("UPDATE strategies_catalog SET parameters_json = ? WHERE id = ?", (json.dumps(params), strat_id))
+                            conn.commit()
+                        except Exception:
+                            pass
+                    except Exception:
+                        params = {}
             result.append({
                 "id": strat_id,
                 "name": name,

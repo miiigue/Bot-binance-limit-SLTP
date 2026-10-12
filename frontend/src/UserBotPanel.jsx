@@ -628,11 +628,15 @@ export default function UserBotPanel({
 
   // Estrategia actualmente seleccionada y apalancamiento efectivo
   const currentStrategyObj = catalogStrategies.find(s => s.name === selectedStrategy);
-  const strategyDefaultLeverage = Number(
-    currentStrategyObj?.parameters?.leverage ||
-    currentStrategyObj?.parameters?.leverage_str ||
-    10
-  );
+  const rawStratLev = currentStrategyObj?.parameters?.leverage ??
+                      currentStrategyObj?.parameters?.leverage_str ??
+                      currentStrategyObj?.config?.leverage ??
+                      currentStrategyObj?.leverage ??
+                      botData?.active_strategy_details?.leverage ??
+                      botData?.active_strategy_details?.parameters?.leverage;
+  const strategyDefaultLeverage = (rawStratLev !== undefined && rawStratLev !== null && !isNaN(Number(rawStratLev)) && Number(rawStratLev) > 0)
+    ? Number(rawStratLev)
+    : 5;
   const effectiveLeverage = (leverage === 'default' || !leverage) 
     ? strategyDefaultLeverage 
     : Number(leverage);
