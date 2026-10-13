@@ -275,10 +275,10 @@ export default function AdminUsersOverview({ addToast, onSelectUserForDossier, o
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl space-y-4 overflow-hidden">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-            <span>📋</span> Directorio Activo de Usuarios ({filteredUsers.length} encontrados)
+            <span>📋</span> Directorio Activo de Inversionistas ({filteredUsers.length} encontrados)
           </span>
           <span className="text-[11px] text-slate-500 font-mono">
-            Mostrando {filteredUsers.length} de {users.length} usuarios
+            Mostrando {filteredUsers.length} de {users.length} inversionistas
           </span>
         </div>
 

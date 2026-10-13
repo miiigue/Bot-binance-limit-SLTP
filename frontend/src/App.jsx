@@ -57,8 +57,29 @@ function MainDashboard() {
   const [activeTab, setActiveTab] = useState('my_bot');
   const [inspectingUser, setInspectingUser] = useState(null);
 
+  // Estados de menús desplegables en la barra de navegación
+  const [isMonitorMenuOpen, setIsMonitorMenuOpen] = useState(false);
+  const [isConfigMenuOpen, setIsConfigMenuOpen] = useState(false);
+  const monitorDropdownRef = useRef(null);
+  const configDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutsideNav = (e) => {
+      if (monitorDropdownRef.current && !monitorDropdownRef.current.contains(e.target)) {
+        setIsMonitorMenuOpen(false);
+      }
+      if (configDropdownRef.current && !configDropdownRef.current.contains(e.target)) {
+        setIsConfigMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutsideNav);
+    return () => document.removeEventListener('mousedown', handleClickOutsideNav);
+  }, []);
+
   useEffect(() => {
     setInspectingUser(null);
+    setIsMonitorMenuOpen(false);
+    setIsConfigMenuOpen(false);
   }, [activeTab]);
   const [availableStrategies, setAvailableStrategies] = useState([]);
   const [isLoadingStrategies, setIsLoadingStrategies] = useState(false);
@@ -655,59 +676,206 @@ function MainDashboard() {
             {/* === PESTAÑAS DE SUPER ADMINISTRADOR === */}
             {isAdmin && (
               <>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('monitor')}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'monitor'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                >
-                  <span>🖥️</span> Monitor
-                  {headerPnlData.coinsInPosition > 0 && (
-                    <span className="text-[10px] bg-emerald-500 text-white font-mono font-bold px-1.5 py-0.2 rounded-full shadow">
-                      {headerPnlData.coinsInPosition}
-                    </span>
+                {/* 1. MONITOR (Menú desplegable con Rendimiento, Gráficos y Mercado) */}
+                <div className="relative" ref={monitorDropdownRef}>
+                  <div className="inline-flex rounded-xl shadow-sm border border-slate-700/70 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('monitor')}
+                      className={`px-3 py-1.5 text-xs sm:text-sm font-extrabold transition-all flex items-center gap-1.5 ${
+                        activeTab === 'monitor'
+                          ? 'bg-amber-400 text-slate-950 shadow-md ring-1 ring-amber-400'
+                          : ['performance', 'chart', 'radar'].includes(activeTab)
+                          ? 'bg-slate-800 text-amber-300'
+                          : 'text-slate-200 hover:text-white hover:bg-slate-800'
+                      }`}
+                      title="Monitor Principal de Operaciones en Vivo"
+                    >
+                      <span>🖥️</span> Monitor
+                      {headerPnlData.coinsInPosition > 0 && (
+                        <span className="text-[10px] bg-emerald-500 text-white font-mono font-bold px-1.5 py-0.2 rounded-full shadow">
+                          {headerPnlData.coinsInPosition}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMonitorMenuOpen(prev => !prev);
+                        setIsConfigMenuOpen(false);
+                      }}
+                      className={`px-2 py-1.5 text-xs font-black border-l border-slate-700/70 transition-all flex items-center justify-center ${
+                        isMonitorMenuOpen
+                          ? 'bg-amber-400 text-slate-950'
+                          : ['performance', 'chart', 'radar'].includes(activeTab)
+                          ? 'bg-slate-800 text-amber-300'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      }`}
+                      title="Opciones de Monitor (Rendimiento, Gráficos, Mercado)"
+                    >
+                      <span className="transform text-[10px]">{isMonitorMenuOpen ? '▲' : '▼'}</span>
+                    </button>
+                  </div>
+
+                  {/* Menú Desplegable de Monitor */}
+                  {isMonitorMenuOpen && (
+                    <div className="absolute left-0 top-full mt-1.5 w-56 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl p-1.5 z-50 backdrop-blur-md animate-fadeIn space-y-1">
+                      <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                        Vistas de Monitor
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('monitor');
+                          setIsMonitorMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                          activeTab === 'monitor'
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>🖥️</span> Monitor General
+                        </div>
+                        {activeTab === 'monitor' && <span className="text-[10px]">●</span>}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('performance');
+                          setIsMonitorMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                          activeTab === 'performance'
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>📈</span> Rendimiento
+                        </div>
+                        {activeTab === 'performance' && <span className="text-[10px]">●</span>}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('chart');
+                          setIsMonitorMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                          activeTab === 'chart'
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>📊</span> Gráficos
+                        </div>
+                        {activeTab === 'chart' && <span className="text-[10px]">●</span>}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('radar');
+                          setIsMonitorMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                          activeTab === 'radar'
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>📡</span> Mercado
+                        </div>
+                        {activeTab === 'radar' && <span className="text-[10px]">●</span>}
+                      </button>
+                    </div>
                   )}
-                </button>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('config')}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'config'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                >
-                  <span>⚙️</span> Configuración
-                </button>
+                {/* 2. CONFIGURACIÓN (Menú desplegable que contiene Configuración y Backtesting) */}
+                <div className="relative" ref={configDropdownRef}>
+                  <div className="inline-flex rounded-xl shadow-sm border border-slate-700/70 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('config')}
+                      className={`px-3 py-1.5 text-xs sm:text-sm font-extrabold transition-all flex items-center gap-1.5 ${
+                        activeTab === 'config'
+                          ? 'bg-amber-400 text-slate-950 shadow-md ring-1 ring-amber-400'
+                          : activeTab === 'backtest'
+                          ? 'bg-slate-800 text-amber-300'
+                          : 'text-slate-200 hover:text-white hover:bg-slate-800'
+                      }`}
+                      title="Configuración de Estrategias y Parámetros"
+                    >
+                      <span>⚙️</span> Configuración
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsConfigMenuOpen(prev => !prev);
+                        setIsMonitorMenuOpen(false);
+                      }}
+                      className={`px-2 py-1.5 text-xs font-black border-l border-slate-700/70 transition-all flex items-center justify-center ${
+                        isConfigMenuOpen
+                          ? 'bg-amber-400 text-slate-950'
+                          : activeTab === 'backtest'
+                          ? 'bg-slate-800 text-amber-300'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      }`}
+                      title="Opciones de Configuración (Parámetros, Backtesting)"
+                    >
+                      <span className="transform text-[10px]">{isConfigMenuOpen ? '▲' : '▼'}</span>
+                    </button>
+                  </div>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('performance')}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'performance'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                >
-                  <span>📈</span> Rendimiento
-                </button>
+                  {/* Menú Desplegable de Configuración */}
+                  {isConfigMenuOpen && (
+                    <div className="absolute left-0 top-full mt-1.5 w-56 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl p-1.5 z-50 backdrop-blur-md animate-fadeIn space-y-1">
+                      <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                        Opciones del Bot
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('config');
+                          setIsConfigMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                          activeTab === 'config'
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>⚙️</span> Parámetros del Bot
+                        </div>
+                        {activeTab === 'config' && <span className="text-[10px]">●</span>}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('backtest');
+                          setIsConfigMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                          activeTab === 'backtest'
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>🧪</span> Backtesting
+                        </div>
+                        {activeTab === 'backtest' && <span className="text-[10px]">●</span>}
+                      </button>
+                    </div>
+                  )}
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('investors')}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'investors'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                >
-                  <span>👥</span> Inversionistas
-                </button>
-
+                {/* 3. INVERSIONISTAS (Usuarios & Bots / Directorio Activo de Inversionistas) */}
                 <button
                   type="button"
                   onClick={() => {
@@ -715,50 +883,16 @@ function MainDashboard() {
                     setInspectingUser(null);
                   }}
                   className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'users_overview'
+                    activeTab === 'users_overview' || activeTab === 'investors'
                       ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
                       : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
                   }`}
+                  title="Directorio de Inversionistas y Monitoreo de Bots de Usuarios"
                 >
-                  <span>🤖</span> Usuarios & Bots
+                  <span>👥</span> Inversionistas
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('chart')}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'chart'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                >
-                  <span>📊</span> Gráficos
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('radar')}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'radar'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                >
-                  <span>📡</span> Mercado
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('backtest')}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'backtest'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                >
-                  <span>🧪</span> Backtesting
-                </button>
-
+                {/* 4. MI BOT */}
                 <button
                   type="button"
                   onClick={() => setActiveTab('my_bot')}
@@ -771,6 +905,7 @@ function MainDashboard() {
                   <span>🤖</span> Mi Bot
                 </button>
 
+                {/* 5. COPY-TRADING */}
                 <button
                   type="button"
                   onClick={() => setActiveTab('copy_trading')}
