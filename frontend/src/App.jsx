@@ -60,8 +60,10 @@ function MainDashboard() {
   // Estados de menús desplegables en la barra de navegación
   const [isMonitorMenuOpen, setIsMonitorMenuOpen] = useState(false);
   const [isConfigMenuOpen, setIsConfigMenuOpen] = useState(false);
+  const [isUsersMenuOpen, setIsUsersMenuOpen] = useState(false);
   const monitorDropdownRef = useRef(null);
   const configDropdownRef = useRef(null);
+  const usersDropdownRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutsideNav = (e) => {
@@ -71,15 +73,23 @@ function MainDashboard() {
       if (configDropdownRef.current && !configDropdownRef.current.contains(e.target)) {
         setIsConfigMenuOpen(false);
       }
+      if (usersDropdownRef.current && !usersDropdownRef.current.contains(e.target)) {
+        setIsUsersMenuOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutsideNav);
-    return () => document.removeEventListener('mousedown', handleClickOutsideNav);
+    document.addEventListener('touchstart', handleClickOutsideNav);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutsideNav);
+      document.removeEventListener('touchstart', handleClickOutsideNav);
+    };
   }, []);
 
   useEffect(() => {
     setInspectingUser(null);
     setIsMonitorMenuOpen(false);
     setIsConfigMenuOpen(false);
+    setIsUsersMenuOpen(false);
   }, [activeTab]);
   const [availableStrategies, setAvailableStrategies] = useState([]);
   const [isLoadingStrategies, setIsLoadingStrategies] = useState(false);
@@ -670,56 +680,40 @@ function MainDashboard() {
         </div>
 
         {/* 2. Barra de Navegación por Pestañas */}
-        <div className="bg-slate-900 border-b border-slate-800 px-2 sm:px-4 md:px-8 py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2 shadow-sm">
-          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5 w-full md:w-auto -mx-1 px-1">
+        <div className="bg-slate-900 border-b border-slate-800 px-2 sm:px-4 md:px-8 py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2 shadow-sm relative z-40">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap py-0.5 w-full md:w-auto">
             
             {/* === PESTAÑAS DE SUPER ADMINISTRADOR === */}
             {isAdmin && (
               <>
-                {/* 1. MONITOR (Menú desplegable con Rendimiento, Gráficos y Mercado) */}
-                <div className="relative" ref={monitorDropdownRef}>
-                  <div className="inline-flex rounded-xl shadow-sm border border-slate-700/70 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('monitor')}
-                      className={`px-3 py-1.5 text-xs sm:text-sm font-extrabold transition-all flex items-center gap-1.5 ${
-                        activeTab === 'monitor'
-                          ? 'bg-amber-400 text-slate-950 shadow-md ring-1 ring-amber-400'
-                          : ['performance', 'chart', 'radar'].includes(activeTab)
-                          ? 'bg-slate-800 text-amber-300'
-                          : 'text-slate-200 hover:text-white hover:bg-slate-800'
-                      }`}
-                      title="Monitor Principal de Operaciones en Vivo"
-                    >
-                      <span>🖥️</span> Monitor
-                      {headerPnlData.coinsInPosition > 0 && (
-                        <span className="text-[10px] bg-emerald-500 text-white font-mono font-bold px-1.5 py-0.2 rounded-full shadow">
-                          {headerPnlData.coinsInPosition}
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsMonitorMenuOpen(prev => !prev);
-                        setIsConfigMenuOpen(false);
-                      }}
-                      className={`px-2 py-1.5 text-xs font-black border-l border-slate-700/70 transition-all flex items-center justify-center ${
-                        isMonitorMenuOpen
-                          ? 'bg-amber-400 text-slate-950'
-                          : ['performance', 'chart', 'radar'].includes(activeTab)
-                          ? 'bg-slate-800 text-amber-300'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                      }`}
-                      title="Opciones de Monitor (Rendimiento, Gráficos, Mercado)"
-                    >
-                      <span className="transform text-[10px]">{isMonitorMenuOpen ? '▲' : '▼'}</span>
-                    </button>
-                  </div>
+                {/* 1. MONITOR (Desplegable que contiene Rendimiento, Gráficos y Mercado) */}
+                <div className="relative inline-block text-left" ref={monitorDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMonitorMenuOpen(prev => !prev);
+                      setIsConfigMenuOpen(false);
+                      setIsUsersMenuOpen(false);
+                    }}
+                    className={`px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 border shadow-sm ${
+                      activeTab === 'monitor' || ['performance', 'chart', 'radar'].includes(activeTab) || isMonitorMenuOpen
+                        ? 'bg-amber-400 text-slate-950 border-amber-400 ring-2 ring-amber-400/40 shadow-md font-black'
+                        : 'text-slate-200 hover:text-white hover:bg-slate-800 border-slate-700/70'
+                    }`}
+                    title="Monitor (Rendimiento, Gráficos, Mercado)"
+                  >
+                    <span>🖥️</span> Monitor
+                    {headerPnlData.coinsInPosition > 0 && (
+                      <span className="text-[10px] bg-emerald-500 text-white font-mono font-bold px-1.5 py-0.2 rounded-full shadow">
+                        {headerPnlData.coinsInPosition}
+                      </span>
+                    )}
+                    <span className="text-[9px] ml-0.5 opacity-80">{isMonitorMenuOpen ? '▲' : '▼'}</span>
+                  </button>
 
                   {/* Menú Desplegable de Monitor */}
                   {isMonitorMenuOpen && (
-                    <div className="absolute left-0 top-full mt-1.5 w-56 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl p-1.5 z-50 backdrop-blur-md animate-fadeIn space-y-1">
+                    <div className="absolute left-0 top-full mt-1.5 w-60 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-1.5 z-[100] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 space-y-1">
                       <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-800">
                         Vistas de Monitor
                       </div>
@@ -795,47 +789,31 @@ function MainDashboard() {
                   )}
                 </div>
 
-                {/* 2. CONFIGURACIÓN (Menú desplegable que contiene Configuración y Backtesting) */}
-                <div className="relative" ref={configDropdownRef}>
-                  <div className="inline-flex rounded-xl shadow-sm border border-slate-700/70 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('config')}
-                      className={`px-3 py-1.5 text-xs sm:text-sm font-extrabold transition-all flex items-center gap-1.5 ${
-                        activeTab === 'config'
-                          ? 'bg-amber-400 text-slate-950 shadow-md ring-1 ring-amber-400'
-                          : activeTab === 'backtest'
-                          ? 'bg-slate-800 text-amber-300'
-                          : 'text-slate-200 hover:text-white hover:bg-slate-800'
-                      }`}
-                      title="Configuración de Estrategias y Parámetros"
-                    >
-                      <span>⚙️</span> Configuración
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsConfigMenuOpen(prev => !prev);
-                        setIsMonitorMenuOpen(false);
-                      }}
-                      className={`px-2 py-1.5 text-xs font-black border-l border-slate-700/70 transition-all flex items-center justify-center ${
-                        isConfigMenuOpen
-                          ? 'bg-amber-400 text-slate-950'
-                          : activeTab === 'backtest'
-                          ? 'bg-slate-800 text-amber-300'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                      }`}
-                      title="Opciones de Configuración (Parámetros, Backtesting)"
-                    >
-                      <span className="transform text-[10px]">{isConfigMenuOpen ? '▲' : '▼'}</span>
-                    </button>
-                  </div>
+                {/* 2. CONFIGURACIÓN (Desplegable que contiene Parámetros y Backtesting) */}
+                <div className="relative inline-block text-left" ref={configDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsConfigMenuOpen(prev => !prev);
+                      setIsMonitorMenuOpen(false);
+                      setIsUsersMenuOpen(false);
+                    }}
+                    className={`px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 border shadow-sm ${
+                      activeTab === 'config' || activeTab === 'backtest' || isConfigMenuOpen
+                        ? 'bg-amber-400 text-slate-950 border-amber-400 ring-2 ring-amber-400/40 shadow-md font-black'
+                        : 'text-slate-200 hover:text-white hover:bg-slate-800 border-slate-700/70'
+                    }`}
+                    title="Configuración (Parámetros, Backtesting)"
+                  >
+                    <span>⚙️</span> Configuración
+                    <span className="text-[9px] ml-0.5 opacity-80">{isConfigMenuOpen ? '▲' : '▼'}</span>
+                  </button>
 
                   {/* Menú Desplegable de Configuración */}
                   {isConfigMenuOpen && (
-                    <div className="absolute left-0 top-full mt-1.5 w-56 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl p-1.5 z-50 backdrop-blur-md animate-fadeIn space-y-1">
+                    <div className="absolute left-0 top-full mt-1.5 w-60 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-1.5 z-[100] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 space-y-1">
                       <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-800">
-                        Opciones del Bot
+                        Opciones de Configuración
                       </div>
                       <button
                         type="button"
@@ -875,22 +853,70 @@ function MainDashboard() {
                   )}
                 </div>
 
-                {/* 3. INVERSIONISTAS (Usuarios & Bots / Directorio Activo de Inversionistas) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('users_overview');
-                    setInspectingUser(null);
-                  }}
-                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
-                    activeTab === 'users_overview' || activeTab === 'investors'
-                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
-                  }`}
-                  title="Directorio de Inversionistas y Monitoreo de Bots de Usuarios"
-                >
-                  <span>👥</span> Inversionistas
-                </button>
+                {/* 3. USUARIOS & BOTS (Desplegable que contiene Usuarios & Bots e Inversionistas) */}
+                <div className="relative inline-block text-left" ref={usersDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUsersMenuOpen(prev => !prev);
+                      setIsMonitorMenuOpen(false);
+                      setIsConfigMenuOpen(false);
+                    }}
+                    className={`px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 border shadow-sm ${
+                      activeTab === 'users_overview' || activeTab === 'investors' || isUsersMenuOpen
+                        ? 'bg-amber-400 text-slate-950 border-amber-400 ring-2 ring-amber-400/40 shadow-md font-black'
+                        : 'text-slate-200 hover:text-white hover:bg-slate-800 border-slate-700/70'
+                    }`}
+                    title="Usuarios & Bots (Directorio de Bots, Inversionistas)"
+                  >
+                    <span>🤖</span> Usuarios & Bots
+                    <span className="text-[9px] ml-0.5 opacity-80">{isUsersMenuOpen ? '▲' : '▼'}</span>
+                  </button>
+
+                  {/* Menú Desplegable de Usuarios & Bots */}
+                  {isUsersMenuOpen && (
+                    <div className="absolute left-0 top-full mt-1.5 w-64 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-1.5 z-[100] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 space-y-1">
+                      <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                        Gestión de Usuarios y Cuentas
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('users_overview');
+                          setInspectingUser(null);
+                          setIsUsersMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                          activeTab === 'users_overview'
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>🤖</span> Monitor Usuarios & Bots
+                        </div>
+                        {activeTab === 'users_overview' && <span className="text-[10px]">●</span>}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('investors');
+                          setIsUsersMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                          activeTab === 'investors'
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>👥</span> Inversionistas
+                        </div>
+                        {activeTab === 'investors' && <span className="text-[10px]">●</span>}
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {/* 4. MI BOT */}
                 <button
