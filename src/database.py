@@ -1712,16 +1712,11 @@ def clear_trade_history() -> bool:
                 cursor.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
             except Exception:
                 pass
+        # NOTA DE AISLAMIENTO MULTI-INQUILINO (TENANT ISOLATION):
+        # clear_trade_history() corresponde EXCLUSIVAMENTE al bot institucional/maestro (tabla 'trades').
+        # NUNCA debe tocar 'user_trades', ya que las operaciones de los inversores/usuarios son privadas,
+        # autónomas y aisladas por inquilino (user_id).
 
-        try:
-            cursor.execute("DELETE FROM user_trades")
-            if isinstance(conn, PGCompatConnection):
-                try:
-                    cursor.execute("ALTER SEQUENCE user_trades_id_seq RESTART WITH 1;")
-                except Exception:
-                    pass
-        except Exception:
-            pass
 
         try:
             from src.binance_client import get_server_time
