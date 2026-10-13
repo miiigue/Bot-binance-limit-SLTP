@@ -70,12 +70,14 @@ function MainDashboard() {
     if (activeTab === 'my_bot' && userBotHeader?.bot_settings?.strategy_name) {
       return userBotHeader.bot_settings.strategy_name;
     }
+    const name = config?.activeStrategyName || config?.active_strategy_name;
+    if (name && name !== 'N/A' && name !== 'Configuración Modificada') {
+      const found = availableStrategies?.find(s => s.name === name || s.filename === name || s.id === name);
+      return found?.name || name;
+    }
     if (activeStrategyDisplayName) return activeStrategyDisplayName;
-    const name = config?.activeStrategyName;
-    if (!name) return 'v3_RSI-SNIPER-MOMENTUM_v3';
-    const found = availableStrategies?.find(s => s.name === name || s.filename === name || s.id === name);
-    return found?.name || name;
-  }, [activeTab, userBotHeader, activeStrategyDisplayName, config?.activeStrategyName, availableStrategies]);
+    return '22_AGRESIVA_TOLERANTE_30S';
+  }, [activeTab, userBotHeader, activeStrategyDisplayName, config?.activeStrategyName, config?.active_strategy_name, availableStrategies]);
 
   const [chartSelectedSymbol, setChartSelectedSymbol] = useState('SOLUSDT');
 

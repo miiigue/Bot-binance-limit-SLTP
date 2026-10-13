@@ -82,7 +82,7 @@ def main():
         except Exception as e_cfg_rd:
             print(f"ℹ️ Aviso al leer config.ini: {e_cfg_rd}")
 
-    if not strat_name or strat_name.lower() == 'global' or strat_name.startswith('V21_'):
+    if not strat_name or strat_name.lower() == 'global':
         strat_name = '22_AGRESIVA_TOLERANTE_30S'
 
     print(f"✅ Estrategia activa soberana preservada: '{strat_name}'")
