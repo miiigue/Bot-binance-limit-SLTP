@@ -2458,7 +2458,7 @@ def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: 
         enc_secret = encrypt_secret(api_secret)
         masked_key = mask_api_key(api_key)
 
-        # Migración en caliente: asegurar que la columna api_base_url exista (PostgreSQL / SQLite)
+        # Migración en caliente: asegurar que las columnas api_base_url e initial_balance existan (PostgreSQL / SQLite)
         try:
             cursor.execute("ALTER TABLE user_api_keys ADD COLUMN api_base_url VARCHAR(255) DEFAULT NULL")
             conn.commit()
@@ -2468,22 +2468,36 @@ def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: 
             except Exception:
                 pass
 
+        try:
+            cursor.execute("ALTER TABLE user_api_keys ADD COLUMN initial_balance double precision DEFAULT 0.0")
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
         # Verificar si ya existe registro para este usuario y exchange/red
-        cursor.execute("SELECT id FROM user_api_keys WHERE user_id = ? AND exchange = 'binance' AND is_testnet = ?", (user_id, bool(is_testnet)))
+        cursor.execute("SELECT id, initial_balance FROM user_api_keys WHERE user_id = ? AND exchange = 'binance' AND is_testnet = ?", (user_id, bool(is_testnet)))
         row = cursor.fetchone()
 
+        bal_det = float(balance_detected)
         if row:
+            # Preservar initial_balance existente o establecerlo si es nuevo
+            existing_init = float(row.get('initial_balance', 0.0) or 0.0) if isinstance(row, dict) else 0.0
+            new_init = existing_init if existing_init > 0 else (bal_det if bal_det > 0 else 0.0)
             cursor.execute("""
                 UPDATE user_api_keys
                 SET api_key_encrypted = ?, api_secret_encrypted = ?, api_key_masked = ?,
-                    is_valid = ?, last_verified_at = ?, balance_detected = ?, api_base_url = ?, updated_at = ?
+                    is_valid = ?, last_verified_at = ?, balance_detected = ?, initial_balance = ?, api_base_url = ?, updated_at = ?
                 WHERE id = ?
-            """, (enc_key, enc_secret, masked_key, bool(is_valid), now_str, float(balance_detected), api_base_url, now_str, row['id'] if isinstance(row, dict) or hasattr(row, '__getitem__') else row[0]))
+            """, (enc_key, enc_secret, masked_key, bool(is_valid), now_str, bal_det, new_init, api_base_url, now_str, row['id'] if isinstance(row, dict) or hasattr(row, '__getitem__') else row[0]))
         else:
+            new_init = bal_det if bal_det > 0 else 0.0
             cursor.execute("""
-                INSERT INTO user_api_keys (user_id, exchange, api_key_encrypted, api_secret_encrypted, api_key_masked, is_testnet, is_valid, last_verified_at, balance_detected, api_base_url, created_at, updated_at)
-                VALUES (?, 'binance', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (user_id, enc_key, enc_secret, masked_key, bool(is_testnet), bool(is_valid), now_str, float(balance_detected), api_base_url, now_str, now_str))
+                INSERT INTO user_api_keys (user_id, exchange, api_key_encrypted, api_secret_encrypted, api_key_masked, is_testnet, is_valid, last_verified_at, balance_detected, initial_balance, api_base_url, created_at, updated_at)
+                VALUES (?, 'binance', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (user_id, enc_key, enc_secret, masked_key, bool(is_testnet), bool(is_valid), now_str, bal_det, new_init, api_base_url, now_str, now_str))
 
         conn.commit()
         logger.info(f"Claves API Binance guardadas con cifrado AES-256 para usuario ID={user_id} (Testnet: {is_testnet})")
@@ -2497,6 +2511,29 @@ def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: 
         return False
     finally:
         conn.close()
+
+
+def set_user_api_initial_balance(user_id: int, initial_balance_usdt: float) -> bool:
+    """Establece o restablece el balance inicial base para conciliar el PnL de un usuario."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""
+            UPDATE user_api_keys
+            SET initial_balance = ?, updated_at = ?
+            WHERE user_id = ? AND exchange = 'binance'
+        """, (float(initial_balance_usdt), now_str, user_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al establecer initial_balance de usuario {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
 
 
 def update_user_api_keys_balance(user_id: int, balance_usdt: float) -> bool:

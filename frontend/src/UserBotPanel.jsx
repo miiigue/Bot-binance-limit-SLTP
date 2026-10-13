@@ -954,9 +954,10 @@ export default function UserBotPanel({
           {/* Auditoría de Capital y Ecuación Financiera */}
           {(() => {
             const currentWalletBalance = Number(walletBreakdown?.wallet_balance ?? balance);
-            const initialCap = Number(walletBreakdown?.initial_capital ?? botData?.initial_capital ?? 5000.0);
+            const initialCap = Number(walletBreakdown?.initial_capital ?? botData?.initial_capital ?? (currentWalletBalance > 0 ? currentWalletBalance : 1000.0));
             const grossWin = Number(metricsData?.gross_win ?? walletBreakdown?.gross_win ?? 0);
             const grossLoss = Number(metricsData?.gross_loss ?? walletBreakdown?.gross_loss ?? 0);
+
 
             // Conciliación matemática exacta:
             // Saldo en Billetera = Capital Inicial + Profits - Pérdidas - Comisiones - Financiamientos

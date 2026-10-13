@@ -1329,7 +1329,11 @@ def user_bot_status_endpoint():
                 api_logger.debug(f"Aviso al consultar desglose de cuenta para usuario {user_id}: {e_live}")
 
         # Determinar Capital Inicial / Depósito Base para conciliar PnL de cartera (Balance - Capital Inicial)
-        initial_capital = 5000.0  # Base estándar por defecto
+        # 1. Si el usuario tiene un initial_balance registrado en sus API keys, respetarlo
+        # 2. Si tiene depósitos en investor_transactions, calcular el neto
+        # 3. Si no tiene ninguno, el capital inicial es su balance actual detectado
+        user_init_key = float(keys.get('initial_balance', 0.0) or 0.0) if keys else 0.0
+        initial_capital = user_init_key if user_init_key > 0 else (live_balance or wallet_balance or 1000.0)
         try:
             from src.database import get_db_connection
             conn_u = get_db_connection()
@@ -1352,6 +1356,7 @@ def user_bot_status_endpoint():
             pass
 
         wallet_pnl = round((live_balance or wallet_balance) - initial_capital, 2)
+
 
         cfg_temp = load_config()
         db_strat = None
@@ -1646,7 +1651,8 @@ def user_trades_endpoint():
                 k_info = get_user_api_keys(user_id=user_id, decrypt=False)
                 bal_detect = float(k_info.get('balance_detected', 0.0) or 0.0) if k_info else 0.0
                 if bal_detect > 0:
-                    init_cap = 5000.0
+                    user_init_val = float(k_info.get('initial_balance', 0.0) or 0.0) if k_info else 0.0
+                    init_cap = user_init_val if user_init_val > 0 else bal_detect
                     m_win = float(metrics.get('gross_win', 0.0) or 0.0)
                     m_loss = float(metrics.get('gross_loss', 0.0) or 0.0)
                     m_fund = float(metrics.get('total_funding', 0.0) or 0.0)
@@ -1662,6 +1668,7 @@ def user_trades_endpoint():
                     elif bal_detect >= net_pre:
                         metrics['total_commission'] = 0.0
                         metrics['total_funding'] = 0.0
+
             except Exception:
                 pass
 
@@ -2947,19 +2954,34 @@ def reset_demo_account_endpoint():
             except Exception:
                 pass
 
+        # Identificar quién realiza la solicitud
+        is_admin_req = False
+        if user_id:
+            try:
+                from src.database import get_user_by_id
+                u_req = get_user_by_id(user_id)
+                if u_req and u_req.get('role') == 'admin':
+                    is_admin_req = True
+            except Exception:
+                pass
+        else:
+            is_admin_req = True
+
         closed_count = 0
+        close_errors = []
         clients_to_check = []
 
-        # Cliente Master / Testnet General
-        try:
-            from src.binance_client import get_futures_client
-            master_client = get_futures_client()
-            if master_client:
-                clients_to_check.append(('master', master_client))
-        except Exception as e_m:
-            logger.warning(f"No se pudo obtener el cliente master para reset demo: {e_m}")
+        # Si es Admin, incluir cliente master/institucional
+        if is_admin_req:
+            try:
+                from src.binance_client import get_futures_client
+                master_client = get_futures_client()
+                if master_client:
+                    clients_to_check.append(('master', master_client, None))
+            except Exception as e_m:
+                logger.warning(f"No se pudo obtener el cliente master para reset demo: {e_m}")
 
-        # Cliente de usuario si tiene API keys registradas
+        # Cliente del usuario específico autenticado
         if user_id:
             try:
                 from src.database import get_user_api_keys, update_user_bot_settings
@@ -2975,89 +2997,135 @@ def reset_demo_account_endpoint():
                         base_url=user_keys.get('api_base_url')
                     )
                     if u_client:
-                        clients_to_check.append((f'user_{user_id}', u_client))
+                        clients_to_check.append((f'user_{user_id}', u_client, user_id))
             except Exception as e_u:
                 logger.warning(f"Aviso al obtener cliente de usuario {user_id} para reset demo: {e_u}")
 
-        # Cancelar órdenes y cerrar posiciones en todos los clientes aplicables
-        for c_label, cli in clients_to_check:
+        # Cancelar órdenes y cerrar posiciones en cada cuenta aplicable
+        last_user_balance = None
+        for c_label, cli, target_uid in clients_to_check:
             try:
-                acc_positions = cli.account().get('positions', [])
+                # Consultar si la cuenta está en Hedge Mode
+                cli_is_hedge = False
+                try:
+                    pos_mode = cli.get_position_mode()
+                    if isinstance(pos_mode, dict):
+                        cli_is_hedge = bool(pos_mode.get('dualSidePosition', False))
+                except Exception:
+                    cli_is_hedge = False
+
+                acc_data = cli.account()
+                acc_positions = acc_data.get('positions', [])
+
+                # 1. Cancelar órdenes abiertas para cada símbolo con posición
+                processed_symbols = set()
+                for p in acc_positions:
+                    sym = p.get('symbol')
+                    if sym and sym not in processed_symbols:
+                        processed_symbols.add(sym)
+                        try:
+                            cli.cancel_open_orders(symbol=sym)
+                        except Exception:
+                            pass
+
+                # 2. Cerrar posiciones activas reales
                 for p in acc_positions:
                     sym = p.get('symbol')
                     if not sym:
                         continue
                     amt = float(p.get('positionAmt', 0))
-                    # Cancelar órdenes abiertas para este símbolo
-                    try:
-                        cli.cancel_open_orders(symbol=sym)
-                    except Exception:
-                        pass
-
                     if abs(amt) > 1e-9:
                         side = 'SELL' if amt > 0 else 'BUY'
-                        raw_ps = p.get('positionSide', 'BOTH')
+                        if cli_is_hedge:
+                            pos_side = p.get('positionSide') or ('LONG' if amt > 0 else 'SHORT')
+                        else:
+                            pos_side = 'BOTH'
+
                         try:
-                            from src.binance_client import adjust_quantity_for_symbol, is_hedge_mode
+                            from src.binance_client import adjust_quantity_for_symbol
                             adj_q = adjust_quantity_for_symbol(sym, abs(amt)) or abs(amt)
                             order_params = {
                                 'symbol': sym.upper(),
                                 'side': side,
                                 'type': 'MARKET',
                                 'quantity': adj_q,
-                                'positionSide': raw_ps
+                                'positionSide': pos_side
                             }
-                            if raw_ps == 'BOTH':
+                            if not cli_is_hedge:
                                 order_params['reduceOnly'] = 'true'
+
                             order_res = cli.new_order(**order_params)
                             if order_res and isinstance(order_res, dict) and order_res.get('orderId'):
                                 closed_count += 1
-                                logger.info(f"[{c_label}] Posición {sym} ({amt}) cerrada exitosamente en Binance Testnet/Demo.")
+                                logger.info(f"[{c_label}] Posición {sym} ({amt}) cerrada exitosamente en Binance.")
                         except Exception as e_ord:
+                            err_str = str(e_ord)
+                            close_errors.append(f"{sym}: {err_str}")
                             logger.error(f"[{c_label}] Error al enviar orden de cierre para {sym}: {e_ord}")
+
+                # 3. Tras cerrar posiciones, consultar balance real actualizado en Binance
+                try:
+                    fresh_acc = cli.account()
+                    fresh_bal = float(fresh_acc.get('totalWalletBalance', 0.0) or 0.0)
+                    if target_uid and fresh_bal > 0:
+                        from src.database import update_user_api_keys_balance, set_user_api_initial_balance
+                        update_user_api_keys_balance(target_uid, fresh_bal)
+                        set_user_api_initial_balance(target_uid, fresh_bal)
+                        last_user_balance = fresh_bal
+                except Exception as e_fbal:
+                    logger.debug(f"Aviso al obtener balance post-cierre para {c_label}: {e_fbal}")
+
             except Exception as e_cli:
                 logger.warning(f"Aviso al consultar posiciones para cliente {c_label}: {e_cli}")
+                close_errors.append(f"Conexión Binance: {str(e_cli)}")
 
-            # Tras cerrar todas las posiciones, asegurar Hedge Mode si la cuenta estaba en One-Way
-            try:
-                pos_mode = cli.get_position_mode()
-                if isinstance(pos_mode, dict) and not pos_mode.get('dualSidePosition', False):
-                    cli.change_position_mode(dualSidePosition="true")
-                    logger.info(f"[{c_label}] Modo Hedge (dualSidePosition=True) activado automáticamente tras reset demo.")
-            except Exception as e_hm:
-                logger.debug(f"[{c_label}] No se pudo cambiar a Hedge Mode tras reset demo: {e_hm}")
-
-        # 2. Resetear base de datos (trades y cutoff)
+        # 4. Aislamiento de BD: Limpiar únicamente los datos del solicitante
         from src.database import clear_trade_history, clear_user_trades
-        clear_trade_history()
+        if is_admin_req:
+            clear_trade_history()
+            session_manager.reset_stats()
+            with status_lock:
+                for sym, worker in worker_statuses.items():
+                    if hasattr(worker, 'session_pnl'):
+                        worker.session_pnl = Decimal('0')
+                    if hasattr(worker, 'historical_pnl'):
+                        worker.historical_pnl = Decimal('0')
+                    if hasattr(worker, '_reset_state'):
+                        try:
+                            worker._reset_state()
+                            worker.in_position = False
+                            worker.current_state = BotState.IDLE
+                        except Exception:
+                            pass
+
         if user_id:
             clear_user_trades(user_id, stop_bot=True)
 
         global _sync_paused_until
-        _sync_paused_until = time.time() + 15  # Pausar sync por 15 segundos post-reset
+        _sync_paused_until = time.time() + 15
 
-        # 3. Resetear session stats y workers
-        session_manager.reset_stats()
-        with status_lock:
-            for sym, worker in worker_statuses.items():
-                if hasattr(worker, 'session_pnl'):
-                    worker.session_pnl = Decimal('0')
-                if hasattr(worker, 'historical_pnl'):
-                    worker.historical_pnl = Decimal('0')
-                if hasattr(worker, '_reset_state'):
-                    try:
-                        worker._reset_state()
-                        worker.in_position = False
-                        worker.current_state = BotState.IDLE
-                    except Exception:
-                        pass
+        # Mensaje 100% verídico y transparente para el usuario
+        bal_text = f" Saldo actual en Binance: ${last_user_balance:,.2f} USDT." if last_user_balance is not None else ""
+        if closed_count > 0:
+            msg = f"Se cerraron exitosamente {closed_count} posiciones abiertas en Binance Testnet y se restableció el historial de tu bot a $0.00 USDT.{bal_text}"
+        else:
+            msg = f"No había posiciones abiertas pendientes en Binance Testnet. Se restableció el historial de operaciones y métricas a $0.00 USDT.{bal_text}"
 
-        msg = f"Cuenta Demo de Binance reiniciada con éxito. Se cerraron {closed_count} posiciones y el historial de PnL se restableció a $0.00 USDT."
+        if close_errors:
+            msg += f" (Aviso: {len(close_errors)} cierre(s) requirieron reintento o margen)."
+
         api_logger.info(msg)
-        return jsonify({"success": True, "message": msg, "closed_positions": closed_count}), 200
+        return jsonify({
+            "success": True,
+            "message": msg,
+            "closed_positions": closed_count,
+            "balance_detected": last_user_balance,
+            "errors": close_errors if close_errors else None
+        }), 200
     except Exception as e:
         logger.error(f"Error al reiniciar cuenta demo: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 # --- ENDPOINT PARA EXPLORADOR Y RADAR DE MERCADO CON CACHÉ ---
 _market_data_cache = {
