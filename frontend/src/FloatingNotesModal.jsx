@@ -23,6 +23,7 @@ export default function FloatingNotesModal() {
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [aiFeedback, setAiFeedback] = useState(null); // { type: 'success'|'error', text: '' }
+  const [isExpanded, setIsExpanded] = useState(false); // Estado para agrandar/maximizar el chat
   
   const saveTimeoutRef = useRef(null);
   const chatBottomRef = useRef(null);
@@ -263,23 +264,29 @@ export default function FloatingNotesModal() {
         </span>
       </button>
 
-      {/* Ventana Modal Flotante */}
+      {/* Ventana Modal Flotante con Soporte Expandible/Maximizado */}
       {isOpen && (
-        <div className="fixed bottom-24 right-4 sm:right-6 z-50 w-[420px] max-w-[94vw] h-[550px] max-h-[82vh] bg-slate-900/95 border-2 border-amber-500/60 shadow-2xl rounded-2xl flex flex-col overflow-hidden backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200 text-slate-100 font-sans">
+        <div
+          className={`fixed z-50 bg-slate-900/98 border-2 border-amber-500/70 shadow-2xl rounded-2xl flex flex-col overflow-hidden backdrop-blur-2xl transition-all duration-200 text-slate-100 font-sans ${
+            isExpanded
+              ? 'inset-4 sm:inset-10 md:inset-16 w-auto h-auto max-w-none max-h-none'
+              : 'bottom-24 right-4 sm:right-6 w-[560px] max-w-[96vw] h-[680px] max-h-[88vh]'
+          }`}
+        >
           
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-slate-950/80 border-b border-amber-500/30">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">✏️</span>
+          <div className="flex items-center justify-between px-4 py-3 bg-slate-950/90 border-b border-amber-500/30 select-none">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">✏️</span>
               <div>
-                <h3 className="text-sm font-bold text-amber-300 leading-tight">Bitácora & Asistente</h3>
-                <span className="text-[10px] text-slate-400 block font-mono">Persistencia en SQLite</span>
+                <h3 className="text-base font-bold text-amber-300 leading-tight">Bitácora & Asistente IA</h3>
+                <span className="text-[11px] text-slate-400 block font-mono">WTN Copilot • Persistencia en Base de Datos</span>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
               {/* Indicador de Guardado */}
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full flex items-center gap-1 border">
+              <span className="text-xs font-mono px-2.5 py-1 rounded-full flex items-center gap-1 border">
                 {saveStatus === 'saving' && (
                   <span className="text-amber-300 border-amber-500/40 bg-amber-950/50 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span> Guardando...
@@ -287,7 +294,7 @@ export default function FloatingNotesModal() {
                 )}
                 {saveStatus === 'saved' && (
                   <span className="text-emerald-300 border-emerald-500/40 bg-emerald-950/50">
-                    ✓ Guardado en DB
+                    ✓ Guardado
                   </span>
                 )}
                 {saveStatus === 'idle' && (
@@ -302,10 +309,21 @@ export default function FloatingNotesModal() {
                 )}
               </span>
 
+              {/* Botón Maximizar / Restaurar */}
+              <button
+                type="button"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors border border-slate-700 text-sm font-bold"
+                title={isExpanded ? 'Restaurar tamaño normal' : 'Maximizar ventana de chat'}
+              >
+                {isExpanded ? '🗗' : '⛶'}
+              </button>
+
               {/* Botón Cerrar (Guarda al cerrar) */}
               <button
+                type="button"
                 onClick={handleClose}
-                className="w-7 h-7 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors border border-slate-700 text-xs font-bold"
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 flex items-center justify-center transition-colors border border-slate-700 text-sm font-bold"
                 title="Cerrar y guardar"
               >
                 ✕
@@ -401,30 +419,30 @@ export default function FloatingNotesModal() {
           {activeTab === 'chat' && (
             <div className="flex-1 flex flex-col overflow-hidden">
               {/* Historial de Mensajes */}
-              <div className="flex-1 overflow-y-auto p-3 space-y-3 font-sans text-xs">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 font-sans text-sm">
                 {chatHistory.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-400">
-                    <span className="text-3xl mb-2">🤖</span>
-                    <p className="font-semibold text-slate-300 mb-1">Copiloto WTN Algo-Trading</p>
-                    <p className="text-[11px] leading-relaxed max-w-[280px]">
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
+                    <span className="text-4xl mb-3">🤖</span>
+                    <p className="font-bold text-slate-200 text-base mb-1">Copiloto WTN Algo-Trading</p>
+                    <p className="text-xs leading-relaxed max-w-md text-slate-400">
                       Conectado a la telemetría en vivo del bot. Pregúntame sobre balance, posiciones abiertas, trailing stop o cualquier instrucción.
                     </p>
-                    <div className="mt-3 flex flex-wrap gap-1.5 justify-center">
+                    <div className="mt-4 flex flex-wrap gap-2 justify-center">
                       <button
                         onClick={() => handleSendMessage('¿Cómo están mis posiciones abiertas y el margen?')}
-                        className="text-[10px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors"
+                        className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors font-medium"
                       >
                         📊 Mis posiciones
                       </button>
                       <button
                         onClick={() => handleSendMessage('¿Qué recomendación das para el trailing stop?')}
-                        className="text-[10px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors"
+                        className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors font-medium"
                       >
                         📈 Trailing Stop
                       </button>
                       <button
                         onClick={() => handleSendMessage('¿Cuál es el saldo total y exposición de cartera?')}
-                        className="text-[10px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors"
+                        className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors font-medium"
                       >
                         💰 Saldo y Exposición
                       </button>
@@ -438,17 +456,17 @@ export default function FloatingNotesModal() {
                         m.role === 'user' ? 'items-end' : 'items-start'
                       }`}
                     >
-                      <div className="flex items-center gap-1.5 mb-0.5 px-1">
-                        <span className="text-[10px] font-bold text-slate-400">
-                          {m.role === 'user' ? 'Tú' : 'Copiloto'}
+                      <div className="flex items-center gap-2 mb-1 px-1">
+                        <span className="text-xs font-bold text-slate-300">
+                          {m.role === 'user' ? '👤 Tú' : '🤖 Copiloto IA'}
                         </span>
-                        <span className="text-[9px] text-slate-500 font-mono">{m.time}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">{m.time}</span>
                       </div>
                       <div
-                        className={`max-w-[88%] rounded-2xl px-3 py-2 leading-relaxed whitespace-pre-wrap ${
+                        className={`max-w-[90%] rounded-2xl px-4 py-3 leading-relaxed text-[13.5px] whitespace-pre-wrap ${
                           m.role === 'user'
-                            ? 'bg-amber-500 text-slate-950 font-medium rounded-br-none shadow-md shadow-amber-500/10'
-                            : 'bg-slate-800/90 text-slate-100 border border-slate-700 rounded-bl-none shadow-md'
+                            ? 'bg-amber-500 text-slate-950 font-semibold rounded-br-none shadow-md shadow-amber-500/15'
+                            : 'bg-slate-800/95 text-slate-100 border border-slate-700/80 rounded-bl-none shadow-lg'
                         }`}
                       >
                         {m.text}
@@ -457,16 +475,16 @@ export default function FloatingNotesModal() {
                   ))
                 )}
                 {isSending && (
-                  <div className="flex items-center gap-2 text-slate-400 text-xs p-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                    <span>El Copiloto está analizando...</span>
+                  <div className="flex items-center gap-2.5 text-amber-300 text-xs p-3 font-medium bg-slate-950/40 rounded-xl border border-slate-800 w-fit">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
+                    <span>El Copiloto está analizando la telemetría en vivo...</span>
                   </div>
                 )}
                 <div ref={chatBottomRef} />
               </div>
 
               {/* Input y Botón Enviar */}
-              <div className="p-2.5 bg-slate-950/90 border-t border-slate-800 flex items-center gap-2">
+              <div className="p-3 bg-slate-950/95 border-t border-slate-800 flex items-center gap-2.5">
                 <input
                   type="text"
                   value={chatInput}
@@ -474,17 +492,17 @@ export default function FloatingNotesModal() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSendMessage();
                   }}
-                  placeholder="Pregunta sobre posiciones, balance, análisis o recomendaciones..."
+                  placeholder="Pregunta sobre posiciones, balance, análisis de riesgo o recomendaciones..."
                   disabled={isSending}
-                  className="flex-1 bg-slate-900 border border-slate-700 focus:border-amber-400 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none font-sans"
+                  className="flex-1 bg-slate-900 border border-slate-700 focus:border-amber-400 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none font-sans transition-all"
                 />
                 <button
                   onClick={() => handleSendMessage()}
                   disabled={!chatInput.trim() || isSending}
-                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1 shadow-md shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold rounded-xl text-sm flex items-center gap-1.5 shadow-md shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
                   <span>Enviar</span>
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z" />
                   </svg>
                 </button>
