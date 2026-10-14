@@ -98,6 +98,15 @@ function MainDashboard() {
   const [userBotHeader, setUserBotHeader] = useState(null);
 
   const activeStrategyDisplay = useMemo(() => {
+    // Si el Administrador está inspeccionando a un usuario ("Ver Actividad")
+    if (inspectingUser) {
+      if (userBotHeader?.bot_settings?.strategy_name) {
+        return userBotHeader.bot_settings.strategy_name;
+      }
+      if (inspectingUser.strategy_name) {
+        return inspectingUser.strategy_name;
+      }
+    }
     if (activeTab === 'my_bot' && userBotHeader?.bot_settings?.strategy_name) {
       return userBotHeader.bot_settings.strategy_name;
     }
@@ -108,7 +117,7 @@ function MainDashboard() {
     }
     if (activeStrategyDisplayName) return activeStrategyDisplayName;
     return '22_AGRESIVA_TOLERANTE_30S';
-  }, [activeTab, userBotHeader, activeStrategyDisplayName, config?.activeStrategyName, config?.active_strategy_name, availableStrategies]);
+  }, [inspectingUser, activeTab, userBotHeader, activeStrategyDisplayName, config?.activeStrategyName, config?.active_strategy_name, availableStrategies]);
 
   const [chartSelectedSymbol, setChartSelectedSymbol] = useState('SOLUSDT');
 
@@ -283,13 +292,14 @@ function MainDashboard() {
     };
   }, [isAuthenticated, authFetch, handleStatusUpdate]);
 
-  // Sondeo de datos de cuenta propia / copy trade para cabecera dinámica
+  // Sondeo de datos de cuenta propia / copy trade / usuario inspeccionado para cabecera dinámica
   useEffect(() => {
     if (!isAuthenticated) return;
     let isMounted = true;
     const fetchUserBot = async () => {
       try {
-        const resp = await authFetch('/api/user/bot');
+        const url = inspectingUser?.id ? `/api/user/bot?user_id=${inspectingUser.id}` : '/api/user/bot';
+        const resp = await authFetch(url);
         if (resp.ok && isMounted) {
           const data = await resp.json();
           setUserBotHeader(data);
@@ -299,12 +309,12 @@ function MainDashboard() {
       }
     };
     fetchUserBot();
-    const botInterval = setInterval(fetchUserBot, 5000);
+    const botInterval = setInterval(fetchUserBot, 4000);
     return () => {
       isMounted = false;
       clearInterval(botInterval);
     };
-  }, [isAuthenticated, authFetch]);
+  }, [isAuthenticated, authFetch, inspectingUser]);
 
   const fetchAvailableStrategies = useCallback(async () => {
     setIsLoadingStrategies(true);
@@ -461,16 +471,44 @@ function MainDashboard() {
     return <AuthModal />;
   }
 
-  const isCopyTradeActiveTab = isInvestor && (activeTab === 'my_bot' || activeTab === 'copy_trading');
-  const userBinanceBalance = Number(userBotHeader?.balance_usdt || 0);
-  const userInitialCapital = Number(userBotHeader?.initial_capital || 5000);
+  const isViewingSpecificUser = Boolean(inspectingUser);
+  const isCopyTradeActiveTab = (isInvestor && (activeTab === 'my_bot' || activeTab === 'copy_trading')) || isViewingSpecificUser;
+  
+  // Cuando se inspecciona a un usuario, mostrar sus datos explícitos de Binance y PnL
+  const targetUserDisplayName = inspectingUser 
+    ? (inspectingUser.username || inspectingUser.email || `Usuario #${inspectingUser.id}`)
+    : (user?.username || 'Usuario');
+
+  const userBinanceBalance = Number(
+    userBotHeader?.balance_usdt !== undefined 
+      ? userBotHeader.balance_usdt 
+      : (inspectingUser?.binance_balance || 0)
+  );
+
+  const userInitialCapital = Number(
+    userBotHeader?.initial_capital !== undefined 
+      ? userBotHeader.initial_capital 
+      : (inspectingUser?.investment_usdt || 5000)
+  );
+
   const userWalletPnl = (userBotHeader?.wallet_pnl !== undefined && userBotHeader?.wallet_pnl !== null)
     ? Number(userBotHeader.wallet_pnl)
-    : (userBinanceBalance - userInitialCapital);
-  const userUnrealizedPnl = Number(userBotHeader?.wallet_breakdown?.unrealized_pnl || 0);
-  const userOpenPositionsCount = Number(userBotHeader?.wallet_breakdown?.open_positions_count || 0);
-  const isUserBotRunningRaw = Boolean(userBotHeader?.bot_settings?.is_running);
-  const userOpMode = userBotHeader?.bot_settings?.operating_mode || 'COPY_TRADING';
+    : (inspectingUser?.net_pnl !== undefined ? Number(inspectingUser.net_pnl) : (userBinanceBalance - userInitialCapital));
+
+  const userUnrealizedPnl = Number(
+    userBotHeader?.wallet_breakdown?.unrealized_pnl !== undefined
+      ? userBotHeader.wallet_breakdown.unrealized_pnl
+      : (inspectingUser?.floating_pnl || 0)
+  );
+
+  const userOpenPositionsCount = Number(
+    userBotHeader?.wallet_breakdown?.open_positions_count !== undefined
+      ? userBotHeader.wallet_breakdown.open_positions_count
+      : (inspectingUser?.open_positions || 0)
+  );
+
+  const isUserBotRunningRaw = Boolean(userBotHeader?.bot_settings?.is_running !== undefined ? userBotHeader.bot_settings.is_running : inspectingUser?.is_running);
+  const userOpMode = userBotHeader?.bot_settings?.operating_mode || inspectingUser?.operating_mode || 'PERSONAL_BOT';
   
   const isCopyActive = isUserBotRunningRaw && userOpMode === 'COPY_TRADING';
   const isPersonalActive = isUserBotRunningRaw && userOpMode === 'PERSONAL_BOT';
@@ -496,9 +534,11 @@ function MainDashboard() {
             <div className="flex items-center justify-between gap-1.5 min-w-0">
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-sm font-black tracking-tight text-slate-950 truncate">WTN ALGO-TRADING</span>
+                  <span className="text-sm font-black tracking-tight text-slate-950 truncate">
+                    {isViewingSpecificUser ? `BOT: ${targetUserDisplayName}` : 'WTN ALGO-TRADING'}
+                  </span>
                   <span className="bg-slate-950 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shadow-sm">
-                    BINANCE
+                    {isViewingSpecificUser ? 'MODO USUARIO' : 'BINANCE'}
                   </span>
                 </div>
                 <span className="text-[9px] font-bold text-slate-900 truncate max-w-[190px]" title={activeStrategyDisplay}>
@@ -539,7 +579,9 @@ function MainDashboard() {
                   ) : <div />}
 
                   <div className="flex items-baseline gap-1.5 font-mono text-slate-950 font-bold ml-auto">
-                    <span className="text-[11px] font-extrabold uppercase text-slate-900">Tu Saldo:</span>
+                    <span className="text-[11px] font-extrabold uppercase text-slate-900">
+                      {isViewingSpecificUser ? 'Saldo Usuario:' : 'Tu Saldo:'}
+                    </span>
                     <span className="text-base font-black">
                       ${userBinanceBalance.toFixed(2)}
                     </span>
@@ -576,12 +618,14 @@ function MainDashboard() {
             <div className="flex-1 min-w-0 flex items-center gap-3">
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-base font-black tracking-tight text-slate-950 truncate">WTN ALGO-TRADING</span>
+                  <span className="text-base font-black tracking-tight text-slate-950 truncate">
+                    {isViewingSpecificUser ? `BOT USUARIO: ${targetUserDisplayName}` : 'WTN ALGO-TRADING'}
+                  </span>
                   <span className="bg-slate-950 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shadow">
-                    BINANCE
+                    {isViewingSpecificUser ? 'MODO INSPECCIÓN' : 'BINANCE'}
                   </span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-900 tracking-wider truncate max-w-[260px]" title={activeStrategyDisplay}>
+                <span className="text-[10px] font-bold text-slate-900 tracking-wider truncate max-w-[280px]" title={activeStrategyDisplay}>
                   {activeStrategyDisplay}
                 </span>
               </div>
@@ -591,21 +635,21 @@ function MainDashboard() {
             <div className="flex-initial px-2">
               <div className="flex items-center gap-3 text-slate-950 font-bold">
                 {isCopyTradeActiveTab ? (
-                  /* Modo Copy Trade / Bot Personal: Mostrar Datos Propios del Usuario */
+                  /* Modo Copy Trade / Bot de Usuario: Mostrar Datos Propios del Usuario Seleccionado */
                   <div className="flex items-center gap-3">
-                    {/* Flotante en vivo del usuario si tiene posiciones */}
-                    {userUnrealizedPnl !== 0 && (
-                      <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border border-slate-800 px-3 py-1 rounded-xl shadow-sm">
-                        <span className="text-xs text-slate-400">Flotante ({userOpenPositionsCount} pos):</span>
-                        <span className={`text-base font-mono font-black ${userUnrealizedPnl < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                          {userUnrealizedPnl >= 0 ? `+${userUnrealizedPnl.toFixed(2)}` : userUnrealizedPnl.toFixed(2)}
-                        </span>
-                        <span className="text-[10px] text-slate-400">USDT</span>
-                      </div>
-                    )}
+                    {/* Flotante en vivo del usuario */}
+                    <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border border-slate-800 px-3 py-1 rounded-xl shadow-sm">
+                      <span className="text-xs text-slate-400">Flotante ({userOpenPositionsCount} pos):</span>
+                      <span className={`text-base font-mono font-black ${userUnrealizedPnl < 0 ? 'text-rose-400' : userUnrealizedPnl > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                        {userUnrealizedPnl >= 0 ? `+${userUnrealizedPnl.toFixed(2)}` : userUnrealizedPnl.toFixed(2)}
+                      </span>
+                      <span className="text-[10px] text-slate-400">USDT</span>
+                    </div>
 
                     <div className="flex items-baseline gap-2.5 text-slate-950">
-                      <span className="text-sm font-extrabold uppercase tracking-wide text-slate-900">Tu Saldo Binance:</span>
+                      <span className="text-sm font-extrabold uppercase tracking-wide text-slate-900">
+                        {isViewingSpecificUser ? 'Saldo Binance Usuario:' : 'Tu Saldo Binance:'}
+                      </span>
                       <span className="text-2xl sm:text-3xl font-mono font-black tracking-tight text-slate-950">
                         ${userBinanceBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
@@ -615,7 +659,7 @@ function MainDashboard() {
                     </div>
                   </div>
                 ) : (
-                  /* Modo Fondo Institucional / Pool Central */
+                  /* Modo Fondo Institucional / Pool Central (Solo cuando el Admin está en sus pestañas globales) */
                   <>
                     {/* Flotante en vivo */}
                     <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border border-slate-800 px-3 py-1 rounded-xl shadow-sm">
