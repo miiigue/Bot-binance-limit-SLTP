@@ -1164,8 +1164,8 @@ function MainDashboard() {
       {/* Contenedor de Notificaciones Toast Flotantes */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
 
-      {/* Botón Flotante de Bitácora & Asistente IA */}
-      <FloatingNotesModal />
+      {/* Botón Flotante de Bitácora & Asistente IA (EXCLUSIVO SOLO PARA SUPER ADMINISTRADOR) */}
+      {isAdmin && <FloatingNotesModal />}
     </div>
   );
 }

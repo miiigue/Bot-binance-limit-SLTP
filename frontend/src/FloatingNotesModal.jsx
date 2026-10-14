@@ -1,20 +1,36 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from './AuthContext';
 
 export default function FloatingNotesModal() {
+  const { authFetch } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('notes'); // 'notes' | 'chat'
+  const [activeTab, setActiveTab] = useState('notes'); // 'notes' | 'chat' | 'ai_config'
   const [notes, setNotes] = useState('');
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState([]);
   const [isSending, setIsSending] = useState(false);
+
+  // Estados de Configuración de IA
+  const [aiConfig, setAiConfig] = useState({
+    has_key: false,
+    masked_key: '',
+    provider: 'gemini',
+    model: 'gemini-2.5-flash'
+  });
+  const [inputApiKey, setInputApiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [isTestingKey, setIsTestingKey] = useState(false);
+  const [isSavingKey, setIsSavingKey] = useState(false);
+  const [aiFeedback, setAiFeedback] = useState(null); // { type: 'success'|'error', text: '' }
   
   const saveTimeoutRef = useRef(null);
   const chatBottomRef = useRef(null);
 
-  // Cargar notas e historial al montar el componente
+  // Cargar notas, historial y configuración de IA al abrir o montar
   useEffect(() => {
     fetchNotes();
+    fetchAiConfig();
   }, []);
 
   // Auto-scroll en el chat
@@ -26,7 +42,7 @@ export default function FloatingNotesModal() {
 
   const fetchNotes = async () => {
     try {
-      const res = await fetch('/api/notes');
+      const res = await authFetch('/api/notes');
       if (res.ok) {
         const data = await res.json();
         if (data.notes !== undefined) setNotes(data.notes);
@@ -37,10 +53,27 @@ export default function FloatingNotesModal() {
     }
   };
 
+  const fetchAiConfig = async () => {
+    try {
+      const res = await authFetch('/api/notes/ai_config');
+      if (res.ok) {
+        const data = await res.json();
+        setAiConfig({
+          has_key: Boolean(data.has_key),
+          masked_key: data.masked_key || '',
+          provider: data.provider || 'gemini',
+          model: data.model || 'gemini-2.5-flash'
+        });
+      }
+    } catch (err) {
+      console.warn('Error al consultar configuración de IA:', err);
+    }
+  };
+
   const saveNotesToDb = async (contentToSave) => {
     setSaveStatus('saving');
     try {
-      const res = await fetch('/api/notes', {
+      const res = await authFetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes: contentToSave, chat_history: chatHistory }),
@@ -75,6 +108,59 @@ export default function FloatingNotesModal() {
     setIsOpen(false);
   };
 
+  const handleSaveAiKey = async () => {
+    if (!inputApiKey.trim() && !aiConfig.has_key) return;
+    setIsSavingKey(true);
+    setAiFeedback(null);
+    try {
+      const res = await authFetch('/api/notes/ai_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: inputApiKey.trim(),
+          provider: aiConfig.provider,
+          model: aiConfig.model
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAiFeedback({ type: 'success', text: data.message || 'Configuración de IA guardada con éxito.' });
+        setInputApiKey('');
+        fetchAiConfig();
+      } else {
+        setAiFeedback({ type: 'error', text: data.message || 'Error al guardar la clave.' });
+      }
+    } catch (err) {
+      setAiFeedback({ type: 'error', text: `Error de conexión: ${err.message}` });
+    } finally {
+      setIsSavingKey(false);
+    }
+  };
+
+  const handleTestAiKey = async () => {
+    setIsTestingKey(true);
+    setAiFeedback(null);
+    try {
+      const res = await authFetch('/api/notes/ai_test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: inputApiKey.trim() || undefined
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAiFeedback({ type: 'success', text: data.message });
+      } else {
+        setAiFeedback({ type: 'error', text: data.message });
+      }
+    } catch (err) {
+      setAiFeedback({ type: 'error', text: `Error al probar conexión: ${err.message}` });
+    } finally {
+      setIsTestingKey(false);
+    }
+  };
+
   const handleSendMessage = async (customMsg = null) => {
     const msgToSend = (customMsg !== null ? customMsg : chatInput).trim();
     if (!msgToSend || isSending) return;
@@ -91,7 +177,7 @@ export default function FloatingNotesModal() {
     setActiveTab('chat');
 
     try {
-      const res = await fetch('/api/notes/chat', {
+      const res = await authFetch('/api/notes/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -111,6 +197,7 @@ export default function FloatingNotesModal() {
               role: 'assistant',
               text: data.reply,
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              ai_powered: data.ai_powered
             },
           ]);
         }
@@ -119,7 +206,7 @@ export default function FloatingNotesModal() {
           ...prev,
           {
             role: 'assistant',
-            text: '⚠️ No se pudo obtener respuesta del servidor en este momento.',
+            text: '⚠️ No se pudo obtener respuesta del servidor en este momento. Verifica tu sesión.',
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           },
         ]);
@@ -236,7 +323,7 @@ export default function FloatingNotesModal() {
               }`}
             >
               <span>📝</span>
-              <span>Bitácora de Notas</span>
+              <span>Bitácora</span>
             </button>
             <button
               onClick={() => setActiveTab('chat')}
@@ -247,12 +334,24 @@ export default function FloatingNotesModal() {
               }`}
             >
               <span>🤖</span>
-              <span>Copiloto de Trading</span>
+              <span>Copiloto</span>
               {chatHistory.length > 0 && (
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
                   {chatHistory.length}
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setActiveTab('ai_config')}
+              className={`flex-1 py-2 flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
+                activeTab === 'ai_config'
+                  ? 'border-amber-400 text-amber-300 bg-slate-900/60'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>⚙️</span>
+              <span>Ajustes IA</span>
+              <span className={`w-2 h-2 rounded-full ${aiConfig.has_key ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
             </button>
           </div>
 
@@ -374,7 +473,7 @@ export default function FloatingNotesModal() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSendMessage();
                   }}
-                  placeholder="Escribe tu mensaje o instrucción..."
+                  placeholder="Pregunta sobre posiciones, balance, análisis o recomendaciones..."
                   disabled={isSending}
                   className="flex-1 bg-slate-900 border border-slate-700 focus:border-amber-400 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none font-sans"
                 />
@@ -388,6 +487,140 @@ export default function FloatingNotesModal() {
                     <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z" />
                   </svg>
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Cuerpo de la Pestaña: AJUSTES DE IA */}
+          {activeTab === 'ai_config' && (
+            <div className="flex-1 flex flex-col p-4 overflow-y-auto space-y-3 text-xs font-sans">
+              <div className="p-3 rounded-xl bg-slate-950/70 border border-amber-500/30">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base">🧠</span>
+                  <h4 className="font-bold text-amber-300">Conexión con Inteligencia Artificial</h4>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Ingresa tu API Key de Google Gemini para que el Copiloto analice en tiempo real la telemetría, posiciones y métricas de la plataforma.
+                </p>
+              </div>
+
+              {/* Estado actual de la Clave */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-800/40 border border-slate-700">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block">Estado de la IA</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className={`w-2.5 h-2.5 rounded-full ${aiConfig.has_key ? 'bg-emerald-400 shadow shadow-emerald-400/50' : 'bg-amber-400'}`} />
+                    <span className="font-bold text-slate-200">
+                      {aiConfig.has_key ? 'Activa y Operativa' : 'Sin API Key (Modo Local Básico)'}
+                    </span>
+                  </div>
+                  {aiConfig.masked_key && (
+                    <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">
+                      Clave guardada: {aiConfig.masked_key}
+                    </span>
+                  )}
+                </div>
+                {aiConfig.has_key && (
+                  <button
+                    type="button"
+                    onClick={handleTestAiKey}
+                    disabled={isTestingKey}
+                    className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 rounded-lg text-[10px] font-bold transition disabled:opacity-50"
+                  >
+                    {isTestingKey ? 'Probando...' : '🔍 Probar Conexión'}
+                  </button>
+                )}
+              </div>
+
+              {/* Formulario de Ingreso de API Key */}
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                    Google Gemini API Key
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showKey ? 'text' : 'password'}
+                      value={inputApiKey}
+                      onChange={(e) => setInputApiKey(e.target.value)}
+                      placeholder={aiConfig.has_key ? 'Ingresa una nueva clave para reemplazarla...' : 'AIzaSy... (Pega aquí tu clave)'}
+                      className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none font-mono pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey(!showKey)}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-200 text-xs"
+                      title={showKey ? 'Ocultar' : 'Mostrar'}
+                    >
+                      {showKey ? '👁️' : '🔒'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 block mb-1">Proveedor</label>
+                    <select
+                      value={aiConfig.provider}
+                      onChange={(e) => setAiConfig(prev => ({ ...prev, provider: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-400"
+                    >
+                      <option value="gemini">Google Gemini</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 block mb-1">Modelo de IA</label>
+                    <select
+                      value={aiConfig.model}
+                      onChange={(e) => setAiConfig(prev => ({ ...prev, model: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-400 font-mono"
+                    >
+                      <option value="gemini-2.5-flash">gemini-2.5-flash (Ultra Rápido)</option>
+                      <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                      <option value="gemini-1.5-pro">gemini-1.5-pro (Avanzado)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Botones Guardar y Probar */}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleSaveAiKey}
+                    disabled={isSavingKey || (!inputApiKey.trim() && !aiConfig.has_key)}
+                    className="flex-1 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black rounded-xl text-xs transition shadow-md shadow-amber-500/20 disabled:opacity-50"
+                  >
+                    {isSavingKey ? 'Guardando...' : '💾 Guardar Clave en Base de Datos'}
+                  </button>
+                  {inputApiKey.trim() && (
+                    <button
+                      type="button"
+                      onClick={handleTestAiKey}
+                      disabled={isTestingKey}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition disabled:opacity-50"
+                    >
+                      {isTestingKey ? 'Probando...' : 'Probar'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Mensaje de Feedback */}
+                {aiFeedback && (
+                  <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
+                    aiFeedback.type === 'success'
+                      ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-200'
+                      : 'bg-rose-950/70 border-rose-500/50 text-rose-200'
+                  }`}>
+                    <span>{aiFeedback.text}</span>
+                    <button onClick={() => setAiFeedback(null)} className="text-slate-400 hover:text-white ml-2">✕</button>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-950/40 border border-slate-800 text-[10px] text-slate-400 space-y-1">
+                <span className="font-bold text-slate-300 block">🔒 Seguridad Soberana:</span>
+                <p>• La clave se almacena segura en la base de datos PostgreSQL del bot.</p>
+                <p>• Solo el Super Administrador tiene acceso a esta consola y a la configuración de IA.</p>
               </div>
             </div>
           )}
