@@ -145,7 +145,8 @@ export default function FloatingNotesModal() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          api_key: inputApiKey.trim() || undefined
+          api_key: inputApiKey.trim() || undefined,
+          model: aiConfig.model || 'gemini-3.8-flash'
         })
       });
       const data = await res.json();
@@ -575,7 +576,8 @@ export default function FloatingNotesModal() {
                       onChange={(e) => setAiConfig(prev => ({ ...prev, model: e.target.value }))}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-400 font-mono"
                     >
-                      <option value="gemini-2.0-flash">gemini-2.0-flash (Recomendado / Estable)</option>
+                      <option value="gemini-3.8-flash">gemini-3.8-flash (Recomendado / Última Generación)</option>
+                      <option value="gemini-2.0-flash">gemini-2.0-flash (Rápido / Estable)</option>
                       <option value="gemini-1.5-flash">gemini-1.5-flash (Alta Velocidad)</option>
                       <option value="gemini-1.5-pro">gemini-1.5-pro (Razonamiento Complejo)</option>
                     </select>

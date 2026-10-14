@@ -4227,7 +4227,7 @@ def handle_notes_ai_config():
         data = request.get_json(silent=True) or {}
         api_key = (data.get('api_key') or '').strip()
         provider = (data.get('provider') or 'gemini').strip().lower()
-        model = (data.get('model') or 'gemini-2.0-flash').strip()
+        model = (data.get('model') or 'gemini-3.8-flash').strip()
         
         if api_key:
             set_bot_setting('admin_ai_api_key', api_key)
@@ -4262,7 +4262,7 @@ def handle_notes_ai_config():
         masked_key = f"{saved_key[:6]}...{saved_key[-4:]}" if len(saved_key) > 10 else "******"
 
     provider = get_bot_setting('admin_ai_provider', 'gemini') or 'gemini'
-    model = get_bot_setting('admin_ai_model', 'gemini-2.0-flash') or 'gemini-2.0-flash'
+    model = get_bot_setting('admin_ai_model', 'gemini-3.8-flash') or 'gemini-3.8-flash'
 
     return jsonify({
         'status': 'success',
@@ -4287,8 +4287,13 @@ def handle_notes_ai_test():
 
     try:
         import requests as _requests
-        # Probar primero con gemini-2.0-flash o gemini-1.5-flash
-        models_to_try = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash']
+        # Obtener modelo solicitado o usar gemini-3.8-flash como prioritario
+        req_model = (data.get('model') or get_bot_setting('admin_ai_model', 'gemini-3.8-flash') or 'gemini-3.8-flash').strip()
+        models_to_try = [req_model]
+        for fallback in ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']:
+            if fallback not in models_to_try:
+                models_to_try.append(fallback)
+
         last_err = ""
         for mod in models_to_try:
             try:
@@ -4296,14 +4301,16 @@ def handle_notes_ai_test():
                 test_payload = {
                     "contents": [{"parts": [{"text": "Responde únicamente: 'CONEXION_OK'"}]}]
                 }
-                res = _requests.post(test_url, json=test_payload, timeout=10)
+                res = _requests.post(test_url, json=test_payload, timeout=12)
                 if res.ok:
                     return jsonify({
                         'status': 'success',
                         'message': f'✅ Conexión exitosa con Google Gemini IA ({mod}). La API Key es 100% válida y operativa.'
                     }), 200
                 else:
-                    last_err = res.json().get('error', {}).get('message', res.text)
+                    err_json = res.json().get('error', {})
+                    err_msg = err_json.get('message', res.text)
+                    last_err = f"[{mod}] {err_msg}"
             except Exception as e_m:
                 last_err = str(e_m)
 
@@ -4367,7 +4374,7 @@ def handle_assistant_chat():
     if not gemini_key:
         gemini_key = os.environ.get('GEMINI_API_KEY')
 
-    target_model = get_bot_setting('admin_ai_model', 'gemini-2.5-flash') or 'gemini-2.5-flash'
+    target_model = get_bot_setting('admin_ai_model', 'gemini-3.8-flash') or 'gemini-3.8-flash'
 
     assistant_reply = ""
     ai_used = False
@@ -4397,7 +4404,7 @@ INSTRUCCIONES DE RESPUESTA:
 4. Sé conciso pero exhaustivo en datos numéricos relevantes."""
 
             models_to_try = [target_model]
-            for fallback in ['gemini-2.0-flash', 'gemini-1.5-flash']:
+            for fallback in ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']:
                 if fallback not in models_to_try:
                     models_to_try.append(fallback)
 
