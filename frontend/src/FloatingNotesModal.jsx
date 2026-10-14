@@ -576,10 +576,10 @@ export default function FloatingNotesModal() {
                       onChange={(e) => setAiConfig(prev => ({ ...prev, model: e.target.value }))}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-400 font-mono"
                     >
-                      <option value="gemini-3.7-flash">gemini-3.7-flash (Recomendado / Ultra Estable)</option>
+                      <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Recomendado / Ultra Rápido & Disponible)</option>
+                      <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Estable / Económico)</option>
+                      <option value="gemini-3.7-flash">gemini-3.7-flash (Alta Precisión)</option>
                       <option value="gemini-3.8-flash">gemini-3.8-flash (Última Generación)</option>
-                      <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Ultra Rápido)</option>
-                      <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Ligero / Económico)</option>
                     </select>
                   </div>
                 </div>
