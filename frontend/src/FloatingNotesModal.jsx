@@ -16,7 +16,7 @@ export default function FloatingNotesModal() {
     has_key: false,
     masked_key: '',
     provider: 'gemini',
-    model: 'gemini-2.0-flash'
+    model: 'gemini-3.7-flash'
   });
   const [inputApiKey, setInputApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -62,7 +62,7 @@ export default function FloatingNotesModal() {
           has_key: Boolean(data.has_key),
           masked_key: data.masked_key || '',
           provider: data.provider || 'gemini',
-          model: data.model || 'gemini-2.5-flash'
+          model: data.model || 'gemini-3.7-flash'
         });
       }
     } catch (err) {
@@ -576,10 +576,10 @@ export default function FloatingNotesModal() {
                       onChange={(e) => setAiConfig(prev => ({ ...prev, model: e.target.value }))}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-400 font-mono"
                     >
-                      <option value="gemini-3.8-flash">gemini-3.8-flash (Recomendado / Última Generación)</option>
-                      <option value="gemini-2.0-flash">gemini-2.0-flash (Rápido / Estable)</option>
-                      <option value="gemini-1.5-flash">gemini-1.5-flash (Alta Velocidad)</option>
-                      <option value="gemini-1.5-pro">gemini-1.5-pro (Razonamiento Complejo)</option>
+                      <option value="gemini-3.7-flash">gemini-3.7-flash (Recomendado / Ultra Estable)</option>
+                      <option value="gemini-3.8-flash">gemini-3.8-flash (Última Generación)</option>
+                      <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Ultra Rápido)</option>
+                      <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Ligero / Económico)</option>
                     </select>
                   </div>
                 </div>

@@ -4287,10 +4287,10 @@ def handle_notes_ai_test():
 
     try:
         import requests as _requests
-        # Obtener modelo solicitado o usar gemini-3.8-flash como prioritario
-        req_model = (data.get('model') or get_bot_setting('admin_ai_model', 'gemini-3.8-flash') or 'gemini-3.8-flash').strip()
+        # Obtener modelo solicitado o usar gemini-3.7-flash como ultra-estable / gemini-3.8-flash
+        req_model = (data.get('model') or get_bot_setting('admin_ai_model', 'gemini-3.7-flash') or 'gemini-3.7-flash').strip()
         models_to_try = [req_model]
-        for fallback in ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']:
+        for fallback in ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']:
             if fallback not in models_to_try:
                 models_to_try.append(fallback)
 
@@ -4404,7 +4404,7 @@ INSTRUCCIONES DE RESPUESTA:
 4. Sé conciso pero exhaustivo en datos numéricos relevantes."""
 
             models_to_try = [target_model]
-            for fallback in ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']:
+            for fallback in ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']:
                 if fallback not in models_to_try:
                     models_to_try.append(fallback)
 
