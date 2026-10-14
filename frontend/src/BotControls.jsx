@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import ConfirmModal from './ConfirmModal';
+import { useAuth } from './AuthContext';
 
 function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
+  const { authFetch } = useAuth();
   const [isActionPending, setIsActionPending] = useState(false);
 
   // Estado del Modal de Confirmación
@@ -98,7 +100,7 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
       onConfirm: async () => {
         setIsActionPending(true);
         try {
-          const resp = await fetch('/api/close_all_positions', { method: 'POST' });
+          const resp = await authFetch('/api/close_all_positions', { method: 'POST' });
           const data = await resp.json();
           if (resp.ok) {
             const results = data.results || data.details || {};
@@ -135,7 +137,7 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
       onConfirm: async () => {
         setIsActionPending(true);
         try {
-          const resp = await fetch('/api/demo/reset', { method: 'POST' });
+          const resp = await authFetch('/api/demo/reset', { method: 'POST' });
           const data = await resp.json();
           if (resp.ok) {
             notify('🔄 Demo Reiniciada', data.message || 'La cuenta demo de Binance se restableció a $0.00 USDT.', 'success');

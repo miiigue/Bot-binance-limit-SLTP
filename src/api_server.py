@@ -2432,6 +2432,7 @@ def get_api_usage_endpoint():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/shutdown', methods=['POST'])
+@admin_required
 def shutdown_bot():
     global workers_started, threads
     api_logger.warning("Solicitud de apagado recibida a través de la API.")
@@ -2468,6 +2469,7 @@ def shutdown_bot():
 
 # --- NUEVO ENDPOINT PARA INICIAR LOS BOTS ---
 @app.route('/api/start_bots', methods=['POST'])
+@admin_required
 def start_bots_endpoint():
     global workers_started
     logger = get_logger()
@@ -2497,6 +2499,7 @@ def start_bots_endpoint():
 
 # --- NUEVOS ENDPOINTS: CIERRE MANUAL INDIVIDUAL Y GLOBAL DE POSICIONES ---
 @app.route('/api/close_position/<symbol>', methods=['POST'])
+@admin_required
 def close_position_endpoint(symbol):
     symbol = symbol.upper().strip()
     logger = get_logger()
@@ -2552,6 +2555,7 @@ def close_position_endpoint(symbol):
             return jsonify({"error": str(e)}), 500
 
 @app.route('/api/bot/<symbol>/toggle_pause', methods=['POST'])
+@admin_required
 def toggle_bot_pause(symbol):
     global paused_symbols
     symbol = symbol.upper().strip()
@@ -2590,6 +2594,7 @@ def toggle_bot_pause(symbol):
         }), 200
 
 @app.route('/api/close_all_positions', methods=['POST'])
+@admin_required
 def close_all_positions_endpoint():
     logger = get_logger()
     logger.warning("🚨 Solicitud GLOBAL para CERRAR TODAS LAS POSICIONES recibida en la API.")
@@ -2911,10 +2916,11 @@ def sync_trades_endpoint():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/trades/reset', methods=['POST'])
+@admin_required
 def reset_trades_endpoint():
-    """Borra el historial de operaciones de la base de datos y establece punto de inicio limpio desde cero."""
+    """Borra el historial de operaciones de la base de datos institucional (tabla 'trades') y establece punto de inicio limpio desde cero para el bot maestro."""
     logger = get_logger()
-    logger.warning("Solicitud POST /api/trades/reset recibida. Reiniciando historial y PnL.")
+    logger.warning("Solicitud POST /api/trades/reset recibida por Admin. Reiniciando historial y PnL maestro...")
     try:
         from src.database import clear_trade_history
         success = clear_trade_history()
@@ -2928,51 +2934,32 @@ def reset_trades_endpoint():
                         worker.session_pnl = Decimal('0')
                     if hasattr(worker, 'historical_pnl'):
                         worker.historical_pnl = Decimal('0')
-            return jsonify({"success": True, "message": "Historial de trades y PnL reiniciado a 0.00 USDT."}), 200
+            return jsonify({"success": True, "message": "Historial de trades y PnL maestro reiniciado a 0.00 USDT."}), 200
         else:
             return jsonify({"success": False, "error": "No se pudo limpiar la base de datos."}), 500
     except Exception as e:
-        logger.error(f"Error al reiniciar historial de trades: {e}", exc_info=True)
+        logger.error(f"Error al reiniciar historial de trades maestro: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/demo/reset', methods=['POST'])
+@token_required
 def reset_demo_account_endpoint():
-    """Reinicia completamente la cuenta Demo / Testnet: cancela órdenes, cierra posiciones activas en Binance Testnet y restablece el PnL e historial a 0.00 USDT."""
+    """Reinicia completamente la cuenta Demo / Testnet del llamante autenticado: cancela órdenes, cierra posiciones activas en Binance Testnet y restablece el PnL e historial a 0.00 USDT con aislamiento estricto multi-inquilino."""
     logger = get_logger()
-    logger.warning("Solicitud POST /api/demo/reset recibida. Reiniciando cuenta Demo/Testnet de Binance...")
+    current_u = getattr(request, 'current_user', {}) or {}
+    user_id = current_u.get('user_id')
+    user_role = current_u.get('role', 'investor')
+    username = current_u.get('username', f'user_{user_id}')
+    is_admin = (user_role == 'admin')
+
+    logger.warning(f"Solicitud POST /api/demo/reset recibida de usuario ID={user_id} ({username}, rol={user_role}). Ejecutando reinicio aislado...")
     try:
-        # Extraer token de usuario si está presente para manejar credenciales de usuario o master
-        user_id = None
-        auth_header = request.headers.get('Authorization')
-        if auth_header and auth_header.startswith('Bearer '):
-            token = auth_header.split(' ')[1]
-            try:
-                import jwt
-                from src.database import JWT_SECRET
-                payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
-                user_id = payload.get('user_id')
-            except Exception:
-                pass
-
-        # Identificar quién realiza la solicitud
-        is_admin_req = False
-        if user_id:
-            try:
-                from src.database import get_user_by_id
-                u_req = get_user_by_id(user_id)
-                if u_req and u_req.get('role') == 'admin':
-                    is_admin_req = True
-            except Exception:
-                pass
-        else:
-            is_admin_req = True
-
         closed_count = 0
         close_errors = []
         clients_to_check = []
 
-        # Si es Admin, incluir cliente master/institucional
-        if is_admin_req:
+        if is_admin:
+            # Si el solicitante es Administrador, reinicia la cuenta maestra / institucional
             try:
                 from src.binance_client import get_futures_client
                 master_client = get_futures_client()
@@ -2980,13 +2967,12 @@ def reset_demo_account_endpoint():
                     clients_to_check.append(('master', master_client, None))
             except Exception as e_m:
                 logger.warning(f"No se pudo obtener el cliente master para reset demo: {e_m}")
-
-        # Cliente del usuario específico autenticado
-        if user_id:
+        else:
+            # Si el solicitante es un usuario/inversor, ÚNICAMENTE reinicia SU cuenta personal Binance
             try:
                 from src.database import get_user_api_keys, update_user_bot_settings
                 from src.binance_client import get_user_futures_client
-                # Pausar bot personal del usuario
+                # Pausar únicamente el bot personal de este usuario
                 update_user_bot_settings(user_id=user_id, is_running=False)
                 user_keys = get_user_api_keys(user_id=user_id, decrypt=True)
                 if user_keys and user_keys.get('api_key') and user_keys.get('api_secret'):
@@ -2998,14 +2984,15 @@ def reset_demo_account_endpoint():
                     )
                     if u_client:
                         clients_to_check.append((f'user_{user_id}', u_client, user_id))
+                else:
+                    logger.info(f"Usuario {user_id} no tiene API keys activas en Binance al solicitar reset demo.")
             except Exception as e_u:
                 logger.warning(f"Aviso al obtener cliente de usuario {user_id} para reset demo: {e_u}")
 
-        # Cancelar órdenes y cerrar posiciones en cada cuenta aplicable
+        # Cancelar órdenes y cerrar posiciones exclusivamente en la cuenta del llamante
         last_user_balance = None
         for c_label, cli, target_uid in clients_to_check:
             try:
-                # Consultar si la cuenta está en Hedge Mode
                 cli_is_hedge = False
                 try:
                     pos_mode = cli.get_position_mode()
@@ -3072,6 +3059,8 @@ def reset_demo_account_endpoint():
                         update_user_api_keys_balance(target_uid, fresh_bal)
                         set_user_api_initial_balance(target_uid, fresh_bal)
                         last_user_balance = fresh_bal
+                    elif not target_uid and fresh_bal > 0:
+                        last_user_balance = fresh_bal
                 except Exception as e_fbal:
                     logger.debug(f"Aviso al obtener balance post-cierre para {c_label}: {e_fbal}")
 
@@ -3079,9 +3068,10 @@ def reset_demo_account_endpoint():
                 logger.warning(f"Aviso al consultar posiciones para cliente {c_label}: {e_cli}")
                 close_errors.append(f"Conexión Binance: {str(e_cli)}")
 
-        # 4. Aislamiento de BD: Limpiar únicamente los datos del solicitante
-        from src.database import clear_trade_history, clear_user_trades
-        if is_admin_req:
+        # 4. Aislamiento estricto de base de datos:
+        if is_admin:
+            # Admin resetea ÚNICAMENTE la tabla de operaciones maestra y los workers del master
+            from src.database import clear_trade_history
             clear_trade_history()
             session_manager.reset_stats()
             with status_lock:
@@ -3097,17 +3087,17 @@ def reset_demo_account_endpoint():
                             worker.current_state = BotState.IDLE
                         except Exception:
                             pass
-
-        if user_id:
+            global _sync_paused_until
+            _sync_paused_until = time.time() + 15
+        else:
+            # Usuario inversor: ÚNICAMENTE borra sus propios trades en 'user_trades' y detiene su bot
+            # NUNCA se toca la tabla 'trades' maestra, NUNCA se tocan las sesiones de admin u otros usuarios
+            from src.database import clear_user_trades
             clear_user_trades(user_id, stop_bot=True)
 
-        global _sync_paused_until
-        _sync_paused_until = time.time() + 15
-
-        # Mensaje 100% verídico y transparente para el usuario
         bal_text = f" Saldo actual en Binance: ${last_user_balance:,.2f} USDT." if last_user_balance is not None else ""
         if closed_count > 0:
-            msg = f"Se cerraron exitosamente {closed_count} posiciones abiertas en Binance Testnet y se restableció el historial de tu bot a $0.00 USDT.{bal_text}"
+            msg = f"Se cerraron exitosamente {closed_count} posiciones abiertas en Binance Testnet y se restableció el historial de tu sesión a $0.00 USDT.{bal_text}"
         else:
             msg = f"No había posiciones abiertas pendientes en Binance Testnet. Se restableció el historial de operaciones y métricas a $0.00 USDT.{bal_text}"
 

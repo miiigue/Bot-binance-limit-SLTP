@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import BinanceSortHeader, { sortTableData } from './BinanceSortHeader';
 import WalletMarginHealth from './WalletMarginHealth';
+import { useAuth } from './AuthContext';
 
 // Clave para guardar/leer en localStorage
 const STATUS_CACHE_KEY = 'botStatusesCache';
@@ -448,6 +449,7 @@ function LiveDiagnosticsCell({ status }) {
 }
 
 function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSelectSymbolForChart }) {
+  const { authFetch } = useAuth();
   // Intentar cargar el estado inicial desde localStorage, asegurando que sea un array válido
   const [statuses, setStatuses] = useState(() => {
     const cachedData = localStorage.getItem(STATUS_CACHE_KEY);
@@ -632,7 +634,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
     const key = side ? `${symbol}_${side}` : symbol;
     setClosingSymbols(prev => ({ ...prev, [key]: true, [symbol]: true }));
     try {
-      const resp = await fetch(`/api/close_position/${symbol}${side ? `?side=${side}` : ''}`, {
+      const resp = await authFetch(`/api/close_position/${symbol}${side ? `?side=${side}` : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ side: side || undefined })
@@ -640,7 +642,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
       const data = await resp.json();
       if (resp.ok) {
         // Refrescar inmediatamente
-        const statusResp = await fetch('/api/status');
+        const statusResp = await authFetch('/api/status');
         if (statusResp.ok) {
           const statusData = await statusResp.json();
           if (statusData && Array.isArray(statusData.statuses)) {
@@ -863,7 +865,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
   const handleResetTradesClick = async () => {
     if (!window.confirm("⚠️ ¿Deseas vaciar completamente el historial de trades en PostgreSQL y reiniciar el PnL a $0.00 USDT?")) return;
     try {
-      const res = await fetch('/api/trades/reset', { method: 'POST' });
+      const res = await authFetch('/api/trades/reset', { method: 'POST' });
       if (res.ok) {
         setTradeHistories({});
         setStatuses([]);
