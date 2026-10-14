@@ -457,13 +457,13 @@ export default function FloatingNotesModal() {
                       }`}
                     >
                       <div className="flex items-center gap-2 mb-1 px-1">
-                        <span className="text-xs font-bold text-slate-300">
+                        <span className="text-sm font-bold text-slate-300">
                           {m.role === 'user' ? '👤 Tú' : '🤖 Copiloto IA'}
                         </span>
-                        <span className="text-[10px] text-slate-500 font-mono">{m.time}</span>
+                        <span className="text-xs text-slate-500 font-mono">{m.time}</span>
                       </div>
                       <div
-                        className={`max-w-[90%] rounded-2xl px-4 py-3 leading-relaxed text-[13.5px] whitespace-pre-wrap ${
+                        className={`max-w-[90%] rounded-2xl px-5 py-3.5 leading-relaxed text-[18px] whitespace-pre-wrap ${
                           m.role === 'user'
                             ? 'bg-amber-500 text-slate-950 font-semibold rounded-br-none shadow-md shadow-amber-500/15'
                             : 'bg-slate-800/95 text-slate-100 border border-slate-700/80 rounded-bl-none shadow-lg'
@@ -475,7 +475,7 @@ export default function FloatingNotesModal() {
                   ))
                 )}
                 {isSending && (
-                  <div className="flex items-center gap-2.5 text-amber-300 text-xs p-3 font-medium bg-slate-950/40 rounded-xl border border-slate-800 w-fit">
+                  <div className="flex items-center gap-2.5 text-amber-300 text-sm p-3 font-medium bg-slate-950/40 rounded-xl border border-slate-800 w-fit">
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
                     <span>El Copiloto está analizando la telemetría en vivo...</span>
                   </div>
@@ -494,15 +494,15 @@ export default function FloatingNotesModal() {
                   }}
                   placeholder="Pregunta sobre posiciones, balance, análisis de riesgo o recomendaciones..."
                   disabled={isSending}
-                  className="flex-1 bg-slate-900 border border-slate-700 focus:border-amber-400 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none font-sans transition-all"
+                  className="flex-1 bg-slate-900 border border-slate-700 focus:border-amber-400 rounded-xl px-4 py-3 text-base text-slate-100 placeholder-slate-500 focus:outline-none font-sans transition-all"
                 />
                 <button
                   onClick={() => handleSendMessage()}
                   disabled={!chatInput.trim() || isSending}
-                  className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold rounded-xl text-sm flex items-center gap-1.5 shadow-md shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="px-5 py-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold rounded-xl text-base flex items-center gap-2 shadow-md shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
                   <span>Enviar</span>
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z" />
                   </svg>
                 </button>
