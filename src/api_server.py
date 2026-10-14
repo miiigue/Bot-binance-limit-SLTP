@@ -4227,7 +4227,7 @@ def handle_notes_ai_config():
         data = request.get_json(silent=True) or {}
         api_key = (data.get('api_key') or '').strip()
         provider = (data.get('provider') or 'gemini').strip().lower()
-        model = (data.get('model') or 'gemini-2.5-flash').strip()
+        model = (data.get('model') or 'gemini-2.0-flash').strip()
         
         if api_key:
             set_bot_setting('admin_ai_api_key', api_key)
@@ -4262,7 +4262,7 @@ def handle_notes_ai_config():
         masked_key = f"{saved_key[:6]}...{saved_key[-4:]}" if len(saved_key) > 10 else "******"
 
     provider = get_bot_setting('admin_ai_provider', 'gemini') or 'gemini'
-    model = get_bot_setting('admin_ai_model', 'gemini-2.5-flash') or 'gemini-2.5-flash'
+    model = get_bot_setting('admin_ai_model', 'gemini-2.0-flash') or 'gemini-2.0-flash'
 
     return jsonify({
         'status': 'success',
@@ -4287,22 +4287,30 @@ def handle_notes_ai_test():
 
     try:
         import requests as _requests
-        test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={test_key}"
-        test_payload = {
-            "contents": [{"parts": [{"text": "Responde únicamente: 'CONEXION_OK'"}]}]
-        }
-        res = _requests.post(test_url, json=test_payload, timeout=10)
-        if res.ok:
-            return jsonify({
-                'status': 'success',
-                'message': '✅ Conexión exitosa con Google Gemini IA. La API Key es 100% válida y operativa.'
-            }), 200
-        else:
-            err_msg = res.json().get('error', {}).get('message', res.text)
-            return jsonify({
-                'status': 'error',
-                'message': f"Error de autenticación con Gemini ({res.status_code}): {err_msg}"
-            }), 400
+        # Probar primero con gemini-2.0-flash o gemini-1.5-flash
+        models_to_try = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash']
+        last_err = ""
+        for mod in models_to_try:
+            try:
+                test_url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={test_key}"
+                test_payload = {
+                    "contents": [{"parts": [{"text": "Responde únicamente: 'CONEXION_OK'"}]}]
+                }
+                res = _requests.post(test_url, json=test_payload, timeout=10)
+                if res.ok:
+                    return jsonify({
+                        'status': 'success',
+                        'message': f'✅ Conexión exitosa con Google Gemini IA ({mod}). La API Key es 100% válida y operativa.'
+                    }), 200
+                else:
+                    last_err = res.json().get('error', {}).get('message', res.text)
+            except Exception as e_m:
+                last_err = str(e_m)
+
+        return jsonify({
+            'status': 'error',
+            'message': f"Error de verificación con Gemini: {last_err}"
+        }), 400
     except Exception as e:
         return jsonify({'status': 'error', 'message': f"Excepción de conexión con la IA: {str(e)}"}), 500
 
@@ -4388,18 +4396,25 @@ INSTRUCCIONES DE RESPUESTA:
 3. Si el Administrador pide analizar una posición, saldo, estrategia o situación de mercado, fundamenta tu respuesta con la telemetría en vivo dada arriba.
 4. Sé conciso pero exhaustivo en datos numéricos relevantes."""
 
-            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={gemini_key}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt_context}]}]
-            }
-            res = _requests.post(gemini_url, json=payload, timeout=20)
-            if res.ok:
-                resp_json = res.json()
-                assistant_reply = resp_json.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '')
-                if assistant_reply:
-                    ai_used = True
-            else:
-                api_logger.warning(f"Error Gemini API ({res.status_code}): {res.text}")
+            models_to_try = [target_model]
+            for fallback in ['gemini-2.0-flash', 'gemini-1.5-flash']:
+                if fallback not in models_to_try:
+                    models_to_try.append(fallback)
+
+            for mod in models_to_try:
+                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={gemini_key}"
+                payload = {
+                    "contents": [{"parts": [{"text": prompt_context}]}]
+                }
+                res = _requests.post(gemini_url, json=payload, timeout=20)
+                if res.ok:
+                    resp_json = res.json()
+                    assistant_reply = resp_json.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '')
+                    if assistant_reply:
+                        ai_used = True
+                        break
+                else:
+                    api_logger.warning(f"Error Gemini API ({mod} - {res.status_code}): {res.text}")
         except Exception as e_gem:
             api_logger.warning(f"Excepción llamando a Gemini API: {e_gem}")
 

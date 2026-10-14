@@ -16,7 +16,7 @@ export default function FloatingNotesModal() {
     has_key: false,
     masked_key: '',
     provider: 'gemini',
-    model: 'gemini-2.5-flash'
+    model: 'gemini-2.0-flash'
   });
   const [inputApiKey, setInputApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -575,9 +575,9 @@ export default function FloatingNotesModal() {
                       onChange={(e) => setAiConfig(prev => ({ ...prev, model: e.target.value }))}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-400 font-mono"
                     >
-                      <option value="gemini-2.5-flash">gemini-2.5-flash (Ultra Rápido)</option>
-                      <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                      <option value="gemini-1.5-pro">gemini-1.5-pro (Avanzado)</option>
+                      <option value="gemini-2.0-flash">gemini-2.0-flash (Recomendado / Estable)</option>
+                      <option value="gemini-1.5-flash">gemini-1.5-flash (Alta Velocidad)</option>
+                      <option value="gemini-1.5-pro">gemini-1.5-pro (Razonamiento Complejo)</option>
                     </select>
                   </div>
                 </div>
