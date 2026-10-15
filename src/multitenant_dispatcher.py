@@ -613,37 +613,45 @@ def run_personal_bot_cycle():
             raw_side = str(p.get('positionSide', 'BOTH')).upper()
             pos_side = ('LONG' if pos_amt > 0 else 'SHORT') if raw_side == 'BOTH' else raw_side
 
-            # 1. Take Profit (proporcional por PnL o por porcentaje)
+            # 1. Take Profit (prioridad por PnL en USDT; porcentaje solo como fallback si TP en USDT es 0)
             tp_usdt_base = float(params.get('take_profit_usdt', params.get('takeProfitUSDT', 50.0)) or 50.0)
             tp_usdt = tp_usdt_base * scale_factor
             enable_tp = str(params.get('enable_take_profit_pnl', params.get('enableTakeProfitPnl', True))).lower() == 'true'
 
-            tp_pct = float(params.get('support_order_take_profit_percent', params.get('supportOrderTakeProfitPercent', 0.0)) or 0.0)
-            tp_by_pct = False
-            if tp_pct > 0 and entry_p > 0:
-                if pos_side == 'LONG' and mark_p >= entry_p * (1.0 + tp_pct / 100.0):
-                    tp_by_pct = True
-                elif pos_side == 'SHORT' and mark_p <= entry_p * (1.0 - tp_pct / 100.0):
-                    tp_by_pct = True
+            is_tp_triggered = False
+            if enable_tp and tp_usdt > 0:
+                if unrealized_pnl >= tp_usdt:
+                    is_tp_triggered = True
+            else:
+                tp_pct = float(params.get('support_order_take_profit_percent', params.get('supportOrderTakeProfitPercent', 0.0)) or 0.0)
+                if tp_pct > 0 and entry_p > 0:
+                    if pos_side == 'LONG' and mark_p >= entry_p * (1.0 + tp_pct / 100.0):
+                        is_tp_triggered = True
+                    elif pos_side == 'SHORT' and mark_p <= entry_p * (1.0 - tp_pct / 100.0):
+                        is_tp_triggered = True
 
-            if (enable_tp and unrealized_pnl >= tp_usdt) or tp_by_pct:
+            if is_tp_triggered:
                 close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Take Profit (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
                 continue
 
-            # 2. Stop Loss (proporcional por PnL o por porcentaje)
+            # 2. Stop Loss (prioridad por PnL en USDT; porcentaje solo como fallback si SL en USDT es 0)
             sl_usdt_base = float(params.get('stop_loss_usdt', params.get('stopLossUSDT', 400.0)) or 400.0)
             sl_usdt = sl_usdt_base * scale_factor
             enable_sl = str(params.get('enable_stop_loss_pnl', params.get('enableStopLossPnl', True))).lower() == 'true'
 
-            sl_pct = float(params.get('support_order_stop_loss_percent', params.get('supportOrderStopLossPercent', 0.0)) or 0.0)
-            sl_by_pct = False
-            if sl_pct > 0 and entry_p > 0:
-                if pos_side == 'LONG' and mark_p <= entry_p * (1.0 - sl_pct / 100.0):
-                    sl_by_pct = True
-                elif pos_side == 'SHORT' and mark_p >= entry_p * (1.0 + sl_pct / 100.0):
-                    sl_by_pct = True
+            is_sl_triggered = False
+            if enable_sl and sl_usdt > 0:
+                if unrealized_pnl <= -abs(sl_usdt):
+                    is_sl_triggered = True
+            else:
+                sl_pct = float(params.get('support_order_stop_loss_percent', params.get('supportOrderStopLossPercent', 0.0)) or 0.0)
+                if sl_pct > 0 and entry_p > 0:
+                    if pos_side == 'LONG' and mark_p <= entry_p * (1.0 - sl_pct / 100.0):
+                        is_sl_triggered = True
+                    elif pos_side == 'SHORT' and mark_p >= entry_p * (1.0 + sl_pct / 100.0):
+                        is_sl_triggered = True
 
-            if (enable_sl and unrealized_pnl <= -abs(sl_usdt)) or sl_by_pct:
+            if is_sl_triggered:
                 close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Stop Loss ({unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
                 continue
 
