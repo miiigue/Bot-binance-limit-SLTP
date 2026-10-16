@@ -1365,7 +1365,7 @@ def user_bot_status_endpoint():
             db_strat = get_active_strategy_from_db()
         except Exception:
             pass
-        active_strategy = (db_strat or cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='')).strip() or '22_AGRESIVA_TOLERANTE_30S'
+        active_strategy = (db_strat or cfg_temp.get('STRATEGY_INFO', 'active_strategy_name', fallback='')).strip()
 
         if is_target_admin:
             settings['strategy_name'] = active_strategy
@@ -1935,10 +1935,10 @@ def admin_users_overview_endpoint():
                     from src.config_loader import load_config
                     db_strat = get_active_strategy_from_db()
                     cfg = load_config()
-                    master_strat = (db_strat or cfg.get('STRATEGY_INFO', 'active_strategy_name', fallback='')).strip() or '22_AGRESIVA_TOLERANTE_30S'
+                    master_strat = (db_strat or cfg.get('STRATEGY_INFO', 'active_strategy_name', fallback='')).strip()
                     user_data['strategy_name'] = master_strat
                 except Exception:
-                    user_data['strategy_name'] = '22_AGRESIVA_TOLERANTE_30S'
+                    user_data['strategy_name'] = db_strat or ''
 
                 # Obtener métricas consolidadas del Bot Maestro desde la base de datos
                 try:

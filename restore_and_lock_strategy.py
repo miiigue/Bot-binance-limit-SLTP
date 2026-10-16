@@ -83,7 +83,13 @@ def main():
             print(f"ℹ️ Aviso al leer config.ini: {e_cfg_rd}")
 
     if not strat_name or strat_name.lower() == 'global':
-        strat_name = '22_AGRESIVA_TOLERANTE_30S'
+        try:
+            from src.database import get_strategies_catalog
+            cats = get_strategies_catalog(only_public=False)
+            if cats:
+                strat_name = cats[0]['name']
+        except Exception:
+            strat_name = ''
 
     print(f"✅ Estrategia activa soberana preservada: '{strat_name}'")
 

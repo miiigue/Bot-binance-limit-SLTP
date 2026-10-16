@@ -2644,12 +2644,25 @@ def get_user_bot_settings(user_id: int) -> dict:
 
         # Crear configuración predeterminada si es nuevo usuario (usar booleano nativo False)
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        default_strat = ''
+        try:
+            default_strat = get_active_strategy_from_db() or ''
+        except Exception:
+            pass
+        if not default_strat:
+            try:
+                from src.config_loader import load_config
+                cfg = load_config()
+                default_strat = cfg.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
+            except Exception:
+                pass
+
         cursor.execute("""
             INSERT INTO user_bot_settings (
                 user_id, is_running, allocated_usdt, leverage, margin_type,
                 symbols_to_trade, strategy_name, operating_mode, updated_at
-            ) VALUES (?, ?, 100.0, 10, 'ISOLATED', 'BTCUSDT,ETHUSDT,SOLUSDT', 'WTN Scalper Pro', 'COPY_TRADING', ?)
-        """, (user_id, False, now_str))
+            ) VALUES (?, ?, 100.0, 10, 'ISOLATED', 'BTCUSDT,ETHUSDT,SOLUSDT', ?, 'COPY_TRADING', ?)
+        """, (user_id, False, default_strat, now_str))
         conn.commit()
 
         cursor.execute("SELECT * FROM user_bot_settings WHERE user_id = ?", (user_id,))

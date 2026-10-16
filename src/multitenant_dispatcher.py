@@ -106,7 +106,11 @@ def load_strategy_params(strategy_name: str) -> dict:
     """Carga los parámetros completos de una estrategia desde BD o archivo JSON."""
     clean_name = str(strategy_name or '').strip()
     if not clean_name:
-        clean_name = '22_AGRESIVA_TOLERANTE_30S'
+        try:
+            from src.database import get_active_strategy_from_db
+            clean_name = str(get_active_strategy_from_db() or '').strip()
+        except Exception:
+            clean_name = ''
 
     # 1. Intentar desde catálogo de BD
     try:
@@ -357,7 +361,7 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
         if order_res and isinstance(order_res, dict) and order_res.get('orderId'):
             order_id = str(order_res.get('orderId', ''))
             executed_price = float(order_res.get('avgPrice', entry_price) or entry_price)
-            strat_name = str(user.get('strategy_name') or params.get('strategy_name') or 'BOT_PARAPRUEBAS')
+            strat_name = str(user.get('strategy_name') or params.get('strategy_name') or '').strip()
 
             record_user_trade(
                 user_id=user_id,
@@ -423,7 +427,7 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
 
         order_res = client.new_order(**order_params)
         order_id = str(order_res.get('orderId', '')) if isinstance(order_res, dict) else ''
-        strat_name = str(user.get('strategy_name') or 'BOT_PARAPRUEBAS')
+        strat_name = str(user.get('strategy_name') or '').strip()
 
         # Determinar el lado real de la operación (LONG o SHORT)
         if position_side in ('LONG', 'SHORT'):
@@ -494,7 +498,13 @@ def run_personal_bot_cycle():
     for user in active_users:
         user_id = user['user_id']
         username = user['username']
-        strat_name = str(user.get('strategy_name') or 'BOT_PARAPRUEBAS').strip()
+        strat_name = str(user.get('strategy_name') or '').strip()
+        if not strat_name:
+            try:
+                from src.database import get_active_strategy_from_db
+                strat_name = str(get_active_strategy_from_db() or '').strip()
+            except Exception:
+                strat_name = ''
         params = load_strategy_params(strat_name)
 
         # Respetar estrictamente el ciclo de ejecución configurado en la estrategia (ej. 30 segundos)
@@ -756,17 +766,19 @@ def run_personal_bot_cycle():
         # -------------------------------------------------------------
         trade_direction = str(params.get('trade_direction', 'BIDIRECTIONAL')).upper().strip()
 
-        # Determinar lista de símbolos a evaluar
+        # Determinar lista de símbolos a evaluar:
+        # Prioridad 1: Símbolos expresamente seleccionados por el usuario
+        # Prioridad 2: Si el usuario no especificó ninguno, usar los de la estrategia
+        # Prioridad 3: Si la estrategia tampoco los define, usar lista estándar de mercado
         raw_user_syms = str(user.get('symbols_to_trade', '')).strip()
-        # Si tiene el valor por defecto restringido de 3 símbolos o está vacío, expandir a lista de mercado de alta liquidez
-        if not raw_user_syms or raw_user_syms in ('BTCUSDT,ETHUSDT,SOLUSDT', 'BTCUSDT'):
+        if raw_user_syms:
+            candidate_symbols = [s.strip().upper() for s in raw_user_syms.split(',') if s.strip()]
+        else:
             strat_syms = params.get('symbols_to_trade') or params.get('symbolsToTrade')
             if strat_syms:
                 candidate_symbols = [s.strip().upper() for s in str(strat_syms).split(',') if s.strip()]
             else:
                 candidate_symbols = DEFAULT_MARKET_SYMBOLS
-        else:
-            candidate_symbols = [s.strip().upper() for s in raw_user_syms.split(',') if s.strip()]
 
         interval = str(params.get('rsi_interval', params.get('rsiInterval', '1m')) or '1m')
 
@@ -1063,11 +1075,17 @@ def get_user_monitor_status(user_id: int) -> dict:
             from src.config_loader import load_config
             db_strat = get_active_strategy_from_db()
             cfg = load_config()
-            strat_name = (db_strat or cfg.get('STRATEGY_INFO', 'active_strategy_name', fallback='')).strip() or '22_AGRESIVA_TOLERANTE_30S'
+            strat_name = (db_strat or cfg.get('STRATEGY_INFO', 'active_strategy_name', fallback='')).strip()
         except Exception:
-            strat_name = '22_AGRESIVA_TOLERANTE_30S'
+            strat_name = ''
     else:
-        strat_name = str(settings.get('strategy_name') or '22_AGRESIVA_TOLERANTE_30S').strip()
+        strat_name = str(settings.get('strategy_name') or '').strip()
+        if not strat_name:
+            try:
+                from src.database import get_active_strategy_from_db
+                strat_name = str(get_active_strategy_from_db() or '').strip()
+            except Exception:
+                strat_name = ''
 
     params = load_strategy_params(strat_name)
     
@@ -1159,14 +1177,14 @@ def get_user_monitor_status(user_id: int) -> dict:
 
     # 3. Lista de símbolos a monitorear: posiciones abiertas + símbolos candidatos
     raw_user_syms = str(settings.get('symbols_to_trade', '')).strip()
-    if not raw_user_syms or raw_user_syms in ('BTCUSDT,ETHUSDT,SOLUSDT', 'BTCUSDT'):
+    if raw_user_syms:
+        symbols_list = [s.strip().upper() for s in raw_user_syms.split(',') if s.strip()]
+    else:
         strat_syms = params.get('symbols_to_trade') or params.get('symbolsToTrade')
         if strat_syms:
             symbols_list = [s.strip().upper() for s in str(strat_syms).split(',') if s.strip()]
         else:
             symbols_list = DEFAULT_MARKET_SYMBOLS.copy()
-    else:
-        symbols_list = [s.strip().upper() for s in raw_user_syms.split(',') if s.strip()]
 
     # Asegurar que todas las posiciones abiertas estén en la lista
     for sym in set(open_positions_long.keys()).union(set(open_positions_short.keys())):
