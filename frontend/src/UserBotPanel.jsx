@@ -1553,6 +1553,101 @@ export default function UserBotPanel({
                   </span>
                 </div>
               </div>
+
+              {/* Tarjeta de Auto-Escalado y Equivalencia de Parámetros de la Estrategia */}
+              {(() => {
+                const stratBaseMargin = Number(
+                  currentStrategyObj?.parameters?.position_size_usdt ??
+                  currentStrategyObj?.parameters?.positionSizeUSDT ??
+                  botData?.active_strategy_details?.parameters?.position_size_usdt ??
+                  50.0
+                ) || 50.0;
+
+                const userVal = Number(allocatedUsdt) || stratBaseMargin;
+                const scaleFactor = userVal / stratBaseMargin;
+                const scalePercent = (scaleFactor * 100).toFixed(1);
+
+                const baseTp = Number(
+                  currentStrategyObj?.parameters?.take_profit_usdt ??
+                  currentStrategyObj?.parameters?.takeProfitUSDT ??
+                  botData?.active_strategy_details?.parameters?.take_profit_usdt ??
+                  50.0
+                ) || 50.0;
+
+                const baseSl = Number(
+                  currentStrategyObj?.parameters?.stop_loss_usdt ??
+                  currentStrategyObj?.parameters?.stopLossUSDT ??
+                  botData?.active_strategy_details?.parameters?.stop_loss_usdt ??
+                  400.0
+                ) || 400.0;
+
+                const baseDcaLoss = Number(
+                  currentStrategyObj?.parameters?.dca_trigger_loss_usdt ??
+                  currentStrategyObj?.parameters?.dcaTriggerLossUsdt ??
+                  botData?.active_strategy_details?.parameters?.dca_trigger_loss_usdt ??
+                  15.0
+                ) || 15.0;
+
+                const baseTsAct = Number(
+                  currentStrategyObj?.parameters?.pnl_trailing_stop_activation_usdt ??
+                  currentStrategyObj?.parameters?.pnlTrailingStopActivationUSDT ??
+                  botData?.active_strategy_details?.parameters?.pnl_trailing_stop_activation_usdt ??
+                  3.5
+                ) || 3.5;
+
+                const scaledTp = (baseTp * scaleFactor).toFixed(2);
+                const scaledSl = (baseSl * scaleFactor).toFixed(2);
+                const scaledDca = (baseDcaLoss * scaleFactor).toFixed(2);
+                const scaledTs = (baseTsAct * scaleFactor).toFixed(2);
+
+                const isScaled = Math.abs(scaleFactor - 1.0) > 0.001;
+
+                return (
+                  <div className="p-3.5 bg-slate-900/80 rounded-xl border border-slate-700/80 space-y-2 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-400 font-bold">⚖️ Auto-Ajuste de Equivalencia (ROE Soberano):</span>
+                        <span className="bg-amber-400/20 text-amber-300 font-mono font-bold px-2 py-0.5 rounded text-[11px] border border-amber-400/30">
+                          {isScaled ? `${scalePercent}% del Capital Base ($${stratBaseMargin} USDT)` : '100% Capital Base (1:1)'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        Nocional: <strong>${(userVal * effectiveLeverage).toFixed(2)} USDT</strong>
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Para garantizar que la estrategia mantenga <strong>idéntico rendimiento porcentual (ROE %)</strong> y protección de riesgo con tu margen de <strong>${userVal.toFixed(2)} USDT</strong>, el motor calcula proporcionalmente todos los disparadores monetarios:
+                    </p>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px]">
+                      <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">Take Profit Ajustado</span>
+                        <span className="font-bold text-emerald-400 text-xs">+{scaledTp} USDT</span>
+                        <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseTp})</span>
+                      </div>
+
+                      <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">Stop Loss Ajustado</span>
+                        <span className="font-bold text-rose-400 text-xs">-{scaledSl} USDT</span>
+                        <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseSl})</span>
+                      </div>
+
+                      <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">DCA Trigger Pérdida</span>
+                        <span className="font-bold text-amber-300 text-xs">-{scaledDca} USDT</span>
+                        <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseDcaLoss})</span>
+                      </div>
+
+                      <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">Trailing Stop Act.</span>
+                        <span className="font-bold text-sky-400 text-xs">+{scaledTs} USDT</span>
+                        <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseTsAct})</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}

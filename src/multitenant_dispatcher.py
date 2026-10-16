@@ -1195,11 +1195,23 @@ def get_user_monitor_status(user_id: int) -> dict:
         if sym and sym not in symbols_list:
             symbols_list.append(sym)
 
-    # Parámetros de la estrategia para TP, SL, Trailing
-    tp_usdt = float(params.get('take_profit_usdt', params.get('takeProfitUSDT', 50.0)) or 50.0)
-    sl_usdt = float(params.get('stop_loss_usdt', params.get('stopLossUSDT', 400.0)) or 400.0)
-    ts_act = float(params.get('pnl_trailing_stop_activation_usdt', 3.5) or 3.5)
-    ts_drop = float(params.get('pnl_trailing_stop_drop_usdt', 1.5) or 1.5)
+    # Factor de escala proporcional para el usuario
+    user_margin = float(settings.get('allocated_usdt') or 50.0)
+    strat_margin = float(params.get('position_size_usdt') or params.get('positionSizeUSDT') or 50.0)
+    if strat_margin <= 0:
+        strat_margin = 50.0
+    scale_factor = user_margin / strat_margin
+
+    # Parámetros de la estrategia para TP, SL, Trailing escalados proporcionalmente
+    tp_usdt_base = float(params.get('take_profit_usdt', params.get('takeProfitUSDT', 50.0)) or 50.0)
+    sl_usdt_base = float(params.get('stop_loss_usdt', params.get('stopLossUSDT', 400.0)) or 400.0)
+    ts_act_base = float(params.get('pnl_trailing_stop_activation_usdt', 3.5) or 3.5)
+    ts_drop_base = float(params.get('pnl_trailing_stop_drop_usdt', 1.5) or 1.5)
+
+    tp_usdt = round(tp_usdt_base * scale_factor, 2)
+    sl_usdt = round(sl_usdt_base * scale_factor, 2)
+    ts_act = round(ts_act_base * scale_factor, 2)
+    ts_drop = round(ts_drop_base * scale_factor, 2)
     enable_ts = str(params.get('enable_pnl_trailing_stop', True)).lower() == 'true'
 
     # Resolver apalancamiento activo: según selección del usuario o el de la estrategia
