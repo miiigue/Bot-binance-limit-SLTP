@@ -54,7 +54,8 @@ function MainDashboard() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [countdown, setCountdown] = useState(0);
 
-  const [activeTab, setActiveTab] = useState('my_bot');
+  // Sesión Admin abre por defecto en 'users_overview' (Usuarios & Bots); Inversionistas en 'my_bot'
+  const [activeTab, setActiveTab] = useState(() => (isAdmin ? 'users_overview' : 'my_bot'));
   const [inspectingUser, setInspectingUser] = useState(null);
 
   // Estados de menús desplegables en la barra de navegación
@@ -121,12 +122,24 @@ function MainDashboard() {
 
   const [chartSelectedSymbol, setChartSelectedSymbol] = useState('SOLUSDT');
 
-  // Asegurar que si el rol es Inversionista, nunca esté en una pestaña de Admin
+  // Asegurar que si el rol es Admin abra por defecto en Usuarios & Bots ('users_overview'); si es Inversionista, nunca esté en pestaña de Admin
+  const hasInitializedTab = useRef(false);
   useEffect(() => {
+    if (!isAuthenticated) return;
+    if (!hasInitializedTab.current) {
+      hasInitializedTab.current = true;
+      if (isAdmin) {
+        setActiveTab('users_overview');
+      } else {
+        setActiveTab('my_bot');
+      }
+      return;
+    }
+
     if (isInvestor && !['my_bot', 'my_investment', 'copy_trading', 'performance', 'chart'].includes(activeTab)) {
       setActiveTab('my_bot');
     }
-  }, [isInvestor, activeTab]);
+  }, [isAdmin, isInvestor, isAuthenticated, activeTab]);
 
   // Interceptar y sincronizar el evento nativo de instalación
   const [deferredPrompt, setDeferredPrompt] = useState(() => (typeof window !== 'undefined' && window.__wtn_install_prompt) || null);

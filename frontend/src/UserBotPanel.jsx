@@ -3,7 +3,7 @@ import { useAuth } from './AuthContext';
 import ConfirmModal from './ConfirmModal';
 import UserBotMonitorTable from './UserBotMonitorTable';
 
-import { formatShortDate } from './dateUtils';
+import { formatShortDate, formatFullDateTime, getCountryTimezone } from './dateUtils';
 
 export default function UserBotPanel({ 
   activeStrategyName, 
@@ -63,33 +63,158 @@ export default function UserBotPanel({
     onConfirm: () => {}
   });
 
-  // Curva de Capital Personal de la Cuenta Copy-Trading (Solo Operaciones Cerradas)
-  const userEquityPoints = useMemo(() => {
+  // Estado para la interacción y Zoom de la Curva de Capital
+  const [equityZoomRange, setEquityZoomRange] = useState('ALL'); // 'ALL' | '50' | '20' | '10'
+  const [selectedEquityPointIndex, setSelectedEquityPointIndex] = useState(null);
+
+  // Helper robusto para parsear fechas
+  const parseSafeDate = useCallback((val) => {
+    if (!val) return null;
+    if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+    if (typeof val === 'number') {
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const s = String(val).trim();
+    if (!s) return null;
+    if (/^\d{10,13}$/.test(s)) {
+      const d = new Date(Number(s.length === 10 ? s + '000' : s));
+      if (!isNaN(d.getTime())) return d;
+    }
+    const iso = s.includes('T') ? (s.endsWith('Z') || s.includes('+') ? s : s + 'Z') : s.replace(' ', 'T') + 'Z';
+    let d = new Date(iso);
+    if (!isNaN(d.getTime())) return d;
+    d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }, []);
+
+  // Formateador de duración (ej: 2d 5h 14m, 3h 22m, 45m 12s, 30s)
+  const formatDurationStr = useCallback((ms) => {
+    if (!ms || ms < 0 || isNaN(ms)) return '0s';
+    const totalSeconds = Math.floor(ms / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+  }, []);
+
+  // Curva de Capital Personal Completa con Punto Cero, Lapso Total y Métricas
+  const userEquityData = useMemo(() => {
     const closedTrades = (tradesData || []).filter(t => Boolean(t.close_timestamp));
-    if (closedTrades.length === 0) return [];
+    if (closedTrades.length === 0) {
+      return {
+        allPoints: [],
+        totalElapsedStr: '0s',
+        puntoCeroDate: null,
+        lastCloseDate: null,
+        totalNetPnL: 0,
+        maxDDUSDT: 0
+      };
+    }
+
     const sorted = [...closedTrades].sort((a, b) => {
-      const da = new Date(a.close_timestamp || 0).getTime();
-      const db = new Date(b.close_timestamp || 0).getTime();
+      const da = parseSafeDate(a.close_timestamp || a.open_timestamp)?.getTime() || (a.id || 0);
+      const db = parseSafeDate(b.close_timestamp || b.open_timestamp)?.getTime() || (b.id || 0);
       return da - db;
     });
 
+    const pCeroDate = parseSafeDate(sorted[0].open_timestamp) || parseSafeDate(sorted[0].close_timestamp) || new Date();
+    const lCloseDate = parseSafeDate(sorted[sorted.length - 1].close_timestamp) || parseSafeDate(sorted[sorted.length - 1].open_timestamp) || pCeroDate;
+    const sessionElapsedMs = Math.max(0, lCloseDate.getTime() - pCeroDate.getTime());
+    const totalElapsedStr = formatDurationStr(sessionElapsedMs);
+
     let running = 0;
-    const pts = [{ idx: 0, pnl: 0, cumulative: 0, time: 'Inicio' }];
+    let peak = 0;
+    let maxDD = 0;
+
+    const allPts = [
+      {
+        idx: 0,
+        isPuntoCero: true,
+        label: 'Punto Cero (Inicio)',
+        id: 0,
+        symbol: sorted[0].symbol || 'INICIO',
+        type: sorted[0].trade_type || 'LONG',
+        pnl: 0,
+        cumulative: 0,
+        date: pCeroDate,
+        time: pCeroDate ? `${String(pCeroDate.getHours()).padStart(2, '0')}:${String(pCeroDate.getMinutes()).padStart(2, '0')}` : '00:00',
+        shortDate: formatShortDate(pCeroDate),
+        fullDateTime: formatFullDateTime(pCeroDate),
+        elapsedStr: '0s (Inicio)',
+        diffPercent: 0,
+        tradeObj: null
+      }
+    ];
+
     sorted.forEach((t, i) => {
       const pnl = Number(t.pnl_usdt || 0);
+      const prevCum = running;
       running += pnl;
-      pts.push({
+
+      if (running > peak) peak = running;
+      const curDD = peak - running;
+      if (curDD > maxDD) maxDD = curDD;
+
+      const cDate = parseSafeDate(t.close_timestamp) || parseSafeDate(t.open_timestamp) || pCeroDate;
+      const tradeElapsedMs = Math.max(0, cDate.getTime() - pCeroDate.getTime());
+      const tradeElapsedFormatted = formatDurationStr(tradeElapsedMs);
+
+      let diffPct = 0;
+      if (prevCum === 0) {
+        diffPct = pnl !== 0 ? (pnl > 0 ? 100 : -100) : 0;
+      } else {
+        diffPct = (pnl / Math.abs(prevCum)) * 100;
+      }
+
+      const timeHHmm = cDate ? `${String(cDate.getHours()).padStart(2, '0')}:${String(cDate.getMinutes()).padStart(2, '0')}` : '--:--';
+
+      allPts.push({
         idx: i + 1,
+        isPuntoCero: false,
+        label: `Cierre #${i + 1}`,
         id: t.id || t.binance_trade_id || (i + 1),
-        symbol: t.symbol,
-        type: t.trade_type,
+        symbol: t.symbol || 'USDT',
+        type: t.trade_type || 'LONG',
         pnl,
         cumulative: running,
-        time: t.close_time_short || formatShortDate(t.close_timestamp)
+        date: cDate,
+        time: timeHHmm,
+        shortDate: t.close_time_short || formatShortDate(cDate),
+        fullDateTime: formatFullDateTime(cDate),
+        elapsedStr: `+${tradeElapsedFormatted} desde inicio`,
+        diffPercent: diffPct,
+        tradeObj: t
       });
     });
-    return pts;
-  }, [tradesData]);
+
+    return {
+      allPoints: allPts,
+      totalElapsedStr,
+      puntoCeroDate: pCeroDate,
+      lastCloseDate: lCloseDate,
+      totalNetPnL: running,
+      maxDDUSDT: maxDD
+    };
+  }, [tradesData, parseSafeDate, formatDurationStr]);
+
+  // Puntos visibles según el Zoom seleccionado
+  const visibleEquityPoints = useMemo(() => {
+    const pts = userEquityData.allPoints;
+    if (pts.length <= 1) return pts;
+    if (equityZoomRange === 'ALL') return pts;
+    const count = Number(equityZoomRange) || 50;
+    // Siempre mantener el punto cero o los últimos N puntos
+    const sliceCount = Math.min(pts.length, count + 1);
+    return pts.slice(pts.length - sliceCount);
+  }, [userEquityData.allPoints, equityZoomRange]);
+
+  // Mantener compatibilidad con referencias anteriores a userEquityPoints
+  const userEquityPoints = userEquityData.allPoints;
 
   // Rendimiento desglosado por criptomoneda con historial cronológico de trades
   const userCoinPerformance = useMemo(() => {
@@ -1573,49 +1698,315 @@ export default function UserBotPanel({
           </div>
         </div>
 
-        {/* Gráfico de Crecimiento de Capital Personal */}
-        {userEquityPoints.length > 1 && (() => {
-          const minE = Math.min(0, ...userEquityPoints.map(p => p.cumulative));
-          const maxE = Math.max(0.1, ...userEquityPoints.map(p => p.cumulative));
+        {/* Gráfico de Crecimiento de Capital Personal Avanzado con Zoom, Tiempo Total e Inspección */}
+        {userEquityData.allPoints.length > 1 && (() => {
+          const points = visibleEquityPoints;
+          const minE = Math.min(0, ...points.map(p => p.cumulative));
+          const maxE = Math.max(0.1, ...points.map(p => p.cumulative));
           const range = (maxE - minE) || 1;
-          const svgW = 650;
-          const svgH = 140;
-          const pad = { top: 15, right: 30, bottom: 25, left: 45 };
+          const svgW = 750;
+          const svgH = 200;
+          const pad = { top: 20, right: 35, bottom: 45, left: 55 };
 
-          const getX = (i) => pad.left + (i / (userEquityPoints.length - 1)) * (svgW - pad.left - pad.right);
+          const getX = (i) => {
+            const chartW = svgW - pad.left - pad.right;
+            if (points.length <= 1) return pad.left + chartW / 2;
+            return pad.left + (i / (points.length - 1)) * chartW;
+          };
           const getY = (val) => pad.top + (svgH - pad.top - pad.bottom) - ((val - minE) / range) * (svgH - pad.top - pad.bottom);
           const zeroY = getY(0);
 
-          const lineD = userEquityPoints.reduce((acc, pt, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(pt.cumulative)}`, '');
-          const areaD = `${lineD} L ${getX(userEquityPoints.length - 1)} ${zeroY} L ${getX(0)} ${zeroY} Z`;
-          const lastPnl = userEquityPoints[userEquityPoints.length - 1].cumulative;
+          const lineD = points.reduce((acc, pt, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(pt.cumulative)}`, '');
+          const areaD = `${lineD} L ${getX(points.length - 1)} ${zeroY} L ${getX(0)} ${zeroY} Z`;
+          const lastPoint = points[points.length - 1];
+          const totalNetPnL = userEquityData.totalNetPnL;
+
+          // Punto inspeccionado actualmente (por defecto el último de los visibles)
+          const activeIdx = (selectedEquityPointIndex !== null && selectedEquityPointIndex >= 0 && selectedEquityPointIndex < points.length)
+            ? selectedEquityPointIndex
+            : points.length - 1;
+          const inspectedPt = points[activeIdx] || lastPoint;
+
+          // Ticks del Eje X para horas y fechas
+          const numTicks = Math.min(points.length, 6);
+          const tickStep = (points.length - 1) / Math.max(1, numTicks - 1);
+          const axisTicks = [];
+          for (let k = 0; k < numTicks; k++) {
+            const ptIdx = Math.round(k * tickStep);
+            if (points[ptIdx] && !axisTicks.some(t => t.idx === ptIdx)) {
+              axisTicks.push({ pt: points[ptIdx], idx: ptIdx });
+            }
+          }
 
           return (
-            <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-white flex items-center gap-1.5">
-                  <span>{lastPnl >= 0 ? '📈' : '📉'} Curva de Capital ({currentSubTab === 'my_bot' ? 'Bot Personal' : 'Copy-Trading'})</span>
-                </span>
-                <span className={`font-mono font-black ${lastPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {lastPnl >= 0 ? '+' : ''}${lastPnl.toFixed(4)} USDT Acumulados
-                </span>
+            <div className="p-4 sm:p-5 bg-slate-950 rounded-2xl border border-slate-800 space-y-3 relative shadow-xl">
+              {/* Encabezado Superior: Título, Lapso Total y Zoom Toolbar */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="text-base">{totalNetPnL >= 0 ? '📈' : '📉'}</span>
+                    <span>Curva de Capital ({currentSubTab === 'my_bot' ? 'Bot Personal' : 'Copy-Trading'})</span>
+                  </span>
+                  <span className="bg-slate-800/80 text-slate-300 text-[11px] px-2.5 py-0.5 rounded-full font-mono font-medium border border-slate-700/60">
+                    {userEquityData.allPoints.length - 1} {(userEquityData.allPoints.length - 1) === 1 ? 'operación' : 'operaciones'}
+                  </span>
+                </div>
+
+                {/* Métricas de Cabecera: Tiempo Transcurrido Total y PnL Acumulado */}
+                <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+                  <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 px-2.5 py-1 rounded-lg">
+                    <span className="text-amber-400 font-bold">⏱️ Tiempo Total:</span>
+                    <span className="text-white font-black">{userEquityData.totalElapsedStr}</span>
+                    <span className="text-slate-400 text-[10px] hidden sm:inline">(Punto Cero ➔ Último)</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 px-2.5 py-1 rounded-lg">
+                    <span className="text-slate-400">Total:</span>
+                    <span className={`font-black ${totalNetPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {totalNetPnL >= 0 ? '+' : ''}${totalNetPnL.toFixed(4)} USDT
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="w-full overflow-x-auto">
-                <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-auto max-h-40 select-none">
+
+              {/* Barra de Ajuste y Zoom Interactivo */}
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                    🔍 Zoom / Vista:
+                  </span>
+                  <div className="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
+                    {[
+                      { key: 'ALL', label: 'Todo' },
+                      { key: '50', label: 'Últimos 50' },
+                      { key: '20', label: 'Últimos 20' },
+                      { key: '10', label: 'Últimos 10' }
+                    ].map(opt => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => {
+                          setEquityZoomRange(opt.key);
+                          setSelectedEquityPointIndex(null);
+                        }}
+                        className={`px-2.5 py-1 text-xs font-mono font-bold rounded-md transition-all ${
+                          equityZoomRange === opt.key
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {equityZoomRange !== 'ALL' && (
+                  <span className="text-[11px] text-sky-400 font-mono bg-sky-950/40 border border-sky-800/40 px-2 py-0.5 rounded">
+                    Mostrando últimos {points.length - 1} trades del historial
+                  </span>
+                )}
+              </div>
+
+              {/* Tarjeta de Inspección Detallada del Punto / Trade Seleccionado */}
+              {inspectedPt && (
+                <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-700/80 shadow-inner">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${
+                        inspectedPt.isPuntoCero
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                      }`}>
+                        {inspectedPt.isPuntoCero ? '🎯 PUNTO CERO' : `📍 TRADE #${inspectedPt.id}`}
+                      </span>
+                      <span className="text-xs font-bold text-white font-mono">
+                        {inspectedPt.isPuntoCero ? 'Inicio de Operaciones de la Cuenta' : `${inspectedPt.symbol} (${inspectedPt.type})`}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="text-slate-300 font-mono text-[11px]">📅 {inspectedPt.fullDateTime}</span>
+                      <span className="bg-slate-800 text-amber-300 px-2 py-0.5 rounded font-mono font-bold text-[11px] border border-slate-700">
+                        ⏱️ {inspectedPt.elapsedStr}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                    <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block">PnL del Trade</span>
+                      <span className={`text-sm font-black ${inspectedPt.isPuntoCero ? 'text-slate-400' : (inspectedPt.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400')}`}>
+                        {inspectedPt.isPuntoCero ? '0.0000 USDT' : `${inspectedPt.pnl >= 0 ? '+' : ''}${inspectedPt.pnl.toFixed(4)} USDT`}
+                      </span>
+                    </div>
+
+                    <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Capital Acumulado</span>
+                      <span className={`text-sm font-black ${inspectedPt.cumulative >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {inspectedPt.cumulative >= 0 ? '+' : ''}${inspectedPt.cumulative.toFixed(4)} USDT
+                      </span>
+                    </div>
+
+                    <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Hora de Cierre</span>
+                      <span className="text-sm font-bold text-slate-200">
+                        {inspectedPt.time}
+                      </span>
+                    </div>
+
+                    <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block">% Rendimiento vs Anterior</span>
+                      {inspectedPt.isPuntoCero ? (
+                        <span className="text-xs text-slate-400 font-bold">Punto 0.00%</span>
+                      ) : (
+                        <span className={`text-sm font-black ${inspectedPt.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {inspectedPt.pnl >= 0 ? '+' : ''}{inspectedPt.diffPercent.toFixed(2)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Contenedor del Gráfico SVG con Ejes X/Y */}
+              <div className="w-full overflow-x-auto pt-1">
+                <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-auto max-h-56 select-none">
                   <defs>
                     <linearGradient id="userEquityGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={lastPnl >= 0 ? "#10b981" : "#f43f5e"} stopOpacity="0.35" />
-                      <stop offset="100%" stopColor={lastPnl >= 0 ? "#10b981" : "#f43f5e"} stopOpacity="0.0" />
+                      <stop offset="0%" stopColor={totalNetPnL >= 0 ? "#10b981" : "#f43f5e"} stopOpacity="0.38" />
+                      <stop offset="100%" stopColor={totalNetPnL >= 0 ? "#10b981" : "#f43f5e"} stopOpacity="0.0" />
                     </linearGradient>
                   </defs>
-                  <line x1={pad.left} y1={zeroY} x2={svgW - pad.right} y2={zeroY} stroke="#334155" strokeDasharray="3 3" strokeWidth="1" />
+
+                  {/* Línea horizontal en Y = 0 */}
+                  <line x1={pad.left} y1={zeroY} x2={svgW - pad.right} y2={zeroY} stroke="#334155" strokeDasharray="3 3" strokeWidth="1.2" />
+
+                  {/* Área bajo la curva */}
                   <path d={areaD} fill="url(#userEquityGrad)" />
-                  <path d={lineD} fill="none" stroke={lastPnl >= 0 ? "#10b981" : "#f43f5e"} strokeWidth="2" />
-                  {userEquityPoints.map((pt, i) => (
-                    <circle key={i} cx={getX(i)} cy={getY(pt.cumulative)} r={i === 0 ? 3 : 3.5} fill={i === 0 ? '#fbbf24' : (pt.pnl >= 0 ? '#10b981' : '#f43f5e')} stroke="#0f172a" strokeWidth="1">
-                      <title>{pt.idx === 0 ? 'Inicio 0.00' : `Trade #${pt.id} (${pt.symbol}): ${pt.pnl >= 0 ? '+' : ''}${pt.pnl.toFixed(4)} USDT`}</title>
-                    </circle>
+
+                  {/* Línea de crecimiento */}
+                  <path d={lineD} fill="none" stroke={totalNetPnL >= 0 ? "#10b981" : "#f43f5e"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+
+                  {/* Eje horizontal base */}
+                  <line x1={pad.left} y1={svgH - pad.bottom} x2={svgW - pad.right} y2={svgH - pad.bottom} stroke="#334155" strokeWidth="1" />
+
+                  {/* Ticks y Horas / Fechas en el Eje X */}
+                  {axisTicks.map(({ pt, idx }) => (
+                    <g key={`tick-${idx}`}>
+                      <line
+                        x1={getX(idx)}
+                        y1={svgH - pad.bottom}
+                        x2={getX(idx)}
+                        y2={svgH - pad.bottom + 5}
+                        stroke="#475569"
+                        strokeWidth="1"
+                      />
+                      <text
+                        x={getX(idx)}
+                        y={svgH - pad.bottom + 17}
+                        fill="#94a3b8"
+                        fontSize="10"
+                        textAnchor="middle"
+                        fontFamily="monospace"
+                      >
+                        {pt.time}
+                      </text>
+                      {pt.shortDate && (
+                        <text
+                          x={getX(idx)}
+                          y={svgH - pad.bottom + 28}
+                          fill="#64748b"
+                          fontSize="9"
+                          textAnchor="middle"
+                          fontFamily="monospace"
+                        >
+                          {pt.shortDate.split(' ')[0]}
+                        </text>
+                      )}
+                    </g>
                   ))}
+
+                  {/* Guía vertical interactiva para el punto activo */}
+                  {inspectedPt && (
+                    <g>
+                      <line
+                        x1={getX(activeIdx)}
+                        y1={pad.top}
+                        x2={getX(activeIdx)}
+                        y2={svgH - pad.bottom}
+                        stroke="#38bdf8"
+                        strokeWidth="1.5"
+                        strokeDasharray="3 3"
+                        opacity="0.85"
+                      />
+                      <rect
+                        x={getX(activeIdx) - 24}
+                        y={svgH - pad.bottom + 20}
+                        width="48"
+                        height="16"
+                        rx="4"
+                        fill="#0284c7"
+                        opacity="0.95"
+                      />
+                      <text
+                        x={getX(activeIdx)}
+                        y={svgH - pad.bottom + 32}
+                        fill="#ffffff"
+                        fontSize="9"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                        fontFamily="monospace"
+                      >
+                        {inspectedPt.time}
+                      </text>
+                    </g>
+                  )}
+
+                  {/* Puntos interactivos clickeables / hover */}
+                  {points.map((pt, i) => {
+                    const isSelected = i === activeIdx;
+                    return (
+                      <g
+                        key={`pt-${i}`}
+                        className="cursor-pointer"
+                        onClick={() => setSelectedEquityPointIndex(i)}
+                        onTouchStart={() => setSelectedEquityPointIndex(i)}
+                        onMouseEnter={() => setSelectedEquityPointIndex(i)}
+                      >
+                        {/* Target táctil invisible */}
+                        <circle cx={getX(i)} cy={getY(pt.cumulative)} r={14} fill="transparent" />
+
+                        {isSelected && (
+                          <circle cx={getX(i)} cy={getY(pt.cumulative)} r={7} fill="none" stroke="#38bdf8" strokeWidth="2.5" opacity="0.85" />
+                        )}
+
+                        <circle
+                          cx={getX(i)}
+                          cy={getY(pt.cumulative)}
+                          r={isSelected ? 5.5 : (i === 0 ? 3.5 : (points.length > 50 ? 2.5 : 3.5))}
+                          fill={i === 0 ? '#fbbf24' : (pt.pnl >= 0 ? '#10b981' : '#f43f5e')}
+                          stroke={isSelected ? '#38bdf8' : '#0f172a'}
+                          strokeWidth={isSelected ? 2 : 1.2}
+                        >
+                          <title>{pt.idx === 0 ? 'Inicio 0.00' : `Trade #${pt.id} (${pt.symbol}): ${pt.pnl >= 0 ? '+' : ''}${pt.pnl.toFixed(4)} USDT | ${pt.time}`}</title>
+                        </circle>
+                      </g>
+                    );
+                  })}
+
+                  {/* Etiquetas de valores de escala Y */}
+                  <text x={pad.left - 8} y={getY(maxE) + 4} fill="#94a3b8" fontSize="10" textAnchor="end" fontFamily="monospace">
+                    +{maxE.toFixed(2)}
+                  </text>
+                  <text x={pad.left - 8} y={zeroY + 4} fill="#cbd5e1" fontSize="10" textAnchor="end" fontFamily="monospace">
+                    0.00
+                  </text>
+                  {minE < 0 && (
+                    <text x={pad.left - 8} y={getY(minE) + 4} fill="#f87171" fontSize="10" textAnchor="end" fontFamily="monospace">
+                      {minE.toFixed(2)}
+                    </text>
+                  )}
                 </svg>
               </div>
             </div>
