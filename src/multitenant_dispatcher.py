@@ -767,16 +767,16 @@ def run_personal_bot_cycle():
         trade_direction = str(params.get('trade_direction', 'BIDIRECTIONAL')).upper().strip()
 
         # Determinar lista de símbolos a evaluar:
-        # Prioridad 1: Símbolos expresamente seleccionados por el usuario
-        # Prioridad 2: Si el usuario no especificó ninguno, usar los de la estrategia
-        # Prioridad 3: Si la estrategia tampoco los define, usar lista estándar de mercado
-        raw_user_syms = str(user.get('symbols_to_trade', '')).strip()
-        if raw_user_syms:
-            candidate_symbols = [s.strip().upper() for s in raw_user_syms.split(',') if s.strip()]
+        # Prioridad 1: Símbolos definidos en la estrategia asignada al bot
+        # Prioridad 2: Símbolos personalizados por el usuario si la estrategia no define
+        # Prioridad 3: Símbolos estándar de mercado como fallback
+        strat_syms = params.get('symbols_to_trade') or params.get('symbolsToTrade')
+        if strat_syms:
+            candidate_symbols = [s.strip().upper() for s in str(strat_syms).split(',') if s.strip()]
         else:
-            strat_syms = params.get('symbols_to_trade') or params.get('symbolsToTrade')
-            if strat_syms:
-                candidate_symbols = [s.strip().upper() for s in str(strat_syms).split(',') if s.strip()]
+            raw_user_syms = str(user.get('symbols_to_trade', '')).strip()
+            if raw_user_syms and raw_user_syms != 'BTCUSDT,ETHUSDT,SOLUSDT':
+                candidate_symbols = [s.strip().upper() for s in raw_user_syms.split(',') if s.strip()]
             else:
                 candidate_symbols = DEFAULT_MARKET_SYMBOLS
 
@@ -1175,20 +1175,24 @@ def get_user_monitor_status(user_id: int) -> dict:
     except Exception:
         pass
 
-    # 3. Lista de símbolos a monitorear: posiciones abiertas + símbolos candidatos
-    raw_user_syms = str(settings.get('symbols_to_trade', '')).strip()
-    if raw_user_syms:
-        symbols_list = [s.strip().upper() for s in raw_user_syms.split(',') if s.strip()]
+    # 3. Lista de símbolos a monitorear:
+    # Prioridad 1: Símbolos definidos en la estrategia cuantitativa asignada al bot
+    # Prioridad 2: Símbolos personalizados por el usuario si la estrategia no los define
+    # Además, incluir siempre cualquier símbolo con posición abierta o con historial de trades
+    strat_syms = params.get('symbols_to_trade') or params.get('symbolsToTrade')
+    if strat_syms:
+        symbols_list = [s.strip().upper() for s in str(strat_syms).split(',') if s.strip()]
     else:
-        strat_syms = params.get('symbols_to_trade') or params.get('symbolsToTrade')
-        if strat_syms:
-            symbols_list = [s.strip().upper() for s in str(strat_syms).split(',') if s.strip()]
+        raw_user_syms = str(settings.get('symbols_to_trade', '')).strip()
+        if raw_user_syms and raw_user_syms != 'BTCUSDT,ETHUSDT,SOLUSDT':
+            symbols_list = [s.strip().upper() for s in raw_user_syms.split(',') if s.strip()]
         else:
             symbols_list = DEFAULT_MARKET_SYMBOLS.copy()
 
-    # Asegurar que todas las posiciones abiertas estén en la lista
-    for sym in set(open_positions_long.keys()).union(set(open_positions_short.keys())):
-        if sym not in symbols_list:
+    # Asegurar que todas las posiciones abiertas y monedas con trades históricos estén en la lista
+    known_symbols = set(open_positions_long.keys()).union(set(open_positions_short.keys())).union(set(historical_pnls.keys()))
+    for sym in known_symbols:
+        if sym and sym not in symbols_list:
             symbols_list.append(sym)
 
     # Parámetros de la estrategia para TP, SL, Trailing
