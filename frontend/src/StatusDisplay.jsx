@@ -136,130 +136,123 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
           </span>
         </div>
       )}
-      {/* --- FILA 1: TAKE PROFIT --- */}
-      {hasTp ? (
-        <div className="flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[11px] leading-tight">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-sans font-medium text-emerald-300 flex items-center gap-1">
-                <span>🎯 TP:</span>
-                <span className="font-mono font-medium text-emerald-200">+{Number(tp.target_usdt).toFixed(2)} USDT</span>
-              </span>
-              {hasTs && (
-                ts.armed ? (
-                  <span className="text-[10px] font-sans font-medium text-sky-300 flex items-center gap-1 animate-pulse">
-                    <span>🔵 TS Protegiendo</span>
-                  </span>
-                ) : tsArmThreshold ? (
-                  <span className="text-[10px] text-sky-400 font-mono font-medium hidden sm:inline" title={`Trailing Stop se armará al alcanzar +${tsArmThreshold.toFixed(2)} USDT`}>
-                    ⚡ TS: +{tsArmThreshold.toFixed(2)}
-                  </span>
-                ) : null
-              )}
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px]">
-              {tp.remaining_usdt !== null && tp.remaining_usdt > 0 && (
-                <span className="text-slate-400 font-sans font-normal hidden sm:inline">
-                  (Faltan: +{Number(tp.remaining_usdt).toFixed(2)})
+      {/* --- SI ESTÁ EN GANANCIA (PnL >= 0): MOSTRAR SOLO TP / TS (OCULTAR SL) --- */}
+      {pnlUsdt >= 0 ? (
+        ts.armed ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[11px] leading-tight">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-sans font-medium text-sky-300 flex items-center gap-1 animate-pulse">
+                  <span>🔵 TS ACTIVO:</span>
+                  <span className="font-mono font-medium text-sky-200">{ts.floor_value !== null && ts.floor_value !== undefined ? `Piso +${ts.floor_value} USDT` : (ts.label || 'Protegiendo')}</span>
                 </span>
-              )}
-              <span className={`font-mono font-medium ${pnlUsdt >= 0 ? (ts.armed ? 'text-sky-400' : 'text-emerald-400') : 'text-slate-400'}`}>
-                {Math.round(tpProgress)}%
-              </span>
+                {ts.peak_value !== null && ts.peak_value !== undefined && (
+                  <span className="text-[10px] text-slate-400 font-sans font-normal hidden sm:inline">
+                    (Pico: +{ts.peak_value})
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                <span className="text-slate-400 font-sans font-normal">
+                  Tolerancia:
+                </span>
+                <span className="font-mono font-medium text-sky-400">
+                  {Math.round(ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100)}%
+                </span>
+              </div>
             </div>
-          </div>
-          <div className="relative w-full bg-slate-900/90 rounded-full h-2.5 overflow-hidden border border-slate-700/80">
-            {hasTs && tsArmPosPct && !ts.armed && (
+            <div className="w-full bg-slate-900/90 rounded-full h-6 overflow-hidden border border-sky-900/80 shadow-inner">
               <div
-                className="absolute top-0 bottom-0 w-1 bg-sky-400 z-20 shadow-sm shadow-sky-400"
-                style={{ left: `${tsArmPosPct}%` }}
-                title={`Umbral de activación Trailing Stop: +${tsArmThreshold} USDT`}
+                className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 shadow-sm shadow-sky-500/50"
+                style={{ width: `${Math.min(100, Math.max(5, ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100))}%` }}
               />
-            )}
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                tpProgress >= 100 
-                  ? 'bg-emerald-400 animate-pulse' 
-                  : ts.armed
-                    ? 'bg-gradient-to-r from-teal-500 via-sky-500 to-blue-500 shadow-sm shadow-sky-500/50'
-                    : pnlUsdt >= 0 
-                      ? 'bg-gradient-to-r from-teal-500 to-emerald-400' 
-                      : 'bg-slate-700'
-              }`}
-              style={{ width: `${tpProgress}%` }}
-            />
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1.5 text-[11px] font-sans font-medium text-emerald-400">
-          <span>🎯 TP:</span>
-          <span>Dinámico por Señal / Trailing</span>
-        </div>
-      )}
-
-      {/* --- FILA 2: TRAILING STOP O STOP LOSS --- */}
-      {ts.armed ? (
-        <div className="flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[11px] leading-tight">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-sans font-medium text-sky-300 flex items-center gap-1 animate-pulse">
-                <span>🔵 TS ACTIVO:</span>
-                <span className="font-mono font-medium text-sky-200">{ts.floor_value !== null && ts.floor_value !== undefined ? `Piso +${ts.floor_value} USDT` : (ts.label || 'Protegiendo')}</span>
-              </span>
-              {ts.peak_value !== null && ts.peak_value !== undefined && (
-                <span className="text-[10px] text-slate-400 font-sans font-normal hidden sm:inline">
-                  (Pico: +{ts.peak_value})
+        ) : hasTp ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[11px] leading-tight">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-sans font-medium text-emerald-300 flex items-center gap-1">
+                  <span>🎯 TP:</span>
+                  <span className="font-mono font-medium text-emerald-200">+{Number(tp.target_usdt).toFixed(2)} USDT</span>
                 </span>
+                {hasTs && (
+                  tsArmThreshold ? (
+                    <span className="text-[10px] text-sky-400 font-mono font-medium hidden sm:inline" title={`Trailing Stop se armará al alcanzar +${tsArmThreshold.toFixed(2)} USDT`}>
+                      ⚡ TS: +{tsArmThreshold.toFixed(2)}
+                    </span>
+                  ) : null
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                {tp.remaining_usdt !== null && tp.remaining_usdt > 0 && (
+                  <span className="text-slate-400 font-sans font-normal hidden sm:inline">
+                    (Faltan: +{Number(tp.remaining_usdt).toFixed(2)})
+                  </span>
+                )}
+                <span className="font-mono font-bold text-emerald-400">
+                  {Math.round(tpProgress)}%
+                </span>
+              </div>
+            </div>
+            <div className="relative w-full bg-slate-900/90 rounded-full h-6 overflow-hidden border border-slate-700/80 shadow-inner">
+              {hasTs && tsArmPosPct && !ts.armed && (
+                <div
+                  className="absolute top-0 bottom-0 w-1 bg-sky-400 z-20 shadow-sm shadow-sky-400"
+                  style={{ left: `${tsArmPosPct}%` }}
+                  title={`Umbral de activación Trailing Stop: +${tsArmThreshold} USDT`}
+                />
               )}
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px]">
-              <span className="text-slate-400 font-sans font-normal">
-                Tolerancia:
-              </span>
-              <span className="font-mono font-medium text-sky-400">
-                {Math.round(ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100)}%
-              </span>
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  tpProgress >= 100 
+                    ? 'bg-emerald-400 animate-pulse' 
+                    : 'bg-gradient-to-r from-teal-500 to-emerald-400'
+                }`}
+                style={{ width: `${tpProgress}%` }}
+              />
             </div>
           </div>
-          <div className="w-full bg-slate-900/90 rounded-full h-2.5 overflow-hidden border border-sky-900/80">
-            <div
-              className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 shadow-sm shadow-sky-500/50"
-              style={{ width: `${Math.min(100, Math.max(5, ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100))}%` }}
-            />
+        ) : (
+          <div className="flex items-center gap-1.5 text-[11px] font-sans font-medium text-emerald-400">
+            <span>🎯 TP:</span>
+            <span>Dinámico por Señal / Trailing</span>
           </div>
-        </div>
-      ) : hasSl ? (
-        <div className="flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[11px] leading-tight">
-            <span className="font-sans font-medium text-rose-300 flex items-center gap-1">
-              <span>🛑 SL:</span>
-              <span className="font-mono font-medium text-rose-200">{Number(slTarget).toFixed(2)} USDT</span>
-            </span>
-            <div className="flex items-center gap-1.5 text-[10px]">
-              <span className="font-mono font-medium text-slate-300">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
-              {pnlUsdt >= 0 ? (
-                <span className="font-sans font-medium text-emerald-400">
-                  🛡️ Seguro
-                </span>
-              ) : (
-                <span className="font-mono font-medium text-rose-400 animate-pulse">
+        )
+      ) : (
+        /* --- SI ESTÁ EN PÉRDIDA (PnL < 0): MOSTRAR SOLO STOP LOSS (OCULTAR TP/TS) --- */
+        hasSl ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[11px] leading-tight">
+              <span className="font-sans font-medium text-rose-300 flex items-center gap-1">
+                <span>🛑 SL:</span>
+                <span className="font-mono font-medium text-rose-200">{Number(slTarget).toFixed(2)} USDT</span>
+              </span>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                <span className="font-mono font-medium text-slate-300">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
+                <span className="font-mono font-bold text-rose-400 animate-pulse">
                   {Math.round(slFillPct)}% riesgo
                 </span>
-              )}
+              </div>
+            </div>
+            <div className="w-full bg-slate-900/90 rounded-full h-6 overflow-hidden border border-slate-700/80 shadow-inner">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  slFillPct >= 80
+                    ? 'bg-gradient-to-r from-red-600 to-rose-500 animate-pulse'
+                    : 'bg-gradient-to-r from-rose-600 to-red-500'
+                }`}
+                style={{ width: `${Math.min(100, Math.max(slFillPct > 0 ? 3 : 0, slFillPct))}%` }}
+              />
             </div>
           </div>
-          <div className="w-full bg-slate-900/90 rounded-full h-2.5 overflow-hidden border border-slate-700/80">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                slFillPct >= 80
-                  ? 'bg-gradient-to-r from-red-600 to-rose-500 animate-pulse'
-                  : 'bg-gradient-to-r from-rose-600 to-red-500'
-              }`}
-              style={{ width: `${slFillPct}%` }}
-            />
+        ) : (
+          <div className="flex items-center gap-1.5 text-[11px] font-sans font-medium text-rose-400">
+            <span>🛑 SL:</span>
+            <span>Sin Stop Loss configurado</span>
           </div>
-        </div>
-      ) : null}
+        )
+      )}
     </div>
   );
 }

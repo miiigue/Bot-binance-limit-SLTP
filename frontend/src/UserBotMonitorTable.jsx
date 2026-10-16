@@ -356,81 +356,79 @@ function PositionTpSlBar({ position }) {
 
   return (
     <div className="flex flex-col gap-1.5 w-full py-1 bg-slate-950/85 p-2.5 rounded-xl border border-slate-800/80 shadow-inner">
-      {/* FILA 1: TAKE PROFIT */}
-      <div className="flex flex-col gap-0.5">
-        <div className="flex items-center justify-between text-[11px] leading-tight flex-wrap gap-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-bold text-emerald-300 flex items-center gap-1">
-              <span>🎯 TP:</span>
-              <span className="font-mono text-emerald-200">+{Number(tp?.target_usdt || 50).toFixed(2)} USDT</span>
-            </span>
-            {pnlUsdt > 0 && (
-              <span className="text-[10px] font-mono font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
-                +{pnlUsdt.toFixed(2)} USDT
+      {isProfit ? (
+        /* GANANDO (PnL >= 0): SOLO MOSTRAR TAKE PROFIT O TRAILING STOP (OCULTAR STOP LOSS) */
+        ts?.armed ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[11px] leading-tight">
+              <span className="font-bold text-sky-300 flex items-center gap-1 animate-pulse">
+                <span>🔵 TS ACTIVO:</span>
+                <span className="font-mono text-sky-200">Pico +{ts.peak_value} USDT</span>
               </span>
-            )}
+              <span className="text-[10px] text-sky-400 font-semibold font-sans">
+                Protegiendo Ganancia 🛡️
+              </span>
+            </div>
+            <div className="w-full bg-slate-900 rounded-full h-6 overflow-hidden border border-sky-800 shadow-inner">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 animate-pulse shadow-sm shadow-sky-500/50"
+                style={{ width: '100%' }}
+              />
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 text-[10px]">
-            <span className={`font-mono font-black ${isProfit ? 'text-emerald-400' : 'text-slate-500'}`}>
-              {Math.round(tpProgress)}%
-            </span>
+        ) : (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[11px] leading-tight flex-wrap gap-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-emerald-300 flex items-center gap-1">
+                  <span>🎯 TP:</span>
+                  <span className="font-mono text-emerald-200">+{Number(tp?.target_usdt || 50).toFixed(2)} USDT</span>
+                </span>
+                {pnlUsdt > 0 && (
+                  <span className="text-[10px] font-mono font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
+                    +{pnlUsdt.toFixed(2)} USDT
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                <span className="font-mono font-black text-emerald-400">
+                  {Math.round(tpProgress)}%
+                </span>
+              </div>
+            </div>
+            <div className="w-full bg-slate-900 rounded-full h-6 overflow-hidden border border-slate-700/80 shadow-inner">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  tpProgress >= 100 
+                    ? 'bg-emerald-400 animate-pulse' 
+                    : ts?.armed
+                      ? 'bg-gradient-to-r from-teal-500 via-sky-500 to-blue-500 shadow-sm shadow-sky-500/50'
+                      : 'bg-gradient-to-r from-teal-500 to-emerald-400'
+                }`}
+                style={{ width: `${tpProgress}%` }}
+              />
+            </div>
           </div>
-        </div>
-        <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-700/80">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              tpProgress >= 100 
-                ? 'bg-emerald-400 animate-pulse' 
-                : ts?.armed
-                  ? 'bg-gradient-to-r from-teal-500 via-sky-500 to-blue-500 shadow-sm shadow-sky-500/50'
-                  : isProfit 
-                    ? 'bg-gradient-to-r from-teal-500 to-emerald-400' 
-                    : 'bg-slate-700'
-            }`}
-            style={{ width: `${tpProgress}%` }}
-          />
-        </div>
-      </div>
-
-      {/* FILA 2: STOP LOSS O TRAILING STOP */}
-      {ts?.armed ? (
-        <div className="flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[11px] leading-tight">
-            <span className="font-bold text-sky-300 flex items-center gap-1 animate-pulse">
-              <span>🔵 TS ACTIVO:</span>
-              <span className="font-mono text-sky-200">Pico +{ts.peak_value} USDT</span>
-            </span>
-            <span className="text-[10px] text-sky-400 font-semibold font-sans">
-              Protegiendo Ganancia 🛡️
-            </span>
-          </div>
-          <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-sky-800">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 animate-pulse shadow-sm shadow-sky-500/50"
-              style={{ width: '100%' }}
-            />
-          </div>
-        </div>
+        )
       ) : (
-        <div className="flex flex-col gap-0.5">
+        /* EN PÉRDIDA (PnL < 0): SOLO MOSTRAR STOP LOSS (OCULTAR TAKE PROFIT) */
+        <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between text-[11px] leading-tight flex-wrap gap-1">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="font-bold text-rose-300 flex items-center gap-1">
                 <span>🛑 SL:</span>
                 <span className="font-mono text-rose-200">{Number(sl?.target_usdt || -400).toFixed(2)} USDT</span>
               </span>
-              {pnlUsdt < 0 && (
-                <span className="text-[10px] font-mono font-black text-rose-300 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/40">
-                  {pnlUsdt.toFixed(2)} USDT
-                </span>
-              )}
+              <span className="text-[10px] font-mono font-black text-rose-300 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/40">
+                {pnlUsdt.toFixed(2)} USDT
+              </span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px]">
               <span className="font-mono font-medium text-slate-200">+{Number(sl?.distance_usdt || 0).toFixed(2)}</span>
               {riskBadge}
             </div>
           </div>
-          <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-700/80">
+          <div className="w-full bg-slate-900 rounded-full h-6 overflow-hidden border border-slate-700/80 shadow-inner">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
                 slFillPct >= 75
