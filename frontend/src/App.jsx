@@ -491,9 +491,19 @@ function MainDashboard() {
       : (inspectingUser?.investment_usdt || 5000)
   );
 
-  const userWalletPnl = (userBotHeader?.wallet_pnl !== undefined && userBotHeader?.wallet_pnl !== null)
+  const userRealizedPnl = Number(
+    userBotHeader?.metrics?.total_pnl !== undefined
+      ? userBotHeader.metrics.total_pnl
+      : (userBotHeader?.wallet_breakdown?.net_pnl !== undefined
+          ? userBotHeader.wallet_breakdown.net_pnl
+          : (inspectingUser?.net_pnl || 0))
+  );
+
+  const userWalletPnl = (userBotHeader?.wallet_pnl !== undefined && userBotHeader?.wallet_pnl !== null && Math.abs(Number(userBotHeader.wallet_pnl)) > 0.001)
     ? Number(userBotHeader.wallet_pnl)
-    : (inspectingUser?.net_pnl !== undefined ? Number(inspectingUser.net_pnl) : (userBinanceBalance - userInitialCapital));
+    : (userRealizedPnl !== 0 
+        ? userRealizedPnl 
+        : (userBinanceBalance - userInitialCapital));
 
   const userUnrealizedPnl = Number(
     userBotHeader?.wallet_breakdown?.unrealized_pnl !== undefined

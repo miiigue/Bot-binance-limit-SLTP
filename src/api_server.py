@@ -1329,34 +1329,51 @@ def user_bot_status_endpoint():
                 api_logger.debug(f"Aviso al consultar desglose de cuenta para usuario {user_id}: {e_live}")
 
         # Determinar Capital Inicial / Depósito Base para conciliar PnL de cartera (Balance - Capital Inicial)
-        # 1. Si el usuario tiene un initial_balance registrado en sus API keys, respetarlo
-        # 2. Si tiene depósitos en investor_transactions, calcular el neto
-        # 3. Si no tiene ninguno, el capital inicial es su balance actual detectado
         user_init_key = float(keys.get('initial_balance', 0.0) or 0.0) if keys else 0.0
-        initial_capital = user_init_key if user_init_key > 0 else (live_balance or wallet_balance or 1000.0)
-        try:
-            from src.database import get_db_connection
-            conn_u = get_db_connection()
-            if conn_u:
-                cur_u = conn_u.cursor()
-                cur_u.execute("""
-                    SELECT 
-                        SUM(CASE WHEN transaction_type IN ('INITIAL', 'DEPOSIT') THEN amount_usdt ELSE 0 END) as total_dep,
-                        SUM(CASE WHEN transaction_type = 'WITHDRAWAL' THEN amount_usdt ELSE 0 END) as total_wd
-                    FROM investor_transactions
-                    WHERE user_id = %s
-                """, (user_id,))
-                row_u = cur_u.fetchone()
-                if row_u and row_u['total_dep'] and float(row_u['total_dep']) > 0:
-                    net_u = float(row_u['total_dep']) - float(row_u['total_wd'] or 0.0)
-                    if net_u > 0 and not bool(keys.get('is_testnet', False) if keys else False):
-                        initial_capital = net_u
-                conn_u.close()
-        except Exception:
-            pass
+        target_balance = float(wallet_balance if wallet_balance > 0 else (live_balance or 0.0))
 
-        wallet_pnl = round((live_balance or wallet_balance) - initial_capital, 2)
+        initial_capital = user_init_key if user_init_key > 0 else 0.0
+        if initial_capital <= 0:
+            try:
+                from src.database import get_db_connection
+                conn_u = get_db_connection()
+                if conn_u:
+                    cur_u = conn_u.cursor()
+                    cur_u.execute("""
+                        SELECT 
+                            SUM(CASE WHEN transaction_type IN ('INITIAL', 'DEPOSIT') THEN amount_usdt ELSE 0 END) as total_dep,
+                            SUM(CASE WHEN transaction_type = 'WITHDRAWAL' THEN amount_usdt ELSE 0 END) as total_wd
+                        FROM investor_transactions
+                        WHERE user_id = ?
+                    """, (user_id,))
+                    row_u = cur_u.fetchone()
+                    if row_u and row_u['total_dep'] and float(row_u['total_dep']) > 0:
+                        net_u = float(row_u['total_dep']) - float(row_u['total_wd'] or 0.0)
+                        if net_u > 0:
+                            initial_capital = net_u
+                    conn_u.close()
+            except Exception:
+                pass
 
+        if initial_capital <= 0:
+            is_test = bool(keys.get('is_testnet', False) if keys else False)
+            if is_test:
+                initial_capital = 5000.0
+            elif metrics and (float(metrics.get('gross_win', 0.0) or 0.0) > 0 or float(metrics.get('gross_loss', 0.0) or 0.0) > 0):
+                net_trades = float(metrics.get('total_pnl', 0.0) or 0.0)
+                initial_capital = max(10.0, round(target_balance - net_trades, 2))
+            else:
+                initial_capital = target_balance if target_balance > 0 else 1000.0
+
+            # Guardar initial_balance en base de datos para no recalcularlo
+            if initial_capital > 0 and user_id and not is_target_admin:
+                try:
+                    from src.database import set_user_api_initial_balance
+                    set_user_api_initial_balance(user_id, initial_capital)
+                except Exception:
+                    pass
+
+        wallet_pnl = round(target_balance - initial_capital, 2)
 
         cfg_temp = load_config()
         db_strat = None
@@ -1381,7 +1398,6 @@ def user_bot_status_endpoint():
         m_comm = float(metrics.get('total_commission', 0.0) or 0.0) if metrics else 0.0
         m_fund = float(metrics.get('total_funding', 0.0) or 0.0) if metrics else 0.0
 
-        target_balance = float(wallet_balance if wallet_balance > 0 else (live_balance or 0.0))
         net_before_costs = round(initial_capital + m_win - m_loss, 2)
         total_costs = max(0.0, round(net_before_costs - target_balance, 2)) if target_balance > 0 else 0.0
 
@@ -1389,12 +1405,15 @@ def user_bot_status_endpoint():
             if m_fund > 0 and m_fund < total_costs:
                 reconciled_funding = round(m_fund, 2)
                 reconciled_comm = round(total_costs - reconciled_funding, 2)
+            elif m_comm > 0 and m_comm < total_costs:
+                reconciled_comm = round(m_comm, 2)
+                reconciled_funding = round(total_costs - reconciled_comm, 2)
             else:
-                reconciled_funding = round(total_costs * 0.08, 2)
+                reconciled_funding = round(m_fund, 2) if m_fund > 0 else 0.0
                 reconciled_comm = round(total_costs - reconciled_funding, 2)
         elif target_balance >= net_before_costs and target_balance > 0:
-            reconciled_comm = 0.0
-            reconciled_funding = 0.0
+            reconciled_comm = round(m_comm, 2)
+            reconciled_funding = round(m_fund, 2)
         else:
             reconciled_comm = round(m_comm, 2)
             reconciled_funding = round(m_fund, 2)
@@ -1652,9 +1671,10 @@ def user_trades_endpoint():
                 bal_detect = float(k_info.get('balance_detected', 0.0) or 0.0) if k_info else 0.0
                 if bal_detect > 0:
                     user_init_val = float(k_info.get('initial_balance', 0.0) or 0.0) if k_info else 0.0
-                    init_cap = user_init_val if user_init_val > 0 else bal_detect
+                    init_cap = user_init_val if user_init_val > 0 else (5000.0 if bool(k_info.get('is_testnet')) else bal_detect)
                     m_win = float(metrics.get('gross_win', 0.0) or 0.0)
                     m_loss = float(metrics.get('gross_loss', 0.0) or 0.0)
+                    m_comm = float(metrics.get('total_commission', 0.0) or 0.0)
                     m_fund = float(metrics.get('total_funding', 0.0) or 0.0)
                     net_pre = round(init_cap + m_win - m_loss, 2)
                     tot_c = max(0.0, round(net_pre - bal_detect, 2))
@@ -1662,12 +1682,15 @@ def user_trades_endpoint():
                         if m_fund > 0 and m_fund < tot_c:
                             metrics['total_funding'] = round(m_fund, 2)
                             metrics['total_commission'] = round(tot_c - metrics['total_funding'], 2)
+                        elif m_comm > 0 and m_comm < tot_c:
+                            metrics['total_commission'] = round(m_comm, 2)
+                            metrics['total_funding'] = round(tot_c - metrics['total_commission'], 2)
                         else:
-                            metrics['total_funding'] = round(tot_c * 0.08, 2)
+                            metrics['total_funding'] = round(m_fund, 2) if m_fund > 0 else 0.0
                             metrics['total_commission'] = round(tot_c - metrics['total_funding'], 2)
                     elif bal_detect >= net_pre:
-                        metrics['total_commission'] = 0.0
-                        metrics['total_funding'] = 0.0
+                        metrics['total_commission'] = round(m_comm, 2)
+                        metrics['total_funding'] = round(m_fund, 2)
 
             except Exception:
                 pass

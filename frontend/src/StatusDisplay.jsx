@@ -161,9 +161,9 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
                 </span>
               </div>
             </div>
-            <div className="w-full bg-slate-900/90 rounded-full h-6 overflow-hidden border border-sky-900/80 shadow-inner">
+            <div className="w-full bg-slate-900/90 rounded-none h-6 overflow-hidden border border-sky-900/80 shadow-inner">
               <div
-                className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 shadow-sm shadow-sky-500/50"
+                className="h-full rounded-none transition-all duration-500 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 shadow-sm shadow-sky-500/50"
                 style={{ width: `${Math.min(100, Math.max(5, ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100))}%` }}
               />
             </div>
@@ -195,7 +195,7 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
                 </span>
               </div>
             </div>
-            <div className="relative w-full bg-slate-900/90 rounded-full h-6 overflow-hidden border border-slate-700/80 shadow-inner">
+            <div className="relative w-full bg-slate-900/90 rounded-none h-6 overflow-hidden border border-slate-700/80 shadow-inner">
               {hasTs && tsArmPosPct && !ts.armed && (
                 <div
                   className="absolute top-0 bottom-0 w-1 bg-sky-400 z-20 shadow-sm shadow-sky-400"
@@ -204,7 +204,7 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
                 />
               )}
               <div
-                className={`h-full rounded-full transition-all duration-500 ${
+                className={`h-full rounded-none transition-all duration-500 ${
                   tpProgress >= 100 
                     ? 'bg-emerald-400 animate-pulse' 
                     : 'bg-gradient-to-r from-teal-500 to-emerald-400'
@@ -235,9 +235,9 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
                 </span>
               </div>
             </div>
-            <div className="w-full bg-slate-900/90 rounded-full h-6 overflow-hidden border border-slate-700/80 shadow-inner">
+            <div className="w-full bg-slate-900/90 rounded-none h-6 overflow-hidden border border-slate-700/80 shadow-inner">
               <div
-                className={`h-full rounded-full transition-all duration-500 ${
+                className={`h-full rounded-none transition-all duration-500 ${
                   slFillPct >= 80
                     ? 'bg-gradient-to-r from-red-600 to-rose-500 animate-pulse'
                     : 'bg-gradient-to-r from-rose-600 to-red-500'

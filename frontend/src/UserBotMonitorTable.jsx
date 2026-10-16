@@ -369,9 +369,9 @@ function PositionTpSlBar({ position }) {
                 Protegiendo Ganancia 🛡️
               </span>
             </div>
-            <div className="w-full bg-slate-900 rounded-full h-6 overflow-hidden border border-sky-800 shadow-inner">
+            <div className="w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-sky-800 shadow-inner">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 animate-pulse shadow-sm shadow-sky-500/50"
+                className="h-full rounded-none bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 animate-pulse shadow-sm shadow-sky-500/50"
                 style={{ width: '100%' }}
               />
             </div>
@@ -396,9 +396,9 @@ function PositionTpSlBar({ position }) {
                 </span>
               </div>
             </div>
-            <div className="w-full bg-slate-900 rounded-full h-6 overflow-hidden border border-slate-700/80 shadow-inner">
+            <div className="w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-slate-700/80 shadow-inner">
               <div
-                className={`h-full rounded-full transition-all duration-500 ${
+                className={`h-full rounded-none transition-all duration-500 ${
                   tpProgress >= 100 
                     ? 'bg-emerald-400 animate-pulse' 
                     : ts?.armed
@@ -428,9 +428,9 @@ function PositionTpSlBar({ position }) {
               {riskBadge}
             </div>
           </div>
-          <div className="w-full bg-slate-900 rounded-full h-6 overflow-hidden border border-slate-700/80 shadow-inner">
+          <div className="w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-slate-700/80 shadow-inner">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${
+              className={`h-full rounded-none transition-all duration-500 ${
                 slFillPct >= 75
                   ? 'bg-gradient-to-r from-red-600 to-rose-500 animate-pulse'
                   : 'bg-gradient-to-r from-rose-600 to-red-500'

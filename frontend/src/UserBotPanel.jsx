@@ -954,36 +954,16 @@ export default function UserBotPanel({
           {/* Auditoría de Capital y Ecuación Financiera */}
           {(() => {
             const currentWalletBalance = Number(walletBreakdown?.wallet_balance ?? balance);
-            const initialCap = Number(walletBreakdown?.initial_capital ?? botData?.initial_capital ?? (currentWalletBalance > 0 ? currentWalletBalance : 1000.0));
             const grossWin = Number(metricsData?.gross_win ?? walletBreakdown?.gross_win ?? 0);
             const grossLoss = Number(metricsData?.gross_loss ?? walletBreakdown?.gross_loss ?? 0);
+            const tradingFees = Number(walletBreakdown?.total_commission ?? metricsData?.total_commission ?? 0);
+            const fundingFees = Number(walletBreakdown?.total_funding ?? metricsData?.total_funding ?? 0);
 
-
-            // Conciliación matemática exacta:
-            // Saldo en Billetera = Capital Inicial + Profits - Pérdidas - Comisiones - Financiamientos
-            const theoreticalPreCostBalance = initialCap + grossWin - grossLoss;
-            const totalOperationalCosts = Math.max(0, Number((theoreticalPreCostBalance - currentWalletBalance).toFixed(2)));
-
-            const rawComm = Number(walletBreakdown?.total_commission ?? metricsData?.total_commission ?? 0);
-            const rawFunding = Number(walletBreakdown?.total_funding ?? metricsData?.total_funding ?? 0);
-
-            let fundingFees = 0;
-            let tradingFees = 0;
-
-            if (totalOperationalCosts > 0) {
-              if (rawFunding > 0 && rawFunding < totalOperationalCosts) {
-                fundingFees = Number(rawFunding.toFixed(2));
-                tradingFees = Number((totalOperationalCosts - fundingFees).toFixed(2));
-              } else {
-                fundingFees = Number((totalOperationalCosts * 0.08).toFixed(2));
-                tradingFees = Number((totalOperationalCosts - fundingFees).toFixed(2));
-              }
-            } else if (currentWalletBalance >= theoreticalPreCostBalance) {
-              tradingFees = 0;
-              fundingFees = 0;
-            } else {
-              tradingFees = rawComm;
-              fundingFees = rawFunding;
+            // Capital Inicial: Usar el valor real entregado por el backend o deducir por ecuación contable
+            let initialCap = Number(walletBreakdown?.initial_capital ?? botData?.initial_capital ?? 0);
+            if (initialCap <= 0 || (Math.abs(initialCap - currentWalletBalance) < 0.01 && (grossWin > 0 || grossLoss > 0))) {
+              initialCap = Number((currentWalletBalance - (grossWin - grossLoss - tradingFees - fundingFees)).toFixed(2));
+              if (initialCap <= 0) initialCap = 5000.0;
             }
 
             const committedMargin = Number(walletBreakdown?.margin_in_positions ?? 0);
