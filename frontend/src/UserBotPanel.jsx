@@ -1557,8 +1557,9 @@ export default function UserBotPanel({
               {/* Tarjeta de Auto-Escalado y Equivalencia de Parámetros de la Estrategia */}
               {(() => {
                 const stratBaseMargin = Number(
-                  currentStrategyObj?.parameters?.position_size_usdt ??
                   currentStrategyObj?.parameters?.positionSizeUSDT ??
+                  currentStrategyObj?.parameters?.position_size_usdt ??
+                  botData?.active_strategy_details?.parameters?.positionSizeUSDT ??
                   botData?.active_strategy_details?.parameters?.position_size_usdt ??
                   50.0
                 ) || 50.0;
@@ -1568,29 +1569,33 @@ export default function UserBotPanel({
                 const scalePercent = (scaleFactor * 100).toFixed(1);
 
                 const baseTp = Number(
-                  currentStrategyObj?.parameters?.take_profit_usdt ??
                   currentStrategyObj?.parameters?.takeProfitUSDT ??
+                  currentStrategyObj?.parameters?.take_profit_usdt ??
+                  botData?.active_strategy_details?.parameters?.takeProfitUSDT ??
                   botData?.active_strategy_details?.parameters?.take_profit_usdt ??
                   50.0
                 ) || 50.0;
 
                 const baseSl = Number(
-                  currentStrategyObj?.parameters?.stop_loss_usdt ??
                   currentStrategyObj?.parameters?.stopLossUSDT ??
+                  currentStrategyObj?.parameters?.stop_loss_usdt ??
+                  botData?.active_strategy_details?.parameters?.stopLossUSDT ??
                   botData?.active_strategy_details?.parameters?.stop_loss_usdt ??
                   400.0
                 ) || 400.0;
 
                 const baseDcaLoss = Number(
-                  currentStrategyObj?.parameters?.dca_trigger_loss_usdt ??
                   currentStrategyObj?.parameters?.dcaTriggerLossUsdt ??
+                  currentStrategyObj?.parameters?.dca_trigger_loss_usdt ??
+                  botData?.active_strategy_details?.parameters?.dcaTriggerLossUsdt ??
                   botData?.active_strategy_details?.parameters?.dca_trigger_loss_usdt ??
                   15.0
                 ) || 15.0;
 
                 const baseTsAct = Number(
-                  currentStrategyObj?.parameters?.pnl_trailing_stop_activation_usdt ??
                   currentStrategyObj?.parameters?.pnlTrailingStopActivationUSDT ??
+                  currentStrategyObj?.parameters?.pnl_trailing_stop_activation_usdt ??
+                  botData?.active_strategy_details?.parameters?.pnlTrailingStopActivationUSDT ??
                   botData?.active_strategy_details?.parameters?.pnl_trailing_stop_activation_usdt ??
                   3.5
                 ) || 3.5;

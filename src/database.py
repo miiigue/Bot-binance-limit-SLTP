@@ -1369,6 +1369,15 @@ def get_strategies_catalog(only_public: bool = False) -> list[dict]:
                             pass
                     except Exception:
                         params = {}
+            
+            # Normalización estándar profesional: garantiza paridad y consistencia de todos los campos
+            try:
+                from src.config_loader import normalize_strategy_dict
+                if isinstance(params, dict):
+                    params = normalize_strategy_dict(params)
+            except Exception:
+                pass
+
             result.append({
                 "id": strat_id,
                 "name": name,
@@ -1407,7 +1416,15 @@ def upsert_strategy_catalog(
     clean_disp = str(display_name).strip() if display_name else clean_name
     clean_risk = str(risk_level).upper().strip() if risk_level else 'MODERADO'
     pub_bool = bool(is_public)
-    p_json = json.dumps(parameters or {})
+    
+    clean_params = parameters or {}
+    try:
+        from src.config_loader import normalize_strategy_dict
+        if isinstance(clean_params, dict):
+            clean_params = normalize_strategy_dict(clean_params)
+    except Exception:
+        pass
+    p_json = json.dumps(clean_params)
     now_dt = datetime.now()
 
     conn = None
