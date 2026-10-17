@@ -94,9 +94,34 @@ export default function LegalTermsModal({ user, onTermsAccepted }) {
             </p>
           </div>
 
+          {/* Resumen / Disclaimer Destacado de Estrategias y Propiedad Intelectual */}
+          <div className="p-4 bg-slate-950/80 border border-amber-400/40 rounded-2xl text-slate-200 text-xs space-y-2">
+            <div className="flex items-center gap-2 text-amber-400 font-black uppercase text-[11px] tracking-wider">
+              <span>📌</span> Resumen: Propiedad Intelectual & Curaduría de Estrategias Públicas
+            </div>
+            <p className="text-[11px] leading-relaxed text-slate-300">
+              Todas las estrategias del catálogo público han sido desarrolladas, calibradas y testeadas por el equipo técnico de <strong>WTN Solutions LLC</strong> y son propiedad intelectual exclusiva de la empresa. Su uso es temporal, no exclusivo y revocable. La empresa se reserva el derecho soberano de modificar, suspender, retirar o reasignar cualquier estrategia a otras etapas operativas según convenga a sus criterios técnicos y comerciales, sin previo aviso ni derecho a compensación.
+            </p>
+          </div>
+
           <div className="space-y-3">
             <h4 className="font-extrabold text-white text-sm uppercase tracking-wider text-amber-400 border-b border-slate-800 pb-1">
-              4. Registro en Base de Datos y Trazabilidad Legal
+              4. Propiedad Intelectual, Curaduría Técnica y Soberanía Operativa sobre las Estrategias
+            </h4>
+            <p>
+              <strong>4.1. Titularidad y Derechos de Autor:</strong> Todas las estrategias algorítmicas, modelos matemáticos, disparadores RSI, matrices de re-entrada DCA, parámetros cuantitativos y arquitecturas de ejecución puestas a disposición pública en la plataforma son <strong>propiedad intelectual, técnica y comercial exclusiva de WTN Solutions LLC</strong>. La puesta a disposición de una estrategia no constituye cesión de derechos, venta, licenciamiento exclusivo ni derecho adquirido de uso indefinido en favor del usuario.
+            </p>
+            <p>
+              <strong>4.2. Curaduría y Pruebas Técnicas:</strong> Las estrategias del catálogo público han sido sometidas a rigurosos procesos de simulación retrospectiva (<em>backtesting</em>), optimización y pruebas técnicas en entornos controlados por parte del equipo técnico de la plataforma. El usuario reconoce que las condiciones del mercado son dinámicas e impredecibles, por lo que las pruebas técnicas no garantizan la persistencia de resultados favorables.
+            </p>
+            <p>
+              <strong>4.3. Reserva de Derechos de Retiro, Modificación y Reasignación (Soberanía Corporativa):</strong> WTN Solutions LLC se reserva el derecho inalienable y discrecional de retirar o suspender cualquier estrategia pública, reasignarla a etapas operativas internas, fondos privados, cuentas institucionales o niveles exclusivos, o ajustar parámetros y pausar modelos según lo determinen los comités de riesgo y la conveniencia estratégica de la firma, sin que dicha descontinuación o retiro genere derecho a reclamo o indemnización alguna.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="font-extrabold text-white text-sm uppercase tracking-wider text-amber-400 border-b border-slate-800 pb-1">
+              5. Registro en Base de Datos y Trazabilidad Legal
             </h4>
             <p>
               Al aceptar este documento, la plataforma registrará una firma digital indeleble asociada a tu ID de cuenta (<strong>{user?.account_number || `Cuenta #${user?.id}`}</strong>), timestamp exacto en hora UTC, dirección IP de conexión y la versión activa de los términos (<strong>{TERMS_VERSION}</strong>) en la base de datos central para constancia jurídica de consentimiento informado.

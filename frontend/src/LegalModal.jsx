@@ -71,7 +71,17 @@ export default function LegalModal({ isOpen, onClose }) {
           </section>
 
           <section>
-            <h4 className="font-bold text-white text-sm mb-1 text-amber-400">5. Exención de Responsabilidad Técnica</h4>
+            <h4 className="font-bold text-white text-sm mb-1 text-amber-400">5. Propiedad Intelectual, Curaduría Técnica y Soberanía sobre Estrategias</h4>
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-200 mb-2 leading-relaxed">
+              <strong>📌 Resumen Ejecutivo:</strong> Todas las estrategias públicas son desarrolladas y testeadas por el equipo técnico de WTN Solutions LLC y constituyen propiedad intelectual exclusiva de la empresa. Su uso es temporal y no exclusivo. La compañía se reserva el derecho de retirar, modificar, descontinuar o reasignar cualquier estrategia según convenga a sus criterios técnicos u operativos, sin previo aviso ni indemnización.
+            </div>
+            <p className="text-slate-300">
+              Las estrategias algorítmicas, modelos matemáticos, disparadores y parámetros puestos a disposición en la plataforma son propiedad intelectual y confidencial exclusiva de WTN Solutions LLC. El usuario no adquiere ningún derecho de propiedad ni exclusividad sobre las mismas. La empresa se reserva la potestad discrecional de retirar del catálogo público, pausar o reasignar a etapas internas o fondos privados cualquier estrategia cuando así lo decida para conveniencia y protección de los intereses de la empresa.
+            </p>
+          </section>
+
+          <section>
+            <h4 className="font-bold text-white text-sm mb-1 text-amber-400">6. Exención de Responsabilidad Técnica</h4>
             <p>
               WTN Solutions LLC y sus administradores quedan expresamente eximidos de responsabilidad contractual o extracontractual derivada de:
             </p>
@@ -83,7 +93,7 @@ export default function LegalModal({ isOpen, onClose }) {
           </section>
 
           <section>
-            <h4 className="font-bold text-white text-sm mb-1 text-amber-400">6. Aceptación Expresa</h4>
+            <h4 className="font-bold text-white text-sm mb-1 text-amber-400">7. Aceptación Expresa</h4>
             <p>
               Al completar el registro o conectar sus claves API, el usuario declara haber leído, comprendido y aceptado en su totalidad los presentes términos, aceptando operar bajo su propia cuenta y riesgo en el entorno de la tecnología provista.
             </p>
