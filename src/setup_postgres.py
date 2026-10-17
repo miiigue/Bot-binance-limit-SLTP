@@ -44,7 +44,36 @@ CREATE TABLE IF NOT EXISTS users (
     terms_accepted_ip VARCHAR(64),
     country VARCHAR(128),
     city VARCHAR(128),
-    birth_date VARCHAR(64)
+    birth_date VARCHAR(64),
+    referred_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    referral_terms_accepted INTEGER DEFAULT 0,
+    referral_terms_version VARCHAR(64),
+    referral_terms_accepted_at TIMESTAMP,
+    referral_terms_accepted_ip VARCHAR(64)
+);
+
+-- Tabla de Auditoría de Términos Legales de Afiliados/Referidos
+CREATE TABLE IF NOT EXISTS referral_terms_acceptances (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    terms_version VARCHAR(64) NOT NULL,
+    accepted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ip_address VARCHAR(64),
+    user_agent TEXT
+);
+
+-- Tabla de Comisiones Generadas por Referidos
+CREATE TABLE IF NOT EXISTS referral_commissions (
+    id SERIAL PRIMARY KEY,
+    referrer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    referred_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    trade_id INTEGER,
+    trade_pnl DOUBLE PRECISION NOT NULL,
+    platform_fee_usdt DOUBLE PRECISION NOT NULL,
+    affiliate_share_pct DOUBLE PRECISION NOT NULL,
+    commission_usdt DOUBLE PRECISION NOT NULL,
+    status VARCHAR(32) DEFAULT 'credited',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tabla de Auditoría de Términos Legales
@@ -220,6 +249,11 @@ def init_postgres_schema(pg_url: str):
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS country VARCHAR(128);",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(128);",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date VARCHAR(64);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_terms_accepted INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_terms_version VARCHAR(64);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_terms_accepted_at TIMESTAMP;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_terms_accepted_ip VARCHAR(64);",
             "ALTER TABLE user_api_keys ADD COLUMN IF NOT EXISTS api_base_url VARCHAR(255) DEFAULT NULL;",
             "ALTER TABLE user_trades ADD COLUMN IF NOT EXISTS is_testnet BOOLEAN DEFAULT FALSE;",
             "ALTER TABLE user_bot_settings ADD COLUMN IF NOT EXISTS error_message TEXT;",

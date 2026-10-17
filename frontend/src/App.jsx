@@ -17,6 +17,8 @@ import UserDropdown from './UserDropdown';
 import ApiUsageWidget from './ApiUsageWidget';
 import FloatingNotesModal from './FloatingNotesModal';
 import LegalTermsModal from './LegalTermsModal';
+import ReferralProgramView from './ReferralProgramView';
+import AdminReferralsManager from './AdminReferralsManager';
 import { isSoundEnabled, setSoundEnabled, playProfitSound, playEntrySound, playLossSound } from './soundEffects';
 import './index.css';
 
@@ -136,7 +138,7 @@ function MainDashboard() {
       return;
     }
 
-    if (isInvestor && !['my_bot', 'my_investment', 'copy_trading', 'performance', 'chart'].includes(activeTab)) {
+    if (isInvestor && !['my_bot', 'my_investment', 'copy_trading', 'performance', 'chart', 'referrals'].includes(activeTab)) {
       setActiveTab('my_bot');
     }
   }, [isAdmin, isInvestor, isAuthenticated, activeTab]);
@@ -1010,6 +1012,19 @@ function MainDashboard() {
                 >
                   <span>⚡</span> Copy-Trading
                 </button>
+
+                {/* 6. GESTIÓN DE REFERIDOS (ADMIN) */}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('referrals')}
+                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
+                    activeTab === 'referrals'
+                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
+                  }`}
+                >
+                  <span>🤝</span> Referidos & Comisiones
+                </button>
               </>
             )}
 
@@ -1050,6 +1065,18 @@ function MainDashboard() {
                   }`}
                 >
                   <span>🤖</span> Mi Bot
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('referrals')}
+                  className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 ${
+                    activeTab === 'referrals'
+                      ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                      : 'text-slate-200 hover:text-white hover:bg-slate-800 border border-slate-700/70'
+                  }`}
+                >
+                  <span>🤝</span> Programa de Referidos
                 </button>
 
                 <button
@@ -1202,6 +1229,15 @@ function MainDashboard() {
                 onSaveConfig={handleSave}
                 onSelectSymbolForChart={handleSelectSymbolForChart}
               />
+            )}
+
+            {/* PESTAÑA: Programa de Referidos & Comisiones (Admin = Panel Maestro, Usuario = Dashboard de Afiliado) */}
+            {activeTab === 'referrals' && (
+              isAdmin ? (
+                <AdminReferralsManager addToast={addToast} />
+              ) : (
+                <ReferralProgramView addToast={addToast} />
+              )
             )}
 
             {/* PESTAÑA: Laboratorio de Backtesting (Solo Admin) */}

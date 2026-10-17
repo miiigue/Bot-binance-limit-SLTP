@@ -439,7 +439,12 @@ def init_db_schema():
             terms_accepted_ip TEXT,
             country TEXT,
             city TEXT,
-            birth_date TEXT
+            birth_date TEXT,
+            referred_by_id INTEGER,
+            referral_terms_accepted INTEGER DEFAULT 0,
+            referral_terms_version TEXT,
+            referral_terms_accepted_at DATETIME,
+            referral_terms_accepted_ip TEXT
         )
         """)
         conn.commit()
@@ -453,13 +458,49 @@ def init_db_schema():
             ("terms_accepted_ip", "TEXT"),
             ("country", "TEXT"),
             ("city", "TEXT"),
-            ("birth_date", "TEXT")
+            ("birth_date", "TEXT"),
+            ("referred_by_id", "INTEGER"),
+            ("referral_terms_accepted", "INTEGER DEFAULT 0"),
+            ("referral_terms_version", "TEXT"),
+            ("referral_terms_accepted_at", "DATETIME"),
+            ("referral_terms_accepted_ip", "TEXT")
         ]:
             try:
                 cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
                 conn.commit()
             except Exception:
                 pass
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS referral_terms_acceptances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            terms_version TEXT NOT NULL,
+            accepted_at DATETIME NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """)
+        conn.commit()
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS referral_commissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_id INTEGER NOT NULL,
+            referred_user_id INTEGER NOT NULL,
+            trade_id INTEGER,
+            trade_pnl REAL NOT NULL,
+            platform_fee_usdt REAL NOT NULL,
+            affiliate_share_pct REAL NOT NULL,
+            commission_usdt REAL NOT NULL,
+            status TEXT DEFAULT 'credited',
+            created_at DATETIME NOT NULL,
+            FOREIGN KEY (referrer_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (referred_user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """)
+        conn.commit()
 
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_terms_acceptances (
@@ -1837,7 +1878,7 @@ def count_users() -> int:
     finally:
         conn.close()
 
-def create_user(username: str, email: str, password_hash: str, role: str = 'investor', status: str = 'pending', requested_capital: float = 0.0, country: str = None, city: str = None, birth_date: str = None) -> int:
+def create_user(username: str, email: str, password_hash: str, role: str = 'investor', status: str = 'pending', requested_capital: float = 0.0, country: str = None, city: str = None, birth_date: str = None, referred_by_id: int = None) -> int:
     """Crea un nuevo usuario en la base de datos y retorna su ID."""
     conn = get_db_connection()
     if not conn:
@@ -1846,8 +1887,8 @@ def create_user(username: str, email: str, password_hash: str, role: str = 'inve
         cursor = conn.cursor()
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute("""
-            INSERT INTO users (username, email, password_hash, role, status, created_at, requested_capital, country, city, birth_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (username, email, password_hash, role, status, created_at, requested_capital, country, city, birth_date, referred_by_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             username.strip(), 
             email.strip().lower() if email else None, 
@@ -1858,7 +1899,8 @@ def create_user(username: str, email: str, password_hash: str, role: str = 'inve
             float(requested_capital or 0.0),
             country.strip() if country else None,
             city.strip() if city else None,
-            birth_date.strip() if birth_date else None
+            birth_date.strip() if birth_date else None,
+            int(referred_by_id) if referred_by_id else None
         ))
         conn.commit()
         return cursor.lastrowid
@@ -1915,9 +1957,15 @@ def get_user_by_id(user_id: int) -> dict:
         res.setdefault('terms_accepted_version', None)
         res.setdefault('terms_accepted_at', None)
         res.setdefault('terms_accepted_ip', None)
+        res.setdefault('referral_terms_accepted', 0)
+        res.setdefault('referral_terms_version', None)
+        res.setdefault('referral_terms_accepted_at', None)
+        res.setdefault('referred_by_id', None)
         if res.get('role') == 'admin':
             res['terms_accepted'] = 1
             res['terms_accepted_version'] = 'v1.0-2026'
+            res['referral_terms_accepted'] = 1
+            res['referral_terms_version'] = 'v1.0-2026'
         return res
     except Exception as e:
         get_logger().error(f"Error al obtener usuario por ID {user_id}: {e}")
@@ -1946,9 +1994,15 @@ def get_user_by_identifier(identifier: str) -> dict:
         res.setdefault('terms_accepted_version', None)
         res.setdefault('terms_accepted_at', None)
         res.setdefault('terms_accepted_ip', None)
+        res.setdefault('referral_terms_accepted', 0)
+        res.setdefault('referral_terms_version', None)
+        res.setdefault('referral_terms_accepted_at', None)
+        res.setdefault('referred_by_id', None)
         if res.get('role') == 'admin':
             res['terms_accepted'] = 1
             res['terms_accepted_version'] = 'v1.0-2026'
+            res['referral_terms_accepted'] = 1
+            res['referral_terms_version'] = 'v1.0-2026'
         return res
     except Exception as e:
         get_logger().error(f"Error al buscar usuario por identificador '{identifier}': {e}")
@@ -1980,6 +2034,34 @@ def record_terms_acceptance(user_id: int, terms_version: str = 'v1.0-2026', ip_a
         return True
     except Exception as e:
         get_logger().error(f"Error al registrar aceptación de términos para usuario {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def record_referral_terms_acceptance(user_id: int, terms_version: str = 'v1.0-2026', ip_address: str = None, user_agent: str = None) -> bool:
+    """Registra la firma digital de aceptación de los términos del Programa de Afiliados/Referidos."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""
+            UPDATE users 
+            SET referral_terms_accepted = 1, referral_terms_version = ?, referral_terms_accepted_at = ?, referral_terms_accepted_ip = ?
+            WHERE id = ?
+        """, (terms_version, now_str, ip_address, user_id))
+        
+        cursor.execute("""
+            INSERT INTO referral_terms_acceptances (user_id, terms_version, accepted_at, ip_address, user_agent)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, terms_version, now_str, ip_address or '0.0.0.0', user_agent or 'Antigravity UserAgent'))
+        
+        conn.commit()
+        get_logger().info(f"Términos de Referidos {terms_version} aceptados con firma digital por usuario {user_id} ({ip_address}).")
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al registrar aceptación de términos de referidos para usuario {user_id}: {e}")
         return False
     finally:
         conn.close()
@@ -2862,6 +2944,13 @@ def close_user_trade_record(
             """, (now_str, float(close_price), float(pnl_usdt), close_reason, exit_order_id,
                   clean_side, final_qty, final_open, final_pos, trade_id))
             conn.commit()
+            
+            # Procesar comisiones de referidos si hubo ganancias
+            try:
+                process_trade_referral_commission(user_id, float(pnl_usdt), trade_id)
+            except Exception as e_ref:
+                get_logger().error(f"Aviso procesando comisión de referido: {e_ref}")
+
             return True
         else:
             # Fallback: registrar nuevo trade completo si no había fila previa abierta
@@ -2880,7 +2969,15 @@ def close_user_trade_record(
                 final_open, float(close_price), final_qty, final_pos,
                 float(pnl_usdt), close_reason, exit_order_id
             ))
+            new_t_id = cursor.lastrowid
             conn.commit()
+
+            # Procesar comisiones de referidos si hubo ganancias
+            try:
+                process_trade_referral_commission(user_id, float(pnl_usdt), new_t_id)
+            except Exception as e_ref:
+                get_logger().error(f"Aviso procesando comisión de referido: {e_ref}")
+
             return True
     except Exception as e:
         get_logger().error(f"Error al actualizar cierre de trade personal para usuario {user_id}: {e}")
@@ -3186,7 +3283,319 @@ def get_user_trading_metrics(user_id: int, mode: str = None, current_op_mode: st
     finally:
         conn.close()
 
-# --- FIN NUEVAS FUNCIONES MULTI-TENANT ---
+# =====================================================================
+# --- FUNCIONES DEL PROGRAMA DE REFERIDOS Y COMISIONES (AFFILIATES) ---
+# =====================================================================
+
+def get_referral_program_settings() -> dict:
+    """Retorna la configuración global del Programa de Afiliados/Referidos."""
+    conn = get_db_connection()
+    if not conn:
+        return {
+            "enabled": True,
+            "platform_success_fee_pct": 20.0,
+            "affiliate_share_pct": 10.0,
+            "min_payout_usdt": 10.0
+        }
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM bot_settings WHERE key LIKE 'referral_%'")
+        rows = cursor.fetchall()
+        settings = {
+            "enabled": True,
+            "platform_success_fee_pct": 20.0,
+            "affiliate_share_pct": 10.0,
+            "min_payout_usdt": 10.0
+        }
+        for r in rows:
+            k = r['key'] if isinstance(r, dict) or hasattr(r, 'keys') else r[0]
+            v = r['value'] if isinstance(r, dict) or hasattr(r, 'keys') else r[1]
+            if k == 'referral_program_enabled':
+                settings['enabled'] = str(v).lower() in ('true', '1', 'yes')
+            elif k == 'referral_platform_fee_pct':
+                settings['platform_success_fee_pct'] = float(v or 20.0)
+            elif k == 'referral_affiliate_share_pct':
+                settings['affiliate_share_pct'] = float(v or 10.0)
+            elif k == 'referral_min_payout_usdt':
+                settings['min_payout_usdt'] = float(v or 10.0)
+        return settings
+    except Exception as e:
+        get_logger().error(f"Error al obtener ajustes de referidos: {e}")
+        return {
+            "enabled": True,
+            "platform_success_fee_pct": 20.0,
+            "affiliate_share_pct": 10.0,
+            "min_payout_usdt": 10.0
+        }
+    finally:
+        conn.close()
+
+def update_referral_program_settings(enabled: bool, platform_fee_pct: float, affiliate_share_pct: float, min_payout_usdt: float = 10.0) -> bool:
+    """Actualiza la configuración institucional del Programa de Referidos."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        updates = [
+            ('referral_program_enabled', 'true' if enabled else 'false'),
+            ('referral_platform_fee_pct', str(float(platform_fee_pct))),
+            ('referral_affiliate_share_pct', str(float(affiliate_share_pct))),
+            ('referral_min_payout_usdt', str(float(min_payout_usdt)))
+        ]
+        for k, v in updates:
+            cursor.execute("""
+                INSERT INTO bot_settings (key, value)
+                VALUES (?, ?)
+                ON CONFLICT (key) DO UPDATE SET value = excluded.value
+            """, (k, v))
+        conn.commit()
+        get_logger().info(f"Ajustes de programa de referidos actualizados: PlatformFee={platform_fee_pct}%, AffiliateShare={affiliate_share_pct}%")
+        return True
+    except Exception as e:
+        get_logger().error(f"Error al actualizar ajustes de referidos: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_user_referral_dashboard(user_id: int) -> dict:
+    """
+    Retorna el estado del programa de referidos para un usuario particular:
+    - Si ya aceptó los términos del programa
+    - Total de referidos directos
+    - Lista de referidos (anónimos/parciales para privacidad)
+    - PnL acumulado generado por sus referidos
+    - Total de comisiones ganadas y acreditadas
+    """
+    conn = get_db_connection()
+    if not conn:
+        return {}
+    try:
+        cursor = conn.cursor()
+        
+        # 1. Datos del usuario
+        cursor.execute("SELECT id, username, referral_terms_accepted, referral_terms_accepted_at FROM users WHERE id = ?", (user_id,))
+        u_row = cursor.fetchone()
+        if not u_row:
+            return {}
+        u_data = dict(u_row)
+        terms_accepted = bool(u_data.get('referral_terms_accepted'))
+        
+        settings = get_referral_program_settings()
+
+        # 2. Lista de referidos directos
+        cursor.execute("""
+            SELECT id, username, email, created_at, status, requested_capital
+            FROM users 
+            WHERE referred_by_id = ?
+            ORDER BY id DESC
+        """, (user_id,))
+        referred_rows = cursor.fetchall()
+        referred_list = []
+        for r in referred_rows:
+            r_dict = dict(r)
+            # Ocultar parcialmente email por privacidad profesional
+            raw_email = r_dict.get('email') or ''
+            masked_email = ''
+            if '@' in raw_email:
+                parts = raw_email.split('@')
+                prefix = parts[0][:3] + '***' if len(parts[0]) > 3 else parts[0] + '***'
+                masked_email = f"{prefix}@{parts[1]}"
+            else:
+                masked_email = '***'
+
+            referred_list.append({
+                "id": r_dict['id'],
+                "username": r_dict['username'],
+                "email_masked": masked_email,
+                "created_at": str(r_dict.get('created_at')),
+                "status": r_dict.get('status'),
+                "requested_capital": float(r_dict.get('requested_capital') or 0.0)
+            })
+
+        # 3. Métricas de comisiones generadas
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_commission_events,
+                COALESCE(SUM(trade_pnl), 0.0) as total_trade_pnl,
+                COALESCE(SUM(platform_fee_usdt), 0.0) as total_platform_fee,
+                COALESCE(SUM(commission_usdt), 0.0) as total_commission_earned
+            FROM referral_commissions
+            WHERE referrer_id = ?
+        """, (user_id,))
+        c_row = cursor.fetchone()
+        comm_stats = dict(c_row) if c_row else {}
+
+        # 4. Historial reciente de comisiones acreditadas
+        cursor.execute("""
+            SELECT rc.id, rc.referred_user_id, u.username as referred_username,
+                   rc.trade_pnl, rc.platform_fee_usdt, rc.affiliate_share_pct,
+                   rc.commission_usdt, rc.status, rc.created_at
+            FROM referral_commissions rc
+            JOIN users u ON u.id = rc.referred_user_id
+            WHERE rc.referrer_id = ?
+            ORDER BY rc.id DESC
+            LIMIT 50
+        """, (user_id,))
+        comm_history = [dict(row) for row in cursor.fetchall()]
+
+        return {
+            "referral_code": u_data.get('username'),
+            "terms_accepted": terms_accepted,
+            "terms_accepted_at": str(u_data.get('referral_terms_accepted_at')) if u_data.get('referral_terms_accepted_at') else None,
+            "program_settings": settings,
+            "total_referred_count": len(referred_list),
+            "referred_users": referred_list,
+            "total_network_pnl": round(float(comm_stats.get('total_trade_pnl') or 0.0), 2),
+            "total_platform_fee_generated": round(float(comm_stats.get('total_platform_fee') or 0.0), 2),
+            "total_commissions_earned_usdt": round(float(comm_stats.get('total_commission_earned') or 0.0), 2),
+            "commissions_history": comm_history
+        }
+    except Exception as e:
+        get_logger().error(f"Error al obtener dashboard de referidos para usuario {user_id}: {e}", exc_info=True)
+        return {}
+    finally:
+        conn.close()
+
+def get_admin_referrals_overview() -> dict:
+    """Retorna vista consolidada para el Super Admin con todos los referidores y métricas globales."""
+    conn = get_db_connection()
+    if not conn:
+        return {}
+    try:
+        cursor = conn.cursor()
+        settings = get_referral_program_settings()
+
+        # Resumen Global
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_events,
+                COALESCE(SUM(trade_pnl), 0.0) as global_trade_pnl,
+                COALESCE(SUM(platform_fee_usdt), 0.0) as global_platform_fee,
+                COALESCE(SUM(commission_usdt), 0.0) as global_affiliate_payouts
+            FROM referral_commissions
+        """)
+        sum_row = cursor.fetchone()
+        totals = dict(sum_row) if sum_row else {}
+
+        # Tabla por Referidor
+        cursor.execute("""
+            SELECT 
+                u.id as referrer_id,
+                u.username as referrer_username,
+                u.email as referrer_email,
+                u.referral_terms_accepted,
+                COUNT(DISTINCT ref.id) as referred_count,
+                COALESCE(SUM(rc.trade_pnl), 0.0) as total_trade_pnl,
+                COALESCE(SUM(rc.platform_fee_usdt), 0.0) as total_platform_fee,
+                COALESCE(SUM(rc.commission_usdt), 0.0) as total_commissions_earned
+            FROM users u
+            LEFT JOIN users ref ON ref.referred_by_id = u.id
+            LEFT JOIN referral_commissions rc ON rc.referrer_id = u.id
+            WHERE u.role != 'admin' OR ref.id IS NOT NULL OR rc.id IS NOT NULL
+            GROUP BY u.id, u.username, u.email, u.referral_terms_accepted
+            HAVING COUNT(DISTINCT ref.id) > 0 OR COALESCE(SUM(rc.commission_usdt), 0.0) > 0
+            ORDER BY total_commissions_earned DESC, referred_count DESC
+        """)
+        referrers = [dict(row) for row in cursor.fetchall()]
+
+        return {
+            "settings": settings,
+            "global_totals": {
+                "trade_pnl": round(float(totals.get('global_trade_pnl') or 0.0), 2),
+                "platform_net_revenue": round(float(totals.get('global_platform_fee') or 0.0) - float(totals.get('global_affiliate_payouts') or 0.0), 2),
+                "platform_gross_fee": round(float(totals.get('global_platform_fee') or 0.0), 2),
+                "affiliate_payouts": round(float(totals.get('global_affiliate_payouts') or 0.0), 2),
+                "total_events": int(totals.get('total_events') or 0)
+            },
+            "referrers": referrers
+        }
+    except Exception as e:
+        get_logger().error(f"Error al obtener resumen admin de referidos: {e}", exc_info=True)
+        return {}
+    finally:
+        conn.close()
+
+def process_trade_referral_commission(trade_user_id: int, pnl_usdt: float, trade_id: int = None) -> bool:
+    """
+    Calcula y registra la comisión de referido si la operación cerró con ganancia neta (> 0)
+    y el usuario fue invitado por un referidor activo con términos aceptados.
+    """
+    if pnl_usdt <= 0.0001:
+        return False  # No se cobran comisiones por pérdidas (Modelo de Éxito)
+
+    settings = get_referral_program_settings()
+    if not settings.get('enabled', True):
+        return False
+
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        # Verificar si el usuario tiene un referidor asignado
+        cursor.execute("""
+            SELECT u.referred_by_id, ref.username, ref.status, ref.referral_terms_accepted
+            FROM users u
+            JOIN users ref ON ref.id = u.referred_by_id
+            WHERE u.id = ?
+        """, (trade_user_id,))
+        row = cursor.fetchone()
+        if not row:
+            return False  # Usuario no tiene referidor o el referidor ya no existe
+
+        ref_id = row['referred_by_id'] if isinstance(row, dict) or hasattr(row, 'keys') else row[0]
+        ref_username = row['username'] if isinstance(row, dict) or hasattr(row, 'keys') else row[1]
+        ref_status = row['status'] if isinstance(row, dict) or hasattr(row, 'keys') else row[2]
+        ref_terms = row['referral_terms_accepted'] if isinstance(row, dict) or hasattr(row, 'keys') else row[3]
+
+        if str(ref_status).lower() != 'active' or not bool(ref_terms):
+            get_logger().info(f"Comisión de referido no procesada: el referidor #{ref_id} ({ref_username}) no está activo o no ha aceptado términos.")
+            return False
+
+        platform_fee_pct = float(settings.get('platform_success_fee_pct', 20.0))
+        affiliate_share_pct = float(settings.get('affiliate_share_pct', 10.0))
+
+        # 1. Comisión total cobrada por la plataforma
+        platform_fee_usdt = round(pnl_usdt * (platform_fee_pct / 100.0), 4)
+        # 2. Parte que le corresponde al referidor (10% de lo que gana la plataforma)
+        affiliate_commission_usdt = round(platform_fee_usdt * (affiliate_share_pct / 100.0), 4)
+
+        if affiliate_commission_usdt <= 0:
+            return False
+
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""
+            INSERT INTO referral_commissions (
+                referrer_id, referred_user_id, trade_id, trade_pnl, 
+                platform_fee_usdt, affiliate_share_pct, commission_usdt, 
+                status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'credited', ?)
+        """, (
+            ref_id, trade_user_id, trade_id, float(pnl_usdt),
+            float(platform_fee_usdt), float(affiliate_share_pct),
+            float(affiliate_commission_usdt), now_str
+        ))
+        conn.commit()
+        get_logger().info(
+            f"💰 [Comisión de Afiliados] Referidor #{ref_id} ({ref_username}) acreditado con ${affiliate_commission_usdt:.4f} USDT "
+            f"(Trade PnL: +${pnl_usdt:.2f}, Fee Plataforma ({platform_fee_pct}%): ${platform_fee_usdt:.2f}, Share: {affiliate_share_pct}%)."
+        )
+        return True
+    except Exception as e:
+        get_logger().error(f"Error procesando comisión de referidos para trade de usuario {trade_user_id}: {e}", exc_info=True)
+        return False
+    finally:
+        conn.close()
+
+# --- FIN NUEVAS FUNCIONES MULTI-TENANT & REFERIDOS ---
 
 # Ejemplo de uso (actualizado para SQLite)
 if __name__ == '__main__':

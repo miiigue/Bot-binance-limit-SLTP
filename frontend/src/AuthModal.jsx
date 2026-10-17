@@ -14,11 +14,28 @@ export default function AuthModal() {
   const [investmentAmount, setInvestmentAmount] = useState('0');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showLegalModal, setShowLegalModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
+
+  // Auto-detectar código de referido desde el enlace (?ref=codigo)
+  useEffect(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const ref = searchParams.get('ref') || searchParams.get('invitation') || searchParams.get('code');
+      if (ref) {
+        setReferralCode(ref.trim());
+        if (mode === 'login' && !needsInitialAdmin) {
+          setMode('register');
+        }
+      }
+    } catch (e) {
+      // Ignorar errores en parseo de URL
+    }
+  }, [mode, needsInitialAdmin]);
 
   // Validación en tiempo real del formulario de registro
   const isRegisterFormValid = 
@@ -28,6 +45,7 @@ export default function AuthModal() {
     Boolean(country.trim()) &&
     Boolean(city.trim()) &&
     Boolean(birthDate.trim()) &&
+    Boolean(referralCode.trim()) &&
     investmentAmount !== '' &&
     !isNaN(parseFloat(investmentAmount)) &&
     parseFloat(investmentAmount) >= 0 &&
@@ -62,6 +80,11 @@ export default function AuthModal() {
     }
 
     if (mode === 'register') {
+      if (!referralCode.trim()) {
+        setErrorMessage('El Código de Invitación / Referido es obligatorio para registrarse.');
+        return;
+      }
+
       if (!country.trim() || !city.trim() || !birthDate.trim()) {
         setErrorMessage('Por favor completa tu país, ciudad y fecha de nacimiento.');
         return;
@@ -98,7 +121,8 @@ export default function AuthModal() {
         mode === 'register' ? (parseFloat(investmentAmount) || 0) : 0,
         country.trim(),
         city.trim(),
-        birthDate.trim()
+        birthDate.trim(),
+        referralCode.trim()
       );
       if (res.pending_approval) {
         setSuccessNotice('Tu solicitud de cuenta ha sido registrada con éxito. Está en espera de aprobación por el Administrador.');
@@ -299,6 +323,29 @@ export default function AuthModal() {
               <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl mb-1 text-xs text-slate-400">
                   <span>💼</span> Las cuentas de nuevos inversionistas ingresan en estado de <strong className="text-amber-300">pendiente de aprobación</strong> hasta ser autorizadas por el Administrador.
+                </div>
+
+                {/* Código de Invitación / Referido Obligatorio */}
+                <div className="p-3 bg-amber-400/10 border border-amber-400/30 rounded-xl">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-black text-amber-300">
+                      Código de Invitación / Referido *
+                    </label>
+                    <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded font-mono">
+                      OBLIGATORIO
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={referralCode}
+                    onChange={(e) => setReferralCode(e.target.value)}
+                    placeholder="Usuario de quien te invitó"
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-amber-400/50 rounded-xl text-sm font-mono font-bold text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                  />
+                  <p className="text-[10px] text-amber-200/80 mt-1">
+                    Solo pueden registrarse usuarios invitados formalmente por un miembro activo de la plataforma.
+                  </p>
                 </div>
 
                 <div>

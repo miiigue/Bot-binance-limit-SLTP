@@ -844,7 +844,7 @@ def auth_register_endpoint():
             investment_amount = 0.0
 
         if total_users == 0:
-            # Esquema A: Primer usuario se convierte en Super Admin activo
+            # Esquema A: Primer usuario se convierte en Super Admin activo (no requiere código de referido)
             user_id = create_user(
                 username=username, 
                 email=email, 
@@ -861,8 +861,9 @@ def auth_register_endpoint():
 
             # Registrar aceptación de términos para admin
             try:
-                from src.database import record_terms_acceptance
+                from src.database import record_terms_acceptance, record_referral_terms_acceptance
                 record_terms_acceptance(user_id, 'v1.0-2026', ip_address=request.remote_addr, user_agent=request.headers.get('User-Agent'))
+                record_referral_terms_acceptance(user_id, 'v1.0-2026', ip_address=request.remote_addr, user_agent=request.headers.get('User-Agent'))
             except Exception:
                 pass
 
@@ -878,7 +879,9 @@ def auth_register_endpoint():
                 "city": city,
                 "birth_date": birth_date,
                 "terms_accepted": 1,
-                "terms_accepted_version": "v1.0-2026"
+                "terms_accepted_version": "v1.0-2026",
+                "referral_terms_accepted": 1,
+                "referral_terms_version": "v1.0-2026"
             }
             api_logger.info(f"Super Administrador inicial registrado exitosamente: {username}")
             return jsonify({
@@ -889,7 +892,38 @@ def auth_register_endpoint():
                 "is_first_user": True
             })
         else:
-            # Esquema B: Nuevos usuarios se registran en estado 'pending' (requieren aprobación explícita del Admin)
+            # Esquema B: Validación OBLIGATORIA de Código de Invitación / Referido
+            referral_code = str(data.get('referral_code', '')).strip()
+            if not referral_code:
+                return jsonify({
+                    "status": "error", 
+                    "message": "El Código de Invitación / Referido es estrictamente obligatorio para registrarse."
+                }), 400
+
+            referrer = get_user_by_identifier(referral_code)
+            if not referrer:
+                return jsonify({
+                    "status": "error", 
+                    "message": f"El código de referido '{referral_code}' no existe en la plataforma."
+                }), 400
+
+            if str(referrer.get('status', '')).lower() not in ('active', 'pending'):
+                return jsonify({
+                    "status": "error", 
+                    "message": "El usuario del código de invitación se encuentra inactivo o suspendido."
+                }), 400
+
+            # Validación de regla de negocio: Para poder referir, el usuario DEBE haber firmado los términos de referido
+            # (a excepción del admin que tiene privilegios maestros)
+            if referrer.get('role') != 'admin' and not bool(referrer.get('referral_terms_accepted')):
+                return jsonify({
+                    "status": "error",
+                    "message": f"El usuario '{referral_code}' aún no ha activado ni aceptado los términos del Programa de Referidos, por lo que su código no está habilitado para invitar nuevos usuarios."
+                }), 400
+
+            referrer_id = referrer['id']
+
+            # Crear usuario asignando su referidor
             user_id = create_user(
                 username=username, 
                 email=email, 
@@ -899,7 +933,8 @@ def auth_register_endpoint():
                 requested_capital=investment_amount,
                 country=country,
                 city=city,
-                birth_date=birth_date
+                birth_date=birth_date,
+                referred_by_id=referrer_id
             )
             if not user_id:
                 return jsonify({"status": "error", "message": "Error al registrar la cuenta de inversionista."}), 500
@@ -1050,6 +1085,96 @@ def accept_terms_endpoint():
             return jsonify({"status": "error", "message": "No se pudo registrar la aceptación de términos."}), 500
     except Exception as e:
         api_logger.error(f"Error en accept_terms_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =====================================================================
+# --- ENDPOINTS DEL PROGRAMA DE AFILIADOS / REFERIDOS ---
+# =====================================================================
+
+@app.route('/api/user/referrals/accept_terms', methods=['POST'])
+@token_required
+def user_accept_referral_terms_endpoint():
+    """Registra la firma digital de los términos del Programa de Referidos."""
+    try:
+        user_id = request.current_user['user_id']
+        data = request.get_json() or {}
+        terms_version = data.get('version', 'v1.0-2026')
+        ip_address = request.remote_addr or request.headers.get('X-Forwarded-For') or '0.0.0.0'
+        user_agent = request.headers.get('User-Agent', '')
+
+        from src.database import record_referral_terms_acceptance
+        success = record_referral_terms_acceptance(user_id, terms_version, ip_address, user_agent)
+        if success:
+            updated_user = get_user_by_id(user_id)
+            return jsonify({
+                "status": "success",
+                "message": "¡Has aceptado los términos del Programa de Referidos exitosamente! Tu enlace de invitación ha sido activado.",
+                "user": updated_user
+            })
+        else:
+            return jsonify({"status": "error", "message": "No se pudo registrar la aceptación de términos de referidos."}), 500
+    except Exception as e:
+        api_logger.error(f"Error en user_accept_referral_terms_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/user/referrals/dashboard', methods=['GET'])
+@token_required
+def user_referral_dashboard_endpoint():
+    """Obtiene métricas personales, referidos y comisiones para el usuario autenticado."""
+    try:
+        user_id = request.current_user['user_id']
+        from src.database import get_user_referral_dashboard
+        data = get_user_referral_dashboard(user_id)
+        return jsonify({"status": "success", "data": data})
+    except Exception as e:
+        api_logger.error(f"Error en user_referral_dashboard_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/referrals/overview', methods=['GET'])
+@token_required
+def admin_referrals_overview_endpoint():
+    """Vista consolidada de todos los referidores y métricas globales para el Super Admin."""
+    if request.current_user.get('role') != 'admin':
+        return jsonify({"status": "error", "message": "Acceso denegado. Se requieren permisos de Administrador."}), 403
+    try:
+        from src.database import get_admin_referrals_overview
+        data = get_admin_referrals_overview()
+        return jsonify({"status": "success", "data": data})
+    except Exception as e:
+        api_logger.error(f"Error en admin_referrals_overview_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/referrals/settings', methods=['POST'])
+@token_required
+def admin_update_referral_settings_endpoint():
+    """Actualiza la configuración institucional del Programa de Referidos (fee de plataforma y share de afiliados)."""
+    if request.current_user.get('role') != 'admin':
+        return jsonify({"status": "error", "message": "Acceso denegado. Se requieren permisos de Administrador."}), 403
+    try:
+        data = request.get_json() or {}
+        enabled = bool(data.get('enabled', True))
+        platform_fee_pct = float(data.get('platform_success_fee_pct', 20.0))
+        affiliate_share_pct = float(data.get('affiliate_share_pct', 10.0))
+        min_payout_usdt = float(data.get('min_payout_usdt', 10.0))
+
+        if platform_fee_pct < 0 or platform_fee_pct > 100 or affiliate_share_pct < 0 or affiliate_share_pct > 100:
+            return jsonify({"status": "error", "message": "Los porcentajes deben encontrarse entre 0% y 100%."}), 400
+
+        from src.database import update_referral_program_settings
+        ok = update_referral_program_settings(enabled, platform_fee_pct, affiliate_share_pct, min_payout_usdt)
+        if ok:
+            return jsonify({
+                "status": "success", 
+                "message": f"Configuración de referidos guardada: Cobro Plataforma {platform_fee_pct}%, Ganancia Referidor {affiliate_share_pct}%."
+            })
+        else:
+            return jsonify({"status": "error", "message": "Error al actualizar ajustes en base de datos."}), 500
+    except Exception as e:
+        api_logger.error(f"Error en admin_update_referral_settings_endpoint: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
