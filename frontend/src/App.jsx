@@ -110,8 +110,14 @@ function MainDashboard() {
         return inspectingUser.strategy_name;
       }
     }
-    if (activeTab === 'my_bot' && userBotHeader?.bot_settings?.strategy_name) {
-      return userBotHeader.bot_settings.strategy_name;
+    // Si es un inversionista o está en su bot personal, mostrar la estrategia de SU cuenta
+    if (isInvestor || activeTab === 'my_bot' || activeTab === 'copy_trading') {
+      if (userBotHeader?.bot_settings?.strategy_name) {
+        return userBotHeader.bot_settings.strategy_name;
+      }
+      if (userBotHeader?.active_strategy_details?.name) {
+        return userBotHeader.active_strategy_details.name;
+      }
     }
     const name = config?.activeStrategyName || config?.active_strategy_name;
     if (name && name !== 'N/A' && name !== 'Configuración Modificada') {
@@ -120,7 +126,7 @@ function MainDashboard() {
     }
     if (activeStrategyDisplayName) return activeStrategyDisplayName;
     return '22_AGRESIVA_TOLERANTE_30S';
-  }, [inspectingUser, activeTab, userBotHeader, activeStrategyDisplayName, config?.activeStrategyName, config?.active_strategy_name, availableStrategies]);
+  }, [inspectingUser, isInvestor, activeTab, userBotHeader, activeStrategyDisplayName, config?.activeStrategyName, config?.active_strategy_name, availableStrategies]);
 
   const [chartSelectedSymbol, setChartSelectedSymbol] = useState('SOLUSDT');
 
@@ -487,9 +493,10 @@ function MainDashboard() {
   }
 
   const isViewingSpecificUser = Boolean(inspectingUser);
-  const isCopyTradeActiveTab = (isInvestor && (activeTab === 'my_bot' || activeTab === 'copy_trading')) || isViewingSpecificUser;
+  // Para los inversionistas, la cabecera amarilla SIEMPRE debe mostrar sus datos personales de Binance y PnL de su cuenta
+  const isCopyTradeActiveTab = isInvestor || isViewingSpecificUser || activeTab === 'my_bot' || activeTab === 'copy_trading';
   
-  // Cuando se inspecciona a un usuario, mostrar sus datos explícitos de Binance y PnL
+  // Cuando se inspecciona a un usuario o está en sesión de inversionista, mostrar sus datos explícitos de Binance y PnL
   const targetUserDisplayName = inspectingUser 
     ? (inspectingUser.username || inspectingUser.email || `Usuario #${inspectingUser.id}`)
     : (user?.username || 'Usuario');
@@ -644,10 +651,12 @@ function MainDashboard() {
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-base font-black tracking-tight text-slate-950 truncate">
-                    {isViewingSpecificUser ? `BOT USUARIO: ${targetUserDisplayName}` : 'WTN ALGO-TRADING'}
+                    {isViewingSpecificUser 
+                      ? `BOT USUARIO: ${targetUserDisplayName}` 
+                      : (isInvestor ? `BOT: ${user?.username || 'Usuario'}` : 'WTN ALGO-TRADING')}
                   </span>
                   <span className="bg-slate-950 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shadow">
-                    {isViewingSpecificUser ? 'MODO INSPECCIÓN' : 'BINANCE'}
+                    {isViewingSpecificUser ? 'MODO INSPECCIÓN' : (isInvestor ? 'CUENTA PRIVADA' : 'BINANCE')}
                   </span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-900 tracking-wider truncate max-w-[280px]" title={activeStrategyDisplay}>
