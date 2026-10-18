@@ -144,13 +144,10 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-sans font-medium text-sky-300 flex items-center gap-1 animate-pulse">
                   <span>🔵 TS ACTIVO:</span>
-                  <span className="font-mono font-medium text-sky-200">{ts.floor_value !== null && ts.floor_value !== undefined ? `Piso +${ts.floor_value} USDT` : (ts.label || 'Protegiendo')}</span>
-                </span>
-                {ts.peak_value !== null && ts.peak_value !== undefined && (
-                  <span className="text-[10px] text-slate-400 font-sans font-normal hidden sm:inline">
-                    (Pico: +{ts.peak_value})
+                  <span className="font-mono font-medium text-emerald-300">
+                    Ganancia asegurada +{Number(ts.floor_value !== null && ts.floor_value !== undefined ? ts.floor_value : Math.max(0, (ts.peak_value || 0) - (ts.drop_usdt || 0))).toFixed(2)} USDT
                   </span>
-                )}
+                </span>
               </div>
               <div className="flex items-center gap-1.5 text-[10px]">
                 <span className="text-slate-400 font-sans font-normal">

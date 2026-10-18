@@ -1403,13 +1403,7 @@ export default function UserBotPanel({
                   onClick={() => setIsCatalogOpen(prev => !prev)}
                   className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-indigo-500/40 rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95"
                 >
-                  <span>{isCatalogOpen ? '🔼 Ocultar Lista' : '🔽 Desplegar Lista Completa'}</span>
-                </button>
-                <button
-                  onClick={fetchStrategiesCatalog}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition"
-                >
-                  ↻ Actualizar Catálogo
+                  <span>{isCatalogOpen ? '🔼 Ocultar Lista y Configuración' : '🔽 Desplegar Catálogo y Configuración'}</span>
                 </button>
               </div>
             </div>
@@ -1473,200 +1467,200 @@ export default function UserBotPanel({
                     })}
                   </div>
                 )}
-              </>
-            )}
 
-            {/* Asignación de Capital y Apalancamiento */}
-            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <span>⚙️</span> Personaliza tu Capital y Apalancamiento
-                  </h4>
-                  <span className="text-xs text-slate-400">
-                    ({selectedStrategy || 'Ninguna'})
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSaveBotSettings}
-                  disabled={isSavingSettings}
-                  className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center gap-1.5 self-start sm:self-auto"
-                >
-                  <span>💾</span>
-                  <span>{isSavingSettings ? 'Guardando...' : 'Guardar Parámetros de Mi Bot'}</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* Margen por Orden (USDT) */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
-                    Margen por Orden (USDT):
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min="5"
-                      step="5"
-                      value={allocatedUsdt}
-                      onChange={(e) => setAllocatedUsdt(e.target.value)}
-                      placeholder="Ej: 50"
-                      className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-mono font-bold text-white outline-none focus:border-amber-400"
-                    />
-                    <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">USDT</span>
+                {/* Asignación de Capital y Apalancamiento (Se oculta/despliega junto al catálogo) */}
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-4 mt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span>⚙️</span> Personaliza tu Capital y Apalancamiento
+                      </h4>
+                      <span className="text-xs text-slate-400">
+                        ({selectedStrategy || 'Ninguna'})
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSaveBotSettings}
+                      disabled={isSavingSettings}
+                      className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center gap-1.5 self-start sm:self-auto"
+                    >
+                      <span>💾</span>
+                      <span>{isSavingSettings ? 'Guardando...' : 'Guardar Parámetros de Mi Bot'}</span>
+                    </button>
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
-                    <div>💼 Margen: <strong className="text-cyan-300 font-mono font-medium">${Number(allocatedUsdt || 0).toFixed(2)} USDT</strong></div>
-                    <div>⚡ Valor Nominal (Nocional): <strong className="text-amber-300 font-mono font-medium">${(Number(allocatedUsdt || 0) * effectiveLeverage).toFixed(2)} USDT</strong> <span className="text-slate-400">({effectiveLeverage}x {leverage === 'default' || !leverage ? 'por defecto' : 'personalizado'})</span></div>
-                    <div className="text-[10px] text-slate-500 pt-0.5">Saldo libre en Binance: ${balance.toFixed(2)} USDT</div>
-                  </div>
-                </div>
 
-                {/* Apalancamiento */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
-                    Apalancamiento (Leverage):
-                  </label>
-                  <select
-                    value={leverage || 'default'}
-                    onChange={(e) => setLeverage(e.target.value)}
-                    className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-400"
-                  >
-                    <option value="default">Por Defecto ({strategyDefaultLeverage}x de la Estrategia)</option>
-                    <option value="1">1x (Sin Apalancamiento - Spot)</option>
-                    <option value="2">2x (Muy Conservador)</option>
-                    <option value="3">3x (Recomendado Institucional)</option>
-                    <option value="5">5x (Moderado)</option>
-                    <option value="10">10x (Estándar)</option>
-                    <option value="20">20x (Dinámico)</option>
-                  </select>
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    {leverage === 'default' || !leverage 
-                      ? `Tomando ${strategyDefaultLeverage}x establecido en la estrategia "${selectedStrategy || 'activa'}"`
-                      : `Apalancamiento manual seleccionado: ${leverage}x`}
-                  </span>
-                </div>
-
-                {/* Margen */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
-                    Modo de Margen:
-                  </label>
-                  <select
-                    value={marginType}
-                    onChange={(e) => setMarginType(e.target.value)}
-                    className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-400"
-                  >
-                    <option value="ISOLATED">ISOLATED (Margen Aislado - Recomendado)</option>
-                    <option value="CROSSED">CROSSED (Margen Cruzado)</option>
-                  </select>
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    Aislado limita el riesgo exclusivamente a la orden.
-                  </span>
-                </div>
-              </div>
-
-              {/* Tarjeta de Auto-Escalado y Equivalencia de Parámetros de la Estrategia */}
-              {(() => {
-                const stratBaseMargin = Number(
-                  currentStrategyObj?.parameters?.positionSizeUSDT ??
-                  currentStrategyObj?.parameters?.position_size_usdt ??
-                  botData?.active_strategy_details?.parameters?.positionSizeUSDT ??
-                  botData?.active_strategy_details?.parameters?.position_size_usdt ??
-                  50.0
-                ) || 50.0;
-
-                const userVal = Number(allocatedUsdt) || stratBaseMargin;
-                const scaleFactor = userVal / stratBaseMargin;
-                const scalePercent = (scaleFactor * 100).toFixed(1);
-
-                const baseTp = Number(
-                  currentStrategyObj?.parameters?.takeProfitUSDT ??
-                  currentStrategyObj?.parameters?.take_profit_usdt ??
-                  botData?.active_strategy_details?.parameters?.takeProfitUSDT ??
-                  botData?.active_strategy_details?.parameters?.take_profit_usdt ??
-                  50.0
-                ) || 50.0;
-
-                const baseSl = Number(
-                  currentStrategyObj?.parameters?.stopLossUSDT ??
-                  currentStrategyObj?.parameters?.stop_loss_usdt ??
-                  botData?.active_strategy_details?.parameters?.stopLossUSDT ??
-                  botData?.active_strategy_details?.parameters?.stop_loss_usdt ??
-                  400.0
-                ) || 400.0;
-
-                const baseDcaLoss = Number(
-                  currentStrategyObj?.parameters?.dcaTriggerLossUsdt ??
-                  currentStrategyObj?.parameters?.dca_trigger_loss_usdt ??
-                  botData?.active_strategy_details?.parameters?.dcaTriggerLossUsdt ??
-                  botData?.active_strategy_details?.parameters?.dca_trigger_loss_usdt ??
-                  15.0
-                ) || 15.0;
-
-                const baseTsAct = Number(
-                  currentStrategyObj?.parameters?.pnlTrailingStopActivationUSDT ??
-                  currentStrategyObj?.parameters?.pnl_trailing_stop_activation_usdt ??
-                  botData?.active_strategy_details?.parameters?.pnlTrailingStopActivationUSDT ??
-                  botData?.active_strategy_details?.parameters?.pnl_trailing_stop_activation_usdt ??
-                  3.5
-                ) || 3.5;
-
-                const scaledTp = (baseTp * scaleFactor).toFixed(2);
-                const scaledSl = (baseSl * scaleFactor).toFixed(2);
-                const scaledDca = (baseDcaLoss * scaleFactor).toFixed(2);
-                const scaledTs = (baseTsAct * scaleFactor).toFixed(2);
-
-                const isScaled = Math.abs(scaleFactor - 1.0) > 0.001;
-
-                return (
-                  <div className="p-3.5 bg-slate-900/80 rounded-xl border border-slate-700/80 space-y-2 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-amber-400 font-bold">⚖️ Auto-Ajuste de Equivalencia (ROE Soberano):</span>
-                        <span className="bg-amber-400/20 text-amber-300 font-mono font-bold px-2 py-0.5 rounded text-[11px] border border-amber-400/30">
-                          {isScaled ? `${scalePercent}% del Capital Base ($${stratBaseMargin} USDT)` : '100% Capital Base (1:1)'}
-                        </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {/* Margen por Orden (USDT) */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                        Margen por Orden (USDT):
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="5"
+                          step="5"
+                          value={allocatedUsdt}
+                          onChange={(e) => setAllocatedUsdt(e.target.value)}
+                          placeholder="Ej: 50"
+                          className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-mono font-bold text-white outline-none focus:border-amber-400"
+                        />
+                        <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">USDT</span>
                       </div>
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        Nocional: <strong>${(userVal * effectiveLeverage).toFixed(2)} USDT</strong>
+                      <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
+                        <div>💼 Margen: <strong className="text-cyan-300 font-mono font-medium">${Number(allocatedUsdt || 0).toFixed(2)} USDT</strong></div>
+                        <div>⚡ Valor Nominal (Nocional): <strong className="text-amber-300 font-mono font-medium">${(Number(allocatedUsdt || 0) * effectiveLeverage).toFixed(2)} USDT</strong> <span className="text-slate-400">({effectiveLeverage}x {leverage === 'default' || !leverage ? 'por defecto' : 'personalizado'})</span></div>
+                        <div className="text-[10px] text-slate-500 pt-0.5">Saldo libre en Binance: ${balance.toFixed(2)} USDT</div>
+                      </div>
+                    </div>
+
+                    {/* Apalancamiento */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
+                        Apalancamiento (Leverage):
+                      </label>
+                      <select
+                        value={leverage || 'default'}
+                        onChange={(e) => setLeverage(e.target.value)}
+                        className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-400"
+                      >
+                        <option value="default">Por Defecto ({strategyDefaultLeverage}x de la Estrategia)</option>
+                        <option value="1">1x (Sin Apalancamiento - Spot)</option>
+                        <option value="2">2x (Muy Conservador)</option>
+                        <option value="3">3x (Recomendado Institucional)</option>
+                        <option value="5">5x (Moderado)</option>
+                        <option value="10">10x (Estándar)</option>
+                        <option value="20">20x (Dinámico)</option>
+                      </select>
+                      <span className="text-[10px] text-slate-500 mt-1 block">
+                        {leverage === 'default' || !leverage 
+                          ? `Tomando ${strategyDefaultLeverage}x establecido en la estrategia "${selectedStrategy || 'activa'}"`
+                          : `Apalancamiento manual seleccionado: ${leverage}x`}
                       </span>
                     </div>
 
-                    <p className="text-[11px] text-slate-300 leading-relaxed">
-                      Para garantizar que la estrategia mantenga <strong>idéntico rendimiento porcentual (ROE %)</strong> y protección de riesgo con tu margen de <strong>${userVal.toFixed(2)} USDT</strong>, el motor calcula proporcionalmente todos los disparadores monetarios:
-                    </p>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px]">
-                      <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">Take Profit Ajustado</span>
-                        <span className="font-bold text-emerald-400 text-xs">+{scaledTp} USDT</span>
-                        <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseTp})</span>
-                      </div>
-
-                      <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">Stop Loss Ajustado</span>
-                        <span className="font-bold text-rose-400 text-xs">-{scaledSl} USDT</span>
-                        <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseSl})</span>
-                      </div>
-
-                      <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">DCA Trigger Pérdida</span>
-                        <span className="font-bold text-amber-300 text-xs">-{scaledDca} USDT</span>
-                        <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseDcaLoss})</span>
-                      </div>
-
-                      <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">Trailing Stop Act.</span>
-                        <span className="font-bold text-sky-400 text-xs">+{scaledTs} USDT</span>
-                        <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseTsAct})</span>
-                      </div>
+                    {/* Modo de Margen */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
+                        Modo de Margen:
+                      </label>
+                      <select
+                        value={marginType}
+                        onChange={(e) => setMarginType(e.target.value)}
+                        className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-400"
+                      >
+                        <option value="ISOLATED">ISOLATED (Margen Aislado - Recomendado)</option>
+                        <option value="CROSSED">CROSSED (Margen Cruzado)</option>
+                      </select>
+                      <span className="text-[10px] text-slate-500 mt-1 block">
+                        Aislado limita el riesgo exclusivamente a la orden.
+                      </span>
                     </div>
                   </div>
-                );
-              })()}
-            </div>
+
+                  {/* Tarjeta de Auto-Escalado y Equivalencia de Parámetros de la Estrategia */}
+                  {(() => {
+                    const stratBaseMargin = Number(
+                      currentStrategyObj?.parameters?.positionSizeUSDT ??
+                      currentStrategyObj?.parameters?.position_size_usdt ??
+                      botData?.active_strategy_details?.parameters?.positionSizeUSDT ??
+                      botData?.active_strategy_details?.parameters?.position_size_usdt ??
+                      50.0
+                    ) || 50.0;
+
+                    const userVal = Number(allocatedUsdt) || stratBaseMargin;
+                    const scaleFactor = userVal / stratBaseMargin;
+                    const scalePercent = (scaleFactor * 100).toFixed(1);
+
+                    const baseTp = Number(
+                      currentStrategyObj?.parameters?.takeProfitUSDT ??
+                      currentStrategyObj?.parameters?.take_profit_usdt ??
+                      botData?.active_strategy_details?.parameters?.takeProfitUSDT ??
+                      botData?.active_strategy_details?.parameters?.take_profit_usdt ??
+                      50.0
+                    ) || 50.0;
+
+                    const baseSl = Number(
+                      currentStrategyObj?.parameters?.stopLossUSDT ??
+                      currentStrategyObj?.parameters?.stop_loss_usdt ??
+                      botData?.active_strategy_details?.parameters?.stopLossUSDT ??
+                      botData?.active_strategy_details?.parameters?.stop_loss_usdt ??
+                      400.0
+                    ) || 400.0;
+
+                    const baseDcaLoss = Number(
+                      currentStrategyObj?.parameters?.dcaTriggerLossUsdt ??
+                      currentStrategyObj?.parameters?.dca_trigger_loss_usdt ??
+                      botData?.active_strategy_details?.parameters?.dcaTriggerLossUsdt ??
+                      botData?.active_strategy_details?.parameters?.dca_trigger_loss_usdt ??
+                      15.0
+                    ) || 15.0;
+
+                    const baseTsAct = Number(
+                      currentStrategyObj?.parameters?.pnlTrailingStopActivationUSDT ??
+                      currentStrategyObj?.parameters?.pnl_trailing_stop_activation_usdt ??
+                      botData?.active_strategy_details?.parameters?.pnlTrailingStopActivationUSDT ??
+                      botData?.active_strategy_details?.parameters?.pnl_trailing_stop_activation_usdt ??
+                      3.5
+                    ) || 3.5;
+
+                    const scaledTp = (baseTp * scaleFactor).toFixed(2);
+                    const scaledSl = (baseSl * scaleFactor).toFixed(2);
+                    const scaledDca = (baseDcaLoss * scaleFactor).toFixed(2);
+                    const scaledTs = (baseTsAct * scaleFactor).toFixed(2);
+
+                    const isScaled = Math.abs(scaleFactor - 1.0) > 0.001;
+
+                    return (
+                      <div className="p-3.5 bg-slate-900/80 rounded-xl border border-slate-700/80 space-y-2 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-amber-400 font-bold">⚖️ Auto-Ajuste de Equivalencia (ROE Soberano):</span>
+                            <span className="bg-amber-400/20 text-amber-300 font-mono font-bold px-2 py-0.5 rounded text-[11px] border border-amber-400/30">
+                              {isScaled ? `${scalePercent}% del Capital Base ($${stratBaseMargin} USDT)` : '100% Capital Base (1:1)'}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            Nocional: <strong>${(userVal * effectiveLeverage).toFixed(2)} USDT</strong>
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-slate-300 leading-relaxed">
+                          Para garantizar que la estrategia mantenga <strong>idéntico rendimiento porcentual (ROE %)</strong> y protección de riesgo con tu margen de <strong>${userVal.toFixed(2)} USDT</strong>, el motor calcula proporcionalmente todos los disparadores monetarios:
+                        </p>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px]">
+                          <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">Take Profit Ajustado</span>
+                            <span className="font-bold text-emerald-400 text-xs">+{scaledTp} USDT</span>
+                            <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseTp})</span>
+                          </div>
+
+                          <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">Stop Loss Ajustado</span>
+                            <span className="font-bold text-rose-400 text-xs">-{scaledSl} USDT</span>
+                            <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseSl})</span>
+                          </div>
+
+                          <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">DCA Trigger Pérdida</span>
+                            <span className="font-bold text-amber-300 text-xs">-{scaledDca} USDT</span>
+                            <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseDcaLoss})</span>
+                          </div>
+
+                          <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans">Trailing Stop Act.</span>
+                            <span className="font-bold text-sky-400 text-xs">+{scaledTs} USDT</span>
+                            <span className="text-[9px] text-slate-500 block font-sans">(Base: ${baseTsAct})</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

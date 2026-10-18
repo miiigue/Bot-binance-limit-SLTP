@@ -363,10 +363,9 @@ function PositionTpSlBar({ position }) {
             <div className="flex items-center justify-between text-[11px] leading-tight">
               <span className="font-bold text-sky-300 flex items-center gap-1 animate-pulse">
                 <span>🔵 TS ACTIVO:</span>
-                <span className="font-mono text-sky-200">Pico +{ts.peak_value} USDT</span>
-              </span>
-              <span className="text-[10px] text-sky-400 font-semibold font-sans">
-                Protegiendo Ganancia 🛡️
+                <span className="font-mono text-emerald-300">
+                  Ganancia asegurada +{Number(ts.floor_value !== undefined && ts.floor_value !== null ? ts.floor_value : Math.max(0, (ts.peak_value || 0) - (ts.drop_usdt || 0))).toFixed(2)} USDT
+                </span>
               </span>
             </div>
             <div className="w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-sky-800 shadow-inner">

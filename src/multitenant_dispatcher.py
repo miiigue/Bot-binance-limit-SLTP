@@ -1295,6 +1295,7 @@ def get_user_monitor_status(user_id: int) -> dict:
             sl_dist_l = round(abs(sl_usdt) - abs(min(0.0, pnl_l)), 2)
             sl_fill_l = min(100.0, max(0.0, (abs(min(0.0, pnl_l)) / abs(sl_usdt)) * 100.0)) if sl_usdt > 0 else 0.0
 
+            floor_l = round(max(0.0, pk_l - ts_drop), 2)
             pos_long_info = {
                 'side': 'LONG',
                 'amt': amt_l,
@@ -1306,7 +1307,7 @@ def get_user_monitor_status(user_id: int) -> dict:
                 'leverage': lev_l,
                 'tp': {'target_usdt': tp_usdt, 'progress_pct': round(tp_prog_l, 1), 'remaining_usdt': round(tp_rem_l, 2)},
                 'sl': {'target_usdt': -abs(sl_usdt), 'distance_usdt': sl_dist_l, 'fill_pct': round(sl_fill_l, 1)},
-                'ts': {'enabled': enable_ts, 'armed': ts_armed_l, 'act_threshold': ts_act, 'drop_usdt': ts_drop, 'peak_value': round(pk_l, 2)}
+                'ts': {'enabled': enable_ts, 'armed': ts_armed_l, 'act_threshold': ts_act, 'drop_usdt': ts_drop, 'peak_value': round(pk_l, 2), 'floor_value': floor_l}
             }
 
         if pos_short_raw:
@@ -1339,6 +1340,7 @@ def get_user_monitor_status(user_id: int) -> dict:
             ts_armed_s = enable_ts and (pk_s >= ts_act)
             sl_dist_s = round(abs(sl_usdt) - abs(min(0.0, pnl_s)), 2)
             sl_fill_s = min(100.0, max(0.0, (abs(min(0.0, pnl_s)) / abs(sl_usdt)) * 100.0)) if sl_usdt > 0 else 0.0
+            floor_s = round(max(0.0, pk_s - ts_drop), 2)
 
             pos_short_info = {
                 'side': 'SHORT',
@@ -1351,7 +1353,7 @@ def get_user_monitor_status(user_id: int) -> dict:
                 'leverage': lev_s,
                 'tp': {'target_usdt': tp_usdt, 'progress_pct': round(tp_prog_s, 1), 'remaining_usdt': round(tp_rem_s, 2)},
                 'sl': {'target_usdt': -abs(sl_usdt), 'distance_usdt': sl_dist_s, 'fill_pct': round(sl_fill_s, 1)},
-                'ts': {'enabled': enable_ts, 'armed': ts_armed_s, 'act_threshold': ts_act, 'drop_usdt': ts_drop, 'peak_value': round(pk_s, 2)}
+                'ts': {'enabled': enable_ts, 'armed': ts_armed_s, 'act_threshold': ts_act, 'drop_usdt': ts_drop, 'peak_value': round(pk_s, 2), 'floor_value': floor_s}
             }
 
         tot_margin = round(margin_l + margin_s, 2)
