@@ -1048,15 +1048,15 @@ export default function UserBotPanel({
                 </div>
               </div>
 
-              {/* Advertencia Profesional de Riesgo y Gestión Prudente de Capital */}
+              {/* Consejo Amigable de Gestión Prudente de Capital */}
               <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-200/90 flex items-start gap-2.5 mb-4 leading-relaxed">
-                <span className="text-base select-none shrink-0 mt-0.5">⚠️</span>
+                <span className="text-base select-none shrink-0 mt-0.5">🌱</span>
                 <div>
                   <span className="font-bold text-amber-300 tracking-wide block uppercase text-[11px] mb-0.5">
-                    Aviso de Riesgo y Gestión Responsable de Capital:
+                    Empieza con paso firme y cabeza fría:
                   </span>
                   <span>
-                    El trading algorítmico y de derivados conlleva un alto nivel de riesgo. <strong>Nunca utilice dinero que no pueda permitirse perder o que necesite para sus compromisos vitales</strong>. Los rendimientos o ganancias pasadas y presentes no garantizan resultados futuros. Se recomienda comenzar con una fracción prudente y pequeña de capital, observar el comportamiento y la volatilidad del mercado con el tiempo antes de considerar cualquier incremento, y tener siempre presente que el riesgo de pérdida total o parcial del capital invertido está siempre presente.
+                    <strong>Nunca uses dinero que necesites para vivir o para tus responsabilidades</strong>. Los mercados tienen riesgos y los buenos resultados pasados no garantizan ganancias futuras. Te sugerimos <strong>probar primero con una cantidad pequeña</strong> que no te cause ningún problema si llegas a perderla; tómate tu tiempo para ver los resultados y observar cómo trabaja el bot antes de plantearte una inversión mayor.
                   </span>
                 </div>
               </div>
