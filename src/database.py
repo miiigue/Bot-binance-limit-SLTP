@@ -1458,14 +1458,6 @@ def upsert_strategy_catalog(
     clean_risk = str(risk_level).upper().strip() if risk_level else 'MODERADO'
     pub_bool = bool(is_public)
     
-    clean_params = parameters or {}
-    try:
-        from src.config_loader import normalize_strategy_dict
-        if isinstance(clean_params, dict):
-            clean_params = normalize_strategy_dict(clean_params)
-    except Exception:
-        pass
-    p_json = json.dumps(clean_params)
     now_dt = datetime.now()
 
     conn = None
@@ -1473,6 +1465,46 @@ def upsert_strategy_catalog(
         conn = get_db_connection(timeout=10)
         _ensure_strategies_catalog_table(conn)
         cursor = conn.cursor()
+
+        # BLINDAJE SOBERANO: Verificar si ya existe en catálogo y cuál es su parameters_json actual
+        cursor.execute("SELECT parameters_json FROM strategies_catalog WHERE name = ?", (clean_name,))
+        existing_row = cursor.fetchone()
+        existing_p_json = existing_row[0] if existing_row else None
+
+        # Determinar parameters_json a guardar:
+        # Si se suministraron parámetros explícitos y no vacíos, se usan y normalizan.
+        # Si NO se suministraron parámetros o vinieron vacíos:
+        #   - Si ya existían en DB y tenían datos, SE PRESERVAN AL 100% (blindaje contra sobrescrituras accidentales).
+        #   - Si no existían en DB, se intenta cargar del archivo maestro en strategies/{name}.json.
+        #   - Solo si todo lo anterior falla, se usa el diccionario por defecto.
+        clean_params = parameters if (isinstance(parameters, dict) and len(parameters) > 0) else None
+        
+        final_p_json = None
+        if clean_params is not None:
+            try:
+                from src.config_loader import normalize_strategy_dict
+                clean_params = normalize_strategy_dict(clean_params)
+            except Exception:
+                pass
+            final_p_json = json.dumps(clean_params)
+        elif existing_p_json:
+            # Preservar exactamente los parámetros existentes en la base de datos
+            final_p_json = existing_p_json if isinstance(existing_p_json, str) else json.dumps(existing_p_json)
+        else:
+            # Buscar en archivo físico de estrategia
+            strat_file = os.path.join(STRATEGIES_PATH, f"{clean_name}.json")
+            if os.path.exists(strat_file):
+                try:
+                    with open(strat_file, 'r', encoding='utf-8') as sf:
+                        disk_p = json.load(sf)
+                    from src.config_loader import normalize_strategy_dict
+                    final_p_json = json.dumps(normalize_strategy_dict(disk_p))
+                except Exception:
+                    pass
+            
+            if not final_p_json:
+                from src.config_loader import normalize_strategy_dict
+                final_p_json = json.dumps(normalize_strategy_dict({}))
         
         # 1. Intentar actualizar directamente si ya existe
         cursor.execute("""
@@ -1485,14 +1517,14 @@ def upsert_strategy_catalog(
                 parameters_json = ?,
                 updated_at = ?
             WHERE name = ?
-        """, (clean_disp, description or '', clean_risk, pub_bool, float(min_capital_usdt or 50.0), p_json, now_dt, clean_name))
+        """, (clean_disp, description or '', clean_risk, pub_bool, float(min_capital_usdt or 50.0), final_p_json, now_dt, clean_name))
 
         # 2. Si no existía, insertar
         if cursor.rowcount == 0:
             cursor.execute("""
                 INSERT INTO strategies_catalog (name, display_name, description, risk_level, is_public, min_capital_usdt, parameters_json, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (clean_name, clean_disp, description or '', clean_risk, pub_bool, float(min_capital_usdt or 50.0), p_json, now_dt, now_dt))
+            """, (clean_name, clean_disp, description or '', clean_risk, pub_bool, float(min_capital_usdt or 50.0), final_p_json, now_dt, now_dt))
 
         conn.commit()
         return True
