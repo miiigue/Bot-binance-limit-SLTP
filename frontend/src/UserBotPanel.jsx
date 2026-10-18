@@ -520,33 +520,6 @@ export default function UserBotPanel({
     setConfirmModal(prev => ({ ...prev, isOpen: false }));
   };
 
-  // Reiniciar Cuenta Demo / Testnet de Binance (con confirmación obligatoria)
-  const handleResetDemoAccount = () => {
-    openConfirm({
-      title: '🔄 ¿Reiniciar Cuenta Demo / Testnet de Binance?',
-      message: '⚠️ Esta acción cancelará todas las órdenes en Binance Testnet, cerrará las posiciones abiertas y restablecerá el historial de trades y PnL acumulado a $0.00 USDT.',
-      confirmText: 'Sí, Reiniciar Demo',
-      type: 'danger',
-      onConfirm: async () => {
-        setActionLoading(true);
-        setFeedback(null);
-        try {
-          const resp = await authFetch('/api/demo/reset', { method: 'POST' });
-          const resJson = await resp.json();
-          if (!resp.ok) throw new Error(resJson.message || resJson.error);
-          setFeedback({ type: 'success', text: `✅ ${resJson.message}` });
-          localStorage.removeItem('botStatusesCache');
-          fetchUserBotStatus();
-          fetchUserTrades();
-          setTimeout(() => window.location.reload(), 1500);
-        } catch (err) {
-          setFeedback({ type: 'error', text: `Error al reiniciar cuenta demo: ${err.message}` });
-        } finally {
-          setActionLoading(false);
-        }
-      }
-    });
-  };
 
   // Reiniciar solo Historial de Trades y PnL del Usuario (sin tocar posiciones de Binance)
   const handleResetUserTrades = () => {
@@ -981,22 +954,6 @@ export default function UserBotPanel({
                 )}
               </div>
             </div>
-
-            {/* Botón Acción: Reiniciar Demo Binance (Oculto en modo readOnly) */}
-            {!readOnly && (
-              <div className="pl-4 border-l border-slate-800 flex items-center">
-                <button
-                  type="button"
-                  onClick={handleResetDemoAccount}
-                  disabled={actionLoading}
-                  className="px-3.5 py-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-700/60 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow active:scale-95 disabled:opacity-50"
-                  title="Cierra posiciones, cancela órdenes en Testnet y restablece el PnL a $0.00 USDT (con confirmación previa)"
-                >
-                  <span>🔄</span>
-                  <span>Reiniciar Demo Binance</span>
-                </button>
-              </div>
-            )}
           </div>
         </div>
 
