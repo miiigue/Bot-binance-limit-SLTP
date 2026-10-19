@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import Trading3DScene from './Trading3DScene';
-import { LogoHexNexus, LogoDeltaRay, LogoDualOrbit, LogoCyberWTN, LOGO_OPTIONS } from './LogoOptions';
+import { WordmarkNeoQuant, WordmarkCyberFintech, WordmarkInstitutional, WordmarkVelocity, LOGO_OPTIONS } from './LogoOptions';
 
 /**
  * Tilt3DCard
@@ -61,8 +61,8 @@ function Tilt3DCard({ children, className = '' }) {
 }
 
 export default function LandingPage({ onOpenLogin, onOpenRegister }) {
-  // Selector dinámico de logo para que el usuario elija su favorito
-  const [selectedLogoId, setSelectedLogoId] = useState('hex'); // 'hex', 'delta', 'orbit', 'wtn'
+  // Selector dinámico de logo / wordmark oficial
+  const [selectedLogoId, setSelectedLogoId] = useState('neoquant'); // 'neoquant', 'fintech', 'institutional', 'velocity'
   const [showLogoModal, setShowLogoModal] = useState(false);
 
   // Simulador interactivo de inversión
@@ -74,7 +74,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
 
   // Obtener componente de logo actual
   const currentLogoOption = LOGO_OPTIONS.find((l) => l.id === selectedLogoId) || LOGO_OPTIONS[0];
-  const CurrentLogoComponent = currentLogoOption.Component;
+  const CurrentWordmarkComponent = currentLogoOption.Component;
 
   // Parámetros dinámicos del simulador
   const profileMultipliers = {
@@ -87,7 +87,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       pairs: 6,
     },
     v21: {
-      label: 'V21 Soberana (Recomendado)',
+      label: 'V21 Soberana (Estándar)',
       leverage: '5x - 7x',
       minPct: 8,
       maxPct: 16,
@@ -113,7 +113,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
     { pair: 'ETH/USDT', price: '2,645', change: '+2.9%', signal: 'LONG' },
     { pair: 'SOL/USDT', price: '184.8', change: '+6.5%', signal: 'ACTIVO' },
     { pair: 'BNB/USDT', price: '593.0', change: '+1.8%', signal: 'LONG' },
-    { pair: 'AVAX/USDT', price: '28.9', change: '+5.4%', signal: 'DCA' },
+    { pair: 'AVAX/USDT', price: '28.9', change: '+5.4%', signal: 'COMPRA' },
     { pair: 'XRP/USDT', price: '0.549', change: '+4.1%', signal: 'LONG' },
   ];
 
@@ -126,33 +126,16 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/85 backdrop-blur-xl border-b border-cyan-500/20 shadow-lg shadow-cyan-950/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           
-          {/* LOGO OFICIAL DEL PROYECTO */}
+          {/* LOGOTIPO TIPOGRÁFICO OFICIAL CON NOMBRE COMPLETO */}
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => setShowLogoModal(true)}
-              className="relative group p-1 rounded-2xl bg-slate-900 border border-cyan-500/30 hover:border-cyan-400 shadow-md transition-all hover:scale-105 active:scale-95"
-              title="Haz clic para ver y elegir entre las 4 opciones de logo"
+              className="text-left group transition-transform hover:scale-[1.02] active:scale-[0.98] focus:outline-none"
+              title="Haz clic para ver y elegir entre los estilos de logo oficiales"
             >
-              <CurrentLogoComponent size={42} />
-              <span className="absolute -bottom-1 -right-1 px-1 py-0.2 bg-cyan-400 text-[8px] font-black text-slate-950 rounded">
-                LOGO
-              </span>
+              <CurrentWordmarkComponent />
             </button>
-
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl sm:text-2xl font-black tracking-tight text-white">
-                  WTN <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-400 bg-clip-text text-transparent">ALGO-TRADING</span>
-                </span>
-                <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-mono font-bold uppercase rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                  BINANCE FUTURES
-                </span>
-              </div>
-              <div className="text-[10px] font-mono font-semibold text-slate-400 tracking-wider">
-                SISTEMA CUANTITATIVO 24/7
-              </div>
-            </div>
           </div>
 
           {/* MENÚ DE ENLACES VISUALES */}
@@ -160,21 +143,15 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             <a href="#productos" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
               <span>💼</span> Productos de Inversión
             </a>
-            <a href="#algoritmos" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-              <span>🧠</span> Motores
-            </a>
             <a href="#simulador" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
               <span>📊</span> Calculadora
-            </a>
-            <a href="#seguridad" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-              <span>🛡️</span> Seguridad
             </a>
             <button
               type="button"
               onClick={() => setShowLogoModal(true)}
-              className="px-2.5 py-1 text-[11px] font-mono text-cyan-300 hover:text-white bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 rounded-lg transition"
+              className="px-2.5 py-1 text-[11px] font-mono text-cyan-300 hover:text-white bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 rounded-lg transition flex items-center gap-1.5"
             >
-              🎨 Elegir Logo
+              <span>🎨</span> Elegir Estilo de Logo
             </button>
           </nav>
 
@@ -229,13 +206,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               💼 Productos de Inversión
             </a>
             <a
-              href="#algoritmos"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
-            >
-              🧠 Motores Algorítmicos
-            </a>
-            <a
               href="#simulador"
               onClick={() => setMobileMenuOpen(false)}
               className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
@@ -247,7 +217,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               onClick={() => { setMobileMenuOpen(false); setShowLogoModal(true); }}
               className="block w-full text-left text-sm font-semibold text-cyan-400 py-2 border-b border-slate-800"
             >
-              🎨 Cambiar Diseño de Logo
+              🎨 Cambiar Estilo de Logo
             </button>
             <div className="pt-2 flex flex-col gap-2">
               <button
@@ -279,7 +249,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
             <span>ALGORITMO 24/7 ACTIVO</span>
             <span className="text-slate-400">•</span>
-            <span className="text-slate-200">BINANCE FUTURES</span>
+            <span className="text-slate-200">MERCADOS DE DERIVADOS</span>
           </div>
 
           {/* TITULAR PRINCIPAL RESUMIDO Y DE IMPACTO */}
@@ -291,7 +261,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
           </h1>
 
           <p className="text-base sm:text-xl text-slate-300 max-w-2xl font-normal leading-relaxed mb-8">
-            Ejecución matemática 24/7 sin sesgos emocionales. Algoritmos de <strong className="text-cyan-400">RSI Dinámico</strong> y <strong className="text-cyan-400">DCA Inteligente</strong> con gestión de riesgo institucional.
+            Ejecución matemática 24/7 sin sesgos emocionales. Algoritmos cuantitativos de alta precisión.
           </p>
 
           {/* BOTONES DE LLAMADA A LA ACCIÓN */}
@@ -321,7 +291,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 backdrop-blur-md text-center">
               <div className="text-2xl font-black text-sky-400 font-mono">&lt; 12ms</div>
-              <div className="text-[11px] text-slate-400 font-semibold mt-0.5">Latencia Binance</div>
+              <div className="text-[11px] text-slate-400 font-semibold mt-0.5">Latencia de Ejecución</div>
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 backdrop-blur-md text-center">
               <div className="text-2xl font-black text-emerald-400 font-mono">100%</div>
@@ -399,7 +369,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-cyan-400 font-bold">✓</span>
-                    <span><strong>Diversificación total:</strong> Operativa concurrente en más de 10 pares.</span>
+                    <span><strong>Diversificación total:</strong> Operativa concurrente en múltiples activos.</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-cyan-400 font-bold">✓</span>
@@ -437,24 +407,24 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                 </div>
 
                 <h3 className="text-xl sm:text-2xl font-black text-white mb-2">
-                  Copy-Trading Soberano (Binance API)
+                  Copy-Trading Soberano (API Exchange)
                 </h3>
                 <p className="text-xs text-slate-300 mb-5 leading-relaxed">
-                  Tus fondos permanecen 100% en tu propia cuenta de Binance. Conectas tus credenciales API y el bot replica cada señal del algoritmo maestro en tu cuenta privada a milisegundos.
+                  Tus fondos permanecen 100% en tu propia cuenta de exchange. Conectas tus credenciales API y el bot replica cada señal del algoritmo maestro en tu cuenta privada a milisegundos.
                 </p>
 
                 <div className="space-y-2.5 mb-6 text-xs text-slate-300">
                   <div className="flex items-center gap-2">
                     <span className="text-sky-400 font-bold">✓</span>
-                    <span><strong>Custodia absoluta:</strong> Tu capital nunca sale de tu billetera de Binance.</span>
+                    <span><strong>Custodia absoluta:</strong> Tu capital nunca sale de tu propia wallet en el exchange.</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sky-400 font-bold">✓</span>
-                    <span><strong>Retiros 100% libres:</strong> Retira tu capital o ganancias cuando lo desees.</span>
+                    <span><strong>Retiros 100% libres:</strong> Retira tu capital o ganancias cuando lo desees 24/7.</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sky-400 font-bold">✓</span>
-                    <span><strong>Permisos seguros:</strong> Solo lectura y trading; retiros bloqueados por API.</span>
+                    <span><strong>Permisos seguros:</strong> Solo lectura y trading; retiros estrictamente bloqueados por API.</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sky-400 font-bold">✓</span>
@@ -481,64 +451,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          4. MOTORES ALGORÍTMICOS (VISUAL Y ULTRA CONCISO)
-         ========================================================================= */}
-      <section id="algoritmos" className="py-20 relative z-10 border-t border-slate-900">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <span className="px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-mono font-bold uppercase">
-              🧠 TECNOLOGÍA EN PRODUCCIÓN
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight mt-3 mb-2">
-              4 Motores Cuantitativos de Alta Precisión
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400">
-              Reglas matemáticas comprobadas que sustituyen la intuición y el azar.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            
-            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-cyan-500/40 transition">
-              <div className="text-2xl mb-2">📈</div>
-              <h4 className="text-sm font-bold text-white mb-1">RSI Multi-Marco & Divergencias</h4>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Escaneo sincronizado en 1m, 5m y 15m. Entradas de alta probabilidad en zonas extremas de agotamiento.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-sky-500/40 transition">
-              <div className="text-2xl mb-2">🔄</div>
-              <h4 className="text-sm font-bold text-white mb-1">DCA Geométrico de 3 Niveles</h4>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Rebaja el precio promedio en retrocesos para salir en ganancia rápida sin sobreexponer el balance.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-blue-500/40 transition">
-              <div className="text-2xl mb-2">🛡️</div>
-              <h4 className="text-sm font-bold text-white mb-1">Trailing Stop Blindado</h4>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Doble protección: órdenes condicionales nativas en Binance + guardián VPS para cierres por mercado en milisegundos.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-indigo-500/40 transition">
-              <div className="text-2xl mb-2">⚡</div>
-              <h4 className="text-sm font-bold text-white mb-1">Escudo Anti-Crash de BTC</h4>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Congela automáticamente nuevas compras si Bitcoin sufre un colapso brusco, preservando saldo en USDT.
-              </p>
-            </div>
-
-          </div>
-
-        </div>
-      </section>
-
-      {/* =========================================================================
-          5. SIMULADOR INTERACTIVO CONCISO Y VISUAL
+          4. SIMULADOR INTERACTIVO CONCISO Y VISUAL
          ========================================================================= */}
       <section id="simulador" className="py-20 relative z-10 border-t border-slate-900 bg-slate-900/30">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -650,56 +563,9 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          6. SEGURIDAD Y INFRAESTRUCTURA (3 PILARES CONCISOS)
+          5. BANNER CTA FINAL
          ========================================================================= */}
-      <section id="seguridad" className="py-20 relative z-10 border-t border-slate-900">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <span className="px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-mono font-bold uppercase">
-              🛡️ GARANTÍA DE SEGURIDAD
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight mt-3 mb-2">
-              Infraestructura y Soberanía
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400">
-              Protección de datos y arquitectura sin custodia de fondos.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800">
-              <div className="text-2xl text-cyan-400 mb-2">🔒</div>
-              <h4 className="text-sm font-bold text-white mb-1">Cero Custodia de Criptomonedas</h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Tus activos nunca salen de Binance. Las claves API operan con retiros estrictamente deshabilitados.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800">
-              <div className="text-2xl text-sky-400 mb-2">🗄️</div>
-              <h4 className="text-sm font-bold text-white mb-1">Base de Datos PostgreSQL 16</h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Reconciliación matemática en cada ciclo para evitar discrepancias de balance y trades duplicados.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800">
-              <div className="text-2xl text-blue-400 mb-2">☁️</div>
-              <h4 className="text-sm font-bold text-white mb-1">Hetzner Cloud Dedicado</h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Servidor privado en Europa con latencia inferior a 12 ms directa a los centros de datos de Binance.
-              </p>
-            </div>
-          </div>
-
-        </div>
-      </section>
-
-      {/* =========================================================================
-          7. BANNER CTA FINAL
-         ========================================================================= */}
-      <section className="py-16 relative z-10">
+      <section className="py-16 relative z-10 border-t border-slate-900">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="rounded-3xl p-8 sm:p-12 bg-gradient-to-r from-blue-950/80 via-slate-900 to-cyan-950/80 border border-cyan-500/40 text-center shadow-2xl">
             <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight mb-3">
@@ -729,7 +595,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          8. MODAL INTERACTIVO PARA ELEGIR EL LOGO
+          6. MODAL INTERACTIVO PARA ELEGIR EL LOGO TIPOGRÁFICO
          ========================================================================= */}
       {showLogoModal && (
         <div
@@ -753,16 +619,16 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                 🎨 IDENTIDAD VISUAL WTN ALGO-TRADING
               </span>
               <h3 className="text-2xl font-black text-white mt-1">
-                Elige el Logo Oficial para el Proyecto
+                Elige el Estilo Oficial de Logo para el Proyecto
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Haz clic en la opción que más te guste para aplicarla inmediatamente en toda la página.
+                Como las grandes firmas financieras, el logo es el mismo nombre con identidad tipográfica única. Elige tu favorito:
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {LOGO_OPTIONS.map((opt) => {
-                const Icon = opt.Component;
+                const Wordmark = opt.Component;
                 const isSelected = selectedLogoId === opt.id;
                 return (
                   <button
@@ -772,18 +638,18 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                       setSelectedLogoId(opt.id);
                       setShowLogoModal(false);
                     }}
-                    className={`p-4 rounded-2xl border text-left transition flex items-start gap-4 ${
+                    className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between ${
                       isSelected
                         ? 'bg-cyan-950/60 border-cyan-400 ring-2 ring-cyan-400/30 shadow-lg'
                         : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    <div className="shrink-0 p-2 rounded-xl bg-slate-900 border border-slate-800">
-                      <Icon size={46} />
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-3 min-h-[56px]">
+                      <Wordmark />
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-extrabold text-white truncate">{opt.name}</span>
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-white">{opt.name}</span>
                         {isSelected && <span className="text-[10px] text-cyan-400 font-bold">✓ Activo</span>}
                       </div>
                       <div className="text-[10px] text-cyan-300 font-medium mt-0.5">{opt.subtitle}</div>
@@ -808,7 +674,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       )}
 
       {/* =========================================================================
-          9. FOOTER OFICIAL CON WTN SOLUTIONS LLC (DESCARGO REGULATORIO Y LEGAL)
+          7. FOOTER OFICIAL CON WTN SOLUTIONS LLC (DESCARGO REGULATORIO Y LEGAL)
          ========================================================================= */}
       <footer className="bg-slate-950 border-t border-slate-900 pt-14 pb-10 relative z-10 text-xs text-slate-400">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -818,10 +684,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             {/* EMPRESA LEGAL */}
             <div className="md:col-span-2 space-y-3">
               <div className="flex items-center gap-2">
-                <CurrentLogoComponent size={28} />
-                <span className="text-base font-black text-white">
-                  WTN SOLUTIONS LLC
-                </span>
+                <CurrentWordmarkComponent />
               </div>
               <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
                 Empresa especializada en software financiero cuantitativo y tecnología algorítmica para mercados de derivados.
@@ -835,9 +698,8 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             <div className="space-y-1.5">
               <div className="text-xs font-bold text-white uppercase tracking-wider mb-2">Productos</div>
               <div><a href="#productos" className="hover:text-cyan-400 transition">Fondo Mancomunado</a></div>
-              <div><a href="#productos" className="hover:text-cyan-400 transition">Copy-Trading Binance</a></div>
+              <div><a href="#productos" className="hover:text-cyan-400 transition">Copy-Trading Privado</a></div>
               <div><a href="#simulador" className="hover:text-cyan-400 transition">Simulador de Inversión</a></div>
-              <div><a href="#seguridad" className="hover:text-cyan-400 transition">Garantía Non-Custodial</a></div>
             </div>
 
             {/* CONTACTO */}
@@ -855,10 +717,10 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
           {/* DESCARGO REGULATORIO */}
           <div className="pt-6 border-t border-slate-900 text-[10px] text-slate-400 leading-relaxed space-y-2">
             <p>
-              <strong className="text-slate-400 uppercase">Descargo de Responsabilidad de Riesgo:</strong> El trading de futuros de criptomonedas implica un riesgo financiero sustancial y no es adecuado para todos los perfiles de inversor. Rendimientos pasados o simulados no garantizan resultados futuros.
+              <strong className="text-slate-400 uppercase">Descargo de Responsabilidad de Riesgo:</strong> El trading de contratos de futuros y derivados de criptomonedas implica un riesgo financiero sustancial y no es adecuado para todos los perfiles de inversor. Rendimientos pasados o simulados no garantizan resultados futuros.
             </p>
             <p>
-              <strong className="text-slate-400">WTN Solutions LLC</strong> provee soluciones de automatización tecnológica y algoritmos de trading. No constituye asesoramiento financiero ni gestión directa de fondos de terceros. La custodia de fondos en Copy-Trading permanece siempre en la cuenta individual de Binance del cliente.
+              <strong className="text-slate-400">WTN Solutions LLC</strong> provee soluciones de automatización tecnológica y algoritmos de trading. No constituye asesoramiento financiero ni gestión directa de fondos de terceros. La custodia de fondos en Copy-Trading permanece siempre en la cuenta individual de exchange del cliente.
             </p>
           </div>
 
@@ -868,7 +730,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               &copy; {new Date().getFullYear()} <strong className="text-slate-400">WTN Solutions LLC</strong>. Todos los derechos reservados.
             </div>
             <div>
-              WTN ALGO-TRADING™ • Binance Futures
+              WTN ALGO-TRADING™ • Mercados de Derivados
             </div>
           </div>
 
