@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import Trading3DScene from './Trading3DScene';
+import EquityCurvesShowcase from './EquityCurvesShowcase';
 import { WordmarkNeoQuant, WordmarkCyberFintech, WordmarkInstitutional, WordmarkVelocity, LOGO_OPTIONS } from './LogoOptions';
 
 /**
@@ -61,8 +62,8 @@ function Tilt3DCard({ children, className = '' }) {
 }
 
 export default function LandingPage({ onOpenLogin, onOpenRegister }) {
-  // Selector dinámico de logo / wordmark oficial
-  const [selectedLogoId, setSelectedLogoId] = useState('neoquant'); // 'neoquant', 'fintech', 'institutional', 'velocity'
+  // Selector dinámico de estilo de logo
+  const [selectedLogoId, setSelectedLogoId] = useState('neoquant');
   const [showLogoModal, setShowLogoModal] = useState(false);
 
   // Simulador interactivo de inversión
@@ -72,7 +73,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
   // Menú móvil
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Obtener componente de logo actual
+  // Componente del logotipo activo
   const currentLogoOption = LOGO_OPTIONS.find((l) => l.id === selectedLogoId) || LOGO_OPTIONS[0];
   const CurrentWordmarkComponent = currentLogoOption.Component;
 
@@ -108,13 +109,15 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
   const estMin = Math.round(simCapital * (sim.minPct / 100));
   const estMax = Math.round(simCapital * (sim.maxPct / 100));
 
-  const tickerItems = [
-    { pair: 'BTC/USDT', price: '68,450', change: '+3.2%', signal: 'LONG' },
-    { pair: 'ETH/USDT', price: '2,645', change: '+2.9%', signal: 'LONG' },
-    { pair: 'SOL/USDT', price: '184.8', change: '+6.5%', signal: 'ACTIVO' },
-    { pair: 'BNB/USDT', price: '593.0', change: '+1.8%', signal: 'LONG' },
-    { pair: 'AVAX/USDT', price: '28.9', change: '+5.4%', signal: 'COMPRA' },
-    { pair: 'XRP/USDT', price: '0.549', change: '+4.1%', signal: 'LONG' },
+  // Datos financieros estilo Bolsa de Valores (Wall Street / Bloomberg Ticker Tape)
+  const exchangeTape = [
+    { symbol: 'BTC/USDT', price: '68,485.20', change: '+3.42%', isUp: true, high: '69,120.00', low: '66,190.50', vol: '$1.84B' },
+    { symbol: 'ETH/USDT', price: '2,648.75', change: '+2.88%', isUp: true, high: '2,680.10', low: '2,560.00', vol: '$920M' },
+    { symbol: 'SOL/USDT', price: '185.10', change: '+6.74%', isUp: true, high: '187.50', low: '172.30', vol: '$640M' },
+    { symbol: 'BNB/USDT', price: '594.30', change: '+1.92%', isUp: true, high: '598.00', low: '582.40', vol: '$210M' },
+    { symbol: 'XRP/USDT', price: '0.5512', change: '+4.20%', isUp: true, high: '0.5590', low: '0.5280', vol: '$185M' },
+    { symbol: 'AVAX/USDT', price: '29.15', change: '+5.60%', isUp: true, high: '29.80', low: '27.40', vol: '$140M' },
+    { symbol: 'LINK/USDT', price: '12.65', change: '+3.85%', isUp: true, high: '12.90', low: '12.10', vol: '$98M' },
   ];
 
   return (
@@ -139,9 +142,18 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
           </div>
 
           {/* MENÚ DE ENLACES VISUALES */}
-          <nav className="hidden lg:flex items-center gap-7 text-xs font-semibold text-slate-300">
+          <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-300">
             <a href="#productos" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-              <span>💼</span> Productos de Inversión
+              <span>💼</span> 3 Productos
+            </a>
+            <a href="#activos" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
+              <span>💎</span> Monedas Seguras
+            </a>
+            <a href="#rendimiento" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
+              <span>📈</span> Curvas de Capital
+            </a>
+            <a href="#comisiones" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
+              <span>🏷️</span> Comisiones & Beneficios
             </a>
             <a href="#simulador" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
               <span>📊</span> Calculadora
@@ -203,7 +215,28 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               onClick={() => setMobileMenuOpen(false)}
               className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
             >
-              💼 Productos de Inversión
+              💼 3 Productos de Inversión
+            </a>
+            <a
+              href="#activos"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
+            >
+              💎 Monedas de Mayor Capitalización
+            </a>
+            <a
+              href="#rendimiento"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
+            >
+              📈 Curvas de Capital Verificadas
+            </a>
+            <a
+              href="#comisiones"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
+            >
+              🏷️ Niveles de Comisiones & Beneficios
             </a>
             <a
               href="#simulador"
@@ -235,7 +268,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       {/* =========================================================================
           2. HERO SECTION CON MOTOR 3D INTERACTIVO
          ========================================================================= */}
-      <section className="relative min-h-[88vh] pt-28 pb-16 flex flex-col justify-center overflow-hidden">
+      <section className="relative min-h-[88vh] pt-28 pb-12 flex flex-col justify-center overflow-hidden">
         
         {/* ESCENA 3D DE FONDO */}
         <div className="absolute inset-0 z-0 opacity-80 sm:opacity-95">
@@ -244,12 +277,12 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
 
         <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center flex flex-col items-center">
           
-          {/* BADGE DE ESTADO */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-950/70 border border-cyan-400/40 text-cyan-300 text-xs font-mono font-bold tracking-wide shadow-lg shadow-cyan-500/10 mb-6 backdrop-blur-md">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span>ALGORITMO 24/7 ACTIVO</span>
-            <span className="text-slate-400">•</span>
-            <span className="text-slate-200">MERCADOS DE DERIVADOS</span>
+          {/* BADGE DE LANZAMIENTO INTERNACIONAL & BENEFICIOS EXCLUSIVOS */}
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-cyan-950/90 via-blue-950/80 to-slate-950/90 border border-cyan-400/50 text-cyan-300 text-xs font-mono font-bold tracking-wide shadow-xl shadow-cyan-500/10 mb-6 backdrop-blur-md">
+            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span>🌍 LANZAMIENTO INTERNACIONAL OFICIAL</span>
+            <span className="text-slate-500">•</span>
+            <span className="text-amber-300">BENEFICIOS PREFERENCIALES PARA PRIMEROS REGISTROS</span>
           </div>
 
           {/* TITULAR PRINCIPAL RESUMIDO Y DE IMPACTO */}
@@ -261,17 +294,17 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
           </h1>
 
           <p className="text-base sm:text-xl text-slate-300 max-w-2xl font-normal leading-relaxed mb-8">
-            Ejecución matemática 24/7 sin sesgos emocionales. Algoritmos cuantitativos de alta precisión.
+            Ejecución matemática 24/7 sin sesgos emocionales. Algoritmos cuantitativos de alta precisión con gestión institucional.
           </p>
 
           {/* BOTONES DE LLAMADA A LA ACCIÓN */}
-          <div className="flex flex-col sm:flex-row items-center gap-3.5 w-full sm:w-auto mb-12">
+          <div className="flex flex-col sm:flex-row items-center gap-3.5 w-full sm:w-auto mb-10">
             <button
               type="button"
               onClick={() => onOpenRegister && onOpenRegister(simCapital)}
               className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-slate-950 font-black text-sm rounded-2xl shadow-xl shadow-cyan-500/30 transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
             >
-              <span>🚀 Enviar Solicitud de Inversión</span>
+              <span>🚀 Acceder al Lanzamiento Internacional</span>
             </button>
 
             <button
@@ -287,7 +320,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 w-full max-w-3xl">
             <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 backdrop-blur-md text-center">
               <div className="text-2xl font-black text-cyan-400 font-mono">99.98%</div>
-              <div className="text-[11px] text-slate-400 font-semibold mt-0.5">Uptime Cloud</div>
+              <div className="text-[11px] text-slate-400 font-semibold mt-0.5">Uptime Servidor</div>
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 backdrop-blur-md text-center">
               <div className="text-2xl font-black text-sky-400 font-mono">&lt; 12ms</div>
@@ -305,17 +338,21 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
 
         </div>
 
-        {/* CINTA DE TICKERS */}
-        <div className="mt-12 w-full overflow-hidden border-y border-slate-800/80 bg-slate-950/70 backdrop-blur-md py-2.5">
-          <div className="flex gap-8 whitespace-nowrap animate-marquee">
-            {tickerItems.concat(tickerItems).map((item, index) => (
-              <div key={index} className="inline-flex items-center gap-2 text-xs font-mono">
-                <span className="font-bold text-slate-200">{item.pair}</span>
-                <span className="text-slate-400">${item.price}</span>
-                <span className="text-emerald-400 font-bold">{item.change}</span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800">
-                  {item.signal}
+        {/* =========================================================================
+            TICKER TAPE CONTINUO ESTILO BOLSA DE VALORES (WALL STREET / BLOOMBERG)
+           ========================================================================= */}
+        <div className="mt-10 w-full bg-slate-950/95 border-y border-cyan-500/30 overflow-hidden py-2.5 font-mono text-xs shadow-xl backdrop-blur-xl">
+          <div className="flex gap-10 whitespace-nowrap animate-marquee">
+            {exchangeTape.concat(exchangeTape).map((t, idx) => (
+              <div key={idx} className="inline-flex items-center gap-2.5">
+                <span className="font-black text-white">{t.symbol}</span>
+                <span className="text-slate-200 font-bold">${t.price}</span>
+                <span className={`font-bold flex items-center gap-0.5 ${t.isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {t.isUp ? '▲' : '▼'} {t.change}
                 </span>
+                <span className="text-slate-400 text-[10px]">H: ${t.high}</span>
+                <span className="text-slate-400 text-[10px]">L: ${t.low}</span>
+                <span className="text-cyan-400 text-[10px] font-semibold">VOL: {t.vol}</span>
               </div>
             ))}
           </div>
@@ -324,27 +361,27 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          3. SECCIÓN FUNDAMENTAL: LOS 2 PRODUCTOS DE INVERSIÓN
+          3. SECCIÓN FUNDAMENTAL: LOS 3 PRODUCTOS DE INVERSIÓN
          ========================================================================= */}
       <section id="productos" className="py-20 relative z-10 border-t border-slate-900 bg-slate-900/40">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
-          <div className="text-center max-w-2xl mx-auto mb-12">
+          <div className="text-center max-w-2xl mx-auto mb-14">
             <span className="px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold uppercase">
-              💼 MODELOS DISPONIBLES
+              💼 PORTAFOLIO DE SOLUCIONES
             </span>
-            <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight mt-3 mb-2">
-              Elige Tu Forma de Invertir
+            <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight mt-3 mb-2">
+              3 Productos de Inversión Cuantitativa
             </h2>
             <p className="text-xs sm:text-sm text-slate-400">
-              Dos productos independientes adaptados a tus objetivos de custodia y gestión.
+              Desde gestión pasiva con estrategias exclusivas hasta control absoluto de apalancamiento y parámetros.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             
             {/* PRODUCTO 1: FONDO MANCOMUNADO DE INVERSIÓN */}
-            <Tilt3DCard className="bg-gradient-to-b from-slate-900 to-slate-950 border border-cyan-500/30 p-7 sm:p-8 shadow-xl shadow-cyan-950/20 flex flex-col justify-between">
+            <Tilt3DCard className="bg-gradient-to-b from-slate-900 to-slate-950 border border-cyan-500/40 p-7 shadow-xl shadow-cyan-950/20 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-2xl text-cyan-400">
@@ -355,29 +392,36 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                   </span>
                 </div>
 
-                <h3 className="text-xl sm:text-2xl font-black text-white mb-2">
-                  Fondo Mancomunado de Inversión
+                <h3 className="text-xl font-black text-white mb-2">
+                  Fondo Mancomunado
                 </h3>
-                <p className="text-xs text-slate-300 mb-5 leading-relaxed">
-                  Aportas capital a un pool de liquidez institucional operado de forma centralizada por los algoritmos soberanos. Ideal para quienes buscan rendimientos pasivos sin gestionar claves API.
-                </p>
+                
+                {/* EXCLUSIVIDAD DE ESTRATEGIAS DESTACADA */}
+                <div className="p-2.5 rounded-xl bg-cyan-950/60 border border-cyan-500/30 mb-4">
+                  <div className="text-[10px] font-mono font-bold text-cyan-300 flex items-center gap-1">
+                    <span>⭐</span> ESTRATEGIAS MÁS EFICIENTES Y EXCLUSIVAS
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                    El fondo opera con algoritmos de máxima rentabilidad y contención de volatilidad, reservados exclusivamente para la masa monetaria institucional.
+                  </p>
+                </div>
 
-                <div className="space-y-2.5 mb-6 text-xs text-slate-300">
+                <div className="space-y-2 text-xs text-slate-300 mb-6">
                   <div className="flex items-center gap-2">
                     <span className="text-cyan-400 font-bold">✓</span>
-                    <span><strong>Cero configuración técnica:</strong> Nuestro equipo opera y audita el fondo.</span>
+                    <span>Cero configuración técnica para el inversor.</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-cyan-400 font-bold">✓</span>
-                    <span><strong>Diversificación total:</strong> Operativa concurrente en múltiples activos.</span>
+                    <span>Diversificación simultánea en activos de alta liquidez.</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-cyan-400 font-bold">✓</span>
-                    <span><strong>Estado de Cuenta Oficial (PDF):</strong> Auditoría periódica y transparente.</span>
+                    <span><strong>Estado de Cuenta Oficial (PDF)</strong> con auditoría transparente.</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-cyan-400 font-bold">✓</span>
-                    <span><strong>Distribución Proporcional:</strong> Beneficios repartidos según tu participación.</span>
+                    <span>Reparto proporcional de beneficios netos.</span>
                   </div>
                 </div>
               </div>
@@ -386,16 +430,16 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                 <button
                   type="button"
                   onClick={() => onOpenRegister && onOpenRegister(simCapital)}
-                  className="w-full py-3 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/50 text-cyan-300 hover:text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-cyan-300 hover:text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2"
                 >
-                  <span>Solicitar Ingreso al Fondo</span>
+                  <span>Ingresar al Fondo Exclusivo</span>
                   <span>→</span>
                 </button>
               </div>
             </Tilt3DCard>
 
             {/* PRODUCTO 2: COPY-TRADING SOBERANO NON-CUSTODIAL */}
-            <Tilt3DCard className="bg-gradient-to-b from-slate-900 to-slate-950 border border-sky-500/30 p-7 sm:p-8 shadow-xl shadow-sky-950/20 flex flex-col justify-between">
+            <Tilt3DCard className="bg-gradient-to-b from-slate-900 to-slate-950 border border-sky-500/40 p-7 shadow-xl shadow-sky-950/20 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <div className="w-12 h-12 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-2xl text-sky-400">
@@ -406,29 +450,30 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                   </span>
                 </div>
 
-                <h3 className="text-xl sm:text-2xl font-black text-white mb-2">
-                  Copy-Trading Soberano (API Exchange)
+                <h3 className="text-xl font-black text-white mb-2">
+                  Copy-Trading Soberano
                 </h3>
-                <p className="text-xs text-slate-300 mb-5 leading-relaxed">
-                  Tus fondos permanecen 100% en tu propia cuenta de exchange. Conectas tus credenciales API y el bot replica cada señal del algoritmo maestro en tu cuenta privada a milisegundos.
+                
+                <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+                  Tus fondos residen en tu cuenta privada. Conectas tus credenciales API con retiros bloqueados y el bot replica cada señal en tu cuenta a milisegundos.
                 </p>
 
-                <div className="space-y-2.5 mb-6 text-xs text-slate-300">
+                <div className="space-y-2 text-xs text-slate-300 mb-6">
                   <div className="flex items-center gap-2">
                     <span className="text-sky-400 font-bold">✓</span>
-                    <span><strong>Custodia absoluta:</strong> Tu capital nunca sale de tu propia wallet en el exchange.</span>
+                    <span><strong>Custodia absoluta:</strong> Tu dinero nunca sale de tu wallet.</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sky-400 font-bold">✓</span>
-                    <span><strong>Retiros 100% libres:</strong> Retira tu capital o ganancias cuando lo desees 24/7.</span>
+                    <span><strong>Retiros libres 24/7</strong> sin intermediarios ni aprobaciones.</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sky-400 font-bold">✓</span>
-                    <span><strong>Permisos seguros:</strong> Solo lectura y trading; retiros estrictamente bloqueados por API.</span>
+                    <span>Permisos API estrictos: solo lectura y ejecución de órdenes.</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sky-400 font-bold">✓</span>
-                    <span><strong>Monitoreo en vivo:</strong> Visualiza tus trades desde tu PC o teléfono.</span>
+                    <span>Replicación automática de órdenes con latencia &lt; 12ms.</span>
                   </div>
                 </div>
               </div>
@@ -439,7 +484,59 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                   onClick={() => onOpenRegister && onOpenRegister(simCapital)}
                   className="w-full py-3 bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-300 hover:to-blue-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-sky-500/20 transition flex items-center justify-center gap-2"
                 >
-                  <span>Conectar Cuenta de Copy-Trading</span>
+                  <span>Conectar Copy-Trading</span>
+                  <span>→</span>
+                </button>
+              </div>
+            </Tilt3DCard>
+
+            {/* PRODUCTO 3: BOT PERSONAL AUTÓNOMO (CONTROL TOTAL & APALANCAMIENTO A MEDIDA) */}
+            <Tilt3DCard className="bg-gradient-to-b from-slate-900 to-slate-950 border border-blue-500/40 p-7 shadow-xl shadow-blue-950/20 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-2xl text-blue-400">
+                    🤖
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-blue-400/15 text-blue-300 font-mono text-[10px] font-bold border border-blue-400/30">
+                    PRODUCTO 03 • CONTROL TOTAL
+                  </span>
+                </div>
+
+                <h3 className="text-xl font-black text-white mb-2">
+                  Bot Personal Autónomo
+                </h3>
+                
+                <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+                  Para traders que exigen personalización completa: calibra tus propios parámetros de inversión, tamaño de orden, filtros y apalancamiento a tu medida.
+                </p>
+
+                <div className="space-y-2 text-xs text-slate-300 mb-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-400 font-bold">✓</span>
+                    <span><strong>Apalancamiento a medida:</strong> Configura 3x, 5x, 8x o según tu perfil.</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-400 font-bold">✓</span>
+                    <span><strong>Selección de pares:</strong> Activa o desactiva monedas individualmente.</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-400 font-bold">✓</span>
+                    <span>Gestión de riesgo propia y límites de exposición por moneda.</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-400 font-bold">✓</span>
+                    <span>Arranque y pausa independiente desde tu panel privado.</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => onOpenRegister && onOpenRegister(simCapital)}
+                  className="w-full py-3 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/50 text-blue-300 hover:text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2"
+                >
+                  <span>Configurar Bot Personal</span>
                   <span>→</span>
                 </button>
               </div>
@@ -451,9 +548,220 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          4. SIMULADOR INTERACTIVO CONCISO Y VISUAL
+          4. SECCIÓN: MONEDAS DE MAYOR CAPITALIZACIÓN SEGURAS
          ========================================================================= */}
-      <section id="simulador" className="py-20 relative z-10 border-t border-slate-900 bg-slate-900/30">
+      <section id="activos" className="py-16 relative z-10 border-t border-slate-900">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          
+          <div className="bg-slate-900/60 border border-cyan-500/30 rounded-3xl p-6 sm:p-10 backdrop-blur-xl">
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
+              
+              <div className="max-w-xl">
+                <span className="px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold uppercase">
+                  💎 FILTRO ESTRICTO DE LIQUIDEZ
+                </span>
+                <h3 className="text-2xl sm:text-3xl font-black text-white mt-3 mb-2">
+                  Solo Monedas Seguras de Mayor Capitalización
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Los algoritmos operan única y exclusivamente en los activos más líquidos y de mayor capitalización global. Esto elimina riesgos de manipulación de mercado, deslizamiento de precios (*slippage*) y volatilidad ilíquida de tokens experimentales.
+                </p>
+              </div>
+
+              {/* LISTA VISUAL DE ACTIVOS BLUE-CHIP */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full lg:w-auto">
+                {[
+                  { name: 'Bitcoin', ticker: 'BTC/USDT', rank: '#1 Mercado' },
+                  { name: 'Ethereum', ticker: 'ETH/USDT', rank: '#2 Mercado' },
+                  { name: 'Solana', ticker: 'SOL/USDT', rank: 'Alta Liquidez' },
+                  { name: 'BNB', ticker: 'BNB/USDT', rank: 'Top Capitalización' },
+                  { name: 'Ripple', ticker: 'XRP/USDT', rank: 'Volumen Global' },
+                  { name: 'Avalanche', ticker: 'AVAX/USDT', rank: 'Bajo Slippage' },
+                ].map((coin, idx) => (
+                  <div key={idx} className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
+                    <div className="font-mono text-xs font-bold text-white">{coin.ticker}</div>
+                    <div className="text-[10px] text-cyan-400 mt-0.5">{coin.name}</div>
+                    <div className="text-[9px] text-slate-500 mt-1">{coin.rank}</div>
+                  </div>
+                ))}
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* =========================================================================
+          5. PASARELA DE CURVAS DE CAPITAL DE USUARIOS ANÓNIMOS
+         ========================================================================= */}
+      <section id="rendimiento" className="py-20 relative z-10 border-t border-slate-900 bg-slate-900/30">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold uppercase">
+              📊 HISTÓRICOS VERIFICADOS
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight mt-3 mb-2">
+              Curvas de Crecimiento de Capital
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-400">
+              Trayectorias reales de cuentas activas en la plataforma sin revelar identidades por privacidad institucional.
+            </p>
+          </div>
+
+          {/* COMPONENTE INTERACTIVO DE PASARELA */}
+          <EquityCurvesShowcase />
+
+        </div>
+      </section>
+
+      {/* =========================================================================
+          6. NIVELES DE COMISIONES & BENEFICIOS PROPUESTOS
+         ========================================================================= */}
+      <section id="comisiones" className="py-20 relative z-10 border-t border-slate-900">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <span className="px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-mono font-bold uppercase">
+              🏷️ TRANSPARENCIA Y CONDICIONES
+            </span>
+            <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight mt-3 mb-2">
+              Niveles de Comisiones & Beneficios
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-400">
+              Modelo escalonado de éxito: a mayor capital asignado, menor comisión de rendimiento y mayores ventajas operativas.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            {/* TIER SILVER */}
+            <div className="p-6 rounded-3xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between">
+              <div>
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px] font-bold">
+                  TIER SILVER
+                </span>
+                <h4 className="text-xl font-bold text-white mt-2">Iniciación</h4>
+                <div className="text-2xl font-black text-white font-mono my-2">
+                  $1,000 <span className="text-slate-400 text-sm font-normal">a $4,999 USDT</span>
+                </div>
+                <div className="space-y-2 text-xs text-slate-300 pt-3 border-t border-slate-800">
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Comisión sobre éxito estándar</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Acceso a Copy-Trading y Fondo</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Reportes mensuales de rendimiento</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Soporte estándar por tickets</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenRegister && onOpenRegister(2500)}
+                className="w-full mt-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
+              >
+                Comenzar en Silver
+              </button>
+            </div>
+
+            {/* TIER GOLD (DESTACADO) */}
+            <div className="p-6 rounded-3xl bg-gradient-to-b from-slate-900 to-cyan-950/40 border border-cyan-400/60 shadow-xl shadow-cyan-950/30 flex flex-col justify-between relative">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[9px] font-black uppercase tracking-wider">
+                MÁS POPULAR
+              </div>
+              <div>
+                <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
+                  TIER GOLD
+                </span>
+                <h4 className="text-xl font-bold text-white mt-2">Avanzado / Privado</h4>
+                <div className="text-2xl font-black text-cyan-300 font-mono my-2">
+                  $5,000 <span className="text-slate-400 text-sm font-normal">a $19,999 USDT</span>
+                </div>
+                <div className="space-y-2 text-xs text-slate-200 pt-3 border-t border-slate-800">
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> <strong>Comisión reducida</strong> sobre ganancias</div>
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Acceso a los 3 Productos (incluye Bot Personal)</div>
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Reportes semanales detallados</div>
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Asignación prioritaria en cupos del Fondo</div>
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Soporte técnico preferencial 24/7</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenRegister && onOpenRegister(10000)}
+                className="w-full mt-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black text-xs shadow-lg transition hover:scale-105 active:scale-95"
+              >
+                Comenzar en Gold
+              </button>
+            </div>
+
+            {/* TIER DIAMOND INSTITUCIONAL */}
+            <div className="p-6 rounded-3xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between">
+              <div>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-mono text-[10px] font-bold border border-blue-500/30">
+                  TIER DIAMOND
+                </span>
+                <h4 className="text-xl font-bold text-white mt-2">Institucional</h4>
+                <div className="text-2xl font-black text-white font-mono my-2">
+                  $20,000+ <span className="text-slate-400 text-sm font-normal">USDT</span>
+                </div>
+                <div className="space-y-2 text-xs text-slate-300 pt-3 border-t border-slate-800">
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> <strong>Comisión mínima preferencial</strong> de éxito</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Acceso exclusivo a estrategias VIP del Fondo</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Gestor cuantitativo dedicado 1-a-1</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Estados de Cuenta oficiales en PDF a medida</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Calibración personalizada de apalancamiento</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenRegister && onOpenRegister(25000)}
+                className="w-full mt-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
+              >
+                Comenzar en Diamond
+              </button>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* =========================================================================
+          7. PROGRAMA DE REFERIDOS POR INVITACIÓN PRIVADA (SIN PORCENTAJES)
+         ========================================================================= */}
+      <section id="referidos" className="py-16 relative z-10 border-t border-slate-900 bg-slate-900/30">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="p-8 sm:p-10 rounded-3xl bg-slate-900/80 border border-cyan-500/30 flex flex-col md:flex-row items-center justify-between gap-8 backdrop-blur-xl">
+            <div className="space-y-3 max-w-xl">
+              <span className="px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold uppercase">
+                🤝 CRECIMIENTO COMUNITARIO
+              </span>
+              <h3 className="text-2xl sm:text-3xl font-black text-white">
+                Programa de Invitación y Referidos
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Cada inversor activo recibe su enlace y código privado de invitación. Al incorporar a socios, colegas o fondos a la plataforma, generas recompensas continuas sobre el volumen y rendimiento de tu red, sin costos adicionales para tus invitados.
+              </p>
+              <div className="flex flex-wrap gap-2 text-xs font-mono text-cyan-300 pt-1">
+                <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800">✓ Enlace Único de Invitación</span>
+                <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800">✓ Trazabilidad en Tiempo Real</span>
+                <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800">✓ Liquidación Directa</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onOpenRegister && onOpenRegister(simCapital)}
+              className="px-7 py-3.5 bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black text-xs rounded-xl shadow-lg hover:scale-105 active:scale-95 transition shrink-0"
+            >
+              Obtener Código de Invitación
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================================
+          8. SIMULADOR INTERACTIVO CONCISO Y VISUAL
+         ========================================================================= */}
+      <section id="simulador" className="py-20 relative z-10 border-t border-slate-900">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           
           <div className="text-center max-w-2xl mx-auto mb-10">
@@ -563,16 +871,19 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          5. BANNER CTA FINAL
+          9. BANNER CTA FINAL
          ========================================================================= */}
       <section className="py-16 relative z-10 border-t border-slate-900">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="rounded-3xl p-8 sm:p-12 bg-gradient-to-r from-blue-950/80 via-slate-900 to-cyan-950/80 border border-cyan-500/40 text-center shadow-2xl">
-            <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight mb-3">
+            <span className="px-3 py-1 rounded-full bg-cyan-400/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-400/40 uppercase">
+              CUPOS LIMITADOS DE APERTURA INTERNACIONAL
+            </span>
+            <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight mt-3 mb-3">
               ¿Listo para Automatizar Tus Inversiones?
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto mb-6">
-              Solicita tu acceso al Fondo Mancomunado o conecta tu cuenta privada de Copy-Trading.
+              Únete al Fondo Mancomunado, conecta tu Copy-Trading o activa tu Bot Personal Autónomo.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <button
@@ -595,7 +906,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          6. MODAL INTERACTIVO PARA ELEGIR EL LOGO TIPOGRÁFICO
+          10. MODAL INTERACTIVO PARA ELEGIR EL LOGO TIPOGRÁFICO
          ========================================================================= */}
       {showLogoModal && (
         <div
@@ -674,7 +985,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       )}
 
       {/* =========================================================================
-          7. FOOTER OFICIAL CON WTN SOLUTIONS LLC (DESCARGO REGULATORIO Y LEGAL)
+          11. FOOTER OFICIAL CON WTN SOLUTIONS LLC (DESCARGO REGULATORIO Y LEGAL)
          ========================================================================= */}
       <footer className="bg-slate-950 border-t border-slate-900 pt-14 pb-10 relative z-10 text-xs text-slate-400">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -699,7 +1010,8 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               <div className="text-xs font-bold text-white uppercase tracking-wider mb-2">Productos</div>
               <div><a href="#productos" className="hover:text-cyan-400 transition">Fondo Mancomunado</a></div>
               <div><a href="#productos" className="hover:text-cyan-400 transition">Copy-Trading Privado</a></div>
-              <div><a href="#simulador" className="hover:text-cyan-400 transition">Simulador de Inversión</a></div>
+              <div><a href="#productos" className="hover:text-cyan-400 transition">Bot Personal Autónomo</a></div>
+              <div><a href="#comisiones" className="hover:text-cyan-400 transition">Niveles de Comisiones</a></div>
             </div>
 
             {/* CONTACTO */}
