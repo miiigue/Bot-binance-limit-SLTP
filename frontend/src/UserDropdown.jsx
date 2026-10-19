@@ -11,7 +11,8 @@ export default function UserDropdown({
   handleToggleSound,
   deferredPrompt,
   onTriggerInstall,
-  onNavigateApiKeys
+  onNavigateApiKeys,
+  onViewLandingPage
 }) {
   const { authFetch } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
@@ -372,6 +373,35 @@ export default function UserDropdown({
                 {isStandalone ? '✓ Instalada' : 'Instalar'}
               </span>
             </button>
+
+            {/* 1.5. Ver Landing Page Pública Institucional */}
+            {onViewLandingPage && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  onViewLandingPage();
+                }}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 transition group"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 group-hover:scale-105 transition-transform">
+                    🌐
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-100 group-hover:text-sky-300 transition-colors">
+                      Landing Page Pública
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Ver portal institucional 3D
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2 py-0.5 rounded-full font-bold">
+                  WEB
+                </span>
+              </button>
+            )}
 
             {/* 2. Contáctanos (Soporte WTN) */}
             <button

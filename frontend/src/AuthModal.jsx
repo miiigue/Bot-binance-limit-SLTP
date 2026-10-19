@@ -2,16 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import LegalModal from './LegalModal';
 
-export default function AuthModal() {
+export default function AuthModal({ initialMode = 'login', prefilledInvestmentAmount = '0', onClose } = {}) {
   const { needsInitialAdmin, login, register } = useAuth();
 
-  const [mode, setMode] = useState(needsInitialAdmin ? 'setup' : 'login'); // 'setup', 'login', 'register', 'pending_notice'
+  const [mode, setMode] = useState(needsInitialAdmin ? 'setup' : (initialMode || 'login')); // 'setup', 'login', 'register', 'pending_notice'
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [country, setCountry] = useState('');
   const [city, setCity] = useState('');
   const [birthDate, setBirthDate] = useState('');
-  const [investmentAmount, setInvestmentAmount] = useState('0');
+  const [investmentAmount, setInvestmentAmount] = useState(prefilledInvestmentAmount && parseFloat(prefilledInvestmentAmount) > 0 ? String(prefilledInvestmentAmount) : '0');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [referralCode, setReferralCode] = useState('');
@@ -20,6 +20,20 @@ export default function AuthModal() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
+
+  // Sincronizar monto si cambia externamente desde la landing page
+  useEffect(() => {
+    if (prefilledInvestmentAmount && parseFloat(prefilledInvestmentAmount) > 0) {
+      setInvestmentAmount(String(prefilledInvestmentAmount));
+    }
+  }, [prefilledInvestmentAmount]);
+
+  // Sincronizar modo si cambia desde la landing page (ej: login -> register)
+  useEffect(() => {
+    if (!needsInitialAdmin && initialMode) {
+      setMode(initialMode);
+    }
+  }, [initialMode, needsInitialAdmin]);
 
   // Auto-detectar código de referido desde el enlace (?ref=codigo)
   useEffect(() => {
@@ -136,8 +150,27 @@ export default function AuthModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-md bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl shadow-amber-500/10 p-6 sm:p-8 text-white">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && onClose) {
+          onClose();
+        }
+      }}
+    >
+      <div className="relative w-full max-w-md bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl shadow-cyan-500/10 p-6 sm:p-8 text-white">
+        
+        {/* Botón Cerrar (Volver a la Landing Page) */}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-5 right-5 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition border border-slate-700 text-sm font-bold z-10"
+            title="Cerrar y volver a la página principal"
+          >
+            ✕
+          </button>
+        )}
         
         {/* Encabezado con Logo y Título */}
         <div className="text-center mb-6">

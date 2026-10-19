@@ -19,6 +19,7 @@ import FloatingNotesModal from './FloatingNotesModal';
 import LegalTermsModal from './LegalTermsModal';
 import ReferralProgramView from './ReferralProgramView';
 import AdminReferralsManager from './AdminReferralsManager';
+import LandingPage from './LandingPage';
 import { isSoundEnabled, setSoundEnabled, playProfitSound, playEntrySound, playLossSound } from './soundEffects';
 import './index.css';
 
@@ -31,7 +32,29 @@ const formatElapsedTime = (totalSeconds) => {
 };
 
 function MainDashboard() {
-  const { user, isAdmin, isInvestor, isAuthenticated, isLoading, logout, authFetch, updateUser } = useAuth();
+  const { user, isAdmin, isInvestor, isAuthenticated, isLoading, logout, authFetch, updateUser, needsInitialAdmin } = useAuth();
+
+  // Estados para la Landing Page Institucional y Modales de Acceso
+  const [showAuthModal, setShowAuthModal] = useState(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      return Boolean(sp.get('ref') || sp.get('invitation') || sp.get('code') || sp.get('login') || sp.get('register') || needsInitialAdmin);
+    } catch (e) {
+      return Boolean(needsInitialAdmin);
+    }
+  });
+  const [authModalMode, setAuthModalMode] = useState(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (needsInitialAdmin) return 'setup';
+      if (sp.get('ref') || sp.get('invitation') || sp.get('code') || sp.get('register')) return 'register';
+      return 'login';
+    } catch (e) {
+      return needsInitialAdmin ? 'setup' : 'login';
+    }
+  });
+  const [prefilledInvestment, setPrefilledInvestment] = useState('5000');
+  const [viewingLandingPage, setViewingLandingPage] = useState(false);
 
   const [config, setConfig] = useState(null);
   const [botsRunning, setBotsRunning] = useState(null);
@@ -481,15 +504,61 @@ function MainDashboard() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white">
-        <div className="w-12 h-12 border-4 border-amber-400 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <div className="text-sm font-bold text-slate-400 font-mono">Verificando sesión segura...</div>
+        <div className="w-12 h-12 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <div className="text-sm font-bold text-slate-400 font-mono">Verificando sesión segura WTN ALGO-TRADING...</div>
       </div>
     );
   }
 
-  // 2. SI NO ESTÁ AUTENTICADO: MOSTRAR MODAL DE LOGIN / REGISTRO / SETUP
+  // 2. SI NO ESTÁ AUTENTICADO: MOSTRAR LANDING PAGE PROFESIONAL CON ACCESO A MODALES
   if (!isAuthenticated) {
-    return <AuthModal />;
+    return (
+      <>
+        <LandingPage
+          onOpenLogin={() => {
+            setAuthModalMode('login');
+            setShowAuthModal(true);
+          }}
+          onOpenRegister={(prefilledAmount) => {
+            setAuthModalMode('register');
+            if (prefilledAmount) {
+              setPrefilledInvestment(String(prefilledAmount));
+            }
+            setShowAuthModal(true);
+          }}
+        />
+
+        {showAuthModal && (
+          <AuthModal
+            initialMode={authModalMode}
+            prefilledInvestmentAmount={prefilledInvestment}
+            onClose={() => setShowAuthModal(false)}
+          />
+        )}
+      </>
+    );
+  }
+
+  // 2.1 SI EL USUARIO ESTÁ AUTENTICADO PERO DECIDE VER LA LANDING PAGE INSTITUCIONAL
+  if (viewingLandingPage) {
+    return (
+      <div className="relative">
+        <div className="fixed top-24 left-4 sm:left-8 z-50">
+          <button
+            type="button"
+            onClick={() => setViewingLandingPage(false)}
+            className="px-4 py-2.5 bg-slate-900/90 hover:bg-slate-800 text-cyan-400 hover:text-white border border-cyan-500/40 rounded-2xl font-bold text-xs shadow-2xl backdrop-blur-md flex items-center gap-2 transition hover:scale-105 active:scale-95"
+          >
+            <span>←</span>
+            <span>Volver al Panel de Trading</span>
+          </button>
+        </div>
+        <LandingPage
+          onOpenLogin={() => setViewingLandingPage(false)}
+          onOpenRegister={() => setViewingLandingPage(false)}
+        />
+      </div>
+    );
   }
 
   const isViewingSpecificUser = Boolean(inspectingUser);
@@ -598,6 +667,7 @@ function MainDashboard() {
                     window.dispatchEvent(new CustomEvent('open-api-modal'));
                   }, 100);
                 }}
+                onViewLandingPage={() => setViewingLandingPage(true)}
               />
             </div>
 
@@ -756,6 +826,7 @@ function MainDashboard() {
                     window.dispatchEvent(new CustomEvent('open-api-modal'));
                   }, 100);
                 }}
+                onViewLandingPage={() => setViewingLandingPage(true)}
               />
             </div>
           </div>
