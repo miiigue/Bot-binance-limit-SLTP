@@ -3092,9 +3092,11 @@ def clear_user_trades(user_id: int, stop_bot: bool = False) -> bool:
     try:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM user_trades WHERE user_id = ?", (user_id,))
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if stop_bot:
-            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             cursor.execute("UPDATE user_bot_settings SET last_started_at = ?, is_running = FALSE WHERE user_id = ?", (now_str, user_id))
+        else:
+            cursor.execute("UPDATE user_bot_settings SET last_started_at = ? WHERE user_id = ?", (now_str, user_id))
         conn.commit()
         return True
     except Exception as e:

@@ -1457,48 +1457,63 @@ def user_bot_status_endpoint():
         user_init_key = float(keys.get('initial_balance', 0.0) or 0.0) if keys else 0.0
         target_balance = float(wallet_balance if wallet_balance > 0 else (live_balance or 0.0))
 
-        initial_capital = user_init_key if user_init_key > 0 else 0.0
-        if initial_capital <= 0:
-            try:
-                from src.database import get_db_connection
-                conn_u = get_db_connection()
-                if conn_u:
-                    cur_u = conn_u.cursor()
-                    cur_u.execute("""
-                        SELECT 
-                            SUM(CASE WHEN transaction_type IN ('INITIAL', 'DEPOSIT') THEN amount_usdt ELSE 0 END) as total_dep,
-                            SUM(CASE WHEN transaction_type = 'WITHDRAWAL' THEN amount_usdt ELSE 0 END) as total_wd
-                        FROM investor_transactions
-                        WHERE user_id = ?
-                    """, (user_id,))
-                    row_u = cur_u.fetchone()
-                    if row_u and row_u['total_dep'] and float(row_u['total_dep']) > 0:
-                        net_u = float(row_u['total_dep']) - float(row_u['total_wd'] or 0.0)
-                        if net_u > 0:
-                            initial_capital = net_u
-                    conn_u.close()
-            except Exception:
-                pass
+        total_trades_count = int(metrics.get('total_trades', 0) or 0) if metrics else 0
+        has_trades = total_trades_count > 0 or (float(metrics.get('gross_win', 0.0) or 0.0) > 0) or (float(metrics.get('gross_loss', 0.0) or 0.0) > 0)
 
-        if initial_capital <= 0:
-            is_test = bool(keys.get('is_testnet', False) if keys else False)
-            if is_test:
-                initial_capital = 5000.0
-            elif metrics and (float(metrics.get('gross_win', 0.0) or 0.0) > 0 or float(metrics.get('gross_loss', 0.0) or 0.0) > 0):
-                net_trades = float(metrics.get('total_pnl', 0.0) or 0.0)
-                initial_capital = max(10.0, round(target_balance - net_trades, 2))
-            else:
-                initial_capital = target_balance if target_balance > 0 else 1000.0
-
-            # Guardar initial_balance en base de datos para no recalcularlo
-            if initial_capital > 0 and user_id and not is_target_admin:
+        # Si NO hay operaciones registradas en el historial para este usuario (0 trades):
+        # El capital inicial DEBE ser exactamente su saldo actual detectado y el PnL debe ser 0.00 USDT
+        if not has_trades:
+            initial_capital = target_balance
+            wallet_pnl = 0.0
+            if user_id and not is_target_admin and abs(user_init_key - target_balance) > 0.001:
                 try:
                     from src.database import set_user_api_initial_balance
-                    set_user_api_initial_balance(user_id, initial_capital)
+                    set_user_api_initial_balance(user_id, target_balance)
+                except Exception:
+                    pass
+        else:
+            initial_capital = user_init_key if user_init_key > 0 else 0.0
+            if initial_capital <= 0:
+                try:
+                    from src.database import get_db_connection
+                    conn_u = get_db_connection()
+                    if conn_u:
+                        cur_u = conn_u.cursor()
+                        cur_u.execute("""
+                            SELECT 
+                                SUM(CASE WHEN transaction_type IN ('INITIAL', 'DEPOSIT') THEN amount_usdt ELSE 0 END) as total_dep,
+                                SUM(CASE WHEN transaction_type = 'WITHDRAWAL' THEN amount_usdt ELSE 0 END) as total_wd
+                            FROM investor_transactions
+                            WHERE user_id = ?
+                        """, (user_id,))
+                        row_u = cur_u.fetchone()
+                        if row_u and row_u['total_dep'] and float(row_u['total_dep']) > 0:
+                            net_u = float(row_u['total_dep']) - float(row_u['total_wd'] or 0.0)
+                            if net_u > 0:
+                                initial_capital = net_u
+                        conn_u.close()
                 except Exception:
                     pass
 
-        wallet_pnl = round(target_balance - initial_capital, 2)
+            if initial_capital <= 0:
+                is_test = bool(keys.get('is_testnet', False) if keys else False)
+                if is_test:
+                    initial_capital = 5000.0
+                elif metrics and (float(metrics.get('gross_win', 0.0) or 0.0) > 0 or float(metrics.get('gross_loss', 0.0) or 0.0) > 0):
+                    net_trades = float(metrics.get('total_pnl', 0.0) or 0.0)
+                    initial_capital = max(10.0, round(target_balance - net_trades, 2))
+                else:
+                    initial_capital = target_balance if target_balance > 0 else 1000.0
+
+                # Guardar initial_balance en base de datos para no recalcularlo
+                if initial_capital > 0 and user_id and not is_target_admin:
+                    try:
+                        from src.database import set_user_api_initial_balance
+                        set_user_api_initial_balance(user_id, initial_capital)
+                    except Exception:
+                        pass
+
+            wallet_pnl = round(target_balance - initial_capital, 2)
 
         cfg_temp = load_config()
         db_strat = None
@@ -1523,25 +1538,29 @@ def user_bot_status_endpoint():
         m_comm = float(metrics.get('total_commission', 0.0) or 0.0) if metrics else 0.0
         m_fund = float(metrics.get('total_funding', 0.0) or 0.0) if metrics else 0.0
 
-        net_before_costs = round(initial_capital + m_win - m_loss, 2)
-        total_costs = max(0.0, round(net_before_costs - target_balance, 2)) if target_balance > 0 else 0.0
-
-        if total_costs > 0:
-            if m_fund > 0 and m_fund < total_costs:
-                reconciled_funding = round(m_fund, 2)
-                reconciled_comm = round(total_costs - reconciled_funding, 2)
-            elif m_comm > 0 and m_comm < total_costs:
-                reconciled_comm = round(m_comm, 2)
-                reconciled_funding = round(total_costs - reconciled_comm, 2)
-            else:
-                reconciled_funding = round(m_fund, 2) if m_fund > 0 else 0.0
-                reconciled_comm = round(total_costs - reconciled_funding, 2)
-        elif target_balance >= net_before_costs and target_balance > 0:
-            reconciled_comm = round(m_comm, 2)
-            reconciled_funding = round(m_fund, 2)
+        if not has_trades:
+            reconciled_comm = 0.0
+            reconciled_funding = 0.0
         else:
-            reconciled_comm = round(m_comm, 2)
-            reconciled_funding = round(m_fund, 2)
+            net_before_costs = round(initial_capital + m_win - m_loss, 2)
+            total_costs = max(0.0, round(net_before_costs - target_balance, 2)) if target_balance > 0 else 0.0
+
+            if total_costs > 0:
+                if m_fund > 0 and m_fund < total_costs:
+                    reconciled_funding = round(m_fund, 2)
+                    reconciled_comm = round(total_costs - reconciled_funding, 2)
+                elif m_comm > 0 and m_comm < total_costs:
+                    reconciled_comm = round(m_comm, 2)
+                    reconciled_funding = round(total_costs - reconciled_comm, 2)
+                else:
+                    reconciled_funding = round(m_fund, 2) if m_fund > 0 else 0.0
+                    reconciled_comm = round(total_costs - reconciled_funding, 2)
+            elif target_balance >= net_before_costs and target_balance > 0:
+                reconciled_comm = round(m_comm, 2)
+                reconciled_funding = round(m_fund, 2)
+            else:
+                reconciled_comm = round(m_comm, 2)
+                reconciled_funding = round(m_fund, 2)
 
         if metrics:
             metrics['total_commission'] = reconciled_comm
@@ -1833,17 +1852,61 @@ def user_trades_endpoint():
 @app.route('/api/user/trades/reset', methods=['POST'])
 @token_required
 def user_trades_reset_endpoint():
-    """Reinicia el historial de trades del usuario y su PnL acumulado a $0.00 USDT."""
+    """Reinicia el historial de trades del usuario y su PnL acumulado a $0.00 USDT, re-anclando el capital inicial al saldo en vivo."""
     try:
         user_id = request.current_user['user_id']
         username = request.current_user.get('username', f'user_{user_id}')
-        from src.database import clear_user_trades
-        ok = clear_user_trades(user_id, stop_bot=False)
+        is_admin = (request.current_user.get('role') == 'ADMIN')
+
+        # Permitir que un admin reinicie los trades de un usuario específico
+        target_user_id = user_id
+        if is_admin:
+            body_data = request.get_json(silent=True) or {}
+            param_uid = body_data.get('user_id') or request.args.get('user_id')
+            if param_uid:
+                try:
+                    target_user_id = int(param_uid)
+                except Exception:
+                    target_user_id = user_id
+
+        from src.database import clear_user_trades, get_user_api_keys, set_user_api_initial_balance, update_user_api_keys_balance
+
+        # 1. Consultar saldo actual en vivo en Binance para anclar el nuevo Capital Inicial de referencia
+        live_balance = 0.0
+        keys = get_user_api_keys(target_user_id, decrypt=True)
+        if keys and keys.get('is_valid') and keys.get('api_key') and keys.get('api_secret'):
+            try:
+                from src.binance_client import get_user_futures_client
+                u_client = get_user_futures_client(
+                    api_key=keys['api_key'],
+                    api_secret=keys['api_secret'],
+                    is_testnet=bool(keys.get('is_testnet', False)),
+                    base_url=keys.get('api_base_url')
+                )
+                acc = u_client.account()
+                if isinstance(acc, dict):
+                    live_balance = round(float(acc.get('totalWalletBalance', 0.0) or 0.0), 2)
+            except Exception as e_bal:
+                api_logger.warning(f"No se pudo consultar balance en vivo para reset de usuario {target_user_id}: {e_bal}")
+                live_balance = float(keys.get('balance_detected', 0.0) or 0.0)
+        elif keys:
+            live_balance = float(keys.get('balance_detected', 0.0) or 0.0)
+
+        # 2. Re-anclar el Capital Inicial al saldo de Binance detectado al momento exacto del reset
+        set_user_api_initial_balance(target_user_id, live_balance)
+        update_user_api_keys_balance(user_id=target_user_id, balance_usdt=live_balance)
+
+        # 3. Vaciar historial de trades y actualizar marca temporal de inicio de sesión
+        ok = clear_user_trades(target_user_id, stop_bot=False)
+
         if ok:
-            api_logger.info(f"Historial de trades del usuario {user_id} ({username}) reiniciado con éxito a 0.00 USDT.")
+            api_logger.info(f"Historial de trades de usuario {target_user_id} ({username}) reiniciado con éxito. Capital inicial anclado a ${live_balance:.2f} USDT.")
             return jsonify({
                 "status": "success",
-                "message": "Historial de trades y PnL reiniciados a 0.00 USDT con éxito."
+                "message": f"Historial de trades y PnL reiniciados con éxito. Nuevo capital base anclado a ${live_balance:.2f} USDT.",
+                "new_initial_capital": live_balance,
+                "wallet_balance": live_balance,
+                "wallet_pnl": 0.0
             }), 200
         else:
             return jsonify({"status": "error", "message": "No se pudo reiniciar el historial de trades en la base de datos."}), 500
@@ -2511,6 +2574,14 @@ def get_worker_status():
 
         total_pool_deposited = 5000.0  # Base estándar por defecto
         try:
+            from src.database import get_bot_setting
+            m_saved = get_bot_setting('master_initial_capital')
+            if m_saved:
+                total_pool_deposited = float(m_saved)
+        except Exception:
+            pass
+
+        try:
             from src.database import get_db_connection
             conn_pool = get_db_connection()
             if conn_pool:
@@ -2532,8 +2603,14 @@ def get_worker_status():
         except Exception:
             pass
 
-        account_balance = live_balance if live_balance is not None else total_pool_deposited
-        wallet_pnl = round(account_balance - total_pool_deposited, 4)
+        has_master_trades = int(db_metrics.get('total_trades', 0) or 0) > 0 if db_metrics else False
+        if not has_master_trades and live_balance is not None:
+            total_pool_deposited = live_balance
+            wallet_pnl = 0.0
+            account_balance = live_balance
+        else:
+            account_balance = live_balance if live_balance is not None else total_pool_deposited
+            wallet_pnl = round(account_balance - total_pool_deposited, 4)
 
         # Telemetría de uso y límites de API de Binance
         api_usage = None
@@ -3082,6 +3159,18 @@ def reset_trades_endpoint():
                         worker.session_pnl = Decimal('0')
                     if hasattr(worker, 'historical_pnl'):
                         worker.historical_pnl = Decimal('0')
+
+            # Consultar saldo actual de la cuenta maestra en Binance para anclar master_initial_capital
+            try:
+                from src.binance_client import get_account_balance_usdt
+                m_bal = get_account_balance_usdt()
+                if m_bal is not None and float(m_bal) > 0:
+                    from src.database import set_bot_setting
+                    set_bot_setting('master_initial_capital', str(round(float(m_bal), 2)))
+                    logger.info(f"Capital inicial maestro re-anclado a ${float(m_bal):.2f} USDT tras reseteo.")
+            except Exception as e_m:
+                logger.warning(f"Aviso al consultar saldo maestro para re-anclar capital inicial: {e_m}")
+
             return jsonify({"success": True, "message": "Historial de trades y PnL maestro reiniciado a 0.00 USDT."}), 200
         else:
             return jsonify({"success": False, "error": "No se pudo limpiar la base de datos."}), 500

@@ -525,7 +525,7 @@ export default function UserBotPanel({
   const handleResetUserTrades = () => {
     openConfirm({
       title: '🗑️ ¿Reiniciar Historial de Trades & PnL?',
-      message: '⚠️ Esta acción vaciará el historial de operaciones de tu sesión y pondrá tu PnL acumulado en $0.00 USDT. Tu bot y posiciones activas seguirán operando con total normalidad.',
+      message: '⚠️ Esta acción vaciará el historial de operaciones de tu sesión y pondrá tu PnL acumulado en $0.00 USDT. Tu saldo actual en Binance pasará a ser tu nuevo Capital Inicial de referencia.',
       confirmText: 'Sí, Vaciar Historial',
       type: 'danger',
       onConfirm: async () => {
@@ -536,6 +536,17 @@ export default function UserBotPanel({
           const resJson = await resp.json();
           if (!resp.ok) throw new Error(resJson.message || resJson.error);
           setFeedback({ type: 'success', text: `✅ ${resJson.message}` });
+          setTradesData([]);
+          setMetricsData({
+            total_trades: 0,
+            winning_trades: 0,
+            losing_trades: 0,
+            win_rate: 0,
+            total_pnl: 0,
+            gross_win: 0,
+            gross_loss: 0,
+            profit_factor: 0
+          });
           fetchUserTrades();
           fetchUserBotStatus();
         } catch (err) {
@@ -1056,9 +1067,11 @@ export default function UserBotPanel({
 
             // Capital Inicial: Usar el valor real entregado por el backend o deducir por ecuación contable
             let initialCap = Number(walletBreakdown?.initial_capital ?? botData?.initial_capital ?? 0);
-            if (initialCap <= 0 || (Math.abs(initialCap - currentWalletBalance) < 0.01 && (grossWin > 0 || grossLoss > 0))) {
+            if (grossWin === 0 && grossLoss === 0 && tradingFees === 0 && fundingFees === 0) {
+              initialCap = currentWalletBalance;
+            } else if (initialCap <= 0 || (Math.abs(initialCap - currentWalletBalance) < 0.01 && (grossWin > 0 || grossLoss > 0))) {
               initialCap = Number((currentWalletBalance - (grossWin - grossLoss - tradingFees - fundingFees)).toFixed(2));
-              if (initialCap <= 0) initialCap = 5000.0;
+              if (initialCap <= 0) initialCap = currentWalletBalance > 0 ? currentWalletBalance : 5000.0;
             }
 
             const committedMargin = Number(walletBreakdown?.margin_in_positions ?? 0);

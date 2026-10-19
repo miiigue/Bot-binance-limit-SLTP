@@ -521,11 +521,15 @@ function MainDashboard() {
           : (inspectingUser?.net_pnl || 0))
   );
 
-  const userWalletPnl = (userBotHeader?.wallet_pnl !== undefined && userBotHeader?.wallet_pnl !== null && Math.abs(Number(userBotHeader.wallet_pnl)) > 0.001)
-    ? Number(userBotHeader.wallet_pnl)
-    : (userRealizedPnl !== 0 
-        ? userRealizedPnl 
-        : (userBinanceBalance - userInitialCapital));
+  const userHasTrades = Number(userBotHeader?.metrics?.total_trades || inspectingUser?.trades_count || 0) > 0;
+
+  const userWalletPnl = !userHasTrades
+    ? 0
+    : ((userBotHeader?.wallet_pnl !== undefined && userBotHeader?.wallet_pnl !== null)
+        ? Number(userBotHeader.wallet_pnl)
+        : (userRealizedPnl !== 0 
+            ? userRealizedPnl 
+            : (userBinanceBalance - userInitialCapital)));
 
   const userUnrealizedPnl = Number(
     userBotHeader?.wallet_breakdown?.unrealized_pnl !== undefined
