@@ -1,7 +1,15 @@
 import React, { useState, useRef } from 'react';
 import Trading3DScene from './Trading3DScene';
 import EquityCurvesShowcase from './EquityCurvesShowcase';
-import { WordmarkNeoQuant, WordmarkCyberFintech, WordmarkInstitutional, WordmarkVelocity, LOGO_OPTIONS } from './LogoOptions';
+import {
+  WordmarkVelocityApex,
+  WordmarkVelocityCyberSlash,
+  WordmarkVelocityLaser,
+  WordmarkVelocityMonolith,
+  WordmarkVelocityTitanium,
+  WordmarkNeoQuant,
+  LOGO_OPTIONS
+} from './LogoOptions';
 
 /**
  * Tilt3DCard
@@ -62,8 +70,8 @@ function Tilt3DCard({ children, className = '' }) {
 }
 
 export default function LandingPage({ onOpenLogin, onOpenRegister }) {
-  // Selector dinámico de estilo de logo
-  const [selectedLogoId, setSelectedLogoId] = useState('neoquant');
+  // Selector dinámico de estilo de logo (Opción 4 Velocity como predeterminado)
+  const [selectedLogoId, setSelectedLogoId] = useState('velocity-apex');
   const [showLogoModal, setShowLogoModal] = useState(false);
 
   // Simulador interactivo de inversión
@@ -343,8 +351,8 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
            ========================================================================= */}
         <div className="mt-10 w-full bg-slate-950/95 border-y border-cyan-500/30 overflow-hidden py-2.5 font-mono text-xs shadow-xl backdrop-blur-xl">
           <div className="flex gap-10 whitespace-nowrap animate-marquee">
-            {exchangeTape.concat(exchangeTape).map((t, idx) => (
-              <div key={idx} className="inline-flex items-center gap-2.5">
+            {[...exchangeTape, ...exchangeTape, ...exchangeTape, ...exchangeTape].map((t, idx) => (
+              <div key={idx} className="inline-flex items-center gap-2.5 flex-shrink-0">
                 <span className="font-black text-white">{t.symbol}</span>
                 <span className="text-slate-200 font-bold">${t.price}</span>
                 <span className={`font-bold flex items-center gap-0.5 ${t.isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -373,9 +381,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight mt-3 mb-2">
               3 Productos de Inversión Cuantitativa
             </h2>
-            <p className="text-xs sm:text-sm text-slate-400">
-              Desde gestión pasiva con estrategias exclusivas hasta control absoluto de apalancamiento y parámetros.
-            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -617,105 +622,204 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          6. NIVELES DE COMISIONES & BENEFICIOS PROPUESTOS
+          6. NIVELES DE COMISIONES POR RENDIMIENTO (PERFORMANCE FEE 15% AL 40%)
          ========================================================================= */}
-      <section id="comisiones" className="py-20 relative z-10 border-t border-slate-900">
+      <section id="comisiones" className="py-20 relative z-10 border-t border-slate-900 bg-slate-950">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <span className="px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-mono font-bold uppercase">
-              🏷️ TRANSPARENCIA Y CONDICIONES
+          <div className="text-center max-w-3xl mx-auto mb-14">
+            <span className="px-3.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold uppercase tracking-wider">
+              🏷️ MODELO DE ALINEACIÓN 100% POR RENDIMIENTO NETO
             </span>
-            <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight mt-3 mb-2">
-              Niveles de Comisiones & Beneficios
+            <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight mt-3 mb-3">
+              Comisiones de Éxito: 15% al 40%
             </h2>
-            <p className="text-xs sm:text-sm text-slate-400">
-              Modelo escalonado de éxito: a mayor capital asignado, menor comisión de rendimiento y mayores ventajas operativas.
+            <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
+              <strong>Cero costos fijos ni mensualidades obligatorias.</strong> Cobramos una comisión únicamente sobre los rendimientos netos generados. Si tú no ganas, nuestra comisión es exactamente <span className="text-cyan-400 font-mono font-bold">$0.00 USDT</span>.
             </p>
           </div>
 
+          {/* CUADRO COMPARATIVO DE IMPACTO: ¿QUÉ PREFIERES EN TU CUENTA? */}
+          <div className="mb-14 p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-slate-900 via-cyan-950/30 to-slate-900 border border-cyan-500/40 shadow-2xl shadow-cyan-950/40 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="relative z-10 text-center max-w-2xl mx-auto mb-8">
+              <span className="text-[11px] font-mono font-bold px-3 py-1 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-300 uppercase">
+                💡 LA LÓGICA DEL INVERSOR INTELIGENTE
+              </span>
+              <h3 className="text-2xl sm:text-3xl font-black text-white mt-3">
+                ¿Qué prefieres tener acreditado en tu bolsillo?
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-300 mt-2">
+                Los grandes patrimonios no buscan la comisión más barata, sino la estrategia que maximiza su capital neto real disponible:
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+              
+              {/* CASO A: ESTRATEGIA BÁSICA / BAJA COMISIÓN */}
+              <div className="p-6 rounded-2xl bg-slate-950/80 border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-mono font-bold text-slate-400 uppercase">Caso A • Estrategia Convencional</span>
+                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] font-bold">15% Comisión</span>
+                  </div>
+                  <div className="text-slate-400 text-xs mb-1">Ganancia bruta generada:</div>
+                  <div className="text-2xl sm:text-3xl font-black text-slate-200 font-mono mb-4">
+                    +$1,000 <span className="text-xs text-slate-400 font-normal">USDT</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2 text-xs text-slate-300 font-mono">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Comisión de éxito (15%):</span>
+                      <span className="text-rose-400">-$150 USDT</span>
+                    </div>
+                    <div className="pt-2 border-t border-slate-800 flex justify-between font-bold text-sm">
+                      <span className="text-white">Te quedan en mano:</span>
+                      <span className="text-slate-200">+$850 USDT</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 text-[11px] text-slate-400 italic">
+                  * Pagaste una comisión mínima, pero tu ganancia neta final fue muy limitada.
+                </div>
+              </div>
+
+              {/* CASO B: ESTRATEGIA ALFA DEL FONDO / ALTO RENDIMIENTO */}
+              <div className="p-6 rounded-2xl bg-gradient-to-b from-cyan-950/80 to-slate-950 border border-cyan-400/80 shadow-xl shadow-cyan-500/20 flex flex-col justify-between relative">
+                <div className="absolute -top-3 right-6 px-3 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[9px] font-black uppercase tracking-wider">
+                  MÁXIMO BENEFICIO NETO
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-mono font-bold text-cyan-300 uppercase">Caso B • Estrategias Exclusivas del Fondo</span>
+                    <span className="px-2 py-0.5 rounded bg-cyan-400/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-400/40">40% Comisión</span>
+                  </div>
+                  <div className="text-cyan-300/80 text-xs mb-1">Ganancia bruta generada:</div>
+                  <div className="text-2xl sm:text-3xl font-black text-emerald-400 font-mono mb-4">
+                    +$100,000 <span className="text-xs text-emerald-300 font-normal">USDT</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900/90 border border-cyan-500/30 space-y-2 text-xs text-slate-200 font-mono">
+                    <div className="flex justify-between">
+                      <span className="text-slate-300">Comisión de éxito (40%):</span>
+                      <span className="text-rose-400">-$40,000 USDT</span>
+                    </div>
+                    <div className="pt-2 border-t border-cyan-500/30 flex justify-between font-bold text-sm">
+                      <span className="text-white">Te quedan limpios:</span>
+                      <span className="text-emerald-400 text-base">+$60,000 USDT</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 text-[11px] text-cyan-200 font-semibold">
+                  ✓ Es infinitamente superior llevarte <strong className="text-white">$60,000 limpios</strong> pagando el 40%, que llevarte $850 pagando el 15%. ¡Lo que importa es el capital neto real en tu cuenta!
+                </div>
+              </div>
+
+            </div>
+
+            <div className="mt-6 pt-5 border-t border-cyan-500/20 text-center text-xs text-slate-300 leading-relaxed max-w-3xl mx-auto">
+              <em>"Por esta razón, el Fondo Mancomunado maneja una comisión de éxito proporcional a la exclusividad de sus algoritmos: porque sus estrategias multiplican exponencialmente la rentabilidad bruta y te dejan un capital neto muy superior."</em>
+            </div>
+          </div>
+
+          {/* LAS 3 MODALIDADES Y SU RANGO DE COMISIÓN (15% AL 40%) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             
-            {/* TIER SILVER */}
+            {/* PRODUCTO BOT PERSONAL */}
             <div className="p-6 rounded-3xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between">
               <div>
-                <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px] font-bold">
-                  TIER SILVER
-                </span>
-                <h4 className="text-xl font-bold text-white mt-2">Iniciación</h4>
-                <div className="text-2xl font-black text-white font-mono my-2">
-                  $1,000 <span className="text-slate-400 text-sm font-normal">a $4,999 USDT</span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px] font-bold">
+                    BOT PERSONAL AUTÓNOMO
+                  </span>
+                  <span className="text-xs font-mono font-bold text-cyan-400">15% - 20%</span>
                 </div>
+                <h4 className="text-xl font-bold text-white mt-1">Control a Tu Medida</h4>
+                <div className="text-2xl font-black text-cyan-300 font-mono my-3">
+                  15% a 20% <span className="text-slate-400 text-xs font-normal">sobre ganancias netas</span>
+                </div>
+                <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+                  Para inversores y traders cuantitativos que configuran sus propios parámetros de apalancamiento, monedas y reglas de salida.
+                </p>
                 <div className="space-y-2 text-xs text-slate-300 pt-3 border-t border-slate-800">
-                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Comisión sobre éxito estándar</div>
-                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Acceso a Copy-Trading y Fondo</div>
-                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Reportes mensuales de rendimiento</div>
-                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Soporte estándar por tickets</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Menor tasa de comisión del sistema</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Control de apalancamiento desde 1x hasta 10x</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Parámetros y stops 100% personalizados</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> $0 comisión si un trade no genera ganancia</div>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => onOpenRegister && onOpenRegister(2500)}
+                onClick={() => onOpenRegister && onOpenRegister(simCapital)}
                 className="w-full mt-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
               >
-                Comenzar en Silver
+                Elegir Bot Personal
               </button>
             </div>
 
-            {/* TIER GOLD (DESTACADO) */}
-            <div className="p-6 rounded-3xl bg-gradient-to-b from-slate-900 to-cyan-950/40 border border-cyan-400/60 shadow-xl shadow-cyan-950/30 flex flex-col justify-between relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[9px] font-black uppercase tracking-wider">
-                MÁS POPULAR
-              </div>
+            {/* COPY TRADING */}
+            <div className="p-6 rounded-3xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between">
               <div>
-                <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
-                  TIER GOLD
-                </span>
-                <h4 className="text-xl font-bold text-white mt-2">Avanzado / Privado</h4>
-                <div className="text-2xl font-black text-cyan-300 font-mono my-2">
-                  $5,000 <span className="text-slate-400 text-sm font-normal">a $19,999 USDT</span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px] font-bold">
+                    COPY-TRADING PRIVADO
+                  </span>
+                  <span className="text-xs font-mono font-bold text-cyan-400">20% - 30%</span>
                 </div>
-                <div className="space-y-2 text-xs text-slate-200 pt-3 border-t border-slate-800">
-                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> <strong>Comisión reducida</strong> sobre ganancias</div>
-                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Acceso a los 3 Productos (incluye Bot Personal)</div>
-                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Reportes semanales detallados</div>
-                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Asignación prioritaria en cupos del Fondo</div>
-                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Soporte técnico preferencial 24/7</div>
+                <h4 className="text-xl font-bold text-white mt-1">Réplica Algorítmica</h4>
+                <div className="text-2xl font-black text-cyan-300 font-mono my-3">
+                  20% a 30% <span className="text-slate-400 text-xs font-normal">sobre ganancias netas</span>
+                </div>
+                <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+                  Réplica sincronizada en tu propia cuenta de exchange con latencia ultra-baja y ejecución idéntica a los algoritmos maestros.
+                </p>
+                <div className="space-y-2 text-xs text-slate-300 pt-3 border-t border-slate-800">
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Custodia 100% en tu exchange</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Retiros deshabilitados en claves API</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Ajuste proporcional automático de balance</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Auditoría en tiempo real de operaciones</div>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => onOpenRegister && onOpenRegister(10000)}
+                onClick={() => onOpenRegister && onOpenRegister(simCapital)}
+                className="w-full mt-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
+              >
+                Elegir Copy-Trading
+              </button>
+            </div>
+
+            {/* FONDO MANCOMUNADO (DESTACADO / ESTRATEGIAS EXCLUSIVAS) */}
+            <div className="p-6 rounded-3xl bg-gradient-to-b from-slate-900 to-cyan-950/50 border border-cyan-400/70 shadow-xl shadow-cyan-950/30 flex flex-col justify-between relative">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[9px] font-black uppercase tracking-wider">
+                MÁXIMA RENTABILIDAD ALFA
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
+                    FONDO MANCOMUNADO
+                  </span>
+                  <span className="text-xs font-mono font-bold text-amber-300">35% - 40%</span>
+                </div>
+                <h4 className="text-xl font-bold text-white mt-1">Estrategias Más Eficientes</h4>
+                <div className="text-2xl font-black text-amber-300 font-mono my-3">
+                  Hasta el 40% <span className="text-slate-400 text-xs font-normal">sobre ganancias netas</span>
+                </div>
+                <p className="text-xs text-slate-200 mb-4 leading-relaxed">
+                  Acceso exclusivo a los algoritmos cuantitativos más potentes, con la mayor rentabilidad histórica y optimización de capital mancomunado.
+                </p>
+                <div className="space-y-2 text-xs text-slate-200 pt-3 border-t border-slate-800">
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> <strong>Estrategias exclusivas</strong> de mayor generación de alfa</div>
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Cero configuración técnica para el inversor</div>
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> <strong>Estado de Cuenta Oficial (PDF)</strong> con auditoría</div>
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Mayor volumen de dólares netos para tu patrimonio</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenRegister && onOpenRegister(simCapital)}
                 className="w-full mt-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black text-xs shadow-lg transition hover:scale-105 active:scale-95"
               >
-                Comenzar en Gold
-              </button>
-            </div>
-
-            {/* TIER DIAMOND INSTITUCIONAL */}
-            <div className="p-6 rounded-3xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between">
-              <div>
-                <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-mono text-[10px] font-bold border border-blue-500/30">
-                  TIER DIAMOND
-                </span>
-                <h4 className="text-xl font-bold text-white mt-2">Institucional</h4>
-                <div className="text-2xl font-black text-white font-mono my-2">
-                  $20,000+ <span className="text-slate-400 text-sm font-normal">USDT</span>
-                </div>
-                <div className="space-y-2 text-xs text-slate-300 pt-3 border-t border-slate-800">
-                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> <strong>Comisión mínima preferencial</strong> de éxito</div>
-                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Acceso exclusivo a estrategias VIP del Fondo</div>
-                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Gestor cuantitativo dedicado 1-a-1</div>
-                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Estados de Cuenta oficiales en PDF a medida</div>
-                  <div className="flex items-center gap-2"><span className="text-cyan-400">✓</span> Calibración personalizada de apalancamiento</div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => onOpenRegister && onOpenRegister(25000)}
-                className="w-full mt-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
-              >
-                Comenzar en Diamond
+                Invertir en el Fondo
               </button>
             </div>
 
