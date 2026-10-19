@@ -62,7 +62,9 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
   };
 
   const symbols = monitorData?.symbols || [];
-  const openPositionsCount = symbols.reduce((acc, s) => acc + (s.in_long ? 1 : 0) + (s.in_short ? 1 : (s.in_position ? 1 : 0)), 0);
+  const openPositionsCount = monitorData?.summary?.total_positions !== undefined
+    ? Number(monitorData.summary.total_positions)
+    : symbols.reduce((acc, s) => acc + (s.in_long && s.in_short ? 2 : (s.in_long || s.in_short || s.in_position ? 1 : 0)), 0);
 
   const totalUnrealizedPnl = monitorData?.summary?.total_unrealized_pnl ?? symbols.reduce((acc, s) => acc + Number(s.unrealized_pnl || 0), 0);
   const totalHistoricalPnl = monitorData?.summary?.total_historical_pnl ?? symbols.reduce((acc, s) => acc + Number(s.historical_pnl || 0), 0);
