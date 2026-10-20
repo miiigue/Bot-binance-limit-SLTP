@@ -805,6 +805,87 @@ def auth_setup_status_endpoint():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/auth/check-availability', methods=['GET'])
+def auth_check_availability_endpoint():
+    """
+    Verifica en tiempo real disponibilidad de username, email o validez de referral_code.
+    Query params: type ('username' | 'email' | 'referral_code'), value (string)
+    """
+    try:
+        check_type = str(request.args.get('type', '')).strip().lower()
+        value = str(request.args.get('value', '')).strip()
+
+        if not value:
+            return jsonify({"status": "error", "message": "Valor requerido", "available": False, "valid": False}), 400
+
+        if check_type == 'username':
+            existing = get_user_by_identifier(value)
+            is_available = existing is None
+            msg = "Nombre de usuario disponible" if is_available else "El nombre de usuario ya está registrado"
+            return jsonify({
+                "status": "success",
+                "available": is_available,
+                "message": msg
+            })
+
+        elif check_type == 'email':
+            clean_email = value.lower()
+            existing = get_user_by_identifier(clean_email)
+            is_available = existing is None
+            msg = "Correo electrónico disponible" if is_available else "El correo electrónico ya está registrado"
+            return jsonify({
+                "status": "success",
+                "available": is_available,
+                "message": msg
+            })
+
+        elif check_type == 'referral_code':
+            total_users = count_users()
+            if total_users == 0:
+                return jsonify({
+                    "status": "success",
+                    "valid": True,
+                    "message": "Configuración inicial de la plataforma",
+                    "referrer": "Super Admin"
+                })
+
+            referrer = get_user_by_identifier(value)
+            if not referrer:
+                return jsonify({
+                    "status": "success",
+                    "valid": False,
+                    "message": "El código de referido no existe"
+                })
+
+            if str(referrer.get('status', '')).lower() not in ('active', 'pending'):
+                return jsonify({
+                    "status": "success",
+                    "valid": False,
+                    "message": "El usuario referente está inactivo o suspendido"
+                })
+
+            if referrer.get('role') != 'admin' and not bool(referrer.get('referral_terms_accepted')):
+                return jsonify({
+                    "status": "success",
+                    "valid": False,
+                    "message": "El referente aún no ha activado los términos del programa"
+                })
+
+            return jsonify({
+                "status": "success",
+                "valid": True,
+                "message": "Código de referido verificado y activo",
+                "referrer_name": referrer.get('username')
+            })
+
+        else:
+            return jsonify({"status": "error", "message": "Tipo de validación no soportado"}), 400
+
+    except Exception as e:
+        api_logger.error(f"Error en auth_check_availability_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route('/api/auth/register', methods=['POST'])
 def auth_register_endpoint():
     """

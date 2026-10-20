@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import LegalModal from './LegalModal';
 
@@ -6,7 +6,9 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
   const { needsInitialAdmin, login, register } = useAuth();
 
   const [mode, setMode] = useState(needsInitialAdmin ? 'setup' : (initialMode || 'login')); // 'setup', 'login', 'register', 'pending_notice'
-  const [registerStep, setRegisterStep] = useState(1); // 1: Datos Personales, 2: Cuenta & Capital, 3: Aceptación Legal & Enviar
+  const [registerStep, setRegisterStep] = useState(1); // 1: Invitación y Residencia, 2: Cuenta y Capital, 3: Declaración Institucional y Envío
+
+  // Datos del formulario
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [country, setCountry] = useState('');
@@ -21,6 +23,43 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
+
+  // Estados de validación en tiempo real (Asincrónicos)
+  const [refCheck, setRefCheck] = useState({ checking: false, valid: null, msg: '' });
+  const [userCheck, setUserCheck] = useState({ checking: false, available: null, msg: '' });
+  const [emailCheck, setEmailCheck] = useState({ checking: false, available: null, msg: '' });
+
+  // Timers de debounce
+  const refTimer = useRef(null);
+  const userTimer = useRef(null);
+  const emailTimer = useRef(null);
+
+  // MANEJO DEL BOTÓN "ATRÁS" DEL TELÉFONO / NAVEGADOR (HISTORY POPSTATE)
+  // Al abrir el modal se añade un hash #auth al historial; al presionar "atrás", solo se cierra el modal
+  useEffect(() => {
+    const originalHash = window.location.hash;
+    if (!window.location.hash.includes('auth-modal')) {
+      window.history.pushState({ authModalOpen: true }, '', '#auth-modal');
+    }
+
+    const handlePopState = (e) => {
+      // Si el usuario presiona botón "atrás" en el móvil
+      if (onClose) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      // Limpiar hash si el modal se cierra por clic en la X o fondo
+      if (window.location.hash.includes('auth-modal')) {
+        try {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        } catch (err) {}
+      }
+    };
+  }, [onClose]);
 
   // Sincronizar monto si cambia externamente desde la landing page
   useEffect(() => {
@@ -42,26 +81,102 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
       const searchParams = new URLSearchParams(window.location.search);
       const ref = searchParams.get('ref') || searchParams.get('invitation') || searchParams.get('code');
       if (ref) {
-        setReferralCode(ref.trim());
+        const cleanRef = ref.trim();
+        setReferralCode(cleanRef);
         if (mode === 'login' && !needsInitialAdmin) {
           setMode('register');
         }
+        // Validar inmediatamente
+        checkReferralCode(cleanRef);
       }
-    } catch (e) {
-      // Ignorar errores en parseo de URL
-    }
+    } catch (e) {}
   }, [mode, needsInitialAdmin]);
+
+  // VALIDACIÓN ASINCRÓNICA DE CÓDIGO DE REFERIDO CON DEBOUNCE
+  const checkReferralCode = (val) => {
+    if (!val || val.trim().length === 0) {
+      setRefCheck({ checking: false, valid: null, msg: '' });
+      return;
+    }
+    setRefCheck({ checking: true, valid: null, msg: 'Verificando código...' });
+    if (refTimer.current) clearTimeout(refTimer.current);
+
+    refTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-availability?type=referral_code&value=${encodeURIComponent(val.trim())}`);
+        const data = await res.json();
+        if (data.valid) {
+          setRefCheck({ checking: false, valid: true, msg: `Código verificado (${data.referrer_name || 'Invitador Válido'})` });
+        } else {
+          setRefCheck({ checking: false, valid: false, msg: data.message || 'Código de referido no válido' });
+        }
+      } catch (err) {
+        setRefCheck({ checking: false, valid: null, msg: '' });
+      }
+    }, 400);
+  };
+
+  // VALIDACIÓN ASINCRÓNICA DE USERNAME ÚNICO
+  const checkUsernameAvailability = (val) => {
+    if (!val || val.trim().length < 3) {
+      setUserCheck({ checking: false, available: null, msg: '' });
+      return;
+    }
+    setUserCheck({ checking: true, available: null, msg: 'Comprobando disponibilidad...' });
+    if (userTimer.current) clearTimeout(userTimer.current);
+
+    userTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-availability?type=username&value=${encodeURIComponent(val.trim())}`);
+        const data = await res.json();
+        if (data.available) {
+          setUserCheck({ checking: false, available: true, msg: 'Nombre de usuario disponible' });
+        } else {
+          setUserCheck({ checking: false, available: false, msg: data.message || 'El nombre de usuario ya está registrado' });
+        }
+      } catch (err) {
+        setUserCheck({ checking: false, available: null, msg: '' });
+      }
+    }, 450);
+  };
+
+  // VALIDACIÓN ASINCRÓNICA DE EMAIL ÚNICO
+  const checkEmailAvailability = (val) => {
+    if (!val || !val.includes('@') || !val.includes('.')) {
+      setEmailCheck({ checking: false, available: null, msg: '' });
+      return;
+    }
+    setEmailCheck({ checking: true, available: null, msg: 'Comprobando correo...' });
+    if (emailTimer.current) clearTimeout(emailTimer.current);
+
+    emailTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-availability?type=email&value=${encodeURIComponent(val.trim())}`);
+        const data = await res.json();
+        if (data.available) {
+          setEmailCheck({ checking: false, available: true, msg: 'Correo disponible' });
+        } else {
+          setEmailCheck({ checking: false, available: false, msg: data.message || 'El correo electrónico ya está registrado' });
+        }
+      } catch (err) {
+        setEmailCheck({ checking: false, available: null, msg: '' });
+      }
+    }, 450);
+  };
 
   // Validación por cada paso del registro
   const isStep1Valid = 
     Boolean(referralCode.trim()) &&
+    refCheck.valid === true &&
     Boolean(country.trim()) &&
     Boolean(city.trim()) &&
     Boolean(birthDate.trim());
 
   const isStep2Valid =
     Boolean(username.trim()) &&
+    userCheck.available === true &&
     Boolean(email.trim()) &&
+    emailCheck.available === true &&
     investmentAmount !== '' &&
     !isNaN(parseFloat(investmentAmount)) &&
     parseFloat(investmentAmount) >= 0 &&
@@ -70,7 +185,6 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
 
   const isStep3Valid = Boolean(acceptedTerms);
 
-  // Validación completa en tiempo real del formulario de registro
   const isRegisterFormValid = isStep1Valid && isStep2Valid && isStep3Valid;
 
   const handleLoginSubmit = async (e) => {
@@ -101,8 +215,18 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
     }
 
     if (mode === 'register') {
-      if (!referralCode.trim()) {
-        setErrorMessage('El Código de Invitación / Referido es obligatorio para registrarse.');
+      if (!referralCode.trim() || refCheck.valid === false) {
+        setErrorMessage('Debes ingresar un Código de Invitación / Referido válido.');
+        return;
+      }
+
+      if (userCheck.available === false) {
+        setErrorMessage('El nombre de usuario ya se encuentra registrado. Por favor elige otro.');
+        return;
+      }
+
+      if (emailCheck.available === false) {
+        setErrorMessage('El correo electrónico ya se encuentra registrado en la plataforma.');
         return;
       }
 
@@ -129,7 +253,7 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
     }
 
     if (!acceptedTerms) {
-      setErrorMessage('Debes aceptar los Términos de Servicio y el Descargo de Riesgo para registrarte.');
+      setErrorMessage('Debes aceptar las Condiciones de Operación y el Descargo de Riesgo para registrarte.');
       return;
     }
 
@@ -165,7 +289,7 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
         }
       }}
     >
-      <div className="relative w-full max-w-md bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl shadow-cyan-500/10 p-6 sm:p-8 text-white">
+      <div className="relative w-full max-w-md bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl shadow-cyan-500/10 p-6 sm:p-8 text-white my-auto">
         
         {/* Botón Cerrar (Volver a la Landing Page) */}
         {onClose && (
@@ -371,7 +495,7 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
                     <span className="text-[11px] text-slate-400 font-sans">
                       {registerStep === 1 && '1. Invitación y Residencia'}
                       {registerStep === 2 && '2. Cuenta y Capital'}
-                      {registerStep === 3 && '3. Conformidad Legal'}
+                      {registerStep === 3 && '3. Conformidad Institucional'}
                     </span>
                   </div>
                   {/* Barra de Progreso */}
@@ -416,7 +540,7 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
                           : isStep3Valid ? 'text-emerald-400' : 'text-slate-500'
                       }`}
                     >
-                      Términos
+                      Conformidad
                     </button>
                   </div>
                 </div>
@@ -430,7 +554,7 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
                       <span>💼</span> Acceso exclusivo: Ingresa el código de invitación de quien te refirió y tus datos de residencia para verificar tu elegibilidad.
                     </div>
 
-                    {/* Código de Invitación / Referido Obligatorio */}
+                    {/* Código de Invitación / Referido Obligatorio con Check en Tiempo Real */}
                     <div className="p-3 bg-amber-400/10 border border-amber-400/30 rounded-xl">
                       <div className="flex items-center justify-between mb-1">
                         <label className="block text-xs font-black text-amber-300">
@@ -440,17 +564,58 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
                           REQUERIDO
                         </span>
                       </div>
-                      <input
-                        type="text"
-                        required
-                        value={referralCode}
-                        onChange={(e) => setReferralCode(e.target.value)}
-                        placeholder="Usuario de quien te invitó"
-                        className="w-full px-3.5 py-2.5 bg-slate-950 border border-amber-400/50 rounded-xl text-sm font-mono font-bold text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
-                      />
-                      <p className="text-[10px] text-amber-200/80 mt-1">
-                        Solo pueden solicitar cuenta usuarios referidos formalmente por un miembro activo.
-                      </p>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          required
+                          value={referralCode}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setReferralCode(val);
+                            checkReferralCode(val);
+                          }}
+                          placeholder="Usuario de quien te invitó"
+                          className={`w-full px-3.5 py-2.5 bg-slate-950 border rounded-xl text-sm font-mono font-bold text-white focus:outline-none transition pr-10 ${
+                            refCheck.valid === true
+                              ? 'border-emerald-400 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400'
+                              : refCheck.valid === false
+                              ? 'border-rose-500 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                              : 'border-amber-400/50 focus:border-amber-400 focus:ring-1 focus:ring-amber-400'
+                          }`}
+                        />
+                        {/* Indicador Visual Check Verde / Error / Spinner */}
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-sm">
+                          {refCheck.checking && (
+                            <span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></span>
+                          )}
+                          {!refCheck.checking && refCheck.valid === true && (
+                            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-400 flex items-center justify-center font-bold text-xs">
+                              ✓
+                            </span>
+                          )}
+                          {!refCheck.checking && refCheck.valid === false && (
+                            <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-400 flex items-center justify-center font-bold text-xs">
+                              ✕
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Mensaje de validación del referente */}
+                      {refCheck.msg && (
+                        <p className={`text-[11px] mt-1.5 font-semibold flex items-center gap-1 ${
+                          refCheck.valid === true ? 'text-emerald-400' : refCheck.valid === false ? 'text-rose-400' : 'text-slate-400'
+                        }`}>
+                          {refCheck.valid === true && <span>✓</span>}
+                          {refCheck.valid === false && <span>⚠️</span>}
+                          <span>{refCheck.msg}</span>
+                        </p>
+                      )}
+                      {!refCheck.msg && (
+                        <p className="text-[10px] text-amber-200/80 mt-1">
+                          Solo pueden solicitar cuenta usuarios referidos formalmente por un miembro activo.
+                        </p>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
@@ -509,28 +674,123 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
                    ========================================================================= */}
                 {registerStep === 2 && (
                   <div className="space-y-3.5 animate-fadeIn">
+                    
+                    {/* Nombre de Usuario con Comprobación de Unicidad */}
                     <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">Nombre de Usuario *</label>
-                      <input
-                        type="text"
-                        required
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        placeholder="ej: juan_inversor"
-                        className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
-                      />
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-slate-300">Nombre de Usuario *</label>
+                        {userCheck.available === true && (
+                          <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-0.5">
+                            ✓ Disponible
+                          </span>
+                        )}
+                        {userCheck.available === false && (
+                          <span className="text-[10px] text-rose-400 font-bold flex items-center gap-0.5">
+                            ✕ No disponible
+                          </span>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          required
+                          value={username}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setUsername(val);
+                            checkUsernameAvailability(val);
+                          }}
+                          placeholder="ej: juan_inversor"
+                          className={`w-full px-3.5 py-2.5 bg-slate-950 border rounded-xl text-sm text-white focus:outline-none transition pr-10 ${
+                            userCheck.available === true
+                              ? 'border-emerald-400 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400'
+                              : userCheck.available === false
+                              ? 'border-rose-500 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                              : 'border-slate-700 focus:border-amber-400 focus:ring-1 focus:ring-amber-400'
+                          }`}
+                        />
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-sm">
+                          {userCheck.checking && (
+                            <span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></span>
+                          )}
+                          {!userCheck.checking && userCheck.available === true && (
+                            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-400 flex items-center justify-center font-bold text-xs">
+                              ✓
+                            </span>
+                          )}
+                          {!userCheck.checking && userCheck.available === false && (
+                            <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-400 flex items-center justify-center font-bold text-xs">
+                              ✕
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {userCheck.msg && (
+                        <p className={`text-[11px] mt-1 font-semibold ${
+                          userCheck.available === true ? 'text-emerald-400' : 'text-rose-400'
+                        }`}>
+                          {userCheck.msg}
+                        </p>
+                      )}
                     </div>
 
+                    {/* Correo Electrónico con Comprobación de Unicidad */}
                     <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">Correo Electrónico *</label>
-                      <input
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="inversor@ejemplo.com"
-                        className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
-                      />
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-slate-300">Correo Electrónico *</label>
+                        {emailCheck.available === true && (
+                          <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-0.5">
+                            ✓ Válido
+                          </span>
+                        )}
+                        {emailCheck.available === false && (
+                          <span className="text-[10px] text-rose-400 font-bold flex items-center gap-0.5">
+                            ✕ Ya registrado
+                          </span>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="email"
+                          required
+                          value={email}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEmail(val);
+                            checkEmailAvailability(val);
+                          }}
+                          placeholder="inversor@ejemplo.com"
+                          className={`w-full px-3.5 py-2.5 bg-slate-950 border rounded-xl text-sm text-white focus:outline-none transition pr-10 ${
+                            emailCheck.available === true
+                              ? 'border-emerald-400 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400'
+                              : emailCheck.available === false
+                              ? 'border-rose-500 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                              : 'border-slate-700 focus:border-amber-400 focus:ring-1 focus:ring-amber-400'
+                          }`}
+                        />
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-sm">
+                          {emailCheck.checking && (
+                            <span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></span>
+                          )}
+                          {!emailCheck.checking && emailCheck.available === true && (
+                            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-400 flex items-center justify-center font-bold text-xs">
+                              ✓
+                            </span>
+                          )}
+                          {!emailCheck.checking && emailCheck.available === false && (
+                            <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-400 flex items-center justify-center font-bold text-xs">
+                              ✕
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {emailCheck.msg && (
+                        <p className={`text-[11px] mt-1 font-semibold ${
+                          emailCheck.available === true ? 'text-emerald-400' : 'text-rose-400'
+                        }`}>
+                          {emailCheck.msg}
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -654,11 +914,11 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
                       </div>
                     </div>
 
-                    {/* Resumen de los 4 Títulos Institucionales de Términos */}
+                    {/* Resumen de las 4 Secciones Institucionales de Términos */}
                     <div className="space-y-2 p-3.5 bg-slate-950/90 border border-cyan-500/30 rounded-2xl">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-white flex items-center gap-1.5">
-                          <span>⚖️</span> TÍTULOS DE ACEPTACIÓN LEGAL
+                          <span>⚖️</span> CONDICIONES Y AVISO REGULATORIO
                         </span>
                         <button
                           type="button"
