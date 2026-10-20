@@ -12,6 +12,7 @@ const ACCOUNTS_DATA = [
     id: 'Cuenta #118',
     mode: 'Copy-Trading',
     modeBadge: '100% AUTOCUSTODIA',
+    profitDiff: '+$2,105 USDT',
     badgeColor: 'sky',
     capital: '$5,000 USDT',
     currentBalance: '$7,105 USDT',
@@ -26,6 +27,7 @@ const ACCOUNTS_DATA = [
     id: 'Cuenta #073',
     mode: 'Bot Personal Autónomo',
     modeBadge: 'PARÁMETROS PERSONALIZADOS',
+    profitDiff: '+$8,505 USDT',
     badgeColor: 'blue',
     capital: '$15,000 USDT',
     currentBalance: '$23,505 USDT',
@@ -40,6 +42,7 @@ const ACCOUNTS_DATA = [
     id: 'Cuenta #205',
     mode: 'Fondo Mancomunado',
     modeBadge: 'PERFIL DE PRESERVACIÓN',
+    profitDiff: '+$7,875 USDT',
     badgeColor: 'emerald',
     capital: '$25,000 USDT',
     currentBalance: '$32,875 USDT',
@@ -251,9 +254,14 @@ export default function EquityCurvesShowcase() {
         {/* MÉTRICAS CLAVE DE LA CUENTA */}
         <div className="lg:col-span-4 space-y-4">
           <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800">
-            <span className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wider block mb-1">
-              {account.modeBadge}
-            </span>
+            <div className="flex items-center flex-wrap gap-1.5 mb-2">
+              <span className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30">
+                {account.modeBadge}
+              </span>
+              <span className="text-[10px] font-mono font-black text-emerald-300 uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/40 shadow-sm">
+                GANANCIA: {account.profitDiff}
+              </span>
+            </div>
             <div className="text-3xl font-black text-emerald-400 font-mono">
               {account.gain}
             </div>
@@ -264,7 +272,7 @@ export default function EquityCurvesShowcase() {
 
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80">
-              <span className="text-[10px] text-slate-400 block">Win Rate</span>
+              <span className="text-[10px] text-slate-400 block">% de acierto</span>
               <strong className="text-white font-mono text-sm">{account.winRate}</strong>
             </div>
             <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80">

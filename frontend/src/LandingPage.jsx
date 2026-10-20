@@ -259,6 +259,117 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
+          2. SECCIÓN: AUTOMATIZACIÓN TOTAL & ESTILO DE VIDA (CERO CONOCIMIENTOS)
+         ========================================================================= */}
+      <section className="py-16 sm:py-24 relative z-10 border-t border-slate-900 bg-gradient-to-b from-slate-950 via-[#030914] to-slate-950 overflow-hidden">
+        
+        {/* Resplandor ambiental de fondo */}
+        <div className="absolute top-1/2 -left-20 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-1/2 -right-20 w-96 h-96 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          
+          <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-400/15 border border-emerald-400/30 text-emerald-300 text-xs font-mono font-bold uppercase tracking-wider mb-3">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>CERO CONOCIMIENTOS DE TRADING • 100% AUTOMÁTICO</span>
+            </div>
+            
+            <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
+              Tú Eliges tu Serie Favorita.{' '}
+              <span className="block mt-1 bg-gradient-to-r from-cyan-400 via-sky-300 to-emerald-400 bg-clip-text text-transparent">
+                La Inteligencia Artificial Hace el Trabajo Real.
+              </span>
+            </h2>
+            
+            <p className="text-sm sm:text-base text-slate-300 mt-4 leading-relaxed font-normal">
+              Olvídate de pasar horas analizando gráficos, trasnochar viendo velas o sufrir por la volatilidad. Mientras descansas o disfrutas con tu familia, los algoritmos institucionales ejecutan entradas matemáticas milimétricas las 24 horas.
+            </p>
+          </div>
+
+          {/* LOS 3 PASOS SIMPLES DE ALTO IMPACTO */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 mb-12">
+            
+            {/* PASO 1 */}
+            <div className="relative p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-cyan-500/40 transition-all shadow-xl group">
+              <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-xl text-cyan-400 font-black font-mono mb-4 group-hover:scale-110 transition-transform">
+                01
+              </div>
+              <h3 className="text-lg font-black text-white mb-2 flex items-center gap-2">
+                <span>📝</span> Regístrate en 2 Minutos
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Apertura tu cuenta mediante invitación privada. Sin trámites burocráticos ni instalaciones complejas en tu computadora.
+              </p>
+              <div className="mt-4 pt-3 border-t border-slate-800/80 text-[11px] font-mono text-cyan-300 font-semibold">
+                ✓ Proceso simple y guiado
+              </div>
+            </div>
+
+            {/* PASO 2 */}
+            <div className="relative p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-sky-500/40 transition-all shadow-xl group">
+              <div className="w-12 h-12 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-xl text-sky-400 font-black font-mono mb-4 group-hover:scale-110 transition-transform">
+                02
+              </div>
+              <h3 className="text-lg font-black text-white mb-2 flex items-center gap-2">
+                <span>🎯</span> Selecciona tu Modalidad
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Elige entre el <strong>Fondo Mancomunado</strong> (100% pasivo) o <strong>Copy-Trading</strong> en tu propia cuenta con tu dinero siempre bajo tu control.
+              </p>
+              <div className="mt-4 pt-3 border-t border-slate-800/80 text-[11px] font-mono text-sky-300 font-semibold">
+                ✓ Autocustodia o Gestión Pasiva
+              </div>
+            </div>
+
+            {/* PASO 3 */}
+            <div className="relative p-6 sm:p-7 rounded-3xl bg-gradient-to-b from-slate-900 to-emerald-950/40 border border-emerald-500/40 transition-all shadow-xl shadow-emerald-950/20 group">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xl text-emerald-400 font-black font-mono mb-4 group-hover:scale-110 transition-transform">
+                03
+              </div>
+              <h3 className="text-lg font-black text-white mb-2 flex items-center gap-2">
+                <span>⚡</span> Enciende tu Bot y Relájate
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Haz clic en activar y listo. La IA opera de forma continua y fría, aprovechando cada oportunidad del mercado mientras tú disfrutas de tu día.
+              </p>
+              <div className="mt-4 pt-3 border-t border-slate-800/80 text-[11px] font-mono text-emerald-300 font-semibold">
+                ✓ Ganancias automáticas 24/7
+              </div>
+            </div>
+
+          </div>
+
+          {/* BANNER DE URGENCIA Y FOMO */}
+          <div className="p-5 sm:p-7 rounded-3xl bg-gradient-to-r from-cyan-950/80 via-slate-900 to-amber-950/50 border border-cyan-400/40 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-6 backdrop-blur-xl">
+            <div className="space-y-1.5 text-center md:text-left">
+              <div className="inline-flex items-center gap-2 text-[11px] font-mono font-black text-amber-300 uppercase tracking-wider">
+                <span>⏱️ CUPOS DE ACCESO ASIGNADOS POR INVITACIÓN</span>
+              </div>
+              <h4 className="text-xl sm:text-2xl font-black text-white">
+                Cada segundo que pasa sin automatizar es dinero que dejas sobre la mesa.
+              </h4>
+              <p className="text-xs text-slate-300 max-w-xl">
+                Los mercados financieros operan los 365 días del año. No necesitas ser un experto en finanzas: deja que la tecnología trabaje incansablemente por tu patrimonio.
+              </p>
+            </div>
+
+            <div className="shrink-0 w-full md:w-auto">
+              <button
+                type="button"
+                onClick={() => onOpenRegister && onOpenRegister(simCapital)}
+                className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-cyan-400 via-sky-300 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-cyan-500/25 transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2 whitespace-nowrap"
+              >
+                <span>🚀 Activar Mi Cuenta Ahora</span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* =========================================================================
           3. SECCIÓN: MONEDAS DE MAYOR CAPITALIZACIÓN SEGURAS
          ========================================================================= */}
       <section id="activos" className="py-16 relative z-10 border-t border-slate-900">
