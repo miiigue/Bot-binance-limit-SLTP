@@ -9,21 +9,6 @@ import React, { useState, useEffect } from 'react';
 
 const ACCOUNTS_DATA = [
   {
-    id: 'Cuenta #041',
-    mode: 'Fondo Mancomunado',
-    modeBadge: 'GESTIÓN PASIVA EXCLUSIVA',
-    badgeColor: 'cyan',
-    capital: '$10,000 USDT',
-    currentBalance: '$13,840 USDT',
-    gain: '+38.4%',
-    duration: '90 Días',
-    winRate: '91.2%',
-    maxDrawdown: '4.8%',
-    description: 'Estrategia V21 exclusiva del Fondo con asignación conservadora y reinversión de beneficios.',
-    // Puntos normalizados (0-100 en Y, donde 100 es abajo y 0 es arriba)
-    points: [85, 82, 80, 83, 76, 74, 70, 72, 65, 62, 58, 60, 52, 48, 44, 46, 38, 34, 30, 22, 18],
-  },
-  {
     id: 'Cuenta #118',
     mode: 'Copy-Trading',
     modeBadge: '100% NON-CUSTODIAL',
@@ -34,7 +19,7 @@ const ACCOUNTS_DATA = [
     duration: '75 Días',
     winRate: '89.6%',
     maxDrawdown: '6.2%',
-    description: 'Replicación milimétrica en cuenta de exchange privada con retiros libres en cualquier momento.',
+    description: 'Replicación en cuenta privada con retiros libres en cualquier momento.',
     points: [88, 86, 82, 79, 81, 75, 71, 68, 64, 66, 59, 54, 50, 47, 49, 41, 36, 31, 27, 20, 15],
   },
   {
@@ -48,7 +33,7 @@ const ACCOUNTS_DATA = [
     duration: '110 Días',
     winRate: '87.4%',
     maxDrawdown: '9.4%',
-    description: 'Apalancamiento dinámico calibrado por el usuario con ejecución concurrente en 8 pares de alta capitalización.',
+    description: 'Apalancamiento calibrado por el usuario en monedas de alta capitalización.',
     points: [90, 84, 86, 80, 72, 75, 68, 62, 65, 55, 48, 52, 43, 38, 41, 32, 26, 28, 19, 14, 8],
   },
   {
@@ -62,7 +47,7 @@ const ACCOUNTS_DATA = [
     duration: '80 Días',
     winRate: '94.8%',
     maxDrawdown: '3.6%',
-    description: 'Enfoque de máxima contención de volatilidad con filtro estricto de régimen y drawdowns mínimos.',
+    description: 'Estrategia de alta precisión con drawdowns mínimos.',
     points: [86, 84, 82, 80, 78, 75, 73, 71, 68, 66, 63, 61, 58, 55, 53, 50, 46, 43, 40, 36, 32],
   },
 ];

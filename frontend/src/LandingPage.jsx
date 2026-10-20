@@ -324,12 +324,8 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             </button>
           </div>
 
-          {/* MÉTRICAS CLAVE (4 CARDS VISUALES) */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 w-full max-w-3xl">
-            <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 backdrop-blur-md text-center">
-              <div className="text-2xl font-black text-cyan-400 font-mono">99.98%</div>
-              <div className="text-[11px] text-slate-400 font-semibold mt-0.5">Uptime Servidor</div>
-            </div>
+          {/* MÉTRICAS CLAVE (3 CARDS VISUALES) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 w-full max-w-2xl">
             <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 backdrop-blur-md text-center">
               <div className="text-2xl font-black text-sky-400 font-mono">&lt; 12ms</div>
               <div className="text-[11px] text-slate-400 font-semibold mt-0.5">Latencia de Ejecución</div>
@@ -565,9 +561,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                 <h3 className="text-2xl sm:text-3xl font-black text-white mt-3 mb-2">
                   Solo Monedas Seguras de Mayor Capitalización
                 </h3>
-                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                  Los algoritmos operan única y exclusivamente en los activos más líquidos y de mayor capitalización global. Esto elimina riesgos de manipulación de mercado, deslizamiento de precios (*slippage*) y volatilidad ilíquida de tokens experimentales.
-                </p>
               </div>
 
               {/* LISTA VISUAL DE ACTIVOS BLUE-CHIP */}
@@ -597,21 +590,9 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       {/* =========================================================================
           5. PASARELA DE CURVAS DE CAPITAL DE USUARIOS ANÓNIMOS
          ========================================================================= */}
-      <section id="rendimiento" className="py-20 relative z-10 border-t border-slate-900 bg-slate-900/30">
+      <section id="rendimiento" className="py-16 sm:py-20 relative z-10 border-t border-slate-900 bg-slate-900/30">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold uppercase">
-              📊 HISTÓRICOS VERIFICADOS
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight mt-3 mb-2">
-              Curvas de Crecimiento de Capital
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400">
-              Trayectorias reales de cuentas activas en la plataforma.
-            </p>
-          </div>
-
           {/* COMPONENTE INTERACTIVO DE PASARELA */}
           <EquityCurvesShowcase />
 
@@ -619,25 +600,13 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          6. NIVELES DE RENDIMIENTO & RETORNO DE INVERSIÓN (RESUMIDO Y FÁCIL)
+          6. NIVELES DE RENDIMIENTO & RETORNO DE INVERSIÓN (COMPARACIÓN SENCILLA)
          ========================================================================= */}
-      <section id="comisiones" className="py-20 relative z-10 border-t border-slate-900 bg-slate-950">
+      <section id="comisiones" className="py-16 sm:py-20 relative z-10 border-t border-slate-900 bg-slate-950">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          <div className="text-center max-w-3xl mx-auto mb-10 sm:mb-14 px-2">
-            <span className="px-3.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold uppercase tracking-wider">
-              💰 GANAMOS SOLO SI TÚ GANAS
-            </span>
-            <h2 className="text-2xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight mt-3 mb-3">
-              Rendimiento y Retorno de Inversión
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400">
-              Lo importante no es la tasa de comisión, sino cuánto dinero real entra a tu cuenta.
-            </p>
-          </div>
 
           {/* CUADRO COMPARATIVO SENCILLO: ¿QUÉ PREFIERES EN TU BOLSILLO? */}
-          <div className="mb-10 sm:mb-14 p-4 sm:p-8 rounded-3xl bg-gradient-to-br from-slate-900 via-cyan-950/30 to-slate-900 border border-cyan-500/40 shadow-2xl shadow-cyan-950/40 relative overflow-hidden">
+          <div className="mb-10 sm:mb-14 p-5 sm:p-8 rounded-3xl bg-gradient-to-br from-slate-900 via-cyan-950/30 to-slate-900 border border-cyan-500/40 shadow-2xl shadow-cyan-950/40 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative z-10 text-center max-w-2xl mx-auto mb-6 sm:mb-8">
@@ -647,8 +616,8 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-white mt-3">
                 ¿Qué prefieres tener en tu bolsillo?
               </h3>
-              <p className="text-xs sm:text-sm text-slate-300 mt-2 px-2">
-                Mira la diferencia entre ganar con una estrategia común o con las estrategias más rentables:
+              <p className="text-xs sm:text-sm text-cyan-300 mt-2 font-medium">
+                Ejemplo real con la misma inversión de <strong className="text-white font-mono">$10,000 USDT</strong>:
               </p>
             </div>
 
@@ -661,6 +630,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                     <span className="text-xs font-mono font-bold text-slate-400 uppercase">Opción 1 • Estrategia Común</span>
                     <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] font-bold">15% Comisión</span>
                   </div>
+                  <div className="text-slate-400 text-xs mb-1">Tu inversión: <strong>$10,000 USDT</strong></div>
                   <div className="text-slate-400 text-xs mb-1">Ganancia obtenida:</div>
                   <div className="text-2xl sm:text-3xl font-black text-slate-200 font-mono mb-4">
                     +$1,000 <span className="text-xs text-slate-400 font-normal">USDT</span>
@@ -684,37 +654,38 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               {/* CASO B: FONDO CON MEJORES ESTRATEGIAS */}
               <div className="p-4 sm:p-6 rounded-2xl bg-gradient-to-b from-cyan-950/80 to-slate-950 border border-cyan-400/80 shadow-xl shadow-cyan-500/20 flex flex-col justify-between relative">
                 <div className="absolute -top-3 right-6 px-3 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[9px] font-black uppercase tracking-wider">
-                  MÁXIMA GANANCIA LIMPIA
+                  MÁS DINERO LIMPIO
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs font-mono font-bold text-cyan-300 uppercase">Opción 2 • Fondo de Inversión</span>
                     <span className="px-2 py-0.5 rounded bg-cyan-400/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-400/40">Mejores Estrategias</span>
                   </div>
+                  <div className="text-slate-400 text-xs mb-1">Misma inversión: <strong>$10,000 USDT</strong></div>
                   <div className="text-cyan-300/80 text-xs mb-1">Ganancia obtenida:</div>
                   <div className="text-2xl sm:text-3xl font-black text-emerald-400 font-mono mb-4">
-                    +$100,000 <span className="text-xs text-emerald-300 font-normal">USDT</span>
+                    +$4,000 <span className="text-xs text-emerald-300 font-normal">USDT</span>
                   </div>
                   <div className="p-3 rounded-xl bg-slate-900/90 border border-cyan-500/30 space-y-2 text-xs text-slate-200 font-mono">
                     <div className="flex justify-between">
                       <span className="text-slate-300">Comisión del 40%:</span>
-                      <span className="text-rose-400">-$40,000 USDT</span>
+                      <span className="text-rose-400">-$1,600 USDT</span>
                     </div>
                     <div className="pt-2 border-t border-cyan-500/30 flex justify-between font-bold text-sm">
                       <span className="text-white">Te quedan limpios:</span>
-                      <span className="text-emerald-400 text-base">+$60,000 USDT</span>
+                      <span className="text-emerald-400 text-base">+$2,400 USDT</span>
                     </div>
                   </div>
                 </div>
                 <div className="mt-4 text-[11px] text-cyan-200 font-semibold">
-                  ✓ ¡Te llevas <strong className="text-white">$60,000 limpios</strong> a tu bolsillo! Es infinitamente mejor ganar $60,000 que solo $850.
+                  ✓ ¡Te llevas <strong className="text-white">$2,400 limpios</strong> a tu bolsillo! Es casi el triple de dinero que los $850.
                 </div>
               </div>
 
             </div>
 
             <div className="mt-6 pt-5 border-t border-cyan-500/20 text-center text-xs text-slate-300 leading-relaxed max-w-2xl mx-auto px-2">
-              <em>"Por esta razón el Fondo utiliza las estrategias más potentes: porque generan muchas más ganancias y te dejan mucho más dinero en mano."</em>
+              <em>"No importa el porcentaje de la comisión: lo único que importa es cuánto dinero real te queda al final en el bolsillo."</em>
             </div>
           </div>
 
@@ -734,9 +705,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                 <div className="text-sm font-semibold text-cyan-300 my-2">
                   Configuración a tu medida
                 </div>
-                <p className="text-xs text-slate-300 mb-4 leading-relaxed">
-                  Tú decides cómo quieres operar: eliges tus monedas favoritas, el apalancamiento y tu nivel de riesgo.
-                </p>
                 <div className="space-y-2.5 text-xs text-slate-300 pt-3 border-t border-slate-800">
                   <div className="flex items-center gap-2"><span className="text-cyan-400 font-bold">✓</span> Tú decides el apalancamiento (1x a 10x)</div>
                   <div className="flex items-center gap-2"><span className="text-cyan-400 font-bold">✓</span> Eliges tus monedas preferidas</div>
@@ -765,9 +733,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                 <div className="text-sm font-semibold text-cyan-300 my-2">
                   Tu dinero en tu propia cuenta
                 </div>
-                <p className="text-xs text-slate-300 mb-4 leading-relaxed">
-                  El dinero nunca sale de tu cuenta. El sistema copia cada operación ganadora en tu exchange al instante.
-                </p>
                 <div className="space-y-2.5 text-xs text-slate-300 pt-3 border-t border-slate-800">
                   <div className="flex items-center gap-2"><span className="text-sky-400 font-bold">✓</span> Tu dinero siempre bajo tu control</div>
                   <div className="flex items-center gap-2"><span className="text-sky-400 font-bold">✓</span> Retiros libres en cualquier momento</div>
@@ -799,9 +764,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                 <div className="text-sm font-semibold text-amber-300 my-2">
                   Las estrategias más rentables
                 </div>
-                <p className="text-xs text-slate-200 mb-4 leading-relaxed">
-                  Operas con las estrategias más potentes del sistema de forma 100% pasiva, sin enredos técnicos ni complicaciones.
-                </p>
                 <div className="space-y-2.5 text-xs text-slate-200 pt-3 border-t border-slate-800">
                   <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Acceso a las estrategias más rentables</div>
                   <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Cero configuración técnica para ti</div>
@@ -847,21 +809,16 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                 </h3>
                 
                 <p className="text-sm sm:text-base text-slate-200 leading-relaxed font-normal">
-                  Convierte tus conocidos en una fuente ingresos pasivos. Al incorporarlos a la plataforma, recibes beneficios generados por cada uno amigo activo
+                  Convierte tus conocidos en una fuente ingresos pasivos. Al incorporarlos a la plataforma, recibes beneficios generados por cada amigo activo
                 </p>
               </div>
 
-              {/* CARD DE LLAMADA A LA ACCIÓN CONTEXTUAL */}
-              <div className="w-full lg:w-auto flex flex-col items-center bg-slate-950/90 border border-cyan-400/40 p-6 sm:p-8 rounded-3xl shadow-2xl text-center shrink-0 max-w-sm">
-                <span className="text-3xl mb-2">🚀</span>
-                <h4 className="text-lg font-black text-white">Comienza a Ganar Hoy</h4>
-                <p className="text-xs text-slate-300 mt-1 mb-5">
-                  Regístrate o inicia sesión para activar tu código privado de invitación y compartirlo de inmediato.
-                </p>
+              {/* BOTÓN DE ACCIÓN */}
+              <div className="w-full lg:w-auto flex flex-col items-center shrink-0">
                 <button
                   type="button"
                   onClick={() => onOpenRegister && onOpenRegister(simCapital)}
-                  className="w-full py-4 bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-cyan-500/30 hover:scale-105 active:scale-95 transition flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-cyan-500/30 hover:scale-105 active:scale-95 transition flex items-center justify-center gap-2"
                 >
                   <span>Activar Mi Enlace de Socio</span>
                   <span>→</span>
