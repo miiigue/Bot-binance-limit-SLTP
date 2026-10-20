@@ -43,7 +43,7 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
 
   const handleStartClick = () => {
     openConfirm({
-      title: '¿Iniciar Hilos de Trading Cuantitativo?',
+      title: '¿Iniciar Hilos de Trading Algorítmico?',
       message: 'Se iniciará el monitoreo continuo de mercado y la ejecución de órdenes automatizadas para los pares configurados.',
       confirmText: 'Sí, Iniciar Bots',
       type: 'success',

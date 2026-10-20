@@ -81,7 +81,7 @@ export default function LegalTermsModal({ user, onTermsAccepted }) {
               2. Custodia Total y Licencia de Software API
             </h4>
             <p>
-              En la modalidad de Copy-Trading o sincronización de cuenta propia de Binance Futures mediante API Keys, <strong>el usuario mantiene la custodia total y soberana de sus activos en su propio exchange</strong>. La tecnología únicamente requiere permisos de Lectura (<em>Enable Reading</em>) y Ejecución de Futuros (<em>Enable Futures</em>). <strong>Queda estrictamente prohibido y bloqueado cualquier permiso de retiro de fondos (<em>Enable Withdrawals</em>)</strong>.
+              En la modalidad de Copy-Trading o sincronización de cuenta propia de Binance Futures mediante API Keys, <strong>el usuario mantiene la custodia total e independiente de sus activos en su propio exchange</strong>. La tecnología únicamente requiere permisos de Lectura (<em>Enable Reading</em>) y Ejecución de Futuros (<em>Enable Futures</em>). <strong>Queda estrictamente prohibido y bloqueado cualquier permiso de retiro de fondos (<em>Enable Withdrawals</em>)</strong>.
             </p>
           </div>
 
@@ -90,7 +90,7 @@ export default function LegalTermsModal({ user, onTermsAccepted }) {
               3. Declaración de Riesgos y Volatilidad de Mercado
             </h4>
             <p>
-              El trading en mercados financieros descentralizados y derivados cripto (Futures) involucra un riesgo inherente derivado de la volatilidad extrema, deslizamientos (<em>slippage</em>) y condiciones imprevistas de mercado. El usuario acepta expresamente que los rendimientos pasados generados por los algoritmos cuantitativos no garantizan ni aseguran resultados o ganancias futuras.
+              El trading en mercados financieros descentralizados y derivados cripto (Futures) involucra un riesgo inherente derivado de la volatilidad extrema, deslizamientos (<em>slippage</em>) y condiciones imprevistas de mercado. El usuario acepta expresamente que los rendimientos pasados generados por los algoritmos automatizados no garantizan ni aseguran resultados o ganancias futuras.
             </p>
           </div>
 
@@ -100,22 +100,22 @@ export default function LegalTermsModal({ user, onTermsAccepted }) {
               <span>📌</span> Resumen: Propiedad Intelectual & Curaduría de Estrategias Públicas
             </div>
             <p className="text-[11px] leading-relaxed text-slate-300">
-              Todas las estrategias del catálogo público han sido desarrolladas, calibradas y testeadas por el equipo técnico de <strong>WTN Solutions LLC</strong> y son propiedad intelectual exclusiva de la empresa. Su uso es temporal, no exclusivo y revocable. La empresa se reserva el derecho soberano de modificar, suspender, retirar o reasignar cualquier estrategia a otras etapas operativas según convenga a sus criterios técnicos y comerciales, sin previo aviso ni derecho a compensación.
+              Todas las estrategias del catálogo público han sido desarrolladas, calibradas y testeadas por el equipo técnico de <strong>WTN Solutions LLC</strong> y son propiedad intelectual exclusiva de la empresa. Su uso es temporal, no exclusivo y revocable. La empresa se reserva el derecho exclusivo de modificar, suspender, retirar o reasignar cualquier estrategia a otras etapas operativas según convenga a sus criterios técnicos y comerciales, sin previo aviso ni derecho a compensación.
             </p>
           </div>
 
           <div className="space-y-3">
             <h4 className="font-extrabold text-white text-sm uppercase tracking-wider text-amber-400 border-b border-slate-800 pb-1">
-              4. Propiedad Intelectual, Curaduría Técnica y Soberanía Operativa sobre las Estrategias
+              4. Propiedad Intelectual, Curaduría Técnica y Control Operativo sobre las Estrategias
             </h4>
             <p>
-              <strong>4.1. Titularidad y Derechos de Autor:</strong> Todas las estrategias algorítmicas, modelos matemáticos, disparadores RSI, matrices de re-entrada DCA, parámetros cuantitativos y arquitecturas de ejecución puestas a disposición pública en la plataforma son <strong>propiedad intelectual, técnica y comercial exclusiva de WTN Solutions LLC</strong>. La puesta a disposición de una estrategia no constituye cesión de derechos, venta, licenciamiento exclusivo ni derecho adquirido de uso indefinido en favor del usuario.
+              <strong>4.1. Titularidad y Derechos de Autor:</strong> Todas las estrategias algorítmicas, modelos matemáticos, disparadores RSI, matrices de re-entrada DCA, parámetros algorítmicos y arquitecturas de ejecución puestas a disposición pública en la plataforma son <strong>propiedad intelectual, técnica y comercial exclusiva de WTN Solutions LLC</strong>. La puesta a disposición de una estrategia no constituye cesión de derechos, venta, licenciamiento exclusivo ni derecho adquirido de uso indefinido en favor del usuario.
             </p>
             <p>
               <strong>4.2. Curaduría y Pruebas Técnicas:</strong> Las estrategias del catálogo público han sido sometidas a rigurosos procesos de simulación retrospectiva (<em>backtesting</em>), optimización y pruebas técnicas en entornos controlados por parte del equipo técnico de la plataforma. El usuario reconoce que las condiciones del mercado son dinámicas e impredecibles, por lo que las pruebas técnicas no garantizan la persistencia de resultados favorables.
             </p>
             <p>
-              <strong>4.3. Reserva de Derechos de Retiro, Modificación y Reasignación (Soberanía Corporativa):</strong> WTN Solutions LLC se reserva el derecho inalienable y discrecional de retirar o suspender cualquier estrategia pública, reasignarla a etapas operativas internas, fondos privados, cuentas institucionales o niveles exclusivos, o ajustar parámetros y pausar modelos según lo determinen los comités de riesgo y la conveniencia estratégica de la firma, sin que dicha descontinuación o retiro genere derecho a reclamo o indemnización alguna.
+              <strong>4.3. Reserva de Derechos de Retiro, Modificación y Reasignación (Facultad Corporativa):</strong> WTN Solutions LLC se reserva el derecho inalienable y discrecional de retirar o suspender cualquier estrategia pública, reasignarla a etapas operativas internas, fondos privados, cuentas institucionales o niveles exclusivos, o ajustar parámetros y pausar modelos según lo determinen los comités de riesgo y la conveniencia estratégica de la firma, sin que dicha descontinuación o retiro genere derecho a reclamo o indemnización alguna.
             </p>
           </div>
 

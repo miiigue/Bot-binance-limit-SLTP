@@ -105,7 +105,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
       {isLoading && !monitorData ? (
         <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
           <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
-          <span>Conectando con Binance Futures y escaneando radar cuantitativo...</span>
+          <span>Conectando con Binance Futures y escaneando radar algorítmico...</span>
         </div>
       ) : symbols.length === 0 ? (
         <div className="p-8 bg-slate-950/60 border border-slate-800 rounded-2xl text-center text-slate-400 text-xs">

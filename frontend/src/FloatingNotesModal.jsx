@@ -638,7 +638,7 @@ export default function FloatingNotesModal() {
               </div>
 
               <div className="p-2.5 rounded-xl bg-slate-950/40 border border-slate-800 text-[10px] text-slate-400 space-y-1">
-                <span className="font-bold text-slate-300 block">🔒 Seguridad Soberana:</span>
+                <span className="font-bold text-slate-300 block">🔒 Seguridad y Control Total:</span>
                 <p>• La clave se almacena segura en la base de datos PostgreSQL del bot.</p>
                 <p>• Solo el Super Administrador tiene acceso a esta consola y a la configuración de IA.</p>
               </div>

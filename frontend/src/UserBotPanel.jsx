@@ -825,7 +825,7 @@ export default function UserBotPanel({
       message: nextState 
         ? (isMarketplaceMode 
             ? `Tu bot personal comenzará a operar en Binance Futures con la estrategia "${stratTitle}", con un margen de $${allocatedUsdt} USDT por orden y ${effectiveLeverage}x de apalancamiento (${leverage === 'default' || !leverage ? 'por defecto de la estrategia' : 'personalizado'}, Nocional: $${(Number(allocatedUsdt) * effectiveLeverage).toFixed(2)} USDT por posición).`
-            : 'El algoritmo cuantitativo comenzará a copiar en tiempo real cada orden de compra y venta en tu cuenta de Binance Futures (Modo Copy-Trading Espejo).')
+            : 'El algoritmo automatizado comenzará a copiar en tiempo real cada orden de compra y venta en tu cuenta de Binance Futures (Modo Copy-Trading Espejo).')
         : 'Se pausará la operativa en tu cuenta de Binance. Las órdenes abiertas mantendrán sus Stop Loss en el exchange.',
       confirmText: nextState 
         ? (isMarketplaceMode ? 'Sí, Iniciar Mi Bot' : 'Sí, Activar Replicación') 
@@ -1364,7 +1364,7 @@ export default function UserBotPanel({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
               <div>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold mb-1">
-                  <span>🛒</span> MARKETPLACE DE ESTRATEGIAS CUANTITATIVAS
+                  <span>🛒</span> MARKETPLACE DE ESTRATEGIAS ALGORÍTMICAS
                 </div>
               </div>
               <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -1429,7 +1429,7 @@ export default function UserBotPanel({
                             </h4>
 
                             <p className="text-xs text-slate-400 mb-4 leading-relaxed line-clamp-3">
-                              {strat.description || 'Estrategia cuantitativa con gestión dinámica de riesgo y toma de ganancias inteligente.'}
+                              {strat.description || 'Estrategia algorítmica con gestión dinámica de riesgo y toma de ganancias inteligente.'}
                             </p>
                           </div>
                         </div>
@@ -1586,7 +1586,7 @@ export default function UserBotPanel({
                       <div className="p-3.5 bg-slate-900/80 rounded-xl border border-slate-700/80 space-y-2 text-xs">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-amber-400 font-bold">⚖️ Auto-Ajuste de Equivalencia (ROE Soberano):</span>
+                            <span className="text-amber-400 font-bold">⚖️ Auto-Ajuste de Equivalencia (ROE Objetivo):</span>
                             <span className="bg-amber-400/20 text-amber-300 font-mono font-bold px-2 py-0.5 rounded text-[11px] border border-amber-400/30">
                               {isScaled ? `${scalePercent}% del Capital Base ($${stratBaseMargin} USDT)` : '100% Capital Base (1:1)'}
                             </span>
@@ -2344,7 +2344,7 @@ export default function UserBotPanel({
                   <td colSpan={11} className="p-8 text-center text-slate-500 text-xs">
                     {currentSubTab === 'my_bot'
                       ? 'No hay operaciones cerradas registradas para esta sesión de tu bot personal. Las nuevas posiciones ejecutadas por tu estrategia quedarán registradas aquí.'
-                      : 'No hay operaciones cerradas registradas para esta sesión de copytrading. Las nuevas posiciones de la estrategia cuantitativa activa quedarán registradas aquí.'}
+                      : 'No hay operaciones cerradas registradas para esta sesión de copytrading. Las nuevas posiciones de la estrategia algorítmica activa quedarán registradas aquí.'}
                   </td>
                 </tr>
               )}

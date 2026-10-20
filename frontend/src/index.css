@@ -111,7 +111,7 @@ code, kbd, samp, pre, .font-mono {
 .animate-marquee {
   display: flex !important;
   width: max-content !important;
-  animation: marquee 28s linear infinite !important;
+  animation: marquee 85s linear infinite !important;
   will-change: transform;
 }
 

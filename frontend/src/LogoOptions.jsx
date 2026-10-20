@@ -2,7 +2,7 @@ import React from 'react';
 
 /**
  * LOGOTIPOS TIPOGRÁFICOS (WORDMARKS) PARA WTN ALGO-TRADING
- * Diseñados según los estándares institucionales de firmas globales cuantitativas (Citadel, Two Sigma, Jane Street, Jump Trading).
+ * Diseñados según los estándares institucionales de firmas globales de trading (Citadel, Two Sigma, Jane Street, Jump Trading).
  * Inspirados principalmente en la estética 'Velocity Breakout' (Opción 4):
  * Tipografía en cursiva aerodinámica, contrastes extremos, gradientes cian-eléctricos y precisión micro-vectorial.
  */

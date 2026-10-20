@@ -324,7 +324,7 @@ export default function InvestorPortfolio({ onNavigatePerformance }) {
                 </span>
               </div>
               <span className="text-[10px] text-slate-400 font-medium">
-                Supervisión Cuantitativa Institucional
+                Supervisión Algorítmica Institucional
               </span>
             </div>
           </div>

@@ -29,7 +29,7 @@ export default function LegalModal({ isOpen, onClose }) {
         {/* Scrollable Body */}
         <div className="overflow-y-auto pr-2 space-y-4 text-xs text-slate-300 leading-relaxed font-sans flex-1">
           <div className="p-3 bg-amber-400/10 border border-amber-400/20 rounded-2xl text-amber-300 text-[11px]">
-            <strong>AVISO IMPORTANTE:</strong> Este documento establece las condiciones legales para el uso de la tecnología cuantitativa WTN Algo-Trading. Léalo atentamente antes de solicitar acceso o vincular credenciales.
+            <strong>AVISO IMPORTANTE:</strong> Este documento establece las condiciones legales para el uso de la tecnología algorítmica WTN Algo-Trading. Léalo atentamente antes de solicitar acceso o vincular credenciales.
           </div>
 
           <section>
@@ -71,7 +71,7 @@ export default function LegalModal({ isOpen, onClose }) {
           </section>
 
           <section>
-            <h4 className="font-bold text-white text-sm mb-1 text-amber-400">5. Propiedad Intelectual, Curaduría Técnica y Soberanía sobre Estrategias</h4>
+            <h4 className="font-bold text-white text-sm mb-1 text-amber-400">5. Propiedad Intelectual, Curaduría Técnica y Control sobre Estrategias</h4>
             <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-200 mb-2 leading-relaxed">
               <strong>📌 Resumen Ejecutivo:</strong> Todas las estrategias públicas son desarrolladas y testeadas por el equipo técnico de WTN Solutions LLC y constituyen propiedad intelectual exclusiva de la empresa. Su uso es temporal y no exclusivo. La compañía se reserva el derecho de retirar, modificar, descontinuar o reasignar cualquier estrategia según convenga a sus criterios técnicos u operativos, sin previo aviso ni indemnización.
             </div>

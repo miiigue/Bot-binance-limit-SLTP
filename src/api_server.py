@@ -3794,7 +3794,7 @@ def upsert_strategy_catalog_endpoint():
         if ok:
             return jsonify({
                 "success": True,
-                "message": f"Estrategia '{name}' guardada exitosamente en el catálogo soberano."
+                "message": f"Estrategia '{name}' guardada exitosamente en el catálogo oficial."
             }), 200
         return jsonify({"error": "Error al guardar en el catálogo de base de datos."}), 500
     except Exception as e_main:

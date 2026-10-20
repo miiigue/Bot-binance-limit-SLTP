@@ -66,7 +66,7 @@ export default function CapitalRequestModal({ isOpen, onClose, onRequestSubmitte
 
         <div className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 text-xs text-slate-300 leading-relaxed">
           <span>
-            Indica el capital en USDT que deseas incorporar al pool cuantitativo gestionado por <strong>WTN Solutions LLC</strong>. Tu solicitud ingresará al panel de aprobación de la Administración.
+            Indica el capital en USDT que deseas incorporar al pool de inversión gestionado por <strong>WTN Solutions LLC</strong>. Tu solicitud ingresará al panel de aprobación de la Administración.
           </span>
         </div>
 

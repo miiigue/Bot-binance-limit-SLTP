@@ -96,7 +96,7 @@ export default function ReferralTermsModal({ isOpen, onClose, onAccepted }) {
               3. Custodia Exclusiva y Operativa en Cuentas Privadas de Binance
             </h4>
             <p>
-              Todos los usuarios invitados mantienen en todo momento el control, custodia y soberanía de sus fondos dentro de sus propias cuentas de Binance Futures. Las comisiones de referidos se calculan a nivel de software y se liquidan de acuerdo con las políticas contables internas de la plataforma.
+              Todos los usuarios invitados mantienen en todo momento el control y custodia total de sus fondos dentro de sus propias cuentas de Binance Futures. Las comisiones de referidos se calculan a nivel de software y se liquidan de acuerdo con las políticas contables internas de la plataforma.
             </p>
           </div>
 

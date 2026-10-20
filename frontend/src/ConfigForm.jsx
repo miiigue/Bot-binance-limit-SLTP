@@ -1298,7 +1298,7 @@ function ConfigForm({
         dataToSend.enable_hedge_breakout_requirement = dataToSend.enableHedgeBreakoutRequirement;
       }
 
-      // Parámetros Soberanos del Catálogo para Inversionistas
+      // Parámetros del Catálogo para Inversionistas
       dataToSend.is_public = isStrategyPublic;
       dataToSend.isPublic = isStrategyPublic;
       dataToSend.risk_level = strategyRiskLevel;
@@ -1936,7 +1936,7 @@ function ConfigForm({
             <div>
               <div className="flex items-center gap-2.5 flex-wrap">
                 <span className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center gap-2">
-                  <span>🛒</span> Catálogo para Inversionistas (Marketplace Soberano)
+                  <span>🛒</span> Catálogo para Inversionistas (Marketplace Oficial)
                 </span>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-950 text-indigo-300 border border-indigo-700/60">
                   {availableStrategies.length} Estrategias Registradas
