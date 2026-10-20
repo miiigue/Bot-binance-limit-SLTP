@@ -254,18 +254,33 @@ export default function EquityCurvesShowcase() {
         {/* MÉTRICAS CLAVE DE LA CUENTA */}
         <div className="lg:col-span-4 space-y-4">
           <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800">
-            <div className="flex items-center flex-wrap gap-1.5 mb-2">
-              <span className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30">
+            <div className="flex items-center flex-wrap gap-2 mb-3">
+              <span className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wider px-2.5 py-1 rounded-lg bg-cyan-950/60 border border-cyan-500/30">
                 {account.modeBadge}
               </span>
-              <span className="text-[10px] font-mono font-black text-emerald-300 uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/40 shadow-sm">
-                GANANCIA: {account.profitDiff}
-              </span>
             </div>
-            <div className="text-3xl font-black text-emerald-400 font-mono">
-              {account.gain}
+
+            {/* DOS BLOQUES IDENTICOS: PORCENTAJE Y MONTO DE GANANCIA */}
+            <div className="grid grid-cols-2 gap-2.5 mb-2">
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800/80">
+                <span className="text-[10px] font-mono text-slate-400 block uppercase font-bold tracking-wider mb-0.5">
+                  Rendimiento
+                </span>
+                <div className="text-2xl sm:text-3xl font-black text-emerald-400 font-mono tracking-tight">
+                  {account.gain}
+                </div>
+              </div>
+              <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/40 shadow-inner">
+                <span className="text-[10px] font-mono text-emerald-400 block uppercase font-bold tracking-wider mb-0.5">
+                  Ganancia Neta
+                </span>
+                <div className="text-2xl sm:text-3xl font-black text-emerald-300 font-mono tracking-tight">
+                  {account.profitDiff}
+                </div>
+              </div>
             </div>
-            <div className="text-xs text-slate-400 mt-0.5">
+
+            <div className="text-xs text-slate-400 font-medium">
               Ganancia neta en {account.duration}
             </div>
           </div>
