@@ -151,48 +151,48 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-cyan-400 selection:text-slate-950 font-sans overflow-x-hidden">
       
       {/* =========================================================================
-          1. HEADER / BARRA DE NAVEGACIÓN (SIN MENCIÓN A WTN SOLUTIONS)
+          1. HEADER / BARRA DE NAVEGACIÓN RESPONSIVE
          ========================================================================= */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/85 backdrop-blur-xl border-b border-cyan-500/20 shadow-lg shadow-cyan-950/30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/90 backdrop-blur-xl border-b border-cyan-500/20 shadow-lg shadow-cyan-950/30">
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2">
           
-          {/* LOGOTIPO TIPOGRÁFICO OFICIAL CON NOMBRE COMPLETO */}
-          <div className="flex items-center gap-3">
+          {/* LOGOTIPO TIPOGRÁFICO OFICIAL CON NOMBRE COMPLETO (ESCALA RESPONSIVE PARA MÓVILES) */}
+          <div className="flex items-center shrink-0">
             <button
               type="button"
               onClick={() => setShowLogoModal(true)}
-              className="text-left group transition-transform hover:scale-[1.02] active:scale-[0.98] focus:outline-none"
-              title="Haz clic para ver y elegir entre los estilos de logo oficiales"
+              className="text-left group transition-transform hover:scale-[1.02] active:scale-[0.98] focus:outline-none flex items-center"
+              title="Haz clic para abrir la Galería Oficial de Logos y Tamaños"
             >
               <CurrentWordmarkComponent />
             </button>
           </div>
 
           {/* BOTONES DE ACCIÓN: ELEGIR LOGO / INICIAR SESIÓN / SOLICITAR INVERSIÓN */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             <button
               type="button"
               onClick={() => setShowLogoModal(true)}
-              className="hidden md:flex px-2.5 py-1.5 text-[11px] font-mono text-cyan-300 hover:text-white bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 rounded-xl transition items-center gap-1.5"
-              title="Explorar variantes tipográficas del logotipo"
+              className="hidden lg:flex px-2.5 py-1.5 text-[11px] font-mono text-cyan-300 hover:text-white bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 rounded-xl transition items-center gap-1.5"
+              title="Abrir Galería de Logotipos y Tamaños"
             >
-              <span>🎨</span> Elegir Logo
+              <span>🎨</span> Galería Logos
             </button>
 
             <button
               type="button"
               onClick={() => onOpenLogin && onOpenLogin()}
-              className="px-3.5 sm:px-4 py-2 text-xs font-bold text-slate-200 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/50 rounded-xl transition shadow-sm"
+              className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-200 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/50 rounded-xl transition shadow-sm whitespace-nowrap"
             >
-              Iniciar Sesión
+              <span className="hidden xs:inline">Iniciar </span><span>Sesión</span>
             </button>
 
             <button
               type="button"
               onClick={() => onOpenRegister && onOpenRegister(simCapital)}
-              className="px-3.5 sm:px-5 py-2 sm:py-2.5 text-xs font-extrabold text-slate-950 bg-gradient-to-r from-cyan-400 via-sky-300 to-cyan-300 hover:from-cyan-300 hover:to-sky-200 rounded-xl shadow-lg shadow-cyan-500/25 transition hover:scale-105 active:scale-95 flex items-center gap-1.5 sm:gap-2"
+              className="px-2.5 sm:px-5 py-1.5 sm:py-2.5 text-[11px] sm:text-xs font-extrabold text-slate-950 bg-gradient-to-r from-cyan-400 via-sky-300 to-cyan-300 hover:from-cyan-300 hover:to-sky-200 rounded-xl shadow-lg shadow-cyan-500/25 transition hover:scale-105 active:scale-95 flex items-center gap-1 sm:gap-2 whitespace-nowrap"
             >
-              <span>Solicitar Inversión</span>
+              <span className="hidden sm:inline">Solicitar </span><span>Inversión</span>
               <span>→</span>
             </button>
           </div>
@@ -715,7 +715,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       {/* =========================================================================
           7. SECCIÓN PATRIMONIO GENERACIONAL: EL MODELO TRUMP & EL FONDO PARA TUS HIJOS
          ========================================================================= */}
-      <section id="patrimonio-hijos" className="py-20 sm:py-24 relative z-10 border-t border-slate-900 bg-gradient-to-b from-slate-950 via-[#070b16] to-slate-950 overflow-hidden">
+      <section id="patrimonio-hijos" className="py-16 sm:py-20 relative z-10 border-t border-slate-900 bg-gradient-to-b from-slate-950 via-[#070b16] to-slate-950 overflow-hidden">
         
         {/* Luces ambientales en dorado institucional y azul naval */}
         <div className="absolute top-1/4 left-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -723,9 +723,9 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
 
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
             
-            {/* COLUMNA IZQUIERDA: IMAGEN EMBLEMÁTICA (PELUCA DORADA / BANDERA USA / BÓVEDA) */}
+            {/* COLUMNA IZQUIERDA: IMAGEN LIMPIA SIN ETIQUETAS QUE OBSTRUYAN */}
             <div className="lg:col-span-5 flex flex-col items-center">
               <div className="w-full max-w-md rounded-3xl p-2.5 bg-gradient-to-b from-amber-400/40 via-slate-800 to-amber-500/30 border border-amber-400/50 shadow-2xl shadow-amber-500/20 backdrop-blur-xl group">
                 <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-amber-500/30">
@@ -735,128 +735,101 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                     className="w-full h-auto object-cover object-center transform group-hover:scale-105 transition-transform duration-700"
                     loading="lazy"
                   />
-                  
-                  {/* Overlay gradiente inferior para legibilidad */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent pointer-events-none" />
 
-                  {/* Badge flotante superior con bandera y sello institucional */}
+                  {/* Badge flotante superior discreto */}
                   <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950/85 border border-amber-400/60 text-amber-300 font-mono text-[10px] font-bold backdrop-blur-md shadow-lg">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/85 border border-amber-400/60 text-amber-300 font-mono text-[10px] font-bold backdrop-blur-md shadow-lg">
                       <span className="text-xs">🇺🇸</span> Modelo Trump Accounts
                     </span>
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-950/85 border border-emerald-400/60 text-emerald-300 font-mono text-[10px] font-black backdrop-blur-md">
                       100% Autocustodia
                     </span>
                   </div>
-
-                  {/* Leyenda inferior sobre la imagen */}
-                  <div className="absolute bottom-3 left-3 right-3 p-3 rounded-xl bg-slate-950/90 border border-amber-400/30 backdrop-blur-md">
-                    <div className="text-[11px] font-bold text-amber-200 uppercase tracking-wider flex items-center gap-1.5">
-                      <span>🏛️</span> El Poder del Interés Compuesto
-                    </div>
-                    <div className="text-[10px] text-slate-300 mt-0.5">
-                      18 años creciendo en automático mientras ellos juegan y estudian.
-                    </div>
-                  </div>
                 </div>
               </div>
 
-              {/* Estadísticas de impacto */}
+              {/* Estadísticas clave */}
               <div className="grid grid-cols-2 gap-3 w-full max-w-md mt-4">
                 <div className="p-3 rounded-2xl bg-slate-900/80 border border-amber-400/30 text-center">
-                  <div className="text-lg font-black font-mono text-amber-300">+18 Años</div>
-                  <div className="text-[10px] text-slate-400">Maduración del Capital</div>
+                  <div className="text-base sm:text-lg font-black font-mono text-amber-300">+18 Años</div>
+                  <div className="text-[10px] text-slate-400">Interés Compuesto</div>
                 </div>
                 <div className="p-3 rounded-2xl bg-slate-900/80 border border-cyan-400/30 text-center">
-                  <div className="text-lg font-black font-mono text-cyan-300">$0 Deudas</div>
-                  <div className="text-[10px] text-slate-400">Al llegar a la Mayoría de Edad</div>
+                  <div className="text-base sm:text-lg font-black font-mono text-cyan-300">$0 Deudas</div>
+                  <div className="text-[10px] text-slate-400">Patrimonio en su Mayoría de Edad</div>
                 </div>
               </div>
             </div>
 
-            {/* COLUMNA DERECHA: ARGUMENTACIÓN CONVINCENTE PARA LATINOS Y PADRES DEL MUNDO */}
-            <div className="lg:col-span-7 space-y-5">
+            {/* COLUMNA DERECHA: TEXTO RESUMIDO AL 70% + FRASE MOTIVADORA CON FOMO */}
+            <div className="lg:col-span-7 space-y-4">
               
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-400/15 border border-amber-400/40 text-amber-300 text-xs font-mono font-black uppercase tracking-wider">
-                <span className="text-sm">🇺🇸</span>
-                <span>VISIÓN DE ESTADO • PATRIMONIO GENERACIONAL</span>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/15 border border-amber-400/40 text-amber-300 text-[11px] font-mono font-black uppercase tracking-wider">
+                <span className="text-xs">🇺🇸</span>
+                <span>MODELO GENERACIONAL • TRUMP ACCOUNTS (530A)</span>
               </div>
 
-              <h3 className="text-2xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-tight">
-                Si en EE.UU. Piensan en Asignar Cuentas a sus Recién Nacidos...{' '}
+              <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight leading-tight">
+                En EE.UU. Invierten en sus Hijos al Nacer...{' '}
                 <span className="block mt-1 bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent">
-                  ¿Qué Estás Construyendo Tú para tus Hijos?
+                  ¿Qué Estás Haciendo Tú por los Tuyos?
                 </span>
               </h3>
 
-              <div className="text-xs sm:text-sm text-slate-300 space-y-3 leading-relaxed">
-                <p>
-                  En Estados Unidos, Donald Trump impulsó la creación de las <strong className="text-white">Trump Accounts (530A)</strong>: cuentas de inversión que asignan un capital inicial a los bebés al nacer para que el mercado bursátil lo multiplique a lo largo de 18 años y puedan reclamarlo al cumplir la mayoría de edad.
-                </p>
-                <p>
-                  Pero seamos honestos: <strong className="text-amber-300">si eres latino o vives fuera de EE.UU., ningún gobierno ni político va a crear esa cuenta por ti.</strong> En nuestros países, la inflación, las devaluaciones y los bancos tradicionales devoran el poder adquisitivo de quienes solo ahorran en moneda local.
-                </p>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
+                Donald Trump propuso crear cuentas de inversión para recién nacidos con 18 años de interés compuesto. Fuera de EE.UU., ningún gobierno lo hará por tus hijos: tú eres quien debe construir su respaldo financiero hoy en <strong className="text-white">autocustodia total</strong>.
+              </p>
+
+              {/* 3 PILARES ESENCIALES (SÚPER RESUMIDOS) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                  <div className="font-bold text-white text-xs flex items-center gap-1 mb-1">
+                    <span>🌱</span> Capital Semilla
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    Inicia con lo que tengas en USDT. El tiempo multiplica.
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                  <div className="font-bold text-white text-xs flex items-center gap-1 mb-1">
+                    <span>🤖</span> Algoritmos 24/7
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    Operación matemática en Bitcoin, Ethereum y Solana.
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                  <div className="font-bold text-white text-xs flex items-center gap-1 mb-1">
+                    <span>🎓</span> Mayoría de Edad
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    Tu hijo reclama su saldo para universidad o empresa sin deudas.
+                  </p>
+                </div>
               </div>
 
-              {/* 4 BENEFICIOS CLAVE EN AUTOCUSTODIA */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                
-                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-amber-400/40 transition">
-                  <div className="flex items-center gap-2 text-xs font-bold text-white mb-1">
-                    <span className="text-base text-amber-400">🌱</span>
-                    <span>1. Capital Semilla a tu Alcance</span>
+              {/* FRASE DE ALTO FOMO Y URGENCIA */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-950/60 via-slate-900 to-rose-950/40 border border-amber-400/50 shadow-lg">
+                <div className="flex items-start gap-2.5">
+                  <span className="text-lg text-amber-400 shrink-0 mt-0.5">⚡</span>
+                  <div>
+                    <div className="text-[11px] font-mono font-bold text-amber-300 uppercase tracking-wide">
+                      URGENCIA FINANCIERA • EL TIEMPO NO SE RECUPERA
+                    </div>
+                    <p className="text-xs text-amber-100 font-semibold leading-relaxed mt-1">
+                      «Cada día que dejas pasar sin un fondo multiplicándose en autocustodia es dinero que la inflación le arrebata a tus hijos. El tiempo es el único activo irreemplazable: asegura su patrimonio hoy con los beneficios preferenciales de lanzamiento antes de que se agoten los cupos asignados.»
+                    </p>
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-snug">
-                    Inicias con lo que tengas disponible en USDT. No necesitas millones: el tiempo y la constancia hacen el trabajo pesado.
-                  </p>
                 </div>
-
-                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-cyan-400/40 transition">
-                  <div className="flex items-center gap-2 text-xs font-bold text-white mb-1">
-                    <span className="text-base text-cyan-400">🤖</span>
-                    <span>2. Algoritmos 24/7 en Activos Sólidos</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-snug">
-                    Tus fondos operan solo en las monedas líderes del mundo (BTC, ETH, SOL), sumando beneficios ciclo tras ciclo.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-emerald-400/40 transition">
-                  <div className="flex items-center gap-2 text-xs font-bold text-white mb-1">
-                    <span className="text-base text-emerald-400">🛡️</span>
-                    <span>3. 100% en Autocustodia</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-snug">
-                    Tú tienes el control total de los fondos en tu propia cuenta. Cero riesgo de quiebra bancaria o congelamiento estatal.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-sky-400/40 transition">
-                  <div className="flex items-center gap-2 text-xs font-bold text-white mb-1">
-                    <span className="text-base text-sky-400">🎓</span>
-                    <span>4. Reclamo a la Mayoría de Edad</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-snug">
-                    A los 18 años, tu hijo no empieza de cero: recibe una cuenta madura para pagar su universidad, fundar su empresa o comprar su casa.
-                  </p>
-                </div>
-
               </div>
 
-              {/* FRASE DE REFLEXIÓN & LLAMADO A LA ACCIÓN */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-950/20 border border-amber-500/30">
-                <p className="text-xs text-amber-200/90 italic font-medium">
-                  «Los ricos no gastan su capital hoy; ponen los algoritmos a trabajar para que sus hijos nunca tengan que empezar de cero.»
-                </p>
-              </div>
-
-              <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
+              <div className="pt-1">
                 <button
                   type="button"
                   onClick={() => onOpenRegister && onOpenRegister(simCapital)}
-                  className="w-full sm:w-auto px-7 py-3.5 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-amber-300 hover:to-yellow-200 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-xl shadow-amber-500/25 transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-7 py-3 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-amber-300 hover:to-yellow-200 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-xl shadow-amber-500/25 transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
                 >
-                  <span>👶 Crear el Fondo para mis Hijos en Autocustodia</span>
+                  <span>👶 Asegurar el Futuro de mis Hijos Ahora</span>
                   <span>→</span>
                 </button>
               </div>
@@ -1055,80 +1028,143 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          10. MODAL INTERACTIVO PARA ELEGIR EL LOGO TIPOGRÁFICO
+          10. GALERÍA OFICIAL DE LOGOTIPOS & SISTEMA DE MARCA INSTITUCIONAL
          ========================================================================= */}
       {showLogoModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-xl animate-fadeIn"
           onClick={() => setShowLogoModal(false)}
         >
           <div
-            className="relative w-full max-w-2xl bg-slate-900 border border-cyan-500/40 rounded-3xl p-6 sm:p-8 text-white shadow-2xl"
+            className="relative w-full max-w-4xl max-h-[92vh] bg-slate-900/95 border border-cyan-500/40 rounded-3xl p-5 sm:p-8 text-white shadow-2xl flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* BOTÓN CERRAR */}
             <button
               type="button"
               onClick={() => setShowLogoModal(false)}
-              className="absolute top-5 right-5 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold"
+              className="absolute top-4 right-4 sm:top-6 sm:right-6 w-9 h-9 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center text-sm font-bold border border-slate-700 transition"
+              aria-label="Cerrar modal"
             >
               ✕
             </button>
 
-            <div className="text-center mb-6">
-              <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-widest">
-                🎨 IDENTIDAD VISUAL WTN ALGO-TRADING
-              </span>
-              <h3 className="text-2xl font-black text-white mt-1">
-                Elige el Estilo Oficial de Logo para el Proyecto
+            {/* ENCABEZADO DE LA GALERÍA */}
+            <div className="text-center mb-6 pr-8 pl-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-400/15 border border-cyan-400/30 text-cyan-300 font-mono text-[10px] font-bold uppercase tracking-wider mb-2">
+                <span>🎨</span> IDENTIDAD VISUAL & BRANDING SUITE
+              </div>
+              <h3 className="text-xl sm:text-3xl font-black text-white tracking-tight">
+                Galería Oficial de Logotipos WTN ALGO-TRADING
               </h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Como las grandes firmas financieras, el logo es el mismo nombre con identidad tipográfica única. Elige tu favorito:
+              <p className="text-xs text-slate-300 max-w-2xl mx-auto mt-1.5 leading-relaxed">
+                Diseñados según los estándares tipográficos de las mayores firmas globales. Elige el estilo oficial para la plataforma y consulta las dimensiones técnicas de producción:
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {LOGO_OPTIONS.map((opt) => {
-                const Wordmark = opt.Component;
-                const isSelected = selectedLogoId === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedLogoId(opt.id);
-                      setShowLogoModal(false);
-                    }}
-                    className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between ${
-                      isSelected
-                        ? 'bg-cyan-950/60 border-cyan-400 ring-2 ring-cyan-400/30 shadow-lg'
-                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-3 min-h-[56px]">
-                      <Wordmark />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold text-white">{opt.name}</span>
-                        {isSelected && <span className="text-[10px] text-cyan-400 font-bold">✓ Activo</span>}
+            {/* LISTA ORGANIZADA DE LOGOTIPOS CON SUS TAMAÑOS Y ESPECIFICACIONES */}
+            <div className="overflow-y-auto pr-1 space-y-4 max-h-[64vh]">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {LOGO_OPTIONS.map((opt) => {
+                  const Wordmark = opt.Component;
+                  const isSelected = selectedLogoId === opt.id;
+                  return (
+                    <div
+                      key={opt.id}
+                      className={`p-4 sm:p-5 rounded-2xl border transition flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-gradient-to-b from-cyan-950/50 to-slate-900 border-cyan-400 ring-2 ring-cyan-400/30 shadow-xl'
+                          : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div>
+                        {/* ENCABEZADO DE LA CARD */}
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-black text-white">{opt.name}</span>
+                          {isSelected ? (
+                            <span className="px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[9px] font-black uppercase">
+                              ✓ Activo
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-mono">Disponible</span>
+                          )}
+                        </div>
+
+                        <div className="text-[11px] text-cyan-300 font-semibold mb-3">
+                          {opt.subtitle}
+                        </div>
+
+                        {/* ÁREA DE PREVISUALIZACIÓN EN VIVO (FONDO ULTRA OSCURO) */}
+                        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800/80 flex items-center justify-center mb-3 min-h-[64px] overflow-hidden">
+                          <Wordmark />
+                        </div>
+
+                        {/* ORGANIZACIÓN DE TAMAÑOS REQUERIDOS */}
+                        <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 mb-3 space-y-1.5 text-[10px] font-mono">
+                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            📐 Tamaños Oficiales de Producción:
+                          </div>
+                          <div className="flex items-center justify-between text-slate-300">
+                            <span className="text-cyan-400 font-bold">🖥️ Desktop:</span>
+                            <span className="text-slate-300">32px (Cabecera & 4K)</span>
+                          </div>
+                          <div className="flex items-center justify-between text-slate-300">
+                            <span className="text-sky-400 font-bold">📱 Móvil:</span>
+                            <span className="text-slate-300">16px (Smartphones & PWA)</span>
+                          </div>
+                          <div className="flex items-center justify-between text-slate-300">
+                            <span className="text-emerald-400 font-bold">⚡ App/Token:</span>
+                            <span className="text-slate-300">14px (Favicon & Notificaciones)</span>
+                          </div>
+                        </div>
+
+                        {/* CASOS DE USO RECOMENDADOS */}
+                        {opt.useCases && (
+                          <div className="flex flex-wrap gap-1 mb-3">
+                            {opt.useCases.map((u, i) => (
+                              <span key={i} className="px-2 py-0.5 rounded bg-slate-800 text-[9px] text-slate-300 border border-slate-700/60">
+                                {u}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div className="text-[10px] text-cyan-300 font-medium mt-0.5">{opt.subtitle}</div>
-                      <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">{opt.desc}</p>
+
+                      {/* BOTÓN DE SELECCIÓN */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedLogoId(opt.id);
+                          setShowLogoModal(false);
+                        }}
+                        className={`w-full py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-cyan-400 text-slate-950 font-black shadow-lg shadow-cyan-500/20'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700'
+                        }`}
+                      >
+                        {isSelected ? '✓ Logo Activo en Plataforma' : 'Activar este Logo'}
+                      </button>
                     </div>
-                  </button>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="mt-6 text-center">
+            {/* PIE DEL MODAL */}
+            <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <span className="text-[11px]">
+                Tipografía: <strong className="text-slate-200">Sans-Serif Black Italic</strong> con velas alcistas en unidades relativas <strong className="text-emerald-400 font-mono">em</strong>.
+              </span>
               <button
                 type="button"
                 onClick={() => setShowLogoModal(false)}
-                className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition"
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition"
               >
-                Cerrar Ventana
+                Cerrar Galería
               </button>
             </div>
+
           </div>
         </div>
       )}

@@ -3,25 +3,26 @@ import React from 'react';
 /**
  * LOGOTIPOS TIPOGRÁFICOS (WORDMARKS) PARA WTN ALGO-TRADING
  * Diseñados según los estándares institucionales de firmas globales de trading.
- * La palabra TRADING tiene exactamente el mismo tamaño, estilo y color que el resto de las letras,
- * manteniendo la 'I' y la 'N' estilizadas como velas japonesas alcistas verdes.
+ * Responsive fluido: escala matemáticamente en teléfonos móviles sin romperse ni desbordarse.
+ * Mantiene la palabra TRADING en el mismo estilo, tamaño y color, con velas japonesas alcistas verdes.
  */
 
 // ============================================================================
 // MICRO-COMPONENTES SVG: VELAS ALCISTAS VERDES (CANDLESTICKS) PARA 'I' Y 'N'
+// Escalan automáticamente con unidades em para adaptarse al tamaño de fuente exacto
 // ============================================================================
 
 /**
  * CandlestickLetterI: Vela japonesa verde sólida con mecha superior e inferior
  */
-export function CandlestickLetterI({ size = 22, className = "" }) {
-  const width = Math.max(7, Math.round(size * 0.36));
+export function CandlestickLetterI({ size, className = "" }) {
   return (
     <svg
-      width={width}
-      height={size}
       viewBox="0 0 10 24"
-      className={`inline-block align-middle mx-[1px] shrink-0 drop-shadow-[0_0_6px_rgba(16,185,129,0.7)] ${className}`}
+      style={size ? { height: `${size}px`, width: `${Math.round(size * 0.42)}px` } : undefined}
+      className={`inline-block align-middle mx-[0.5px] shrink-0 ${
+        size ? '' : 'h-[1.12em] w-[0.46em]'
+      } drop-shadow-[0_0_6px_rgba(16,185,129,0.7)] ${className}`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -38,14 +39,14 @@ export function CandlestickLetterI({ size = 22, className = "" }) {
 /**
  * CandlestickLetterN: Letra 'N' formada por velas alcistas verdes en escalada conectadas por la diagonal técnica
  */
-export function CandlestickLetterN({ size = 22, className = "" }) {
-  const width = Math.max(15, Math.round(size * 0.76));
+export function CandlestickLetterN({ size, className = "" }) {
   return (
     <svg
-      width={width}
-      height={size}
       viewBox="0 0 20 24"
-      className={`inline-block align-middle mx-[1px] shrink-0 drop-shadow-[0_0_6px_rgba(16,185,129,0.7)] ${className}`}
+      style={size ? { height: `${size}px`, width: `${Math.round(size * 0.83)}px` } : undefined}
+      className={`inline-block align-middle mx-[0.5px] shrink-0 ${
+        size ? '' : 'h-[1.12em] w-[0.92em]'
+      } drop-shadow-[0_0_6px_rgba(16,185,129,0.7)] ${className}`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -71,14 +72,14 @@ export function CandlestickLetterN({ size = 22, className = "" }) {
 // ============================================================================
 export function WordmarkVelocityApex({ className = "" }) {
   return (
-    <div className={`inline-flex items-center gap-1.5 select-none font-black text-2xl sm:text-3xl tracking-tighter ${className}`}>
-      <span className="text-white italic">
+    <div className={`inline-flex items-center gap-1 sm:gap-1.5 select-none font-black text-sm xs:text-base sm:text-2xl md:text-3xl tracking-tighter whitespace-nowrap leading-none ${className}`}>
+      <span className="text-white italic shrink-0">
         WTN
       </span>
-      <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500 bg-clip-text text-transparent transform -skew-x-6 italic flex items-center">
+      <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500 bg-clip-text text-transparent transform -skew-x-6 italic inline-flex items-center leading-none">
         <span>ALGO-TRAD</span>
-        <CandlestickLetterI size={23} className="not-italic" />
-        <CandlestickLetterN size={23} className="not-italic" />
+        <CandlestickLetterI className="not-italic" />
+        <CandlestickLetterN className="not-italic" />
         <span>G</span>
       </span>
     </div>
@@ -93,14 +94,14 @@ export const WordmarkCandlestickApex = WordmarkVelocityApex;
 // ============================================================================
 export function WordmarkPureWhiteCandlestick({ className = "" }) {
   return (
-    <div className={`inline-flex items-center gap-1.5 select-none font-black text-2xl sm:text-3xl tracking-tighter ${className}`}>
-      <span className="text-white italic">
+    <div className={`inline-flex items-center gap-1 sm:gap-1.5 select-none font-black text-sm xs:text-base sm:text-2xl md:text-3xl tracking-tighter whitespace-nowrap leading-none ${className}`}>
+      <span className="text-white italic shrink-0">
         WTN
       </span>
-      <span className="text-white transform -skew-x-6 italic flex items-center">
+      <span className="text-white transform -skew-x-6 italic inline-flex items-center leading-none">
         <span>ALGO-TRAD</span>
-        <CandlestickLetterI size={23} className="not-italic" />
-        <CandlestickLetterN size={23} className="not-italic" />
+        <CandlestickLetterI className="not-italic" />
+        <CandlestickLetterN className="not-italic" />
         <span>G</span>
       </span>
     </div>
@@ -112,17 +113,17 @@ export function WordmarkPureWhiteCandlestick({ className = "" }) {
 // ============================================================================
 export function WordmarkVelocityCyberSlash({ className = "" }) {
   return (
-    <div className={`inline-flex items-center gap-1.5 select-none font-black text-2xl sm:text-3xl tracking-tight ${className}`}>
-      <span className="text-white italic">
+    <div className={`inline-flex items-center gap-1 sm:gap-1.5 select-none font-black text-sm xs:text-base sm:text-2xl md:text-3xl tracking-tight whitespace-nowrap leading-none ${className}`}>
+      <span className="text-white italic shrink-0">
         WTN
       </span>
-      <span className="not-italic text-xl text-cyan-400 font-mono font-light select-none transform -skew-x-12 opacity-80">
+      <span className="not-italic text-xs sm:text-xl text-cyan-400 font-mono font-light select-none transform -skew-x-12 opacity-80 shrink-0">
         //
       </span>
-      <span className="bg-gradient-to-r from-cyan-300 via-sky-200 to-blue-400 bg-clip-text text-transparent transform -skew-x-6 italic flex items-center">
+      <span className="bg-gradient-to-r from-cyan-300 via-sky-200 to-blue-400 bg-clip-text text-transparent transform -skew-x-6 italic inline-flex items-center leading-none">
         <span>ALGO TRAD</span>
-        <CandlestickLetterI size={23} className="not-italic" />
-        <CandlestickLetterN size={23} className="not-italic" />
+        <CandlestickLetterI className="not-italic" />
+        <CandlestickLetterN className="not-italic" />
         <span>G</span>
       </span>
     </div>
@@ -134,15 +135,15 @@ export function WordmarkVelocityCyberSlash({ className = "" }) {
 // ============================================================================
 export function WordmarkVelocityLaser({ className = "" }) {
   return (
-    <div className={`inline-flex flex-col select-none ${className}`}>
-      <div className="inline-flex items-center gap-1.5 font-black text-2xl sm:text-3xl tracking-tighter">
-        <span className="text-white italic">
+    <div className={`inline-flex flex-col select-none whitespace-nowrap leading-none ${className}`}>
+      <div className="inline-flex items-center gap-1 sm:gap-1.5 font-black text-sm xs:text-base sm:text-2xl md:text-3xl tracking-tighter">
+        <span className="text-white italic shrink-0">
           WTN
         </span>
-        <span className="bg-gradient-to-r from-cyan-400 to-sky-300 bg-clip-text text-transparent italic flex items-center">
+        <span className="bg-gradient-to-r from-cyan-400 to-sky-300 bg-clip-text text-transparent italic inline-flex items-center leading-none">
           <span>ALGO-TRAD</span>
-          <CandlestickLetterI size={23} className="not-italic" />
-          <CandlestickLetterN size={23} className="not-italic" />
+          <CandlestickLetterI className="not-italic" />
+          <CandlestickLetterN className="not-italic" />
           <span>G</span>
         </span>
       </div>
@@ -157,18 +158,18 @@ export function WordmarkVelocityLaser({ className = "" }) {
 // ============================================================================
 export function WordmarkVelocityMonolith({ className = "" }) {
   return (
-    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-cyan-500/30 shadow-inner select-none font-black text-xl sm:text-2xl ${className}`}>
-      <span className="text-white tracking-tight italic">
+    <div className={`inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-slate-900/90 border border-cyan-500/30 shadow-inner select-none font-black text-xs xs:text-sm sm:text-xl md:text-2xl whitespace-nowrap leading-none ${className}`}>
+      <span className="text-white tracking-tight italic shrink-0">
         WTN
       </span>
-      <div className="h-4 w-[1px] bg-cyan-500/40 not-italic" />
-      <span className="bg-gradient-to-r from-cyan-400 to-sky-300 bg-clip-text text-transparent transform -skew-x-3 italic flex items-center">
+      <div className="h-3 sm:h-4 w-[1px] bg-cyan-500/40 not-italic shrink-0" />
+      <span className="bg-gradient-to-r from-cyan-400 to-sky-300 bg-clip-text text-transparent transform -skew-x-3 italic inline-flex items-center leading-none">
         <span>ALGO-TRAD</span>
-        <CandlestickLetterI size={20} className="not-italic" />
-        <CandlestickLetterN size={20} className="not-italic" />
+        <CandlestickLetterI className="not-italic" />
+        <CandlestickLetterN className="not-italic" />
         <span>G</span>
       </span>
-      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400 animate-pulse ml-0.5 not-italic" />
+      <span className="inline-block w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400 animate-pulse ml-0.5 not-italic shrink-0" />
     </div>
   );
 }
@@ -178,65 +179,116 @@ export function WordmarkVelocityMonolith({ className = "" }) {
 // ============================================================================
 export function WordmarkNeoQuant({ className = "" }) {
   return (
-    <div className={`inline-flex items-center gap-2 select-none text-2xl sm:text-3xl font-black font-mono tracking-tighter ${className}`}>
-      <span className="text-white">
+    <div className={`inline-flex items-center gap-1 sm:gap-2 select-none text-xs xs:text-sm sm:text-2xl md:text-3xl font-black font-mono tracking-tighter whitespace-nowrap leading-none ${className}`}>
+      <span className="text-white shrink-0">
         WTN
       </span>
-      <span className="ml-1 bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500 bg-clip-text text-transparent flex items-center">
+      <span className="ml-0.5 sm:ml-1 bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500 bg-clip-text text-transparent inline-flex items-center leading-none">
         <span>ALGO-TRAD</span>
-        <CandlestickLetterI size={22} className="not-italic" />
-        <CandlestickLetterN size={22} className="not-italic" />
+        <CandlestickLetterI className="not-italic" />
+        <CandlestickLetterN className="not-italic" />
         <span>G</span>
       </span>
-      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 shadow-md shadow-emerald-400 animate-pulse ml-0.5" />
+      <span className="inline-block w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 shadow-md shadow-emerald-400 animate-pulse ml-0.5 shrink-0" />
     </div>
   );
 }
 
 export const WordmarkVelocityTitanium = WordmarkPureWhiteCandlestick;
 
-// CATÁLOGO COMPLETO DE OPCIONES PARA EL MODAL SELECTOR
+// ============================================================================
+// CATÁLOGO COMPLETO DE OPCIONES PARA LA GALERÍA PROFESIONAL DE IDENTIDAD
+// Incluye especificaciones de tamaños para Desktop, Móvil, Favicon y Casos de Uso
+// ============================================================================
 export const LOGO_OPTIONS = [
   {
     id: 'velocity-apex',
-    name: 'Opción 1: Velocity Candlestick (Recomendada)',
-    subtitle: 'Mismo Estilo y Tamaño con Velas Verdes Integradas',
+    name: 'Opción 1: Velocity Candlestick (Flagship)',
+    subtitle: 'Gradiente Cian-Zafiro con Velas Esmeralda Integradas',
     Component: WordmarkVelocityApex,
-    desc: 'La palabra TRADING tiene exactamente el mismo tamaño, tipografía y gradiente que ALGO, integrando las velas alcistas en I y N de manera fluida y continua.'
+    desc: 'La palabra TRADING tiene exactamente el mismo tamaño, tipografía y gradiente que ALGO, integrando las velas alcistas en I y N de manera fluida y matemática.',
+    sizes: {
+      desktop: 'Grande (32px / 2.0rem) — Cabecera Web & Pantallas 4K',
+      tablet: 'Mediano (24px / 1.5rem) — Tablet & Laptop',
+      mobile: 'Móvil (16px / 1.0rem) — Smartphones & PWA',
+      favicon: 'Token (14px) — Favicon & App Icon'
+    },
+    useCases: ['Cabecera Web Principal', 'App Móvil iOS/Android', 'Informes Financieros PDF', 'Prensa y Medios'],
+    colors: ['#FFFFFF', '#22D3EE', '#38BDF8', '#3B82F6', '#10B981']
   },
   {
     id: 'velocity-white',
     name: 'Opción 2: Pure White Candlestick',
     subtitle: 'Blanco Platino Uniforme con Velas Esmeralda',
     Component: WordmarkPureWhiteCandlestick,
-    desc: 'Todo el nombre en tipografía blanca uniforme de máximo impacto visual, donde únicamente destacan las dos velas verdes alcistas.'
+    desc: 'Todo el nombre en tipografía blanca pura de máxima legibilidad institucional, donde únicamente destacan las dos velas verdes alcistas.',
+    sizes: {
+      desktop: 'Grande (32px / 2.0rem) — Fondos Oscuros de Alto Contraste',
+      tablet: 'Mediano (24px / 1.5rem) — Dashboards Institucionales',
+      mobile: 'Móvil (16px / 1.0rem) — Pantallas OLED',
+      favicon: 'Token (14px) — Documentos Ejecutivos'
+    },
+    useCases: ['Fondos Ultra-Dark', 'Dossier de Inversores', 'Tarjetas Ejecutivas', 'Presentaciones Institucionales'],
+    colors: ['#FFFFFF', '#10B981', '#34D399']
   },
   {
     id: 'velocity-cyber',
     name: 'Opción 3: Cyber Slash Candlestick',
-    subtitle: 'Estilo Fintech con Separador y Velas',
+    subtitle: 'Estilo Fintech con Separador Cuántico // y Velas',
     Component: WordmarkVelocityCyberSlash,
-    desc: 'Separador técnico // con tipografía continua de gran tamaño y velas en I y N.'
+    desc: 'Separador técnico // con tipografía continua de gran impacto y velas en I y N que evocan terminales de alta frecuencia.',
+    sizes: {
+      desktop: 'Grande (32px / 2.0rem) — Interfaces de Trading en Tiempo Real',
+      tablet: 'Mediano (24px / 1.5rem) — Monitores Financieros',
+      mobile: 'Móvil (16px / 1.0rem) — Widgets de Estado',
+      favicon: 'Token (14px) — Notificaciones Push'
+    },
+    useCases: ['Terminales de Trading', 'Gráficos en Vivo', 'Canales de Telegram/Discord', 'Comunidad de Traders'],
+    colors: ['#FFFFFF', '#22D3EE', '#38BDF8', '#10B981']
   },
   {
     id: 'velocity-laser',
     name: 'Opción 4: Laser Horizon Candlestick',
-    subtitle: 'Estilo Bloomberg Terminal con Estela Continua',
+    subtitle: 'Estilo Bloomberg Terminal con Estela Láser Continua',
     Component: WordmarkVelocityLaser,
-    desc: 'Tipografía fluida en una sola línea continua subrayada por una estela láser de baja latencia.'
+    desc: 'Tipografía fluida en una sola línea continua subrayada por una estela láser de baja latencia con gradiente esmeralda.',
+    sizes: {
+      desktop: 'Grande (32px / 2.0rem) — Pantalla Completa & Hero Banners',
+      tablet: 'Mediano (24px / 1.5rem) — Módulos de Rendimiento',
+      mobile: 'Móvil (16px / 1.0rem) — Banners Promocionales',
+      favicon: 'Token (14px) — Firmas de Correo Corporativas'
+    },
+    useCases: ['Hero Banners', 'Stands y Eventos Fintech', 'Publicidad Digital', 'Firmas Oficiales'],
+    colors: ['#FFFFFF', '#22D3EE', '#34D399', '#10B981']
   },
   {
     id: 'velocity-monolith',
     name: 'Opción 5: Monolith Capsule Candlestick',
-    subtitle: 'Cápsula Integrada con LED Activo',
+    subtitle: 'Cápsula Integrada con Borde Reflectivo y LED Activo',
     Component: WordmarkVelocityMonolith,
-    desc: 'Cápsula institucional con borde reflectivo y velas verdes uniformes.'
+    desc: 'Cápsula institucional con borde reflectivo, separador vertical y pulso LED verde que indica ejecución en vivo 24/7.',
+    sizes: {
+      desktop: 'Grande (28px / 1.75rem) — Cabeceras Flotantes',
+      tablet: 'Mediano (20px / 1.25rem) — Barras de Navegación fijas',
+      mobile: 'Móvil (14px / 0.9rem) — Menús compactos',
+      favicon: 'Token (12px) — Badges de Seguridad'
+    },
+    useCases: ['Cabecera Flotante Fija', 'Insignia de Confianza', 'Footers de Contratos', 'Sello de Software'],
+    colors: ['#0F172A', '#FFFFFF', '#22D3EE', '#10B981']
   },
   {
     id: 'neoquant',
     name: 'Opción 6: Neo-Quant Candlestick',
-    subtitle: 'Estilo Terminal Monoespaciada',
+    subtitle: 'Estilo Terminal Monoespaciada con Pulso Algorítmico',
     Component: WordmarkNeoQuant,
-    desc: 'Tipografía de terminal algorítmica con velas verdes en TRADING y pulso esmeralda activo.'
+    desc: 'Tipografía monoespaciada de código fuente con velas verdes en TRADING y pulso esmeralda activo.',
+    sizes: {
+      desktop: 'Grande (32px / 2.0rem) — Consolas de API y Desarrolladores',
+      tablet: 'Mediano (24px / 1.5rem) — Registros y Logs en Vivo',
+      mobile: 'Móvil (16px / 1.0rem) — Dashboards Técnicos',
+      favicon: 'Token (14px) — Documentación API'
+    },
+    useCases: ['Consolas de Código / API', 'Paneles de Desarrollador', 'Documentación Técnica', 'Informes de Auditoría'],
+    colors: ['#FFFFFF', '#22D3EE', '#3B82F6', '#10B981']
   }
 ];
