@@ -269,61 +269,106 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
 
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           
-          {/* HEADER CON ANIMACIÓN DE TV Y LOGOS GIRATORIOS (NETFLIX, DISNEY+, HBO, YOUTUBE) */}
+          {/* HEADER CON PANTALLA DE TV SMART Y LOGOS REALES DE STREAMING */}
           <div className="flex flex-col items-center text-center max-w-3xl mx-auto mb-14 sm:mb-16">
             
-            {/* ESCENA DE TV 3D CON ORBITA DE LOGOS DE STREAMING */}
-            <div className="relative w-64 h-48 sm:w-80 sm:h-52 flex items-center justify-center mb-6">
+            {/* ESCENA DE TELEVISOR SMART CON INTERFAZ DE STREAMING REALISTA */}
+            <div className="relative w-full max-w-[420px] sm:max-w-[500px] mb-8 group">
               
-              {/* Órbita elíptica giratoria con perspectiva 3D */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none [perspective:900px]">
-                <div className="w-56 h-36 sm:w-72 sm:h-44 rounded-full border border-dashed border-cyan-500/30 animate-[spin_24s_linear_infinite] flex items-center justify-center relative">
-                  
-                  {/* LOGO 1: NETFLIX (N icónica sin fondo rojo invasivo) */}
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-700/80 shadow-lg shadow-cyan-950/40 flex items-center gap-1.5 backdrop-blur-md">
-                    <span className="font-black text-rose-500 text-xs tracking-tighter">NETFLIX</span>
-                  </div>
+              {/* Resplandor ambiental de la pantalla */}
+              <div className="absolute -inset-2 bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-sky-500/20 rounded-[28px] blur-xl opacity-75 group-hover:opacity-100 transition duration-500 pointer-events-none" />
 
-                  {/* LOGO 2: DISNEY+ */}
-                  <div className="absolute top-1/2 -right-6 -translate-y-1/2 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-700/80 shadow-lg shadow-blue-950/40 flex items-center gap-1 backdrop-blur-md">
-                    <span className="font-extrabold text-sky-400 text-xs tracking-tight">Disney<span className="text-white">+</span></span>
-                  </div>
-
-                  {/* LOGO 3: HBO MAX */}
-                  <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-700/80 shadow-lg shadow-purple-950/40 flex items-center gap-1 backdrop-blur-md">
-                    <span className="font-black text-purple-400 text-xs tracking-wider">Max</span>
-                  </div>
-
-                  {/* LOGO 4: YOUTUBE */}
-                  <div className="absolute top-1/2 -left-6 -translate-y-1/2 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-700/80 shadow-lg shadow-red-950/30 flex items-center gap-1.5 backdrop-blur-md">
-                    <span className="w-3.5 h-2.5 bg-red-600 rounded-sm flex items-center justify-center text-[7px] text-white">▶</span>
-                    <span className="font-bold text-white text-xs">YouTube</span>
-                  </div>
-
-                </div>
-              </div>
-
-              {/* PANTALLA DE TV SMART ILUMINADA AL CENTRO */}
-              <div className="relative z-10 w-36 sm:w-44 h-24 sm:h-28 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border-2 border-cyan-400/50 shadow-2xl shadow-cyan-500/25 p-2 flex flex-col justify-between overflow-hidden">
-                <div className="flex items-center justify-between text-[9px] font-mono text-cyan-400">
-                  <span className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> LIVE
-                  </span>
-                  <span className="text-slate-400">4K HDR</span>
-                </div>
+              {/* CHASIS DEL TELEVISOR SMART (BISEL METÁLICO MODERNO) */}
+              <div className="relative rounded-[22px] bg-slate-900 border-2 border-slate-700/80 shadow-2xl overflow-hidden p-2.5 sm:p-3">
                 
-                {/* Visual dentro de la pantalla: Gráfico verde creciendo mientras miras TV */}
-                <div className="my-auto text-center">
-                  <div className="text-[10px] text-slate-300 font-medium">IA Generando</div>
-                  <div className="text-sm font-black font-mono text-emerald-400 flex items-center justify-center gap-1">
-                    <span>+$2,400</span>
-                    <span className="text-[9px] text-emerald-300">▲</span>
+                {/* Bisel superior con cámara/sensor sutil */}
+                <div className="flex items-center justify-between px-2 pb-1.5 text-[9px] font-mono text-slate-400">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-slate-300 font-semibold tracking-wider">SMART TV • MODO PASIVO</span>
                   </div>
+                  <span className="text-[10px] text-cyan-400 font-bold">4K HDR</span>
                 </div>
 
-                <div className="w-full bg-slate-800/80 h-1 rounded-full overflow-hidden">
-                  <div className="bg-gradient-to-r from-cyan-400 to-emerald-400 h-full w-4/5 animate-pulse" />
+                {/* PANTALLA PRINCIPAL (DISPLAY OLEAD 16:9) */}
+                <div className="relative rounded-xl bg-gradient-to-br from-[#050b14] via-[#091528] to-[#040810] border border-cyan-500/30 p-3 sm:p-4 overflow-hidden">
+                  
+                  {/* BARRA SUPERIOR DE LA TV: ESTADO DEL BOT */}
+                  <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800/80">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono text-[9px] font-black tracking-wider">
+                        ● EN VIVO
+                      </span>
+                      <span className="text-[11px] text-slate-300 font-bold">Trading Automático Activo</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-mono text-slate-400 block leading-tight">Ganancia en curso</span>
+                      <span className="text-xs sm:text-sm font-black font-mono text-emerald-400">+$2,400.00</span>
+                    </div>
+                  </div>
+
+                  {/* CARROUSEL / SELECTOR DE APPS DE STREAMING (LOGOS OFICIALES ORIGINALES SVG) */}
+                  <div className="mb-3">
+                    <div className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider text-left mb-2 flex items-center gap-1.5">
+                      <span>📺 Elige qué quieres ver hoy:</span>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-2 sm:gap-2.5">
+                      
+                      {/* APP 1: NETFLIX (Logo SVG oficial clásico curvo con gradiente) */}
+                      <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-cyan-400/50 transition-all hover:scale-105 flex flex-col items-center justify-center gap-1.5 shadow-md group/app cursor-pointer">
+                        <svg className="w-8 sm:w-10 h-6" viewBox="0 0 111 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M105.062 14.28L111 30c-1.794-.277-3.593-.526-5.408-.748l-3.32-8.914-3.321 8.444c-1.72-.194-3.442-.36-5.176-.499L99.5 14.53 94.135 0h5.176l3.32 8.914L105.952 0h5.048l-5.938 14.28zM90.468 0v30h-4.945V0h4.945zm-14.802 0v4.75h-5.464V30h-4.946V4.75h-5.463V0h15.873zm-24.37 0v30h-4.946V17.375h-6.242V30H35.16V0h4.947v12.625h6.242V0h4.946zM26.262 0v4.75h-8.835v7.875h7.616v4.75h-7.616v7.875h8.835V30H12.48V0h13.782zM0 0h4.946l7.474 19.375V0h4.946v30h-4.708L5.184 10.625V30H0V0z" fill="#E50914"/>
+                        </svg>
+                        <span className="text-[9px] font-semibold text-slate-300 group-hover/app:text-white">Netflix</span>
+                      </div>
+
+                      {/* APP 2: DISNEY+ (Logo SVG oficial con arco icónico) */}
+                      <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-cyan-400/50 transition-all hover:scale-105 flex flex-col items-center justify-center gap-1.5 shadow-md group/app cursor-pointer">
+                        <svg className="w-8 sm:w-10 h-6" viewBox="0 0 100 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M12 28c4-1 6-5 6-9 0-7-6-12-14-12H0v26h4.5v-10h4.3l4.7 10h5.2L14 22.8c-1.3.6-1.7.9-2 1.2zm-7.5-15h4c4 0 6 2 6 5.5s-2 5.5-6 5.5h-4v-11z" fill="#113CCF" opacity="0"/>
+                          <path d="M10 8c15-4 42-5 70 8-10-3-22-4-34-4-15 0-27 2-36 6v-10z" fill="#00D6FF" opacity="0.6"/>
+                          <text x="5" y="27" fill="#FFFFFF" fontFamily="sans-serif" fontWeight="900" fontSize="16" letterSpacing="-0.5">Disney<tspan fill="#00D6FF">+</tspan></text>
+                        </svg>
+                        <span className="text-[9px] font-semibold text-slate-300 group-hover/app:text-white">Disney+</span>
+                      </div>
+
+                      {/* APP 3: MAX / HBO (Tipografía oficial blanca y púrpura) */}
+                      <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-cyan-400/50 transition-all hover:scale-105 flex flex-col items-center justify-center gap-1.5 shadow-md group/app cursor-pointer">
+                        <div className="w-8 sm:w-10 h-6 flex items-center justify-center">
+                          <span className="font-black text-white text-base sm:text-lg tracking-tight font-sans">
+                            <span className="text-[#002BE7] font-black">M</span>AX
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-semibold text-slate-300 group-hover/app:text-white">HBO Max</span>
+                      </div>
+
+                      {/* APP 4: YOUTUBE (Logo oficial con ícono Play rojo y texto blanco) */}
+                      <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-cyan-400/50 transition-all hover:scale-105 flex flex-col items-center justify-center gap-1.5 shadow-md group/app cursor-pointer">
+                        <div className="w-8 sm:w-10 h-6 flex items-center justify-center gap-1">
+                          <svg className="w-5 h-4" viewBox="0 0 24 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M23.5 2.6c-.3-1-1-1.8-2-2.1C19.7 0 12 0 12 0S4.3 0 2.5.5c-1 .3-1.7 1.1-2 2.1C0 4.4 0 8.5 0 8.5s0 4.1.5 5.9c.3 1 1 1.8 2 2.1 1.8.5 9.5.5 9.5.5s7.7 0 9.5-.5c1-.3 1.7-1.1 2-2.1.5-1.8.5-5.9.5-5.9s0-4.1-.5-5.9z" fill="#FF0000"/>
+                            <path d="M9.6 12.1L15.8 8.5 9.6 4.9v7.2z" fill="#FFFFFF"/>
+                          </svg>
+                        </div>
+                        <span className="text-[9px] font-semibold text-slate-300 group-hover/app:text-white">YouTube</span>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* PIE DE PANTALLA: MENSAJE CONVINCENTE INTEGRADO */}
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-300">
+                    <span className="text-slate-400">Modo Cine Activado</span>
+                    <span className="text-cyan-300 font-mono font-medium">Algoritmo 24/7 en segundo plano ✓</span>
+                  </div>
+
                 </div>
+
+                {/* SOPORTE / BASE DE LA TV */}
+                <div className="w-24 sm:w-32 h-2 mx-auto bg-gradient-to-r from-transparent via-slate-600 to-transparent mt-1 rounded-full opacity-60" />
+                <div className="w-16 sm:w-20 h-1 mx-auto bg-slate-500 rounded-b-md shadow-md" />
+
               </div>
 
             </div>
