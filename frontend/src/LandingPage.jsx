@@ -259,53 +259,105 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          2. SECCIÓN: AUTOMATIZACIÓN TOTAL & MODO STREAMING (SOLO LOS 3 PASOS)
+          2. SECCIÓN: AUTOMATIZACIÓN TOTAL & MODO STREAMING 3D
          ========================================================================= */}
-      <section className="py-16 sm:py-20 relative z-10 border-t border-slate-900 bg-gradient-to-b from-slate-950 via-[#030914] to-slate-950 overflow-hidden">
+      <section className="py-16 sm:py-24 relative z-10 border-t border-slate-900 bg-gradient-to-b from-slate-950 via-[#030914] to-slate-950 overflow-hidden">
         
-        {/* Resplandor ambiental de fondo */}
-        <div className="absolute top-1/2 -left-20 w-96 h-96 bg-red-600/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute top-1/2 -right-20 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+        {/* Luces y resplandores de fondo (Sin color rojo, tonos cyan, sky y violeta premium) */}
+        <div className="absolute top-1/3 -left-20 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-1/3 -right-20 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           
-          {/* BADGE NETFLIX & ENCABEZADO ANIMADO */}
-          <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-14">
-            <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-red-950/40 border border-red-500/30 text-white text-xs font-mono font-bold tracking-wider mb-4 shadow-lg shadow-red-950/50 backdrop-blur-md">
-              <span className="w-5 h-5 rounded-md bg-red-600 flex items-center justify-center font-black text-[13px] text-white shadow-md shadow-red-600/50">
-                N
-              </span>
-              <span className="text-red-400 font-extrabold uppercase tracking-widest text-[11px]">MODO STREAMING</span>
-              <span className="text-slate-500">•</span>
-              <span className="text-slate-200">Disfruta tu serie favorita mientras la IA genera</span>
+          {/* HEADER CON ANIMACIÓN DE TV Y LOGOS GIRATORIOS (NETFLIX, DISNEY+, HBO, YOUTUBE) */}
+          <div className="flex flex-col items-center text-center max-w-3xl mx-auto mb-14 sm:mb-16">
+            
+            {/* ESCENA DE TV 3D CON ORBITA DE LOGOS DE STREAMING */}
+            <div className="relative w-64 h-48 sm:w-80 sm:h-52 flex items-center justify-center mb-6">
+              
+              {/* Órbita elíptica giratoria con perspectiva 3D */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none [perspective:900px]">
+                <div className="w-56 h-36 sm:w-72 sm:h-44 rounded-full border border-dashed border-cyan-500/30 animate-[spin_24s_linear_infinite] flex items-center justify-center relative">
+                  
+                  {/* LOGO 1: NETFLIX (N icónica sin fondo rojo invasivo) */}
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-700/80 shadow-lg shadow-cyan-950/40 flex items-center gap-1.5 backdrop-blur-md">
+                    <span className="font-black text-rose-500 text-xs tracking-tighter">NETFLIX</span>
+                  </div>
+
+                  {/* LOGO 2: DISNEY+ */}
+                  <div className="absolute top-1/2 -right-6 -translate-y-1/2 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-700/80 shadow-lg shadow-blue-950/40 flex items-center gap-1 backdrop-blur-md">
+                    <span className="font-extrabold text-sky-400 text-xs tracking-tight">Disney<span className="text-white">+</span></span>
+                  </div>
+
+                  {/* LOGO 3: HBO MAX */}
+                  <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-700/80 shadow-lg shadow-purple-950/40 flex items-center gap-1 backdrop-blur-md">
+                    <span className="font-black text-purple-400 text-xs tracking-wider">Max</span>
+                  </div>
+
+                  {/* LOGO 4: YOUTUBE */}
+                  <div className="absolute top-1/2 -left-6 -translate-y-1/2 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-700/80 shadow-lg shadow-red-950/30 flex items-center gap-1.5 backdrop-blur-md">
+                    <span className="w-3.5 h-2.5 bg-red-600 rounded-sm flex items-center justify-center text-[7px] text-white">▶</span>
+                    <span className="font-bold text-white text-xs">YouTube</span>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* PANTALLA DE TV SMART ILUMINADA AL CENTRO */}
+              <div className="relative z-10 w-36 sm:w-44 h-24 sm:h-28 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border-2 border-cyan-400/50 shadow-2xl shadow-cyan-500/25 p-2 flex flex-col justify-between overflow-hidden">
+                <div className="flex items-center justify-between text-[9px] font-mono text-cyan-400">
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> LIVE
+                  </span>
+                  <span className="text-slate-400">4K HDR</span>
+                </div>
+                
+                {/* Visual dentro de la pantalla: Gráfico verde creciendo mientras miras TV */}
+                <div className="my-auto text-center">
+                  <div className="text-[10px] text-slate-300 font-medium">IA Generando</div>
+                  <div className="text-sm font-black font-mono text-emerald-400 flex items-center justify-center gap-1">
+                    <span>+$2,400</span>
+                    <span className="text-[9px] text-emerald-300">▲</span>
+                  </div>
+                </div>
+
+                <div className="w-full bg-slate-800/80 h-1 rounded-full overflow-hidden">
+                  <div className="bg-gradient-to-r from-cyan-400 to-emerald-400 h-full w-4/5 animate-pulse" />
+                </div>
+              </div>
+
             </div>
 
-            <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-              3 Pasos Simples.{' '}
-              <span className="bg-gradient-to-r from-red-500 via-rose-400 to-cyan-400 bg-clip-text text-transparent">
-                Cero Estrés.
+            <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight mb-3">
+              Tú Eliges tu Serie Favorita.{' '}
+              <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-emerald-400 bg-clip-text text-transparent block mt-1">
+                La IA Hace el Trabajo Real.
               </span>
             </h2>
+
+            <p className="text-sm sm:text-base text-slate-300 max-w-xl font-normal leading-relaxed">
+              Disfruta de tu tiempo mientras el bot opera en el mercado de forma automática las 24 horas del día.
+            </p>
           </div>
 
-          {/* LOS 3 PASOS ANIMADOS Y EXCLUSIVOS */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
+          {/* LOS 3 PASOS EN CARDS CON EFECTO 3D Y DISEÑO RESPONSIVE MODERNO */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 [perspective:1000px]">
             
             {/* PASO 1 */}
-            <div className="group relative p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-cyan-400/60 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-cyan-500/15 flex flex-col justify-between">
-              <div className="absolute -top-3.5 right-6 px-3 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 font-mono text-[10px] font-black">
-                PASO 1
+            <div className="group relative p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-cyan-400/60 transition-all duration-500 hover:[transform:rotateX(2deg)_rotateY(-2deg)_translateY(-8px)] hover:shadow-2xl hover:shadow-cyan-500/20 flex flex-col justify-between backdrop-blur-xl">
+              <div className="absolute -top-3.5 right-6 px-3 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 font-mono text-[10px] font-black tracking-wider">
+                PASO 01
               </div>
               <div>
-                <div className="w-14 h-14 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-2xl text-cyan-400 font-black font-mono mb-5 group-hover:scale-110 group-hover:bg-cyan-500/25 transition-all">
+                <div className="w-14 h-14 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-2xl text-cyan-400 font-black font-mono mb-5 group-hover:scale-110 group-hover:bg-cyan-500/25 transition-all shadow-lg shadow-cyan-500/10">
                   01
                 </div>
                 <div className="text-2xl mb-2">📝</div>
-                <h3 className="text-xl font-black text-white mb-2">
+                <h3 className="text-xl font-black text-white mb-2 tracking-tight">
                   Regístrate en 2 Minutos
                 </h3>
                 <p className="text-sm text-slate-300 leading-relaxed font-normal">
-                  Apertura tu cuenta mediante invitación privada. Sin trámites burocráticos ni instalaciones complejas en tu computadora.
+                  Apertura tu cuenta mediante invitación privada.
                 </p>
               </div>
               <div className="mt-6 pt-4 border-t border-slate-800 text-xs font-mono text-cyan-300 font-bold flex items-center gap-1.5">
@@ -314,20 +366,20 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             </div>
 
             {/* PASO 2 */}
-            <div className="group relative p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-sky-400/60 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-sky-500/15 flex flex-col justify-between">
-              <div className="absolute -top-3.5 right-6 px-3 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30 font-mono text-[10px] font-black">
-                PASO 2
+            <div className="group relative p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-sky-400/60 transition-all duration-500 hover:[transform:rotateX(2deg)_translateY(-8px)] hover:shadow-2xl hover:shadow-sky-500/20 flex flex-col justify-between backdrop-blur-xl">
+              <div className="absolute -top-3.5 right-6 px-3 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-400/30 font-mono text-[10px] font-black tracking-wider">
+                PASO 02
               </div>
               <div>
-                <div className="w-14 h-14 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-2xl text-sky-400 font-black font-mono mb-5 group-hover:scale-110 group-hover:bg-sky-500/25 transition-all">
+                <div className="w-14 h-14 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-2xl text-sky-400 font-black font-mono mb-5 group-hover:scale-110 group-hover:bg-sky-500/25 transition-all shadow-lg shadow-sky-500/10">
                   02
                 </div>
                 <div className="text-2xl mb-2">🎯</div>
-                <h3 className="text-xl font-black text-white mb-2">
+                <h3 className="text-xl font-black text-white mb-2 tracking-tight">
                   Selecciona tu Modalidad
                 </h3>
                 <p className="text-sm text-slate-300 leading-relaxed font-normal">
-                  Elige entre el Fondo Mancomunado (100% pasivo) o Copy-Trading en tu propia cuenta con tu dinero siempre bajo tu control.
+                  El Fondo, el Copy-Trading o Bot Personal.
                 </p>
               </div>
               <div className="mt-6 pt-4 border-t border-slate-800 text-xs font-mono text-sky-300 font-bold flex items-center gap-1.5">
@@ -336,16 +388,16 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             </div>
 
             {/* PASO 3 */}
-            <div className="group relative p-7 rounded-3xl bg-gradient-to-b from-slate-900 to-red-950/20 border border-red-500/40 hover:border-red-400 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-red-500/20 flex flex-col justify-between">
-              <div className="absolute -top-3.5 right-6 px-3 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 font-mono text-[10px] font-black">
-                PASO 3
+            <div className="group relative p-7 rounded-3xl bg-gradient-to-b from-slate-900 to-cyan-950/30 border border-cyan-500/40 hover:border-cyan-300 transition-all duration-500 hover:[transform:rotateX(2deg)_rotateY(2deg)_translateY(-8px)] hover:shadow-2xl hover:shadow-cyan-500/25 flex flex-col justify-between backdrop-blur-xl">
+              <div className="absolute -top-3.5 right-6 px-3 py-0.5 rounded-full bg-cyan-400/20 text-cyan-200 border border-cyan-400/40 font-mono text-[10px] font-black tracking-wider">
+                PASO 03
               </div>
               <div>
-                <div className="w-14 h-14 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-2xl text-red-400 font-black font-mono mb-5 group-hover:scale-110 group-hover:bg-red-500/30 transition-all">
+                <div className="w-14 h-14 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-2xl text-cyan-300 font-black font-mono mb-5 group-hover:scale-110 group-hover:bg-cyan-500/30 transition-all shadow-lg shadow-cyan-500/10">
                   03
                 </div>
                 <div className="text-2xl mb-2">⚡</div>
-                <h3 className="text-xl font-black text-white mb-2">
+                <h3 className="text-xl font-black text-white mb-2 tracking-tight">
                   Enciende tu Bot y Relájate
                 </h3>
                 <p className="text-sm text-slate-300 leading-relaxed font-normal">
