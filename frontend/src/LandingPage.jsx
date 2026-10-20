@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Trading3DScene from './Trading3DScene';
 import EquityCurvesShowcase from './EquityCurvesShowcase';
 import {
@@ -70,9 +70,28 @@ function Tilt3DCard({ children, className = '' }) {
 }
 
 export default function LandingPage({ onOpenLogin, onOpenRegister }) {
-  // Selector dinámico de estilo de logo (Opción 4 Velocity como predeterminado)
+  // Selector dinámico de estilo de logo (Opción 1 Velocity Candlestick como predeterminado)
   const [selectedLogoId, setSelectedLogoId] = useState('velocity-apex');
   const [showLogoModal, setShowLogoModal] = useState(false);
+
+  // Estado para el botón flotante "Volver Arriba"
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 300) {
+        setShowScrollTop(true);
+      } else {
+        setShowScrollTop(false);
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Simulador interactivo de inversión
   const [simCapital, setSimCapital] = useState(5000);
@@ -149,38 +168,21 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             </button>
           </div>
 
-          {/* MENÚ DE ENLACES VISUALES */}
-          <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-300">
-            <a href="#productos" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-              <span>💼</span> Soluciones
-            </a>
-            <a href="#activos" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-              <span>💎</span> Monedas Seguras
-            </a>
-            <a href="#rendimiento" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-              <span>📈</span> Curvas de Capital
-            </a>
-            <a href="#comisiones" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-              <span>🏷️</span> Comisiones & Beneficios
-            </a>
-            <a href="#simulador" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-              <span>📊</span> Simulador
-            </a>
+          {/* BOTONES DE ACCIÓN: ELEGIR LOGO / INICIAR SESIÓN / SOLICITAR INVERSIÓN */}
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={() => setShowLogoModal(true)}
-              className="px-2.5 py-1 text-[11px] font-mono text-cyan-300 hover:text-white bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 rounded-lg transition flex items-center gap-1.5"
+              className="hidden md:flex px-2.5 py-1.5 text-[11px] font-mono text-cyan-300 hover:text-white bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 rounded-xl transition items-center gap-1.5"
+              title="Explorar variantes tipográficas del logotipo"
             >
-              <span>🎨</span> Elegir Estilo de Logo
+              <span>🎨</span> Elegir Logo
             </button>
-          </nav>
 
-          {/* BOTONES DE ACCIÓN: INICIAR SESIÓN / SOLICITAR INVERSIÓN */}
-          <div className="hidden sm:flex items-center gap-3">
             <button
               type="button"
               onClick={() => onOpenLogin && onOpenLogin()}
-              className="px-4 py-2 text-xs font-bold text-slate-200 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/50 rounded-xl transition"
+              className="px-3.5 sm:px-4 py-2 text-xs font-bold text-slate-200 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/50 rounded-xl transition shadow-sm"
             >
               Iniciar Sesión
             </button>
@@ -188,89 +190,14 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             <button
               type="button"
               onClick={() => onOpenRegister && onOpenRegister(simCapital)}
-              className="px-5 py-2.5 text-xs font-extrabold text-slate-950 bg-gradient-to-r from-cyan-400 via-sky-300 to-cyan-300 hover:from-cyan-300 hover:to-sky-200 rounded-xl shadow-lg shadow-cyan-500/25 transition hover:scale-105 active:scale-95 flex items-center gap-2"
+              className="px-3.5 sm:px-5 py-2 sm:py-2.5 text-xs font-extrabold text-slate-950 bg-gradient-to-r from-cyan-400 via-sky-300 to-cyan-300 hover:from-cyan-300 hover:to-sky-200 rounded-xl shadow-lg shadow-cyan-500/25 transition hover:scale-105 active:scale-95 flex items-center gap-1.5 sm:gap-2"
             >
               <span>Solicitar Inversión</span>
               <span>→</span>
             </button>
           </div>
 
-          {/* BOTÓN MÓVIL */}
-          <div className="flex sm:hidden items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onOpenLogin && onOpenLogin()}
-              className="px-3 py-1.5 text-[11px] font-bold bg-slate-800 rounded-lg text-slate-200"
-            >
-              Acceso
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 text-slate-400 hover:text-white"
-            >
-              {mobileMenuOpen ? '✕' : '☰'}
-            </button>
-          </div>
-
         </div>
-
-        {/* MENÚ MÓVIL DESPLEGABLE */}
-        {mobileMenuOpen && (
-          <div className="sm:hidden px-4 pt-3 pb-6 bg-slate-950/95 border-b border-cyan-500/20 backdrop-blur-2xl space-y-3 animate-fadeIn">
-            <a
-              href="#productos"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
-            >
-              💼 Soluciones de Inversión
-            </a>
-            <a
-              href="#activos"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
-            >
-              💎 Monedas de Mayor Capitalización
-            </a>
-            <a
-              href="#rendimiento"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
-            >
-              📈 Curvas de Capital Verificadas
-            </a>
-            <a
-              href="#comisiones"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
-            >
-              🏷️ Niveles de Comisiones & Beneficios
-            </a>
-            <a
-              href="#simulador"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block text-sm font-semibold text-slate-300 py-2 border-b border-slate-800"
-            >
-              📊 Simulador de Rendimiento
-            </a>
-            <button
-              type="button"
-              onClick={() => { setMobileMenuOpen(false); setShowLogoModal(true); }}
-              className="block w-full text-left text-sm font-semibold text-cyan-400 py-2 border-b border-slate-800"
-            >
-              🎨 Cambiar Estilo de Logo
-            </button>
-            <div className="pt-2 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={() => { setMobileMenuOpen(false); onOpenRegister && onOpenRegister(simCapital); }}
-                className="w-full py-3 bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-cyan-500/20"
-              >
-                Solicitar Inversión
-              </button>
-            </div>
-          </div>
-        )}
       </header>
 
       {/* =========================================================================
@@ -1114,6 +1041,26 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
 
         </div>
       </footer>
+
+      {/* =========================================================================
+          BOTÓN FLOTANTE "IR ARRIBA" (SCROLL TO TOP) PROFESIONAL
+         ========================================================================= */}
+      <button
+        type="button"
+        onClick={scrollToTop}
+        aria-label="Volver arriba"
+        className={`fixed bottom-6 right-6 z-50 p-3 sm:p-3.5 rounded-2xl bg-slate-900/95 hover:bg-cyan-950 border border-cyan-400/50 text-cyan-300 hover:text-white shadow-2xl shadow-cyan-500/25 backdrop-blur-xl transition-all duration-300 transform hover:scale-110 active:scale-95 group ${
+          showScrollTop ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-8 pointer-events-none'
+        }`}
+        title="Volver arriba"
+      >
+        <div className="flex items-center gap-1.5 font-mono text-xs font-bold">
+          <svg className="w-4 h-4 transition-transform group-hover:-translate-y-1 text-cyan-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+          </svg>
+          <span className="hidden sm:inline text-[11px] uppercase tracking-wider font-extrabold">Arriba</span>
+        </div>
+      </button>
 
     </div>
   );
