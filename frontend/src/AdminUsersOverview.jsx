@@ -214,7 +214,7 @@ export default function AdminUsersOverview({ addToast, onSelectUserForDossier, o
         <div className="p-4 bg-slate-900/90 rounded-2xl border border-amber-500/30 flex flex-col justify-between shadow-lg">
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-amber-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
-              <span>🏦</span> Patrimonio Binance Total
+              <span>🏦</span> Patrimonio Total en Exchange
             </span>
             <span className={`text-[10px] font-mono font-bold ${stats.totalUnrealizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
               Flotante: {stats.totalUnrealizedPnl >= 0 ? '+' : ''}${stats.totalUnrealizedPnl.toFixed(2)}
@@ -296,7 +296,7 @@ export default function AdminUsersOverview({ addToast, onSelectUserForDossier, o
                   <th className="py-3 px-3">Estado del Bot</th>
                   <th className="py-3 px-3">Modo & Estrategia</th>
                   <th className="py-3 px-3 text-right">Inversión</th>
-                  <th className="py-3 px-3 text-right">Saldo Binance</th>
+                  <th className="py-3 px-3 text-right">Saldo en Exchange</th>
                   <th className="py-3 px-3 text-right">PnL Flotante</th>
                   <th className="py-3 px-3 text-right">PnL Realizado</th>
                   <th className="py-3 px-3 text-center">Acciones</th>
@@ -369,7 +369,7 @@ export default function AdminUsersOverview({ addToast, onSelectUserForDossier, o
                           <span className="text-rose-400/80 font-semibold text-[10px]">SIN CLAVES API</span>
                         )}
                         <div className="text-[9px] text-slate-500 font-mono mt-0.5">
-                          {u.role === 'admin' ? '🏛️ Bot Maestro del Fondo' : (u.is_testnet ? '🧪 Binance Testnet' : (u.is_api_valid ? '⚡ Binance Real' : 'No Conectado'))}
+                          {u.role === 'admin' ? '🏛️ Bot Maestro del Fondo' : (u.is_testnet ? '🧪 Modo Demo / Testnet' : (u.is_api_valid ? '⚡ Conexión Real' : 'No Conectado'))}
                         </div>
                       </td>
 
@@ -399,7 +399,7 @@ export default function AdminUsersOverview({ addToast, onSelectUserForDossier, o
                         </div>
                       </td>
 
-                      {/* 6. Saldo Binance */}
+                      {/* 6. Saldo en Exchange */}
                       <td className="py-3 px-3 text-right">
                         <div className="flex flex-col items-end">
                           <span className="text-white font-black">

@@ -83,9 +83,9 @@ export default function UserDropdown({
 
     // 1. Script BAT para iniciar en ventana independiente de app nativa sin barras de navegador
     const batContent = `@echo off\r\n` +
-      `title WTN ALGO-TRADING (Binance) - WTN Solutions LLC\r\n` +
+      `title WTN ALGO-TRADING - WTN Solutions LLC\r\n` +
       `echo ==================================================================\r\n` +
-      `echo        WTN ALGO-TRADING (Binance) - WTN Solutions LLC\r\n` +
+      `echo        WTN ALGO-TRADING - WTN Solutions LLC\r\n` +
       `echo ==================================================================\r\n` +
       `echo Iniciando aplicacion de escritorio...\r\n` +
       `start msedge --app="${currentOrigin}" --window-size=1440,900 || start chrome --app="${currentOrigin}" --window-size=1440,900 || start ${currentOrigin}\r\n` +
@@ -309,7 +309,7 @@ export default function UserDropdown({
                 </div>
                 <div className="min-w-0">
                   <div className="font-bold text-slate-100 group-hover:text-amber-300 transition-colors">
-                    Claves API Binance
+                    Claves API Exchange
                   </div>
                   <div className="text-[10px] text-slate-400">
                     Vincular / Actualizar API Key y Secret
@@ -470,7 +470,7 @@ export default function UserDropdown({
               <span>Cerrar Sesión Segura</span>
             </button>
             <div className="mt-2 text-center text-[9px] text-slate-500">
-              WTN Solutions LLC • División Algorítmica Binance
+              WTN Solutions LLC • División Algorítmica de Trading
             </div>
           </div>
         </div>

@@ -435,8 +435,8 @@ export default function AdminInvestors({ addToast }) {
 
         <div class="header">
           <div>
-            <div class="logo">⚡ WTN <span>ALGO-TRADING</span> (Binance)</div>
-            <div class="sub-brand">WTN Solutions LLC • Quantitative Asset Management & Pool</div>
+            <div class="logo">⚡ WTN <span>ALGO-TRADING</span></div>
+            <div class="sub-brand">WTN Solutions LLC • Asset Management & Pool</div>
             <div class="acc-tag">N° CUENTA: ${accNum}</div>
           </div>
           <div style="text-align: right;">
@@ -510,9 +510,9 @@ export default function AdminInvestors({ addToast }) {
         </div>
 
         <div class="footer">
-          Copia certificada emitida por la Administración de <strong>WTN Solutions LLC</strong> — WTN ALGO-TRADING (Binance).<br>
+          Copia certificada emitida por la Administración de <strong>WTN Solutions LLC</strong> — WTN ALGO-TRADING.<br>
           Cifrado institucional de cuenta ${accNum} verificado en servidor central.<br>
-          Operaciones sujetas a condiciones de mercado y volatilidad en Binance Futures.
+          Operaciones sujetas a condiciones de mercado y volatilidad en el Exchange de Futuros.
         </div>
       </body>
       </html>
@@ -596,7 +596,7 @@ export default function AdminInvestors({ addToast }) {
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg">
           <div className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1 flex items-center justify-between">
-            <span>Balance Vivo Binance</span>
+            <span>Balance Vivo en Exchange</span>
             <span className="text-amber-400">⚡</span>
           </div>
           <div className="text-xl sm:text-2xl font-black font-mono text-amber-300">
@@ -1210,7 +1210,7 @@ export default function AdminInvestors({ addToast }) {
                 {/* Últimas Operaciones Ejecutadas en el Fondo */}
                 <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3 flex items-center gap-2">
-                    <span>⚡</span> Últimas Operaciones Ejecutadas en Binance Futures (Afectan a este Inversionista)
+                    <span>⚡</span> Últimas Operaciones Ejecutadas en Futuros (Afectan a este Inversionista)
                   </h4>
                   <div className="overflow-x-auto max-h-48 no-scrollbar">
                     <table className="w-full text-left border-collapse text-xs">

@@ -181,10 +181,10 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
             WTN ALGO-TRADING
           </h2>
           <div className="text-xs font-bold text-amber-400 uppercase tracking-widest mt-0.5">
-            Binance Institutional Division
+            Institutional Trading Division
           </div>
           <p className="text-[11px] text-slate-400 mt-1 font-medium">
-            WTN Solutions LLC • Quantitative Asset Management & Pool
+            WTN Solutions LLC • Asset Management & Pool
           </p>
         </div>
 

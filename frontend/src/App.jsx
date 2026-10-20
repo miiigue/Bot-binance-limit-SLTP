@@ -643,7 +643,7 @@ function MainDashboard() {
                     {isViewingSpecificUser ? `BOT: ${targetUserDisplayName}` : 'WTN ALGO-TRADING'}
                   </span>
                   <span className="bg-slate-950 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shadow-sm">
-                    {isViewingSpecificUser ? 'MODO USUARIO' : 'BINANCE'}
+                    {isViewingSpecificUser ? 'MODO USUARIO' : 'EXCHANGE'}
                   </span>
                 </div>
                 <span className="text-[9px] font-bold text-slate-900 truncate max-w-[190px]" title={activeStrategyDisplay}>
@@ -730,7 +730,7 @@ function MainDashboard() {
                       : (isInvestor ? `BOT: ${user?.username || 'Usuario'}` : 'WTN ALGO-TRADING')}
                   </span>
                   <span className="bg-slate-950 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shadow">
-                    {isViewingSpecificUser ? 'MODO INSPECCIÓN' : (isInvestor ? 'CUENTA PRIVADA' : 'BINANCE')}
+                    {isViewingSpecificUser ? 'MODO INSPECCIÓN' : (isInvestor ? 'CUENTA PRIVADA' : 'EXCHANGE')}
                   </span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-900 tracking-wider truncate max-w-[280px]" title={activeStrategyDisplay}>
@@ -756,12 +756,12 @@ function MainDashboard() {
 
                     <div className="flex items-baseline gap-2.5 text-slate-950">
                       <span className="text-sm font-extrabold uppercase tracking-wide text-slate-900">
-                        {isViewingSpecificUser ? 'Saldo Binance Usuario:' : 'Tu Saldo Binance:'}
+                        {isViewingSpecificUser ? 'Saldo Exchange Usuario:' : 'Tu Saldo en Exchange:'}
                       </span>
                       <span className="text-2xl sm:text-3xl font-mono font-black tracking-tight text-slate-950">
                         ${userBinanceBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
-                      <span className={`text-2xl sm:text-3xl font-mono font-black tracking-tight ${userWalletPnl < 0 ? 'text-rose-900' : 'text-emerald-950'}`} title="Rendimiento neto de cartera (Balance Binance - Inversión Inicial)">
+                      <span className={`text-2xl sm:text-3xl font-mono font-black tracking-tight ${userWalletPnl < 0 ? 'text-rose-900' : 'text-emerald-950'}`} title="Rendimiento neto de cartera (Balance en Exchange - Inversión Inicial)">
                         ({userWalletPnl >= 0 ? `+${userWalletPnl.toFixed(2)}` : userWalletPnl.toFixed(2)} USDT)
                       </span>
                     </div>
@@ -784,7 +784,7 @@ function MainDashboard() {
                       <span className="text-2xl sm:text-3xl font-mono font-black tracking-tight text-slate-950">
                         ${(Number(headerPnlData?.poolBalance) || 5000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
-                      <span className={`text-2xl sm:text-3xl font-mono font-black tracking-tight ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`} title="Rendimiento neto de cartera (Balance Binance - Capital Inicial)">
+                      <span className={`text-2xl sm:text-3xl font-mono font-black tracking-tight ${(Number(headerPnlData?.walletPnl) || 0) < 0 ? 'text-rose-900' : 'text-emerald-950'}`} title="Rendimiento neto de cartera (Balance en Exchange - Capital Inicial)">
                         ({(Number(headerPnlData?.walletPnl) || 0) >= 0 ? `+${(Number(headerPnlData?.walletPnl) || 0).toFixed(2)}` : (Number(headerPnlData?.walletPnl) || 0).toFixed(2)} USDT)
                       </span>
                     </div>
@@ -1225,7 +1225,7 @@ function MainDashboard() {
 
         {!initialLoadingError && (
           <>
-            {/* PESTAÑA: Mi Bot & Copy-Trading Binance (Cuentas individuales Binance) */}
+            {/* PESTAÑA: Mi Bot & Copy-Trading (Cuentas individuales) */}
             {(activeTab === 'my_bot' || activeTab === 'copy_trading') && (
               <UserBotPanel 
                 activeStrategyName={activeStrategyDisplay} 

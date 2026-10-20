@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 /**
  * EquityCurvesShowcase
  * Pasarela visual interactiva de curvas de capital de cuentas activas en la plataforma.
  * Muestra el crecimiento real y consistente del balance de usuarios anónimos
- * sin revelar nombres, destacando el rendimiento en cada una de las 3 modalidades.
+ * con animación dinámica que va creciendo punto a punto, cierre a cierre de trade.
  */
 
 const ACCOUNTS_DATA = [
@@ -69,17 +69,55 @@ const ACCOUNTS_DATA = [
 
 export default function EquityCurvesShowcase() {
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [visiblePoints, setVisiblePoints] = useState(2);
   const account = ACCOUNTS_DATA[selectedIdx];
+  const totalSteps = account.points.length;
 
-  // Generar path SVG suave para la curva de capital
+  // Reiniciar la animación punto a punto cuando el usuario cambia de cuenta
+  useEffect(() => {
+    setVisiblePoints(2);
+  }, [selectedIdx]);
+
+  // Animación progresiva: Crece punto a punto, cierre a cierre de trade
+  useEffect(() => {
+    if (visiblePoints < totalSteps) {
+      const timer = setTimeout(() => {
+        setVisiblePoints((prev) => Math.min(prev + 1, totalSteps));
+      }, 110); // Crecimiento paso a paso (~110ms por trade)
+      return () => clearTimeout(timer);
+    } else {
+      // Al llegar al balance final, mantiene 3.5s y vuelve a iniciar suavemente
+      const loopTimer = setTimeout(() => {
+        setVisiblePoints(2);
+      }, 3500);
+      return () => clearTimeout(loopTimer);
+    }
+  }, [visiblePoints, totalSteps, selectedIdx]);
+
+  // Dimensiones del gráfico SVG
   const width = 600;
   const height = 220;
-  const stepX = width / (account.points.length - 1);
-  const pathD = account.points.reduce((acc, y, i) => {
+  const stepX = width / (totalSteps - 1);
+
+  // Trazo de fondo guía (trayectoria completa tenue)
+  const fullPathD = account.points.reduce((acc, y, i) => {
     const x = i * stepX;
     return i === 0 ? `M ${x} ${y * 1.8}` : `${acc} L ${x} ${y * 1.8}`;
   }, '');
-  const areaD = `${pathD} L ${width} ${height} L 0 ${height} Z`;
+
+  // Trazo animado que crece punto a punto (cierre a cierre)
+  const currentPoints = account.points.slice(0, visiblePoints);
+  const pathD = currentPoints.reduce((acc, y, i) => {
+    const x = i * stepX;
+    return i === 0 ? `M ${x} ${y * 1.8}` : `${acc} L ${x} ${y * 1.8}`;
+  }, '');
+
+  const headX = (visiblePoints - 1) * stepX;
+  const headY = currentPoints[currentPoints.length - 1] * 1.8;
+  const areaD = `${pathD} L ${headX} ${height} L 0 ${height} Z`;
+
+  // Porcentaje de progreso de la curva animada
+  const isFinished = visiblePoints >= totalSteps;
 
   return (
     <div className="w-full bg-slate-900/80 border border-cyan-500/30 rounded-3xl p-6 sm:p-8 backdrop-blur-xl shadow-2xl">
@@ -114,7 +152,7 @@ export default function EquityCurvesShowcase() {
       {/* DETALLES DE LA CUENTA SELECCIONADA */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center pt-6">
         
-        {/* GRÁFICO SVG DE LA CURVA DE CAPITAL */}
+        {/* GRÁFICO SVG DE LA CURVA DE CAPITAL ANIMADA */}
         <div className="lg:col-span-8 bg-slate-950 rounded-2xl border border-slate-800/80 p-4 relative overflow-hidden">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
             <div className="flex items-center gap-2">
@@ -124,9 +162,25 @@ export default function EquityCurvesShowcase() {
                 {account.mode}
               </span>
             </div>
-            <span className="font-mono text-emerald-400 font-bold text-sm">
-              {account.gain}
-            </span>
+
+            {/* INDICADOR DE ANIMACIÓN EN VIVO (CIERRE A CIERRE) */}
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-cyan-950/70 border border-cyan-500/30 text-cyan-300 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                Cierre #{visiblePoints - 1} / {totalSteps - 1} trades
+              </span>
+              <button
+                type="button"
+                onClick={() => setVisiblePoints(2)}
+                title="Repetir animación"
+                className="text-[11px] font-mono text-slate-400 hover:text-cyan-300 px-1.5 py-0.5 rounded hover:bg-slate-800 transition"
+              >
+                ↺
+              </button>
+              <span className="font-mono text-emerald-400 font-bold text-sm">
+                {account.gain}
+              </span>
+            </div>
           </div>
 
           <div className="relative w-full h-[180px] sm:h-[220px]">
@@ -153,10 +207,20 @@ export default function EquityCurvesShowcase() {
               <line x1="0" y1="100" x2={width} y2="100" stroke="#1e293b" strokeDasharray="4 4" strokeWidth="1" />
               <line x1="0" y1="160" x2={width} y2="160" stroke="#1e293b" strokeDasharray="4 4" strokeWidth="1" />
 
-              {/* Área Sombreada */}
+              {/* Guía tenue del recorrido completo */}
+              <path
+                d={fullPathD}
+                fill="none"
+                stroke="#334155"
+                strokeWidth="1.5"
+                strokeDasharray="3 3"
+                opacity="0.35"
+              />
+
+              {/* Área Sombreada Animada */}
               <path d={areaD} fill={`url(#gradArea-${selectedIdx})`} />
 
-              {/* Línea de Crecimiento */}
+              {/* Línea de Crecimiento Dinámica (Crece punto a punto) */}
               <path
                 d={pathD}
                 fill="none"
@@ -166,27 +230,36 @@ export default function EquityCurvesShowcase() {
                 strokeLinejoin="round"
               />
 
-              {/* Punto Final Brillante */}
+              {/* Punto de Cierre Activo (Punto que avanza en cada cierre de trade) */}
               <circle
-                cx={width}
-                cy={account.points[account.points.length - 1] * 1.8}
-                r="6"
-                fill="#10b981"
+                cx={headX}
+                cy={headY}
+                r="7"
+                fill="#00f0ff"
                 className="animate-pulse"
+                opacity="0.75"
               />
               <circle
-                cx={width}
-                cy={account.points[account.points.length - 1] * 1.8}
-                r="2.5"
+                cx={headX}
+                cy={headY}
+                r="4"
+                fill={isFinished ? "#10b981" : "#38bdf8"}
+              />
+              <circle
+                cx={headX}
+                cy={headY}
+                r="2"
                 fill="#ffffff"
               />
             </svg>
           </div>
 
           <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mt-2 pt-2 border-t border-slate-900">
-            <span>Día 1: {account.capital}</span>
-            <span>Evolución Temporal ({account.duration})</span>
-            <span className="text-emerald-400 font-bold">Actual: {account.currentBalance}</span>
+            <span>Inicio: {account.capital}</span>
+            <span className="text-cyan-400 font-semibold">
+              {isFinished ? '✓ Curva completada' : `● Crecimiento en curso (Trade ${visiblePoints - 1}/${totalSteps - 1})`}
+            </span>
+            <span className="text-emerald-400 font-bold">Balance: {account.currentBalance}</span>
           </div>
         </div>
 
