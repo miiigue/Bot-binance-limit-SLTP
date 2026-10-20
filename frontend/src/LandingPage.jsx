@@ -259,7 +259,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 backdrop-blur-md text-center">
               <div className="text-2xl font-black text-emerald-400 font-mono">100%</div>
-              <div className="text-[11px] text-slate-400 font-semibold mt-0.5">Non-Custodial</div>
+              <div className="text-[11px] text-slate-400 font-semibold mt-0.5">Autocustodia</div>
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 backdrop-blur-md text-center">
               <div className="text-2xl font-black text-blue-400 font-mono">24/7</div>
@@ -363,7 +363,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               </div>
             </Tilt3DCard>
 
-            {/* PRODUCTO 2: COPY-TRADING NON-CUSTODIAL */}
+            {/* PRODUCTO 2: COPY-TRADING EN AUTOCUSTODIA */}
             <Tilt3DCard className="bg-gradient-to-b from-slate-900 to-slate-950 border border-sky-500/40 p-7 shadow-xl shadow-sky-950/20 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-4">
@@ -371,7 +371,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                     ⚡
                   </div>
                   <span className="px-2.5 py-1 rounded-full bg-sky-400/15 text-sky-300 font-mono text-[10px] font-bold border border-sky-400/30">
-                    PRODUCTO 02 • 100% NON-CUSTODIAL
+                    PRODUCTO 02 • 100% AUTOCUSTODIA
                   </span>
                 </div>
 
@@ -713,7 +713,163 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          7. PROGRAMA DE SOCIOS & EMBAJADORES (ALTO INCENTIVO PARA ATRAER CAPITAL)
+          7. SECCIÓN PATRIMONIO GENERACIONAL: EL MODELO TRUMP & EL FONDO PARA TUS HIJOS
+         ========================================================================= */}
+      <section id="patrimonio-hijos" className="py-20 sm:py-24 relative z-10 border-t border-slate-900 bg-gradient-to-b from-slate-950 via-[#070b16] to-slate-950 overflow-hidden">
+        
+        {/* Luces ambientales en dorado institucional y azul naval */}
+        <div className="absolute top-1/4 left-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
+            
+            {/* COLUMNA IZQUIERDA: IMAGEN EMBLEMÁTICA (PELUCA DORADA / BANDERA USA / BÓVEDA) */}
+            <div className="lg:col-span-5 flex flex-col items-center">
+              <div className="w-full max-w-md rounded-3xl p-2.5 bg-gradient-to-b from-amber-400/40 via-slate-800 to-amber-500/30 border border-amber-400/50 shadow-2xl shadow-amber-500/20 backdrop-blur-xl group">
+                <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-amber-500/30">
+                  <img
+                    src="/trump-heritage-fund.jpg"
+                    alt="Donald Trump Heritage Fund - Cuentas de Inversión para Hijos en Autocustodia"
+                    className="w-full h-auto object-cover object-center transform group-hover:scale-105 transition-transform duration-700"
+                    loading="lazy"
+                  />
+                  
+                  {/* Overlay gradiente inferior para legibilidad */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent pointer-events-none" />
+
+                  {/* Badge flotante superior con bandera y sello institucional */}
+                  <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950/85 border border-amber-400/60 text-amber-300 font-mono text-[10px] font-bold backdrop-blur-md shadow-lg">
+                      <span className="text-xs">🇺🇸</span> Modelo Trump Accounts
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-950/85 border border-emerald-400/60 text-emerald-300 font-mono text-[10px] font-black backdrop-blur-md">
+                      100% Autocustodia
+                    </span>
+                  </div>
+
+                  {/* Leyenda inferior sobre la imagen */}
+                  <div className="absolute bottom-3 left-3 right-3 p-3 rounded-xl bg-slate-950/90 border border-amber-400/30 backdrop-blur-md">
+                    <div className="text-[11px] font-bold text-amber-200 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🏛️</span> El Poder del Interés Compuesto
+                    </div>
+                    <div className="text-[10px] text-slate-300 mt-0.5">
+                      18 años creciendo en automático mientras ellos juegan y estudian.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Estadísticas de impacto */}
+              <div className="grid grid-cols-2 gap-3 w-full max-w-md mt-4">
+                <div className="p-3 rounded-2xl bg-slate-900/80 border border-amber-400/30 text-center">
+                  <div className="text-lg font-black font-mono text-amber-300">+18 Años</div>
+                  <div className="text-[10px] text-slate-400">Maduración del Capital</div>
+                </div>
+                <div className="p-3 rounded-2xl bg-slate-900/80 border border-cyan-400/30 text-center">
+                  <div className="text-lg font-black font-mono text-cyan-300">$0 Deudas</div>
+                  <div className="text-[10px] text-slate-400">Al llegar a la Mayoría de Edad</div>
+                </div>
+              </div>
+            </div>
+
+            {/* COLUMNA DERECHA: ARGUMENTACIÓN CONVINCENTE PARA LATINOS Y PADRES DEL MUNDO */}
+            <div className="lg:col-span-7 space-y-5">
+              
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-400/15 border border-amber-400/40 text-amber-300 text-xs font-mono font-black uppercase tracking-wider">
+                <span className="text-sm">🇺🇸</span>
+                <span>VISIÓN DE ESTADO • PATRIMONIO GENERACIONAL</span>
+              </div>
+
+              <h3 className="text-2xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-tight">
+                Si en EE.UU. Piensan en Asignar Cuentas a sus Recién Nacidos...{' '}
+                <span className="block mt-1 bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent">
+                  ¿Qué Estás Construyendo Tú para tus Hijos?
+                </span>
+              </h3>
+
+              <div className="text-xs sm:text-sm text-slate-300 space-y-3 leading-relaxed">
+                <p>
+                  En Estados Unidos, Donald Trump impulsó la creación de las <strong className="text-white">Trump Accounts (530A)</strong>: cuentas de inversión que asignan un capital inicial a los bebés al nacer para que el mercado bursátil lo multiplique a lo largo de 18 años y puedan reclamarlo al cumplir la mayoría de edad.
+                </p>
+                <p>
+                  Pero seamos honestos: <strong className="text-amber-300">si eres latino o vives fuera de EE.UU., ningún gobierno ni político va a crear esa cuenta por ti.</strong> En nuestros países, la inflación, las devaluaciones y los bancos tradicionales devoran el poder adquisitivo de quienes solo ahorran en moneda local.
+                </p>
+              </div>
+
+              {/* 4 BENEFICIOS CLAVE EN AUTOCUSTODIA */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                
+                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-amber-400/40 transition">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white mb-1">
+                    <span className="text-base text-amber-400">🌱</span>
+                    <span>1. Capital Semilla a tu Alcance</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Inicias con lo que tengas disponible en USDT. No necesitas millones: el tiempo y la constancia hacen el trabajo pesado.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-cyan-400/40 transition">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white mb-1">
+                    <span className="text-base text-cyan-400">🤖</span>
+                    <span>2. Algoritmos 24/7 en Activos Sólidos</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Tus fondos operan solo en las monedas líderes del mundo (BTC, ETH, SOL), sumando beneficios ciclo tras ciclo.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-emerald-400/40 transition">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white mb-1">
+                    <span className="text-base text-emerald-400">🛡️</span>
+                    <span>3. 100% en Autocustodia</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Tú tienes el control total de los fondos en tu propia cuenta. Cero riesgo de quiebra bancaria o congelamiento estatal.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-sky-400/40 transition">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white mb-1">
+                    <span className="text-base text-sky-400">🎓</span>
+                    <span>4. Reclamo a la Mayoría de Edad</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    A los 18 años, tu hijo no empieza de cero: recibe una cuenta madura para pagar su universidad, fundar su empresa o comprar su casa.
+                  </p>
+                </div>
+
+              </div>
+
+              {/* FRASE DE REFLEXIÓN & LLAMADO A LA ACCIÓN */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-950/20 border border-amber-500/30">
+                <p className="text-xs text-amber-200/90 italic font-medium">
+                  «Los ricos no gastan su capital hoy; ponen los algoritmos a trabajar para que sus hijos nunca tengan que empezar de cero.»
+                </p>
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onOpenRegister && onOpenRegister(simCapital)}
+                  className="w-full sm:w-auto px-7 py-3.5 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-amber-300 hover:to-yellow-200 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-xl shadow-amber-500/25 transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <span>👶 Crear el Fondo para mis Hijos en Autocustodia</span>
+                  <span>→</span>
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* =========================================================================
+          8. PROGRAMA DE SOCIOS & EMBAJADORES (ALTO INCENTIVO PARA ATRAER CAPITAL)
          ========================================================================= */}
       <section id="referidos" className="py-20 relative z-10 border-t border-slate-900 bg-gradient-to-b from-slate-950 via-cyan-950/20 to-slate-950">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1025,7 +1181,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               <strong className="text-slate-400 uppercase">Descargo de Responsabilidad de Riesgo:</strong> El trading de contratos de futuros y derivados de criptomonedas implica un riesgo financiero sustancial y no es adecuado para todos los perfiles de inversor. Rendimientos pasados o simulados no garantizan resultados futuros.
             </p>
             <p>
-              <strong className="text-slate-400">WTN Solutions LLC</strong> provee soluciones de automatización tecnológica y algoritmos de trading. No constituye asesoramiento financiero ni gestión directa de fondos de terceros. La custodia de fondos en Copy-Trading permanece siempre en la cuenta individual de exchange del cliente.
+              <strong className="text-slate-400">WTN Solutions LLC</strong> provee soluciones de automatización tecnológica y algoritmos de trading. No constituye asesoramiento financiero ni gestión directa de fondos de terceros. La autocustodia de fondos en Copy-Trading permanece siempre en la cuenta individual de exchange del cliente.
             </p>
           </div>
 

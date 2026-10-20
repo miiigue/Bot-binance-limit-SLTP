@@ -11,7 +11,7 @@ const ACCOUNTS_DATA = [
   {
     id: 'Cuenta #118',
     mode: 'Copy-Trading',
-    modeBadge: '100% NON-CUSTODIAL',
+    modeBadge: '100% AUTOCUSTODIA',
     badgeColor: 'sky',
     capital: '$5,000 USDT',
     currentBalance: '$7,105 USDT',
