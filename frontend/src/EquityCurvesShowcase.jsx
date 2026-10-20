@@ -111,7 +111,7 @@ export default function EquityCurvesShowcase() {
       <div className="flex items-center justify-between flex-wrap gap-2 pb-6 border-b border-slate-800">
         <div>
           <h3 className="text-xl sm:text-2xl font-black text-white mt-0.5">
-            Pasarela de Curvas de Capital
+            Curvas de Capital
           </h3>
         </div>
 

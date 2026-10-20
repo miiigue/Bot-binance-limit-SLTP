@@ -1,15 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Trading3DScene from './Trading3DScene';
 import EquityCurvesShowcase from './EquityCurvesShowcase';
-import {
-  WordmarkVelocityApex,
-  WordmarkVelocityCyberSlash,
-  WordmarkVelocityLaser,
-  WordmarkVelocityMonolith,
-  WordmarkVelocityTitanium,
-  WordmarkNeoQuant,
-  LOGO_OPTIONS
-} from './LogoOptions';
+import { WordmarkVelocityApex } from './LogoOptions';
 
 /**
  * Tilt3DCard
@@ -70,10 +62,6 @@ function Tilt3DCard({ children, className = '' }) {
 }
 
 export default function LandingPage({ onOpenLogin, onOpenRegister }) {
-  // Selector dinámico de estilo de logo (Opción 1 Velocity Candlestick como predeterminado)
-  const [selectedLogoId, setSelectedLogoId] = useState('velocity-apex');
-  const [showLogoModal, setShowLogoModal] = useState(false);
-
   // Estado para el botón flotante "Volver Arriba"
   const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -96,13 +84,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
   // Simulador interactivo de inversión
   const [simCapital, setSimCapital] = useState(5000);
   const [simProfile, setSimProfile] = useState('v21');
-
-  // Menú móvil
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // Componente del logotipo activo
-  const currentLogoOption = LOGO_OPTIONS.find((l) => l.id === selectedLogoId) || LOGO_OPTIONS[0];
-  const CurrentWordmarkComponent = currentLogoOption.Component;
 
   // Parámetros dinámicos del simulador
   const profileMultipliers = {
@@ -158,33 +139,19 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
           
           {/* LOGOTIPO TIPOGRÁFICO OFICIAL CON NOMBRE COMPLETO (ESCALA RESPONSIVE PARA MÓVILES) */}
           <div className="flex items-center shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowLogoModal(true)}
-              className="text-left group transition-transform hover:scale-[1.02] active:scale-[0.98] focus:outline-none flex items-center"
-              title="Haz clic para abrir la Galería Oficial de Logos y Tamaños"
-            >
-              <CurrentWordmarkComponent />
-            </button>
+            <div className="text-left flex items-center select-none">
+              <WordmarkVelocityApex />
+            </div>
           </div>
 
-          {/* BOTONES DE ACCIÓN: ELEGIR LOGO / INICIAR SESIÓN / SOLICITAR INVERSIÓN */}
+          {/* BOTONES DE ACCIÓN: INICIAR SESIÓN / SOLICITAR INVERSIÓN */}
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             <button
               type="button"
-              onClick={() => setShowLogoModal(true)}
-              className="hidden lg:flex px-2.5 py-1.5 text-[11px] font-mono text-cyan-300 hover:text-white bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 rounded-xl transition items-center gap-1.5"
-              title="Abrir Galería de Logotipos y Tamaños"
-            >
-              <span>🎨</span> Galería Logos
-            </button>
-
-            <button
-              type="button"
               onClick={() => onOpenLogin && onOpenLogin()}
-              className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-200 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/50 rounded-xl transition shadow-sm whitespace-nowrap"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-200 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/50 rounded-xl transition shadow-sm whitespace-nowrap"
             >
-              <span className="hidden xs:inline">Iniciar </span><span>Sesión</span>
+              Iniciar Sesión
             </button>
 
             <button
@@ -224,7 +191,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
           <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-black tracking-tight text-white max-w-4xl leading-[1.12] mb-5 px-2 break-words">
             TRADING{' '}
             <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500 bg-clip-text text-transparent">
-              AUTOMATIZADO
+              AUTOMÁTICO
             </span>
           </h1>
 
@@ -292,188 +259,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          3. SECCIÓN FUNDAMENTAL: SOLUCIONES DE INVERSIÓN
-         ========================================================================= */}
-      <section id="productos" className="py-16 sm:py-20 relative z-10 border-t border-slate-900 bg-slate-900/40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-14">
-            <h2 className="text-2xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight">
-              Inversión Automatizada
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            {/* PRODUCTO 1: FONDO MANCOMUNADO DE INVERSIÓN */}
-            <Tilt3DCard className="bg-gradient-to-b from-slate-900 to-slate-950 border border-cyan-500/40 p-7 shadow-xl shadow-cyan-950/20 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-2xl text-cyan-400">
-                    🏦
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-cyan-400/15 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-400/30">
-                    PRODUCTO 01 • GESTIÓN PASIVA
-                  </span>
-                </div>
-
-                <h3 className="text-xl font-black text-white mb-2">
-                  Fondo Mancomunado
-                </h3>
-                
-                {/* EXCLUSIVIDAD DE ESTRATEGIAS DESTACADA */}
-                <div className="p-2.5 rounded-xl bg-cyan-950/60 border border-cyan-500/30 mb-4">
-                  <div className="text-[10px] font-mono font-bold text-cyan-300 flex items-center gap-1">
-                    <span>⭐</span> ESTRATEGIAS MÁS RENTABLES
-                  </div>
-                  <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
-                    Acceso a las estrategias automáticas de mayor rendimiento para multiplicar tu dinero sin complicaciones.
-                  </p>
-                </div>
-
-                <div className="space-y-2 text-xs text-slate-300 mb-6">
-                  <div className="flex items-center gap-2">
-                    <span className="text-cyan-400 font-bold">✓</span>
-                    <span>Cero conocimientos técnicos necesarios.</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-cyan-400 font-bold">✓</span>
-                    <span>Operación 100% automática y transparente.</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-cyan-400 font-bold">✓</span>
-                    <span><strong>Estado de Cuenta Oficial (PDF)</strong> con auditoría clara.</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-cyan-400 font-bold">✓</span>
-                    <span>Mayor ganancia neta directa a tu bolsillo.</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => onOpenRegister && onOpenRegister(simCapital)}
-                  className="w-full py-3 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-cyan-300 hover:text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2"
-                >
-                  <span>Ingresar al Fondo Exclusivo</span>
-                  <span>→</span>
-                </button>
-              </div>
-            </Tilt3DCard>
-
-            {/* PRODUCTO 2: COPY-TRADING EN AUTOCUSTODIA */}
-            <Tilt3DCard className="bg-gradient-to-b from-slate-900 to-slate-950 border border-sky-500/40 p-7 shadow-xl shadow-sky-950/20 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-2xl text-sky-400">
-                    ⚡
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-sky-400/15 text-sky-300 font-mono text-[10px] font-bold border border-sky-400/30">
-                    PRODUCTO 02 • 100% AUTOCUSTODIA
-                  </span>
-                </div>
-
-                <h3 className="text-xl font-black text-white mb-2">
-                  Copy-Trading Privado
-                </h3>
-                
-                <p className="text-xs text-slate-300 mb-4 leading-relaxed">
-                  Tu dinero se queda en tu propia cuenta. Conectas tus credenciales de forma segura con retiros bloqueados y el sistema replica cada operación exitosa al instante.
-                </p>
-
-                <div className="space-y-2 text-xs text-slate-300 mb-6">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sky-400 font-bold">✓</span>
-                    <span><strong>Tu dinero es tuyo:</strong> Nunca sale de tu wallet o cuenta.</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sky-400 font-bold">✓</span>
-                    <span><strong>Retiros libres 24/7</strong> sin pedir permiso a nadie.</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sky-400 font-bold">✓</span>
-                    <span>Retiros estrictamente deshabilitados en las credenciales API.</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sky-400 font-bold">✓</span>
-                    <span>Copia automática de operaciones en segundos.</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => onOpenRegister && onOpenRegister(simCapital)}
-                  className="w-full py-3 bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-300 hover:to-blue-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-sky-500/20 transition flex items-center justify-center gap-2"
-                >
-                  <span>Conectar Copy-Trading</span>
-                  <span>→</span>
-                </button>
-              </div>
-            </Tilt3DCard>
-
-            {/* PRODUCTO 3: BOT PERSONAL AUTÓNOMO (CONTROL TOTAL & APALANCAMIENTO A MEDIDA) */}
-            <Tilt3DCard className="bg-gradient-to-b from-slate-900 to-slate-950 border border-blue-500/40 p-7 shadow-xl shadow-blue-950/20 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-2xl text-blue-400">
-                    🤖
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-blue-400/15 text-blue-300 font-mono text-[10px] font-bold border border-blue-400/30">
-                    PRODUCTO 03 • CONTROL TOTAL
-                  </span>
-                </div>
-
-                <h3 className="text-xl font-black text-white mb-2">
-                  Bot Personal Autónomo
-                </h3>
-                
-                <p className="text-xs text-slate-300 mb-4 leading-relaxed">
-                  Para quienes quieren control total: tú decides con qué monedas operar, tu nivel de apalancamiento y cuánto arriesgar en cada operación.
-                </p>
-
-                <div className="space-y-2 text-xs text-slate-300 mb-6">
-                  <div className="flex items-center gap-2">
-                    <span className="text-blue-400 font-bold">✓</span>
-                    <span><strong>Apalancamiento a tu medida:</strong> Desde 1x hasta 10x según tu perfil.</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-blue-400 font-bold">✓</span>
-                    <span><strong>Selección de monedas:</strong> Activa solo las que tú elijas.</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-blue-400 font-bold">✓</span>
-                    <span>Tus propios límites de riesgo y ganancias.</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-blue-400 font-bold">✓</span>
-                    <span>El bot opera las 24 horas siguiendo exactamente tus reglas.</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => onOpenRegister && onOpenRegister(simCapital)}
-                  className="w-full py-3 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/50 text-blue-300 hover:text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2"
-                >
-                  <span>Configurar Bot Personal</span>
-                  <span>→</span>
-                </button>
-              </div>
-            </Tilt3DCard>
-
-          </div>
-
-        </div>
-      </section>
-
-      {/* =========================================================================
-          4. SECCIÓN: MONEDAS DE MAYOR CAPITALIZACIÓN SEGURAS
+          3. SECCIÓN: MONEDAS DE MAYOR CAPITALIZACIÓN SEGURAS
          ========================================================================= */}
       <section id="activos" className="py-16 relative z-10 border-t border-slate-900">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -515,7 +301,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          5. PASARELA DE CURVAS DE CAPITAL DE USUARIOS ANÓNIMOS
+          4. CURVAS DE CAPITAL DE USUARIOS ANÓNIMOS
          ========================================================================= */}
       <section id="rendimiento" className="py-16 sm:py-20 relative z-10 border-t border-slate-900 bg-slate-900/30">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -527,7 +313,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          6. NIVELES DE RENDIMIENTO & RETORNO DE INVERSIÓN (COMPARACIÓN SENCILLA)
+          5. NIVELES DE RENDIMIENTO & RETORNO DE INVERSIÓN (COMPARACIÓN SENCILLA)
          ========================================================================= */}
       <section id="comisiones" className="py-16 sm:py-20 relative z-10 border-t border-slate-900 bg-slate-950">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -537,15 +323,9 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative z-10 text-center max-w-2xl mx-auto mb-6 sm:mb-8">
-              <span className="text-[11px] font-mono font-bold px-3 py-1 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-300 uppercase">
-                💡 COMPARACIÓN SENCILLA
-              </span>
               <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-white mt-3">
                 ¿Qué prefieres tener en tu bolsillo?
               </h3>
-              <p className="text-xs sm:text-sm text-cyan-300 mt-2 font-medium">
-                Ejemplo real con la misma inversión de <strong className="text-white font-mono">$10,000 USDT</strong>:
-              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 relative z-10">
@@ -572,9 +352,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                       <span className="text-slate-200">+$850 USDT</span>
                     </div>
                   </div>
-                </div>
-                <div className="mt-4 text-[11px] text-slate-400 italic">
-                  * Pagas poca comisión, pero te llevas poco dinero a casa.
                 </div>
               </div>
 
@@ -604,9 +381,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                     </div>
                   </div>
                 </div>
-                <div className="mt-4 text-[11px] text-cyan-200 font-semibold">
-                  ✓ ¡Te llevas <strong className="text-white">$2,400 limpios</strong> a tu bolsillo! Es casi el triple de dinero que los $850.
-                </div>
               </div>
 
             </div>
@@ -619,31 +393,35 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
           {/* LAS 3 MODALIDADES EXPLICADAS DE FORMA FÁCIL Y DIRECTA */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             
-            {/* PRODUCTO 1: BOT PERSONAL */}
-            <div className="p-6 rounded-3xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between">
+            {/* PRODUCTO 1: FONDO MANCOMUNADO (DESTACADO / ESTRATEGIAS EXCLUSIVAS) */}
+            <div className="p-6 rounded-3xl bg-gradient-to-b from-slate-900 to-cyan-950/50 border border-cyan-400/70 shadow-xl shadow-cyan-950/30 flex flex-col justify-between relative">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[9px] font-black uppercase tracking-wider">
+                MÁS POPULAR • MÁXIMA GANANCIA
+              </div>
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px] font-bold">
+                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
                     MODALIDAD 01
                   </span>
-                  <span className="text-xs font-mono font-bold text-cyan-400">TÚ CONTROLAS</span>
+                  <span className="text-xs font-mono font-bold text-amber-300">EXCLUSIVO</span>
                 </div>
-                <h4 className="text-xl font-bold text-white mt-1">Bot Personal</h4>
-                <div className="text-sm font-semibold text-cyan-300 my-2">
-                  Configuración a tu medida
+                <h4 className="text-xl font-bold text-white mt-1">Fondo de Inversión</h4>
+                <div className="text-sm font-semibold text-amber-300 my-2">
+                  Las estrategias más rentables
                 </div>
-                <div className="space-y-2.5 text-xs text-slate-300 pt-3 border-t border-slate-800">
-                  <div className="flex items-center gap-2"><span className="text-cyan-400 font-bold">✓</span> Tú decides el apalancamiento (1x a 10x)</div>
-                  <div className="flex items-center gap-2"><span className="text-cyan-400 font-bold">✓</span> Eliges tus monedas preferidas</div>
-                  <div className="flex items-center gap-2"><span className="text-cyan-400 font-bold">✓</span> Trabaja en automático 24/7 con tus reglas</div>
+                <div className="space-y-2.5 text-xs text-slate-200 pt-3 border-t border-slate-800">
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Acceso a las estrategias más rentables</div>
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Cero configuración técnica para ti</div>
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Estado de cuenta claro de tus ganancias</div>
+                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Mayor dinero neto directo a tu cuenta</div>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => onOpenRegister && onOpenRegister(simCapital)}
-                className="w-full mt-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
+                className="w-full mt-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black text-xs shadow-lg transition hover:scale-105 active:scale-95"
               >
-                Elegir Bot Personal
+                Invertir en el Fondo
               </button>
             </div>
 
@@ -675,35 +453,31 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               </button>
             </div>
 
-            {/* PRODUCTO 3: FONDO MANCOMUNADO (DESTACADO / ESTRATEGIAS EXCLUSIVAS) */}
-            <div className="p-6 rounded-3xl bg-gradient-to-b from-slate-900 to-cyan-950/50 border border-cyan-400/70 shadow-xl shadow-cyan-950/30 flex flex-col justify-between relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[9px] font-black uppercase tracking-wider">
-                MÁS POPULAR • MÁXIMA GANANCIA
-              </div>
+            {/* PRODUCTO 3: BOT PERSONAL */}
+            <div className="p-6 rounded-3xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
+                  <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px] font-bold">
                     MODALIDAD 03
                   </span>
-                  <span className="text-xs font-mono font-bold text-amber-300">EXCLUSIVO</span>
+                  <span className="text-xs font-mono font-bold text-cyan-400">TÚ CONTROLAS</span>
                 </div>
-                <h4 className="text-xl font-bold text-white mt-1">Fondo de Inversión</h4>
-                <div className="text-sm font-semibold text-amber-300 my-2">
-                  Las estrategias más rentables
+                <h4 className="text-xl font-bold text-white mt-1">Bot Personal</h4>
+                <div className="text-sm font-semibold text-cyan-300 my-2">
+                  Configuración a tu medida
                 </div>
-                <div className="space-y-2.5 text-xs text-slate-200 pt-3 border-t border-slate-800">
-                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Acceso a las estrategias más rentables</div>
-                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Cero configuración técnica para ti</div>
-                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Estado de cuenta claro de tus ganancias</div>
-                  <div className="flex items-center gap-2"><span className="text-emerald-400 font-bold">✓</span> Mayor dinero neto directo a tu cuenta</div>
+                <div className="space-y-2.5 text-xs text-slate-300 pt-3 border-t border-slate-800">
+                  <div className="flex items-center gap-2"><span className="text-cyan-400 font-bold">✓</span> Tú decides el apalancamiento (1x a 10x)</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400 font-bold">✓</span> Eliges tus monedas preferidas</div>
+                  <div className="flex items-center gap-2"><span className="text-cyan-400 font-bold">✓</span> Trabaja en automático 24/7 con tus reglas</div>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => onOpenRegister && onOpenRegister(simCapital)}
-                className="w-full mt-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black text-xs shadow-lg transition hover:scale-105 active:scale-95"
+                className="w-full mt-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
               >
-                Invertir en el Fondo
+                Elegir Bot Personal
               </button>
             </div>
 
@@ -713,7 +487,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          7. SECCIÓN PATRIMONIO GENERACIONAL: EL MODELO TRUMP & EL FONDO PARA TUS HIJOS
+          6. SECCIÓN PATRIMONIO GENERACIONAL: EL MODELO TRUMP & EL FONDO PARA TUS HIJOS
          ========================================================================= */}
       <section id="patrimonio-hijos" className="py-16 sm:py-20 relative z-10 border-t border-slate-900 bg-gradient-to-b from-slate-950 via-[#070b16] to-slate-950 overflow-hidden">
         
@@ -842,7 +616,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          8. PROGRAMA DE SOCIOS & EMBAJADORES (ALTO INCENTIVO PARA ATRAER CAPITAL)
+          7. PROGRAMA DE SOCIOS & EMBAJADORES (ALTO INCENTIVO PARA ATRAER CAPITAL)
          ========================================================================= */}
       <section id="referidos" className="py-20 relative z-10 border-t border-slate-900 bg-gradient-to-b from-slate-950 via-cyan-950/20 to-slate-950">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -865,7 +639,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                 </h3>
                 
                 <p className="text-sm sm:text-base text-slate-200 leading-relaxed font-normal">
-                  Convierte tus conocidos en una fuente ingresos pasivos. Al incorporarlos a la plataforma, recibes beneficios generados por cada amigo activo
+                  Convierte a tus conocidos en una fuente de ingresos pasivos. Al incorporarlos a la plataforma, recibes beneficios directos y comisiones recurrentes generadas por cada amigo activo en el sistema.
                 </p>
               </div>
 
@@ -1028,149 +802,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
       </section>
 
       {/* =========================================================================
-          10. GALERÍA OFICIAL DE LOGOTIPOS & SISTEMA DE MARCA INSTITUCIONAL
-         ========================================================================= */}
-      {showLogoModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-xl animate-fadeIn"
-          onClick={() => setShowLogoModal(false)}
-        >
-          <div
-            className="relative w-full max-w-4xl max-h-[92vh] bg-slate-900/95 border border-cyan-500/40 rounded-3xl p-5 sm:p-8 text-white shadow-2xl flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* BOTÓN CERRAR */}
-            <button
-              type="button"
-              onClick={() => setShowLogoModal(false)}
-              className="absolute top-4 right-4 sm:top-6 sm:right-6 w-9 h-9 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center text-sm font-bold border border-slate-700 transition"
-              aria-label="Cerrar modal"
-            >
-              ✕
-            </button>
-
-            {/* ENCABEZADO DE LA GALERÍA */}
-            <div className="text-center mb-6 pr-8 pl-2">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-400/15 border border-cyan-400/30 text-cyan-300 font-mono text-[10px] font-bold uppercase tracking-wider mb-2">
-                <span>🎨</span> IDENTIDAD VISUAL & BRANDING SUITE
-              </div>
-              <h3 className="text-xl sm:text-3xl font-black text-white tracking-tight">
-                Galería Oficial de Logotipos WTN ALGO-TRADING
-              </h3>
-              <p className="text-xs text-slate-300 max-w-2xl mx-auto mt-1.5 leading-relaxed">
-                Diseñados según los estándares tipográficos de las mayores firmas globales. Elige el estilo oficial para la plataforma y consulta las dimensiones técnicas de producción:
-              </p>
-            </div>
-
-            {/* LISTA ORGANIZADA DE LOGOTIPOS CON SUS TAMAÑOS Y ESPECIFICACIONES */}
-            <div className="overflow-y-auto pr-1 space-y-4 max-h-[64vh]">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {LOGO_OPTIONS.map((opt) => {
-                  const Wordmark = opt.Component;
-                  const isSelected = selectedLogoId === opt.id;
-                  return (
-                    <div
-                      key={opt.id}
-                      className={`p-4 sm:p-5 rounded-2xl border transition flex flex-col justify-between ${
-                        isSelected
-                          ? 'bg-gradient-to-b from-cyan-950/50 to-slate-900 border-cyan-400 ring-2 ring-cyan-400/30 shadow-xl'
-                          : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      <div>
-                        {/* ENCABEZADO DE LA CARD */}
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-black text-white">{opt.name}</span>
-                          {isSelected ? (
-                            <span className="px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[9px] font-black uppercase">
-                              ✓ Activo
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-500 font-mono">Disponible</span>
-                          )}
-                        </div>
-
-                        <div className="text-[11px] text-cyan-300 font-semibold mb-3">
-                          {opt.subtitle}
-                        </div>
-
-                        {/* ÁREA DE PREVISUALIZACIÓN EN VIVO (FONDO ULTRA OSCURO) */}
-                        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800/80 flex items-center justify-center mb-3 min-h-[64px] overflow-hidden">
-                          <Wordmark />
-                        </div>
-
-                        {/* ORGANIZACIÓN DE TAMAÑOS REQUERIDOS */}
-                        <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 mb-3 space-y-1.5 text-[10px] font-mono">
-                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            📐 Tamaños Oficiales de Producción:
-                          </div>
-                          <div className="flex items-center justify-between text-slate-300">
-                            <span className="text-cyan-400 font-bold">🖥️ Desktop:</span>
-                            <span className="text-slate-300">32px (Cabecera & 4K)</span>
-                          </div>
-                          <div className="flex items-center justify-between text-slate-300">
-                            <span className="text-sky-400 font-bold">📱 Móvil:</span>
-                            <span className="text-slate-300">16px (Smartphones & PWA)</span>
-                          </div>
-                          <div className="flex items-center justify-between text-slate-300">
-                            <span className="text-emerald-400 font-bold">⚡ App/Token:</span>
-                            <span className="text-slate-300">14px (Favicon & Notificaciones)</span>
-                          </div>
-                        </div>
-
-                        {/* CASOS DE USO RECOMENDADOS */}
-                        {opt.useCases && (
-                          <div className="flex flex-wrap gap-1 mb-3">
-                            {opt.useCases.map((u, i) => (
-                              <span key={i} className="px-2 py-0.5 rounded bg-slate-800 text-[9px] text-slate-300 border border-slate-700/60">
-                                {u}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* BOTÓN DE SELECCIÓN */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedLogoId(opt.id);
-                          setShowLogoModal(false);
-                        }}
-                        className={`w-full py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 ${
-                          isSelected
-                            ? 'bg-cyan-400 text-slate-950 font-black shadow-lg shadow-cyan-500/20'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700'
-                        }`}
-                      >
-                        {isSelected ? '✓ Logo Activo en Plataforma' : 'Activar este Logo'}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* PIE DEL MODAL */}
-            <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-              <span className="text-[11px]">
-                Tipografía: <strong className="text-slate-200">Sans-Serif Black Italic</strong> con velas alcistas en unidades relativas <strong className="text-emerald-400 font-mono">em</strong>.
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowLogoModal(false)}
-                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition"
-              >
-                Cerrar Galería
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================================
-          11. FOOTER OFICIAL CON WTN SOLUTIONS LLC (DESCARGO REGULATORIO Y LEGAL)
+          10. FOOTER OFICIAL CON WTN SOLUTIONS LLC (DESCARGO REGULATORIO Y LEGAL)
          ========================================================================= */}
       <footer className="bg-slate-950 border-t border-slate-900 pt-14 pb-10 relative z-10 text-xs text-slate-400">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1179,8 +811,8 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             
             {/* EMPRESA LEGAL */}
             <div className="md:col-span-2 space-y-3">
-              <div className="flex items-center gap-2">
-                <CurrentWordmarkComponent />
+              <div className="flex items-center gap-2 select-none">
+                <WordmarkVelocityApex />
               </div>
               <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
                 Empresa especializada en software financiero y tecnología algorítmica para mercados de derivados.
@@ -1193,10 +825,10 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             {/* PRODUCTOS */}
             <div className="space-y-1.5">
               <div className="text-xs font-bold text-white uppercase tracking-wider mb-2">Productos</div>
-              <div><a href="#productos" className="hover:text-cyan-400 transition">Fondo Mancomunado</a></div>
-              <div><a href="#productos" className="hover:text-cyan-400 transition">Copy-Trading Privado</a></div>
-              <div><a href="#productos" className="hover:text-cyan-400 transition">Bot Personal Autónomo</a></div>
-              <div><a href="#comisiones" className="hover:text-cyan-400 transition">Niveles de Comisiones</a></div>
+              <div><a href="#comisiones" className="hover:text-cyan-400 transition">Fondo Mancomunado</a></div>
+              <div><a href="#comisiones" className="hover:text-cyan-400 transition">Copy-Trading Privado</a></div>
+              <div><a href="#comisiones" className="hover:text-cyan-400 transition">Bot Personal Autónomo</a></div>
+              <div><a href="#comisiones" className="hover:text-cyan-400 transition">Niveles de Rendimiento</a></div>
             </div>
 
             {/* CONTACTO */}
