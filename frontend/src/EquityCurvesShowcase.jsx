@@ -87,9 +87,6 @@ export default function EquityCurvesShowcase() {
       {/* SELECTOR DE CUENTAS (PASARELA HORIZONTAL) */}
       <div className="flex items-center justify-between flex-wrap gap-2 pb-6 border-b border-slate-800">
         <div>
-          <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider">
-            📈 RENDIMIENTO REAL VERIFICADO
-          </span>
           <h3 className="text-xl sm:text-2xl font-black text-white mt-0.5">
             Pasarela de Curvas de Capital
           </h3>
