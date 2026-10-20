@@ -290,16 +290,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                   />
                   {/* Gradiente de integración cinematográfica */}
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
-                  
-                  {/* Badge en vivo flotante sobre la foto del living */}
-                  <div className="absolute top-3 left-3 sm:top-4 sm:left-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/80 border border-emerald-400/50 backdrop-blur-md shadow-lg">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    <span className="text-[10px] font-mono font-bold text-emerald-300">BOT OPERANDO 24/7 EN SEGUNDO PLANO</span>
-                  </div>
-
-                  <div className="absolute top-3 right-3 sm:top-4 sm:right-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950/80 border border-cyan-400/50 backdrop-blur-md shadow-lg">
-                    <span className="text-[10px] font-mono font-bold text-cyan-300">+$2,400 GANANCIA GENERADA</span>
-                  </div>
                 </div>
 
                 {/* 2. CARRUSEL LIMPIO DE STREAMING EN LA PARTE BAJA DE LA IMAGEN */}
@@ -554,39 +544,34 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
               </div>
 
               {/* CASO B: FONDO CON MEJORES ESTRATEGIAS */}
-              <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-b from-cyan-950/80 to-slate-950 border border-cyan-400/80 shadow-2xl shadow-cyan-500/20 flex flex-col justify-between relative">
+              <div className="p-5 sm:p-6 rounded-2xl bg-slate-950/90 border border-slate-800 flex flex-col justify-between shadow-xl">
                 <div>
                   <div className="flex items-center justify-between mb-3 min-h-[28px]">
-                    <span className="text-xs font-mono font-bold text-cyan-300 uppercase">Opción 2 • Fondo de Inversión</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="px-2.5 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[9px] font-black uppercase tracking-wider">
-                        MÁS DINERO LIMPIO
-                      </span>
-                      <span className="px-2.5 py-1 rounded-full bg-cyan-400/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-400/40">
-                        Mejores Estrategias
-                      </span>
-                    </div>
+                    <span className="text-xs font-mono font-bold text-slate-400 uppercase">Opción 2 • Fondo de Inversión</span>
+                    <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px] font-bold border border-slate-700">
+                      40% Comisión
+                    </span>
                   </div>
 
                   <div className="text-slate-400 text-xs mb-1">Misma inversión: <strong className="text-white font-mono">$10,000 USDT</strong></div>
-                  <div className="text-cyan-300/80 text-xs mb-1">Ganancia obtenida:</div>
-                  <div className="text-2xl sm:text-3xl font-black text-emerald-400 font-mono mb-4">
-                    +$4,000 <span className="text-xs text-emerald-300 font-normal">USDT</span>
+                  <div className="text-slate-400 text-xs mb-1">Ganancia obtenida:</div>
+                  <div className="text-2xl sm:text-3xl font-black text-slate-200 font-mono mb-4">
+                    +$4,000 <span className="text-xs text-slate-400 font-normal">USDT</span>
                   </div>
 
-                  <div className="p-3.5 rounded-xl bg-slate-900/90 border border-cyan-500/30 space-y-2.5 text-xs font-mono">
-                    <div className="flex justify-between items-center text-slate-200">
-                      <span className="text-slate-300">Comisión del 40%:</span>
+                  <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2.5 text-xs font-mono">
+                    <div className="flex justify-between items-center text-slate-300">
+                      <span className="text-slate-400">Comisión del 40%:</span>
                       <span className="text-rose-400 font-bold">-$1,600 USDT</span>
                     </div>
-                    <div className="pt-2.5 border-t border-cyan-500/30 flex justify-between items-center font-bold text-sm">
+                    <div className="pt-2.5 border-t border-slate-800 flex justify-between items-center font-bold text-sm">
                       <span className="text-white">Te quedan limpios:</span>
-                      <span className="text-emerald-400 text-base font-extrabold">+$2,400 USDT</span>
+                      <span className="text-slate-200 text-base">+$2,400 USDT</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-cyan-500/20 text-[11px] text-cyan-300 font-mono font-semibold">
+                <div className="mt-4 pt-3 border-t border-slate-800/60 text-[11px] text-slate-500 font-mono">
                   Ganancia neta en 75 Días
                 </div>
               </div>
