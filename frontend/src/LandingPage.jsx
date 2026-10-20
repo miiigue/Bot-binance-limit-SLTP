@@ -302,65 +302,46 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                   </div>
                 </div>
 
-                {/* 2. MUEBLE DE TV ELEGANTE CON TELEVISOR SMART Y CARRUSEL 3D GIRATORIO */}
-                <div className="p-4 sm:p-5 bg-gradient-to-b from-slate-950 to-slate-900 border-t border-slate-800 relative">
+                {/* 2. CARRUSEL LIMPIO DE STREAMING EN LA PARTE BAJA DE LA IMAGEN */}
+                <div className="py-3 px-3 sm:px-4 bg-slate-950/95 border-t border-slate-800 relative overflow-hidden">
                   
-                  {/* TELEVISOR SOBRE EL MUEBLE CON PANTALLA CINE */}
-                  <div className="relative rounded-2xl bg-gradient-to-br from-slate-900 via-[#030914] to-slate-950 border-2 border-cyan-500/40 p-3 sm:p-4 shadow-inner overflow-hidden">
-                    
-                    <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800/80 text-[10px] font-mono">
-                      <span className="text-slate-400 font-bold flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                        PANTALLA DE STREAMING INTERACTIVA
-                      </span>
-                      <span className="text-cyan-300 font-semibold">Tú descansas • La IA genera</span>
+                  {/* CARRUSEL DE LOGOS GIRATORIO CONTINUO */}
+                  <div className="relative w-full overflow-hidden mask-[linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]">
+                    <div className="flex gap-4 sm:gap-6 animate-marquee whitespace-nowrap items-center py-1">
+                      
+                      {/* ITERACIONES PARA BUCLE INFINITO */}
+                      {[1, 2, 3].map((loop) => (
+                        <React.Fragment key={loop}>
+                          {/* NETFLIX */}
+                          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md hover:border-cyan-400/50 transition-all">
+                            <svg className="w-6 h-4.5" viewBox="0 0 111 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M105.062 14.28L111 30c-1.794-.277-3.593-.526-5.408-.748l-3.32-8.914-3.321 8.444c-1.72-.194-3.442-.36-5.176-.499L99.5 14.53 94.135 0h5.176l3.32 8.914L105.952 0h5.048l-5.938 14.28zM90.468 0v30h-4.945V0h4.945zm-14.802 0v4.75h-5.464V30h-4.946V4.75h-5.463V0h15.873zm-24.37 0v30h-4.946V17.375h-6.242V30H35.16V0h4.947v12.625h6.242V0h4.946zM26.262 0v4.75h-8.835v7.875h7.616v4.75h-7.616v7.875h8.835V30H12.48V0h13.782zM0 0h4.946l7.474 19.375V0h4.946v30h-4.708L5.184 10.625V30H0V0z" fill="#E50914"/>
+                            </svg>
+                            <span className="text-[11px] font-bold text-white">Netflix</span>
+                          </div>
+
+                          {/* DISNEY+ */}
+                          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md hover:border-cyan-400/50 transition-all">
+                            <span className="font-black text-sky-400 text-xs tracking-tight font-sans">Disney<span className="text-white">+</span></span>
+                          </div>
+
+                          {/* HBO MAX */}
+                          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md hover:border-cyan-400/50 transition-all">
+                            <span className="font-black text-white text-xs tracking-wider font-sans"><span className="text-blue-500 font-black">M</span>AX</span>
+                          </div>
+
+                          {/* YOUTUBE */}
+                          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md hover:border-cyan-400/50 transition-all">
+                            <svg className="w-4.5 h-3.5" viewBox="0 0 24 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M23.5 2.6c-.3-1-1-1.8-2-2.1C19.7 0 12 0 12 0S4.3 0 2.5.5c-1 .3-1.7 1.1-2 2.1C0 4.4 0 8.5 0 8.5s0 4.1.5 5.9c.3 1 1 1.8 2 2.1 1.8.5 9.5.5 9.5.5s7.7 0 9.5-.5c1-.3 1.7-1.1 2-2.1.5-1.8.5-5.9.5-5.9s0-4.1-.5-5.9z" fill="#FF0000"/>
+                              <path d="M9.6 12.1L15.8 8.5 9.6 4.9v7.2z" fill="#FFFFFF"/>
+                            </svg>
+                            <span className="text-[11px] font-bold text-white">YouTube</span>
+                          </div>
+                        </React.Fragment>
+                      ))}
+
                     </div>
-
-                    {/* CARRUSEL DE LOGOS GIRATORIO CONTINUO 3D DENTRO DE LA PANTALLA */}
-                    <div className="relative w-full overflow-hidden py-2 mask-[linear-gradient(to_right,transparent,black_15%,black_85%,transparent)]">
-                      <div className="flex gap-4 sm:gap-6 animate-marquee whitespace-nowrap items-center">
-                        
-                        {/* ITERACIÓN 1 & 2 PARA BUCLE INFINITO */}
-                        {[1, 2, 3].map((loop) => (
-                          <React.Fragment key={loop}>
-                            {/* NETFLIX */}
-                            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-lg hover:border-cyan-400/60 transition-all hover:scale-105">
-                              <svg className="w-7 h-5" viewBox="0 0 111 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M105.062 14.28L111 30c-1.794-.277-3.593-.526-5.408-.748l-3.32-8.914-3.321 8.444c-1.72-.194-3.442-.36-5.176-.499L99.5 14.53 94.135 0h5.176l3.32 8.914L105.952 0h5.048l-5.938 14.28zM90.468 0v30h-4.945V0h4.945zm-14.802 0v4.75h-5.464V30h-4.946V4.75h-5.463V0h15.873zm-24.37 0v30h-4.946V17.375h-6.242V30H35.16V0h4.947v12.625h6.242V0h4.946zM26.262 0v4.75h-8.835v7.875h7.616v4.75h-7.616v7.875h8.835V30H12.48V0h13.782zM0 0h4.946l7.474 19.375V0h4.946v30h-4.708L5.184 10.625V30H0V0z" fill="#E50914"/>
-                              </svg>
-                              <span className="text-[11px] font-bold text-white">Netflix</span>
-                            </div>
-
-                            {/* DISNEY+ */}
-                            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-lg hover:border-cyan-400/60 transition-all hover:scale-105">
-                              <span className="font-black text-sky-400 text-sm tracking-tight font-sans">Disney<span className="text-white">+</span></span>
-                            </div>
-
-                            {/* HBO MAX */}
-                            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-lg hover:border-cyan-400/60 transition-all hover:scale-105">
-                              <span className="font-black text-white text-sm tracking-wider font-sans"><span className="text-blue-500 font-black">M</span>AX</span>
-                            </div>
-
-                            {/* YOUTUBE */}
-                            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-lg hover:border-cyan-400/60 transition-all hover:scale-105">
-                              <svg className="w-5 h-4" viewBox="0 0 24 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M23.5 2.6c-.3-1-1-1.8-2-2.1C19.7 0 12 0 12 0S4.3 0 2.5.5c-1 .3-1.7 1.1-2 2.1C0 4.4 0 8.5 0 8.5s0 4.1.5 5.9c.3 1 1 1.8 2 2.1 1.8.5 9.5.5 9.5.5s7.7 0 9.5-.5c1-.3 1.7-1.1 2-2.1.5-1.8.5-5.9.5-5.9s0-4.1-.5-5.9z" fill="#FF0000"/>
-                                <path d="M9.6 12.1L15.8 8.5 9.6 4.9v7.2z" fill="#FFFFFF"/>
-                              </svg>
-                              <span className="text-[11px] font-bold text-white">YouTube</span>
-                            </div>
-                          </React.Fragment>
-                        ))}
-
-                      </div>
-                    </div>
-
-                  </div>
-
-                  {/* DISEÑO DEL MUEBLE DE MADERA/CRISTAL OSCURO PARA LA TV */}
-                  <div className="mt-2 pt-2 flex items-center justify-between px-3 text-[10px] font-mono text-slate-400 border-t border-slate-800">
-                    <span className="text-slate-500">Mueble de Home Theater</span>
-                    <span className="text-emerald-400 font-semibold">● Conexión segura con el Exchange</span>
                   </div>
 
                 </div>
