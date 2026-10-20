@@ -362,71 +362,83 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
             </p>
           </div>
 
-          {/* LOS 3 PASOS EN CARDS CON EFECTO 3D Y DISEÑO RESPONSIVE MODERNO */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 [perspective:1000px]">
+          {/* LOS 3 PASOS EN FORMATO COMPACTO, ELEGANTE Y ESTILIZADO */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 max-w-5xl mx-auto">
             
             {/* PASO 1 */}
-            <div className="group relative p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-cyan-400/60 transition-all duration-500 hover:[transform:rotateX(2deg)_rotateY(-2deg)_translateY(-8px)] hover:shadow-2xl hover:shadow-cyan-500/20 flex flex-col justify-between backdrop-blur-xl">
-              <div className="absolute -top-3.5 right-6 px-3 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 font-mono text-[10px] font-black tracking-wider">
-                PASO 01
-              </div>
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/70 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between shadow-lg backdrop-blur-md">
               <div>
-                <div className="w-14 h-14 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-2xl text-cyan-400 font-black font-mono mb-5 group-hover:scale-110 group-hover:bg-cyan-500/25 transition-all shadow-lg shadow-cyan-500/10">
-                  01
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center font-mono font-bold text-xs text-cyan-400">
+                      01
+                    </span>
+                    <span className="text-base">📝</span>
+                  </div>
+                  <span className="text-[10px] font-mono font-semibold text-slate-500">
+                    2 min
+                  </span>
                 </div>
-                <div className="text-2xl mb-2">📝</div>
-                <h3 className="text-xl font-black text-white mb-2 tracking-tight">
-                  Regístrate en 2 Minutos
+                <h3 className="text-sm sm:text-base font-bold text-white mb-1">
+                  Regístrate
                 </h3>
-                <p className="text-sm text-slate-300 leading-relaxed font-normal">
-                  Apertura tu cuenta mediante invitación privada.
+                <p className="text-xs text-slate-400 leading-snug">
+                  Apertura con invitación privada.
                 </p>
               </div>
-              <div className="mt-6 pt-4 border-t border-slate-800 text-xs font-mono text-cyan-300 font-bold flex items-center gap-1.5">
-                <span className="text-cyan-400">✓</span> Proceso simple y guiado
+              <div className="mt-3 pt-2.5 border-t border-slate-800/80 text-[11px] font-mono text-cyan-400/90 font-medium flex items-center gap-1.5">
+                <span>✓</span> Proceso simple y guiado
               </div>
             </div>
 
             {/* PASO 2 */}
-            <div className="group relative p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-sky-400/60 transition-all duration-500 hover:[transform:rotateX(2deg)_translateY(-8px)] hover:shadow-2xl hover:shadow-sky-500/20 flex flex-col justify-between backdrop-blur-xl">
-              <div className="absolute -top-3.5 right-6 px-3 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-400/30 font-mono text-[10px] font-black tracking-wider">
-                PASO 02
-              </div>
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/70 hover:bg-slate-900 border border-slate-800 hover:border-sky-500/40 transition-all flex flex-col justify-between shadow-lg backdrop-blur-md">
               <div>
-                <div className="w-14 h-14 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-2xl text-sky-400 font-black font-mono mb-5 group-hover:scale-110 group-hover:bg-sky-500/25 transition-all shadow-lg shadow-sky-500/10">
-                  02
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center font-mono font-bold text-xs text-sky-400">
+                      02
+                    </span>
+                    <span className="text-base">🎯</span>
+                  </div>
+                  <span className="text-[10px] font-mono font-semibold text-slate-500">
+                    Modalidad
+                  </span>
                 </div>
-                <div className="text-2xl mb-2">🎯</div>
-                <h3 className="text-xl font-black text-white mb-2 tracking-tight">
-                  Selecciona tu Modalidad
+                <h3 className="text-sm sm:text-base font-bold text-white mb-1">
+                  Elige tu Modalidad
                 </h3>
-                <p className="text-sm text-slate-300 leading-relaxed font-normal">
-                  El Fondo, el Copy-Trading o Bot Personal.
+                <p className="text-xs text-slate-400 leading-snug">
+                  Fondo, Copy-Trading o Bot Personal.
                 </p>
               </div>
-              <div className="mt-6 pt-4 border-t border-slate-800 text-xs font-mono text-sky-300 font-bold flex items-center gap-1.5">
-                <span className="text-sky-400">✓</span> Autocustodia o Gestión Pasiva
+              <div className="mt-3 pt-2.5 border-t border-slate-800/80 text-[11px] font-mono text-sky-400/90 font-medium flex items-center gap-1.5">
+                <span>✓</span> Autocustodia o Gestión Pasiva
               </div>
             </div>
 
             {/* PASO 3 */}
-            <div className="group relative p-7 rounded-3xl bg-gradient-to-b from-slate-900 to-cyan-950/30 border border-cyan-500/40 hover:border-cyan-300 transition-all duration-500 hover:[transform:rotateX(2deg)_rotateY(2deg)_translateY(-8px)] hover:shadow-2xl hover:shadow-cyan-500/25 flex flex-col justify-between backdrop-blur-xl">
-              <div className="absolute -top-3.5 right-6 px-3 py-0.5 rounded-full bg-cyan-400/20 text-cyan-200 border border-cyan-400/40 font-mono text-[10px] font-black tracking-wider">
-                PASO 03
-              </div>
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-slate-900/80 to-cyan-950/20 border border-cyan-500/30 hover:border-cyan-400/60 transition-all flex flex-col justify-between shadow-lg backdrop-blur-md">
               <div>
-                <div className="w-14 h-14 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-2xl text-cyan-300 font-black font-mono mb-5 group-hover:scale-110 group-hover:bg-cyan-500/30 transition-all shadow-lg shadow-cyan-500/10">
-                  03
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center font-mono font-bold text-xs text-emerald-400">
+                      03
+                    </span>
+                    <span className="text-base">⚡</span>
+                  </div>
+                  <span className="text-[10px] font-mono font-semibold text-emerald-400/80">
+                    Automático
+                  </span>
                 </div>
-                <div className="text-2xl mb-2">⚡</div>
-                <h3 className="text-xl font-black text-white mb-2 tracking-tight">
-                  Enciende tu Bot y Relájate
+                <h3 className="text-sm sm:text-base font-bold text-white mb-1">
+                  Enciende y Relájate
                 </h3>
-                <p className="text-sm text-slate-300 leading-relaxed font-normal">
-                  Haz clic en activar y listo. La IA opera de forma continua y fría, aprovechando cada oportunidad del mercado mientras tú disfrutas de tu día.
+                <p className="text-xs text-slate-400 leading-snug">
+                  La IA opera en el mercado 24/7.
                 </p>
               </div>
-              <div className="mt-6 pt-4 border-t border-slate-800 text-xs font-mono text-emerald-400 font-bold flex items-center gap-1.5">
+              <div className="mt-3 pt-2.5 border-t border-slate-800/80 text-[11px] font-mono text-emerald-400/90 font-medium flex items-center gap-1.5">
                 <span>✓</span> Ganancias automáticas 24/7
               </div>
             </div>
