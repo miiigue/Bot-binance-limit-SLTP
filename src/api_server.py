@@ -25,7 +25,7 @@ from src.config_loader import load_config, reload_config, get_trading_symbols, C
 from src.logger_setup import setup_logging, get_logger
 from src.database import (
     get_cumulative_pnl_by_symbol, get_last_n_trades_for_symbol, clear_trade_history, get_all_recent_trades,
-    count_users, create_user, get_user_by_id, get_user_by_identifier, update_last_login,
+    count_users, create_user, get_user_by_id, get_user_by_identifier, get_user_password_hash_by_id, update_last_login,
     approve_user, reject_user, add_investor_transaction, get_all_investors_summary, clear_requested_capital,
     get_investor_portfolio, get_investor_transactions, toggle_user_status,
     get_admin_investor_dossier, DATABASE_FILE,
@@ -1140,7 +1140,8 @@ def verify_password_endpoint():
         if not password:
             return jsonify({"status": "error", "message": "Por favor ingrese su contraseña de inicio de sesión."}), 400
 
-        if not verify_password(password, user['password_hash']):
+        stored_hash = get_user_password_hash_by_id(user_id)
+        if not stored_hash or not verify_password(password, stored_hash):
             api_logger.warning(f"Intento fallido de confirmación con contraseña para usuario {user['username']} (ID={user_id}).")
             return jsonify({"status": "error", "message": "Contraseña incorrecta. Acción cancelada por seguridad."}), 401
 
@@ -1741,14 +1742,28 @@ def user_bot_toggle_endpoint():
     """Activa o pausa el bot personal del usuario."""
     try:
         user_id = request.current_user['user_id']
+        data = request.get_json(force=True, silent=True) or {}
+
+        # Verificación obligatoria de contraseña antes de iniciar o pausar
+        password = str(data.get('password') or '').strip()
+        if not password:
+            return jsonify({
+                "status": "error",
+                "message": "Debe ingresar su contraseña de inicio de sesión para iniciar o pausar el bot."
+            }), 400
+        stored_hash = get_user_password_hash_by_id(user_id)
+        if not stored_hash or not verify_password(password, stored_hash):
+            return jsonify({
+                "status": "error",
+                "message": "Contraseña incorrecta. Operación cancelada por seguridad institucional."
+            }), 401
+
         keys = get_user_api_keys(user_id=user_id, decrypt=False)
         if not keys or not keys.get('is_valid'):
             return jsonify({
                 "status": "error",
                 "message": "Antes de activar el bot debes conectar y verificar tus claves API de Binance."
             }), 400
-
-        data = request.get_json(force=True, silent=True) or {}
         settings = get_user_bot_settings(user_id=user_id)
         current_state = bool(settings.get('is_running', False))
         target_state = bool(data.get('is_running', not current_state))
@@ -1968,9 +1983,11 @@ def user_trades_reset_endpoint():
         user = get_user_by_id(user_id)
         body_data = request.get_json(silent=True) or {}
         password = str(body_data.get('password') or '').strip()
-        if password:
-            if not user or not verify_password(password, user['password_hash']):
-                return jsonify({"status": "error", "message": "Contraseña incorrecta. Acción cancelada por seguridad."}), 401
+        if not password:
+            return jsonify({"status": "error", "message": "Contraseña requerida para vaciar historial por seguridad."}), 400
+        stored_hash = get_user_password_hash_by_id(user_id)
+        if not stored_hash or not verify_password(password, stored_hash):
+            return jsonify({"status": "error", "message": "Contraseña incorrecta. Acción cancelada por seguridad."}), 401
 
         # Permitir que un admin reinicie los trades de un usuario específico
         target_user_id = user_id
@@ -3263,12 +3280,13 @@ def reset_trades_endpoint():
     try:
         # Verificación de seguridad con contraseña
         admin_uid = request.current_user.get('user_id')
-        admin_user = get_user_by_id(admin_uid) if admin_uid else None
         body_data = request.get_json(silent=True) or {}
         password = str(body_data.get('password') or '').strip()
-        if password:
-            if not admin_user or not verify_password(password, admin_user['password_hash']):
-                return jsonify({"success": False, "error": "Contraseña incorrecta. Acción cancelada por seguridad."}), 401
+        if not password:
+            return jsonify({"success": False, "error": "Contraseña de administrador requerida por seguridad."}), 400
+        stored_hash = get_user_password_hash_by_id(admin_uid) if admin_uid else ''
+        if not stored_hash or not verify_password(password, stored_hash):
+            return jsonify({"success": False, "error": "Contraseña incorrecta. Acción cancelada por seguridad."}), 401
         from src.database import clear_trade_history
         success = clear_trade_history()
         if success:

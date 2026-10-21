@@ -17,6 +17,8 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
   const [investmentAmount, setInvestmentAmount] = useState(prefilledInvestmentAmount && parseFloat(prefilledInvestmentAmount) > 0 ? String(prefilledInvestmentAmount) : '0');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [referralCode, setReferralCode] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showLegalModal, setShowLegalModal] = useState(false);
@@ -365,26 +367,46 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">Contraseña Maestra *</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Mínimo 6 caracteres"
+                    className="w-full pl-3.5 pr-11 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPassword(prev => !prev)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200 text-sm transition"
+                  >
+                    {showPassword ? '🙈' : '👁️'}
+                  </button>
+                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">Confirmar Contraseña *</label>
-                <input
-                  type="password"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repite la contraseña"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
-                />
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repite la contraseña"
+                    className="w-full pl-3.5 pr-11 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowConfirmPassword(prev => !prev)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200 text-sm transition"
+                  >
+                    {showConfirmPassword ? '🙈' : '👁️'}
+                  </button>
+                </div>
               </div>
 
               <button
@@ -453,14 +475,24 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">Contraseña</label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Tu contraseña"
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Tu contraseña"
+                      className="w-full pl-3.5 pr-11 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowPassword(prev => !prev)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200 text-sm transition"
+                    >
+                      {showPassword ? '🙈' : '👁️'}
+                    </button>
+                  </div>
                 </div>
 
                 <button
@@ -825,26 +857,46 @@ export default function AuthModal({ initialMode = 'login', prefilledInvestmentAm
 
                     <div>
                       <label className="block text-xs font-bold text-slate-300 mb-1">Contraseña de Acceso *</label>
-                      <input
-                        type="password"
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Mínimo 6 caracteres"
-                        className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          required
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Mínimo 6 caracteres"
+                          className="w-full pl-3.5 pr-11 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                        />
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => setShowPassword(prev => !prev)}
+                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200 text-sm transition"
+                        >
+                          {showPassword ? '🙈' : '👁️'}
+                        </button>
+                      </div>
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-slate-300 mb-1">Confirmar Contraseña *</label>
-                      <input
-                        type="password"
-                        required
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        placeholder="Repite la contraseña"
-                        className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          required
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="Repite la contraseña"
+                          className="w-full pl-3.5 pr-11 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+                        />
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => setShowConfirmPassword(prev => !prev)}
+                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200 text-sm transition"
+                        >
+                          {showConfirmPassword ? '🙈' : '👁️'}
+                        </button>
+                      </div>
                       {confirmPassword !== '' && confirmPassword !== password && (
                         <p className="text-[11px] text-rose-400 mt-1 font-semibold flex items-center gap-1">
                           <span>⚠️</span> Las contraseñas no coinciden.

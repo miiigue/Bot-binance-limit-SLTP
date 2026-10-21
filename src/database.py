@@ -1970,6 +1970,24 @@ def toggle_user_status(user_id: int, new_status: str) -> bool:
     finally:
         conn.close()
 
+def get_user_password_hash_by_id(user_id: int) -> str:
+    """Obtiene el hash de la contraseña de un usuario por su ID para validación de seguridad."""
+    conn = get_db_connection()
+    if not conn:
+        return ""
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            return ""
+        return str(row['password_hash'] or '')
+    except Exception as e:
+        get_logger().error(f"Error al obtener password_hash por ID {user_id}: {e}")
+        return ""
+    finally:
+        conn.close()
+
 def get_user_by_id(user_id: int) -> dict:
     """Obtiene un usuario por su ID (sin devolver el password_hash)."""
     conn = get_db_connection()
@@ -3131,10 +3149,6 @@ def get_user_trades(user_id: int, limit: int = 2000, mode: str = None) -> list:
         query = "SELECT * FROM user_trades WHERE user_id = ?"
         params = [user_id]
 
-        if last_started_at:
-            query += " AND open_timestamp >= ?"
-            params.append(last_started_at)
-
         if current_op_mode:
             clean_mode = str(current_op_mode).upper().strip()
             if clean_mode in ['COPY_TRADING', 'COPYTRADING']:
@@ -3219,10 +3233,6 @@ def get_user_trading_metrics(user_id: int, mode: str = None, current_op_mode: st
         where_conds = ["user_id = ?", "close_timestamp IS NOT NULL"]
         params = [user_id]
 
-        if last_started_at:
-            where_conds.append("open_timestamp >= ?")
-            params.append(last_started_at)
-
         if current_op_mode:
             clean_mode = str(current_op_mode).upper().strip()
             if clean_mode in ['COPY_TRADING', 'COPYTRADING']:
@@ -3261,9 +3271,6 @@ def get_user_trading_metrics(user_id: int, mode: str = None, current_op_mode: st
         # Query secundaria para comisiones y volumen acumulado de TODAS las operaciones de la sesión (abiertas y cerradas)
         where_all_conds = ["user_id = ?"]
         all_params = [user_id]
-        if last_started_at:
-            where_all_conds.append("open_timestamp >= ?")
-            all_params.append(last_started_at)
         if current_op_mode:
             clean_mode = str(current_op_mode).upper().strip()
             if clean_mode in ['COPY_TRADING', 'COPYTRADING']:

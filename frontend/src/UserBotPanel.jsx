@@ -75,6 +75,14 @@ export default function UserBotPanel({
     onConfirm: null
   });
 
+  // Modal obligatorio de aviso de configuración guardada
+  const [saveSuccessModal, setSaveSuccessModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    details: null
+  });
+
   // Estado para la interacción y Zoom de la Curva de Capital
   const [equityZoomRange, setEquityZoomRange] = useState('ALL'); // 'ALL' | '50' | '20' | '10'
   const [selectedEquityPointIndex, setSelectedEquityPointIndex] = useState(null);
@@ -835,7 +843,19 @@ export default function UserBotPanel({
       const levLabel = (leverage === 'default' || !leverage)
         ? `${strategyDefaultLeverage}x (por defecto de la estrategia)`
         : `${leverage}x (personalizado)`;
-      setFeedback({ type: 'success', text: `✅ Estrategia "${selectedStrategy}" guardada con Margen de $${cap} USDT por orden (${levLabel}).` });
+      const successText = `Estrategia "${selectedStrategy}" configurada exitosamente con Margen de $${cap} USDT por orden y apalancamiento ${levLabel}.`;
+      setFeedback({ type: 'success', text: `✅ ${successText}` });
+      setSaveSuccessModal({
+        isOpen: true,
+        title: '✅ Configuración Guardada con Éxito',
+        message: 'Los parámetros operativos de su bot personal han sido actualizados y asegurados en el sistema.',
+        details: {
+          strategy: selectedStrategy,
+          margin: `${cap} USDT`,
+          leverage: levLabel,
+          marginType: marginType
+        }
+      });
       fetchUserBotStatus();
     } catch (err) {
       setFeedback({ type: 'error', text: err.message });
@@ -854,7 +874,7 @@ export default function UserBotPanel({
   const balance = Number(botData?.balance_usdt || 0);
   const walletBreakdown = botData?.wallet_breakdown || null;
 
-  // Activar / Pausar Operación Automática según la pestaña activa
+  // Activar / Pausar Operación Automática según la pestaña activa (Protegido por Contraseña)
   const handleToggleSync = () => {
     if (!botData?.has_valid_keys) {
       setFeedback({ type: 'error', text: 'Primero debes conectar tus claves API de Binance para operar.' });
@@ -873,20 +893,26 @@ export default function UserBotPanel({
       ? (selectedStrategy || botData?.bot_settings?.strategy_name || 'Estrategia seleccionada')
       : (botData?.active_strategy || activeStrategyName || 'Estrategia Maestra');
 
-    openConfirm({
-      title: nextState 
-        ? (isMarketplaceMode ? '¿Iniciar tu Bot Personal con esta Estrategia?' : '¿Activar Replicación Copy-Trading?') 
-        : (isMarketplaceMode ? '¿Pausar tu Bot Personal?' : '¿Pausar Replicación de Trades?'),
-      message: nextState 
-        ? (isMarketplaceMode 
-            ? `Tu bot personal comenzará a operar en Binance Futures con la estrategia "${stratTitle}", con un margen de $${allocatedUsdt} USDT por orden y ${effectiveLeverage}x de apalancamiento (${leverage === 'default' || !leverage ? 'por defecto de la estrategia' : 'personalizado'}, Nocional: $${(Number(allocatedUsdt) * effectiveLeverage).toFixed(2)} USDT por posición).`
-            : 'El algoritmo automatizado comenzará a copiar en tiempo real cada orden de compra y venta en tu cuenta de Binance Futures (Modo Copy-Trading Espejo).')
-        : 'Se pausará la operativa en tu cuenta de Binance. Las órdenes abiertas mantendrán sus Stop Loss en el exchange.',
-      confirmText: nextState 
-        ? (isMarketplaceMode ? 'Sí, Iniciar Mi Bot' : 'Sí, Activar Replicación') 
-        : (isMarketplaceMode ? 'Sí, Pausar Mi Bot' : 'Sí, Pausar Replicación'),
-      type: nextState ? 'success' : 'warning',
-      onConfirm: async () => {
+    const modalTitle = nextState 
+      ? (isMarketplaceMode ? '🚀 Iniciar Bot Personal' : '⚡ Activar Replicación Copy-Trading') 
+      : (isMarketplaceMode ? '⏸️ Pausar Bot Personal' : '⏸️ Pausar Replicación');
+
+    const modalMsg = nextState 
+      ? (isMarketplaceMode 
+          ? `Está a punto de INICIAR las operaciones automatizadas de su bot personal con la estrategia "${stratTitle}", margen de $${allocatedUsdt} USDT por orden y apalancamiento ${effectiveLeverage}x. Para confirmar e iniciar, ingrese su contraseña de inicio de sesión:`
+          : `Está a punto de ACTIVAR la replicación automática de operaciones Copy-Trading en su cuenta de Binance Futures. Para confirmar y activar, ingrese su contraseña de inicio de sesión:`)
+      : (isMarketplaceMode 
+          ? `Está a punto de PAUSAR su bot personal. No se abrirán nuevas operaciones (las abiertas conservarán su Stop Loss). Para autorizar la pausa, ingrese su contraseña de inicio de sesión:`
+          : `Está a punto de PAUSAR la replicación Copy-Trading en su cuenta de Binance Futures. Para autorizar la pausa, ingrese su contraseña de inicio de sesión:`);
+
+    setPasswordModal({
+      isOpen: true,
+      title: modalTitle,
+      badge: nextState ? 'ACTIVACIÓN DE TRADING' : 'PAUSA DE TRADING',
+      message: modalMsg,
+      confirmText: nextState ? 'Confirmar e Iniciar' : 'Confirmar y Pausar',
+      type: nextState ? 'warning' : 'danger',
+      onConfirm: async (enteredPassword) => {
         setActionLoading(true);
         setFeedback(null);
         try {
@@ -909,7 +935,8 @@ export default function UserBotPanel({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               is_running: nextState,
-              operating_mode: targetMode
+              operating_mode: targetMode,
+              password: enteredPassword
             })
           });
           const resJson = await resp.json();
@@ -922,9 +949,10 @@ export default function UserBotPanel({
               bot_settings: resJson.bot_settings
             }));
           }
+          closePasswordModal();
           fetchUserBotStatus();
         } catch (err) {
-          setFeedback({ type: 'error', text: err.message });
+          throw err;
         } finally {
           setActionLoading(false);
         }
@@ -2567,6 +2595,72 @@ export default function UserBotPanel({
         onConfirm={passwordModal.onConfirm}
         onClose={closePasswordModal}
       />
+
+      {/* Modal de Notificación de Parámetros Guardados (El usuario debe cerrarlo explícitamente) */}
+      {saveSuccessModal.isOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-5 relative overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="absolute top-0 right-0 -mt-8 -mr-8 w-44 h-44 bg-emerald-500/15 rounded-full blur-2xl pointer-events-none"></div>
+
+            <div className="flex items-start gap-3.5">
+              <div className="w-12 h-12 rounded-2xl border border-emerald-500/30 bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-2xl flex-shrink-0 shadow-inner">
+                ✅
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded border text-emerald-400 bg-emerald-500/10 border-emerald-500/20 inline-block">
+                  CONFIGURACIÓN ACTUALIZADA
+                </span>
+                <h3 className="text-base sm:text-lg font-black text-white tracking-tight mt-1 leading-snug">
+                  {saveSuccessModal.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSaveSuccessModal(prev => ({ ...prev, isOpen: false }))}
+                className="text-slate-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-3">
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {saveSuccessModal.message}
+              </p>
+              {saveSuccessModal.details && (
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80 text-[11px]">
+                  <div>
+                    <span className="text-slate-500 block">Estrategia:</span>
+                    <span className="text-white font-bold">{saveSuccessModal.details.strategy}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Margen por orden:</span>
+                    <span className="text-amber-400 font-bold">{saveSuccessModal.details.margin}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Apalancamiento:</span>
+                    <span className="text-emerald-400 font-bold">{saveSuccessModal.details.leverage}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Modalidad de Margen:</span>
+                    <span className="text-cyan-400 font-bold">{saveSuccessModal.details.marginType}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setSaveSuccessModal(prev => ({ ...prev, isOpen: false }))}
+                className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 transition active:scale-98"
+              >
+                Entendido, Continuar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
