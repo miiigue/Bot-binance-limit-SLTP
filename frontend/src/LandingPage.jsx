@@ -521,7 +521,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                   </div>
 
                   <div className="text-slate-400 text-xs mb-1">Tu inversión: <strong className="text-white font-mono">$10,000 USDT</strong></div>
-                  <div className="text-slate-400 text-xs mb-1">Ganancia obtenida:</div>
+                  <div className="text-slate-400 text-xs mb-1">Ganancia del mes:</div>
                   <div className="text-2xl sm:text-3xl font-black text-slate-200 font-mono mb-4">
                     +$1,000 <span className="text-xs text-slate-400 font-normal">USDT</span>
                   </div>
@@ -537,10 +537,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                     </div>
                   </div>
                 </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-800/60 text-[11px] text-slate-500 font-mono">
-                  Ganancia neta en 75 Días
-                </div>
               </div>
 
               {/* CASO B: FONDO CON MEJORES ESTRATEGIAS */}
@@ -554,7 +550,7 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                   </div>
 
                   <div className="text-slate-400 text-xs mb-1">Misma inversión: <strong className="text-white font-mono">$10,000 USDT</strong></div>
-                  <div className="text-slate-400 text-xs mb-1">Ganancia obtenida:</div>
+                  <div className="text-slate-400 text-xs mb-1">Ganancia del mes:</div>
                   <div className="text-2xl sm:text-3xl font-black text-slate-200 font-mono mb-4">
                     +$4,000 <span className="text-xs text-slate-400 font-normal">USDT</span>
                   </div>
@@ -569,10 +565,6 @@ export default function LandingPage({ onOpenLogin, onOpenRegister }) {
                       <span className="text-slate-200 text-base">+$2,400 USDT</span>
                     </div>
                   </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-800/60 text-[11px] text-slate-500 font-mono">
-                  Ganancia neta en 75 Días
                 </div>
               </div>
 

@@ -151,23 +151,8 @@ export default function EquityCurvesShowcase() {
               </span>
             </div>
 
-            {/* INDICADOR DE ANIMACIÓN EN VIVO (CIERRE A CIERRE) */}
+            {/* INDICADOR DE MODO */}
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-cyan-950/70 border border-cyan-500/30 text-cyan-300 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                Cierre #{visiblePoints - 1} / {totalSteps - 1} trades
-              </span>
-              <button
-                type="button"
-                onClick={() => setVisiblePoints(2)}
-                title="Repetir animación"
-                className="text-[11px] font-mono text-slate-400 hover:text-cyan-300 px-1.5 py-0.5 rounded hover:bg-slate-800 transition"
-              >
-                ↺
-              </button>
-              <span className="font-mono text-emerald-400 font-bold text-sm">
-                {account.gain}
-              </span>
             </div>
           </div>
 
