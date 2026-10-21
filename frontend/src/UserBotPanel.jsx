@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import ConfirmModal from './ConfirmModal';
+import PasswordConfirmModal from './PasswordConfirmModal';
 import UserBotMonitorTable from './UserBotMonitorTable';
 
 import { formatShortDate, formatFullDateTime, getCountryTimezone } from './dateUtils';
@@ -61,6 +62,17 @@ export default function UserBotPanel({
     cancelText: 'Cancelar',
     type: 'warning',
     onConfirm: () => {}
+  });
+
+  // Estado del Modal de Confirmación por Contraseña (Seguridad)
+  const [passwordModal, setPasswordModal] = useState({
+    isOpen: false,
+    title: '',
+    badge: 'SEGURIDAD INSTITUCIONAL',
+    message: '',
+    confirmText: 'Confirmar',
+    type: 'warning',
+    onConfirm: null
   });
 
   // Estado para la interacción y Zoom de la Curva de Capital
@@ -520,19 +532,61 @@ export default function UserBotPanel({
     setConfirmModal(prev => ({ ...prev, isOpen: false }));
   };
 
+  const closePasswordModal = () => {
+    setPasswordModal(prev => ({ ...prev, isOpen: false }));
+  };
 
-  // Reiniciar solo Historial de Trades y PnL del Usuario (sin tocar posiciones de Binance)
+  // Solicitar verificación de contraseña antes de desplegar catálogo y configuración
+  const handleToggleCatalogWithAuth = () => {
+    // Si ya está abierto y el usuario desea ocultarlo, no requiere contraseña
+    if (isCatalogOpen) {
+      setIsCatalogOpen(false);
+      return;
+    }
+
+    // Al intentar desplegar para modificar parámetros, solicitar contraseña de seguridad
+    setPasswordModal({
+      isOpen: true,
+      title: '🔒 Modificación de Parámetros Operativos',
+      badge: 'CONTROL DE RIESGO',
+      message: 'Está intentando acceder y modificar los parámetros actuales del bot y su estrategia. Por seguridad y prevención de desajustes accidentales, ingrese su contraseña de inicio de sesión:',
+      confirmText: 'Verificar y Desplegar',
+      type: 'warning',
+      onConfirm: async (enteredPassword) => {
+        const resp = await authFetch('/api/auth/verify_password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: enteredPassword })
+        });
+        const resJson = await resp.json();
+        if (!resp.ok) {
+          throw new Error(resJson.message || 'Contraseña incorrecta.');
+        }
+        // Desplegar catálogo y cerrar modal
+        setIsCatalogOpen(true);
+        closePasswordModal();
+      }
+    });
+  };
+
+  // Reiniciar solo Historial de Trades y PnL del Usuario (con confirmación de contraseña)
   const handleResetUserTrades = () => {
-    openConfirm({
-      title: '🗑️ ¿Reiniciar Historial de Trades & PnL?',
-      message: '⚠️ Esta acción vaciará el historial de operaciones de tu sesión y pondrá tu PnL acumulado en $0.00 USDT. Tu saldo actual en Binance pasará a ser tu nuevo Capital Inicial de referencia.',
-      confirmText: 'Sí, Vaciar Historial',
+    setPasswordModal({
+      isOpen: true,
+      title: '🗑️ Vaciar Historial Personal & PnL',
+      badge: 'ACCIÓN CRÍTICA',
+      message: 'Está a punto de borrar permanentemente su historial de operaciones y restablecer su PnL acumulado a $0.00 USDT. Para autorizar este vaciado irreversible, ingrese su contraseña:',
+      confirmText: 'Confirmar y Vaciar Historial',
       type: 'danger',
-      onConfirm: async () => {
+      onConfirm: async (enteredPassword) => {
         setActionLoading(true);
         setFeedback(null);
         try {
-          const resp = await authFetch('/api/user/trades/reset', { method: 'POST' });
+          const resp = await authFetch('/api/user/trades/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: enteredPassword })
+          });
           const resJson = await resp.json();
           if (!resp.ok) throw new Error(resJson.message || resJson.error);
           setFeedback({ type: 'success', text: `✅ ${resJson.message}` });
@@ -547,10 +601,11 @@ export default function UserBotPanel({
             gross_loss: 0,
             profit_factor: 0
           });
+          closePasswordModal();
           fetchUserTrades();
           fetchUserBotStatus();
         } catch (err) {
-          setFeedback({ type: 'error', text: `Error al reiniciar trades: ${err.message}` });
+          throw err;
         } finally {
           setActionLoading(false);
         }
@@ -1370,7 +1425,7 @@ export default function UserBotPanel({
               <div className="flex items-center gap-2 self-start sm:self-auto">
                 <button
                   type="button"
-                  onClick={() => setIsCatalogOpen(prev => !prev)}
+                  onClick={handleToggleCatalogWithAuth}
                   className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-indigo-500/40 rounded-xl text-xs font-bold transition flex items-center gap-1 active:scale-95"
                 >
                   <span>{isCatalogOpen ? '🔼 Ocultar Lista y Configuración' : '🔽 Desplegar Catálogo y Configuración'}</span>
@@ -2499,6 +2554,18 @@ export default function UserBotPanel({
         type={confirmModal.type}
         onConfirm={confirmModal.onConfirm}
         onClose={closeConfirm}
+      />
+
+      {/* Modal de Confirmación por Contraseña */}
+      <PasswordConfirmModal
+        isOpen={passwordModal.isOpen}
+        title={passwordModal.title}
+        badge={passwordModal.badge}
+        message={passwordModal.message}
+        confirmText={passwordModal.confirmText}
+        type={passwordModal.type}
+        onConfirm={passwordModal.onConfirm}
+        onClose={closePasswordModal}
       />
 
     </div>

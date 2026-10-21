@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ConfirmModal from './ConfirmModal';
+import PasswordConfirmModal from './PasswordConfirmModal';
 import { useAuth } from './AuthContext';
 
 function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
@@ -16,6 +17,8 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
     type: 'warning',
     onConfirm: () => {}
   });
+
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
 
   const openConfirm = (opts) => {
     setConfirmModal({
@@ -129,32 +132,31 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
   };
 
   const handleResetTradesClick = () => {
-    openConfirm({
-      title: '🔄 ¿Reiniciar Cuenta Demo / Testnet de Binance?',
-      message: '⚠️ Esta acción cancelará todas las órdenes en Binance Testnet, cerrará todas las posiciones abiertas y restablecerá el historial de trades y PnL acumulado a $0.00 USDT.',
-      confirmText: 'Sí, Reiniciar Demo Binance',
-      type: 'danger',
-      onConfirm: async () => {
-        setIsActionPending(true);
-        try {
-          const resp = await authFetch('/api/demo/reset', { method: 'POST' });
-          const data = await resp.json();
-          if (resp.ok) {
-            notify('🔄 Demo Reiniciada', data.message || 'La cuenta demo de Binance se restableció a $0.00 USDT.', 'success');
-            setTimeout(() => {
-              localStorage.removeItem('botStatusesCache');
-              window.location.reload();
-            }, 1200);
-          } else {
-            notify('Error al Reiniciar Demo', data.error || 'No se pudo reiniciar la cuenta demo.', 'error');
-          }
-        } catch (err) {
-          notify('Error de Conexión', err.message, 'error');
-        } finally {
-          setIsActionPending(false);
-        }
+    setPasswordModalOpen(true);
+  };
+
+  const handleConfirmResetWithPassword = async (password) => {
+    setIsActionPending(true);
+    try {
+      const resp = await authFetch('/api/trades/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setPasswordModalOpen(false);
+        notify('🔄 Historial Maestro Reiniciado', data.message || 'El historial de trades maestro se restableció a $0.00 USDT.', 'success');
+        setTimeout(() => {
+          localStorage.removeItem('botStatusesCache');
+          window.location.reload();
+        }, 1200);
+      } else {
+        throw new Error(data.error || data.message || 'No se pudo reiniciar el historial.');
       }
-    });
+    } finally {
+      setIsActionPending(false);
+    }
   };
 
   const startDisabled = botsRunning === null || botsRunning === true || isActionPending;
@@ -230,6 +232,18 @@ function BotControls({ botsRunning, onStart, onShutdown, addToast }) {
         type={confirmModal.type}
         onConfirm={confirmModal.onConfirm}
         onClose={closeConfirm}
+      />
+
+      {/* Modal de Confirmación con Contraseña para Vaciar Historial Maestro */}
+      <PasswordConfirmModal
+        isOpen={passwordModalOpen}
+        title="🗑️ Vaciar Historial Institucional & PnL"
+        badge="ACCIÓN MAESTRA CRÍTICA"
+        message="Está a punto de vaciar completamente el historial de trades en PostgreSQL del bot maestro y reiniciar el PnL a $0.00 USDT. Para autorizar esta acción irreversible, ingrese su contraseña de Administrador:"
+        confirmText="Confirmar y Vaciar Historial"
+        type="danger"
+        onConfirm={handleConfirmResetWithPassword}
+        onClose={() => setPasswordModalOpen(false)}
       />
     </>
   );

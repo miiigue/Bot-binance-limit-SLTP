@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { formatFullDateTime } from './dateUtils';
+import PasswordConfirmModal from './PasswordConfirmModal';
 
 export default function UserBotMonitorTable({ authFetch, isRunning = true, activeLeverage, targetUserId = null, readOnly = false }) {
   const { user } = useAuth();
@@ -9,6 +10,7 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
   const [lastUpdated, setLastUpdated] = useState(null);
   const [fetchError, setFetchError] = useState(null);
   const [isResettingTrades, setIsResettingTrades] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   const fetchMonitor = useCallback(async () => {
     try {
@@ -40,22 +42,26 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
     return () => clearInterval(interval);
   }, [fetchMonitor]);
 
-  const handleResetTrades = async () => {
-    if (!window.confirm("⚠️ ¿Deseas reiniciar tu historial de trades y poner el PnL histórico a 0.00 USDT? Tu bot y posiciones activas seguirán operando con normalidad.")) {
-      return;
-    }
+  const handleResetTrades = () => {
+    setShowPasswordModal(true);
+  };
+
+  const executeResetWithPassword = async (password) => {
     setIsResettingTrades(true);
     try {
-      const resp = await authFetch('/api/user/trades/reset', { method: 'POST' });
+      const resp = await authFetch('/api/user/trades/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
       const data = await resp.json();
       if (resp.ok && data.status === 'success') {
+        setShowPasswordModal(false);
         alert("✅ Historial de trades y PnL reiniciados con éxito a 0.00 USDT.");
         fetchMonitor();
       } else {
-        alert(`Error al reiniciar trades: ${data.message || 'Error desconocido'}`);
+        throw new Error(data.message || data.error || 'Error al reiniciar trades');
       }
-    } catch (err) {
-      alert(`Error al reiniciar trades: ${err.message}`);
     } finally {
       setIsResettingTrades(false);
     }
@@ -325,6 +331,18 @@ export default function UserBotMonitorTable({ authFetch, isRunning = true, activ
           Actualizado: {formatFullDateTime(lastUpdated, user?.country)}
         </div>
       )}
+
+      {/* Modal de Confirmación de Contraseña para Vaciar Trades */}
+      <PasswordConfirmModal
+        isOpen={showPasswordModal}
+        title="🗑️ Vaciar Historial & PnL"
+        badge="ACCIÓN CRÍTICA"
+        message="¿Deseas reiniciar tu historial de trades y poner el PnL histórico a 0.00 USDT? Tu bot y posiciones activas seguirán operando con normalidad. Para confirmar, ingresa tu contraseña:"
+        confirmText="Confirmar y Vaciar"
+        type="danger"
+        onConfirm={executeResetWithPassword}
+        onClose={() => setShowPasswordModal(false)}
+      />
     </div>
   );
 }

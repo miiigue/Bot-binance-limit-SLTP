@@ -1125,6 +1125,31 @@ def auth_login_endpoint():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/auth/verify_password', methods=['POST'])
+@token_required
+def verify_password_endpoint():
+    """Verifica la contraseña del usuario autenticado para autorizar operaciones sensibles o críticas."""
+    try:
+        user_id = request.current_user['user_id']
+        user = get_user_by_id(user_id)
+        if not user:
+            return jsonify({"status": "error", "message": "Usuario no encontrado."}), 404
+
+        data = request.get_json(silent=True) or {}
+        password = str(data.get('password') or '').strip()
+        if not password:
+            return jsonify({"status": "error", "message": "Por favor ingrese su contraseña de inicio de sesión."}), 400
+
+        if not verify_password(password, user['password_hash']):
+            api_logger.warning(f"Intento fallido de confirmación con contraseña para usuario {user['username']} (ID={user_id}).")
+            return jsonify({"status": "error", "message": "Contraseña incorrecta. Acción cancelada por seguridad."}), 401
+
+        return jsonify({"status": "success", "verified": True, "message": "Contraseña verificada correctamente."}), 200
+    except Exception as e:
+        api_logger.error(f"Error en verify_password_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route('/api/auth/me', methods=['GET'])
 @token_required
 def auth_me_endpoint():
@@ -1938,6 +1963,14 @@ def user_trades_reset_endpoint():
         user_id = request.current_user['user_id']
         username = request.current_user.get('username', f'user_{user_id}')
         is_admin = (request.current_user.get('role') == 'ADMIN')
+
+        # Verificación de seguridad con contraseña
+        user = get_user_by_id(user_id)
+        body_data = request.get_json(silent=True) or {}
+        password = str(body_data.get('password') or '').strip()
+        if password:
+            if not user or not verify_password(password, user['password_hash']):
+                return jsonify({"status": "error", "message": "Contraseña incorrecta. Acción cancelada por seguridad."}), 401
 
         # Permitir que un admin reinicie los trades de un usuario específico
         target_user_id = user_id
@@ -3228,6 +3261,14 @@ def reset_trades_endpoint():
     logger = get_logger()
     logger.warning("Solicitud POST /api/trades/reset recibida por Admin. Reiniciando historial y PnL maestro...")
     try:
+        # Verificación de seguridad con contraseña
+        admin_uid = request.current_user.get('user_id')
+        admin_user = get_user_by_id(admin_uid) if admin_uid else None
+        body_data = request.get_json(silent=True) or {}
+        password = str(body_data.get('password') or '').strip()
+        if password:
+            if not admin_user or not verify_password(password, admin_user['password_hash']):
+                return jsonify({"success": False, "error": "Contraseña incorrecta. Acción cancelada por seguridad."}), 401
         from src.database import clear_trade_history
         success = clear_trade_history()
         if success:

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import BinanceSortHeader, { sortTableData } from './BinanceSortHeader';
 import WalletMarginHealth from './WalletMarginHealth';
+import PasswordConfirmModal from './PasswordConfirmModal';
 import { useAuth } from './AuthContext';
 
 // Clave para guardar/leer en localStorage
@@ -467,6 +468,7 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
   const [expandedRows, setExpandedRows] = useState({}); // { symbol: boolean }
   const [tradeHistories, setTradeHistories] = useState({}); // { symbol: [trade] }
   const [loadingHistories, setLoadingHistories] = useState({}); // { symbol: boolean }
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
   const [historyErrors, setHistoryErrors] = useState({}); // { symbol: string | null }
   // --- LÍMITE DE TRADES PERSONALIZADO POR MONEDA ---
   const [coinTradeLimits, setCoinTradeLimits] = useState({}); // { symbol: number }
@@ -852,24 +854,33 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
   };
 
   // --- MANEJADOR PARA VACIAR HISTORIAL Y PNL ---
-  const handleResetTradesClick = async () => {
-    if (!window.confirm("⚠️ ¿Deseas vaciar completamente el historial de trades en PostgreSQL y reiniciar el PnL a $0.00 USDT?")) return;
+  const handleResetTradesClick = () => {
+    setShowResetPasswordModal(true);
+  };
+
+  const executeAdminResetWithPassword = async (password) => {
     try {
-      const res = await authFetch('/api/trades/reset', { method: 'POST' });
-      if (res.ok) {
+      const res = await authFetch('/api/trades/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setShowResetPasswordModal(false);
         setTradeHistories({});
         setStatuses([]);
         localStorage.removeItem(STATUS_CACHE_KEY);
         if (onStatusUpdate) {
           onStatusUpdate({ totalPnl: 0, coinCount: 0, coinsInPosition: 0 });
         }
-        alert("✅ Historial de trades reiniciado con éxito. La página se recargará.");
+        alert("✅ Historial de trades maestro reiniciado con éxito. La página se recargará.");
         setTimeout(() => window.location.reload(), 1000);
       } else {
-        alert("Error al reiniciar trades.");
+        throw new Error(data.error || data.message || "Error al reiniciar trades.");
       }
     } catch (e) {
-      alert(`Error: ${e.message}`);
+      throw e;
     }
   };
   // -------------------------------------------------
@@ -1671,6 +1682,18 @@ function StatusDisplay({ botsRunning, onStart, onShutdown, onStatusUpdate, onSel
         </table>
       </div>
     </div>
+
+    {/* Modal de Confirmación de Contraseña para Vaciar Trades Maestro */}
+    <PasswordConfirmModal
+      isOpen={showResetPasswordModal}
+      title="🗑️ Vaciar Historial Maestro & PnL"
+      badge="ACCIÓN CRÍTICA ADMIN"
+      message="¿Desea vaciar completamente el historial de trades en PostgreSQL y reiniciar el PnL a $0.00 USDT? Para autorizar esta acción, ingrese su contraseña de Administrador:"
+      confirmText="Confirmar y Vaciar"
+      type="danger"
+      onConfirm={executeAdminResetWithPassword}
+      onClose={() => setShowResetPasswordModal(false)}
+    />
     </div>
   );
 }
