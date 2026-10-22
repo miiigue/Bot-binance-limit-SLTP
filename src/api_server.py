@@ -3918,6 +3918,7 @@ def upsert_strategy_catalog_endpoint():
         description = str(data.get('description') or '').strip()
         risk_level = str(data.get('risk_level') or 'MODERADO').upper().strip()
         is_public = bool(data.get('is_public', False))
+        min_capital = float(data.get('min_capital_usdt') or data.get('minCapitalUsdt') or 50.0)
         parameters = data.get('parameters')
         if not isinstance(parameters, dict) or len(parameters) == 0:
             parameters = None

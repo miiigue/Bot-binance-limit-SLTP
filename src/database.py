@@ -565,7 +565,7 @@ def init_db_schema():
             is_running BOOLEAN DEFAULT 0,
             allocated_usdt REAL DEFAULT 100.0,
             leverage INTEGER DEFAULT 10,
-            margin_type TEXT DEFAULT 'ISOLATED',
+            margin_type TEXT DEFAULT 'CROSSED',
             symbols_to_trade TEXT DEFAULT 'BTCUSDT,ETHUSDT,SOLUSDT',
             strategy_name TEXT DEFAULT 'WTN Scalper Pro',
             max_open_positions INTEGER DEFAULT 3,
@@ -2554,7 +2554,7 @@ def get_all_users_admin_overview() -> list:
             u['is_bot_running'] = bool(b_info.get('is_running', False))
             u['allocated_usdt'] = float(b_info.get('allocated_usdt', 100.0) or 100.0)
             u['leverage'] = b_info.get('leverage')
-            u['margin_type'] = b_info.get('margin_type', 'ISOLATED')
+            u['margin_type'] = b_info.get('margin_type', 'CROSSED')
             u['symbols_to_trade'] = b_info.get('symbols_to_trade', 'BTCUSDT,ETHUSDT,SOLUSDT')
             u['strategy_name'] = b_info.get('strategy_name', 'WTN Scalper Pro')
             u['operating_mode'] = b_info.get('operating_mode', 'COPY_TRADING')
@@ -2806,12 +2806,31 @@ def get_user_bot_settings(user_id: int) -> dict:
             except Exception:
                 pass
 
+        default_margin = 100.0
+        default_leverage = 8
+        if default_strat:
+            try:
+                cursor.execute("SELECT parameters FROM strategies_catalog WHERE name = ?", (default_strat,))
+                p_row = cursor.fetchone()
+                if p_row and p_row[0]:
+                    import json
+                    p_dict = json.loads(p_row[0]) if isinstance(p_row[0], str) else p_row[0]
+                    if isinstance(p_dict, dict):
+                        pos_sz = p_dict.get('position_size_usdt') or p_dict.get('positionSizeUSDT')
+                        if pos_sz:
+                            default_margin = float(pos_sz)
+                        lev_val = p_dict.get('leverage')
+                        if lev_val:
+                            default_leverage = int(lev_val)
+            except Exception:
+                pass
+
         cursor.execute("""
             INSERT INTO user_bot_settings (
                 user_id, is_running, allocated_usdt, leverage, margin_type,
                 symbols_to_trade, strategy_name, operating_mode, updated_at
-            ) VALUES (?, ?, 100.0, 10, 'ISOLATED', 'BTCUSDT,ETHUSDT,SOLUSDT', ?, 'COPY_TRADING', ?)
-        """, (user_id, False, default_strat, now_str))
+            ) VALUES (?, ?, ?, ?, 'CROSSED', 'BTCUSDT,ETHUSDT,SOLUSDT', ?, 'COPY_TRADING', ?)
+        """, (user_id, False, default_margin, default_leverage, default_strat, now_str))
         conn.commit()
 
         cursor.execute("SELECT * FROM user_bot_settings WHERE user_id = ?", (user_id,))

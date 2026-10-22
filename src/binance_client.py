@@ -51,8 +51,12 @@ def _binance_response_hook(response, *args, **kwargs):
             k_lower = k.lower()
             if k_lower == 'x-mbx-used-weight-1m':
                 try:
-                    _api_rate_limit_stats['used_weight_1m'] = int(v)
+                    weight_val = int(v)
+                    _api_rate_limit_stats['used_weight_1m'] = weight_val
                     _api_rate_limit_stats['last_updated'] = now
+                    if weight_val >= 1920:
+                        get_logger().warning(f"⚠️ [RateLimiter] IP Weight alto ({weight_val}/2400). Aplicando backoff preventivo de 0.5s.")
+                        time.sleep(0.5)
                 except (ValueError, TypeError):
                     pass
             elif k_lower == 'x-mbx-order-count-10s':

@@ -12,8 +12,8 @@ function StrategyRadar({ config }) {
 
   // Valores parseados de la configuración
   const leverage = Number(config?.leverage) || 20;
-  const positionSizeUSDT = Number(config?.positionSizeUSDT) || 50;
-  const estimatedMargin = leverage > 0 ? (positionSizeUSDT / leverage) : positionSizeUSDT;
+  const marginUSDT = Number(config?.positionSizeUSDT) || 50;
+  const notionalUSDT = marginUSDT * leverage;
   const rsiInterval = config?.rsiInterval || '5m';
   const rsiPeriod = Number(config?.rsiPeriod) || 14;
   const symbols = config?.symbolsToTrade ? config.symbolsToTrade.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -77,7 +77,7 @@ function StrategyRadar({ config }) {
   // Cálculos del simulador
   const simulation = useMemo(() => {
     const p = simulatedPrice > 0 ? simulatedPrice : 100;
-    const contractUnits = positionSizeUSDT / p;
+    const contractUnits = notionalUSDT / p;
 
     let calcTpPrice = 0;
     let calcSlPrice = 0;
@@ -89,17 +89,17 @@ function StrategyRadar({ config }) {
     if (isSupportStrategy) {
       calcTpPrice = p * (1 + supportTPPercent / 100);
       calcSlPrice = p * (1 - supportSLPercent / 100);
-      tpGainUSDT = positionSizeUSDT * (supportTPPercent / 100);
-      slLossUSDT = positionSizeUSDT * (supportSLPercent / 100);
-      tpReturnOnMargin = estimatedMargin > 0 ? (tpGainUSDT / estimatedMargin) * 100 : 0;
-      slLossOnMargin = estimatedMargin > 0 ? (slLossUSDT / estimatedMargin) * 100 : 0;
+      tpGainUSDT = notionalUSDT * (supportTPPercent / 100);
+      slLossUSDT = notionalUSDT * (supportSLPercent / 100);
+      tpReturnOnMargin = marginUSDT > 0 ? (tpGainUSDT / marginUSDT) * 100 : 0;
+      slLossOnMargin = marginUSDT > 0 ? (slLossUSDT / marginUSDT) * 100 : 0;
     } else {
       tpGainUSDT = enableTP ? tpUSDT : 0;
       slLossUSDT = enableSL ? slUSDT : 0;
       calcTpPrice = enableTP && contractUnits > 0 ? p + (tpUSDT / contractUnits) : 0;
       calcSlPrice = enableSL && contractUnits > 0 ? p - (slUSDT / contractUnits) : 0;
-      tpReturnOnMargin = estimatedMargin > 0 ? (tpGainUSDT / estimatedMargin) * 100 : 0;
-      slLossOnMargin = estimatedMargin > 0 ? (slLossUSDT / estimatedMargin) * 100 : 0;
+      tpReturnOnMargin = marginUSDT > 0 ? (tpGainUSDT / marginUSDT) * 100 : 0;
+      slLossOnMargin = marginUSDT > 0 ? (slLossUSDT / marginUSDT) * 100 : 0;
     }
 
     const rrRatio = slLossUSDT > 0 ? (tpGainUSDT / slLossUSDT).toFixed(2) : 'N/A';
@@ -119,8 +119,8 @@ function StrategyRadar({ config }) {
     };
   }, [
     simulatedPrice,
-    positionSizeUSDT,
-    estimatedMargin,
+    notionalUSDT,
+    marginUSDT,
     isSupportStrategy,
     supportTPPercent,
     supportSLPercent,
@@ -238,10 +238,10 @@ function StrategyRadar({ config }) {
                     🛒 Colocación de Orden
                   </div>
                   <p className="text-[11.5px] text-gray-200 leading-snug">
-                    Tamaño de posición: <span className="text-white font-bold text-xs">${positionSizeUSDT.toLocaleString()} USDT</span> en contratos.
+                    Tamaño de Inversión (Margen): <strong className="text-emerald-400 font-mono">${marginUSDT.toFixed(2)} USDT</strong>
                   </p>
                   <p className="text-[10.5px] text-gray-400 mt-1">
-                    (Margen en billetera: <strong className="text-emerald-400">${estimatedMargin.toFixed(2)} USDT</strong> con apalancamiento <strong className="text-amber-400">{leverage}x</strong>)
+                    Valor Nocional: <strong className="text-amber-300 font-mono">${notionalUSDT.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT</strong> con apalancamiento <strong className="text-amber-400">{leverage}x</strong>
                   </p>
                 </div>
                 <div className="mt-2.5 pt-2 border-t border-gray-700/60 text-[10.5px] text-gray-400 flex items-center justify-between">

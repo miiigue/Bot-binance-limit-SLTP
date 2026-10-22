@@ -85,20 +85,37 @@ def get_cached_user_client(user_info: dict):
 
 
 def get_cached_klines(symbol: str, interval: str = '1m', limit: int = 100) -> pd.DataFrame | None:
-    """Obtiene velas klines con caché compartida de 15 segundos para no saturar Binance API."""
-    key = (symbol.upper(), interval)
+    """
+    Obtiene velas klines para la evaluación de estrategias.
+    Prioridad 1: Obtiene velas instantáneas desde la memoria del MarketFeed WebSocket (consumo REST = 0).
+    Prioridad 2 (Fallback transparente): Si el buffer en memoria aún no está listo, consulta REST con caché de 15s.
+    """
+    clean_sym = symbol.upper().strip()
+    clean_inv = interval.lower().strip()
+
+    # 1. Intentar memoria WebSocket (Ultra-rápido, sin peso de API)
+    try:
+        from src.market_feed import get_live_klines
+        live_df = get_live_klines(clean_sym, clean_inv, min_len=15)
+        if live_df is not None and not live_df.empty:
+            return live_df
+    except Exception:
+        pass
+
+    # 2. Fallback REST tradicional con caché de 15 segundos
+    key = (clean_sym, clean_inv)
     now = time.time()
     cached = _klines_cache.get(key)
     if cached and (now - cached['timestamp'] < 15.0):
         return cached['data'].copy()
 
     try:
-        df = get_historical_klines(symbol.upper(), interval, limit=limit)
+        df = get_historical_klines(clean_sym, clean_inv, limit=limit)
         if df is not None and not df.empty:
             _klines_cache[key] = {'data': df, 'timestamp': now}
             return df.copy()
     except Exception as e:
-        get_logger().debug(f"Aviso al obtener klines para {symbol} ({interval}): {e}")
+        get_logger().debug(f"Aviso al obtener klines para {clean_sym} ({clean_inv}): {e}")
     return None
 
 
@@ -840,10 +857,22 @@ def _personal_bot_engine_loop():
 
 
 def start_personal_bot_engine():
-    """Inicia el hilo en segundo plano del motor autónomo de usuarios si no está activo."""
+    """Inicia el hilo en segundo plano del motor autónomo de usuarios y el MarketFeed WebSocket si no están activos."""
     global _engine_started
     with _engine_lock:
         if not _engine_started:
+            # 1. Iniciar el MarketFeed por WebSocket en segundo plano para alimentar la memoria sin costo de API REST
+            try:
+                from src.market_feed import start_market_feed
+                from src.config_loader import load_config
+                cfg = load_config()
+                is_demo = cfg.getboolean('BINANCE', 'is_testnet', fallback=True) if cfg else True
+                env = "testnet" if is_demo else "mainnet"
+                start_market_feed(DEFAULT_MARKET_SYMBOLS, ['1m', '3m', '5m'], environment=env)
+            except Exception as e_feed:
+                get_logger().warning(f"Aviso al iniciar MarketFeed centralizado: {e_feed}")
+
+            # 2. Iniciar el motor multi-inquilino de los bots
             t = threading.Thread(target=_personal_bot_engine_loop, name="PersonalBotEngineThread", daemon=True)
             t.start()
             _engine_started = True

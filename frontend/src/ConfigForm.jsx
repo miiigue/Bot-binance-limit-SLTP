@@ -2427,8 +2427,8 @@ function ConfigForm({
             />
           </ConfigItem>
 
-          {/* 3. Tamaño Posición (Margen USDT) */}
-          <ConfigItem labelText="Tamaño Posición" htmlFor="positionSizeUSDT" tooltipKey="positionSizeUSDT" hideDescription>
+          {/* 3. Tamaño de Inversión (Margen USDT) */}
+          <ConfigItem labelText="Tamaño de Inversión" htmlFor="positionSizeUSDT" tooltipKey="positionSizeUSDT" hideDescription>
             <input 
               type="number" 
               name="positionSizeUSDT" 
@@ -2440,8 +2440,8 @@ function ConfigForm({
               className="mt-1 block w-full py-2 px-3 border border-slate-700 bg-slate-950 text-white rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm font-normal"
             />
             <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
-              <div>💼 Margen: <strong className="text-cyan-300 font-mono font-medium">${Number(formData.positionSizeUSDT || 0).toFixed(2)} USDT</strong></div>
-              <div>⚡ Nocional: <strong className="text-amber-300 font-mono font-medium">${(Number(formData.positionSizeUSDT || 0) * (Number(formData.leverage) || 1)).toFixed(2)} USDT</strong> <span className="text-slate-400">({formData.leverage || 1}x)</span></div>
+              <div>💼 Inversión Real (Margen): <strong className="text-cyan-300 font-mono font-medium">${Number(formData.positionSizeUSDT || 0).toFixed(2)} USDT</strong></div>
+              <div>⚡ Valor Nominal (Nocional): <strong className="text-amber-300 font-mono font-medium">${(Number(formData.positionSizeUSDT || 0) * (Number(formData.leverage) || 1)).toFixed(2)} USDT</strong> <span className="text-slate-400">({formData.leverage || 1}x)</span></div>
             </div>
           </ConfigItem>
 

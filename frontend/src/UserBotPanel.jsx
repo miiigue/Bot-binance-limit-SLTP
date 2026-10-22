@@ -39,9 +39,9 @@ export default function UserBotPanel({
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState('');
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
-  const [allocatedUsdt, setAllocatedUsdt] = useState(100);
+  const [allocatedUsdt, setAllocatedUsdt] = useState(387);
   const [leverage, setLeverage] = useState('default');
-  const [marginType, setMarginType] = useState('ISOLATED');
+  const [marginType, setMarginType] = useState('CROSSED');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [activeTradeInspector, setActiveTradeInspector] = useState(null);
   const [userCoinSortOrder, setUserCoinSortOrder] = useState('PNL_DESC');
@@ -630,7 +630,17 @@ export default function UserBotPanel({
         const data = await resp.json();
         const strats = data.strategies || [];
         setCatalogStrategies(strats);
-        setSelectedStrategy(prev => prev || (strats.length > 0 ? strats[0].name : ''));
+        setSelectedStrategy(prev => {
+          if (!prev && strats.length > 0) {
+            const first = strats[0];
+            const defM = first?.parameters?.position_size_usdt ?? first?.parameters?.positionSizeUSDT;
+            if (defM && !hasLoadedInitialSettings.current) {
+              setAllocatedUsdt(Number(defM));
+            }
+            return first.name;
+          }
+          return prev;
+        });
       }
     } catch (err) {
       console.error("Error al obtener catálogo de estrategias:", err);
@@ -796,6 +806,18 @@ export default function UserBotPanel({
         }
       }
     });
+  };
+
+  // Seleccionar estrategia y auto-cargar valores por defecto
+  const handleSelectStrategy = (strat) => {
+    if (!strat) return;
+    setSelectedStrategy(strat.name);
+    const stratMargin = strat?.parameters?.position_size_usdt ?? strat?.parameters?.positionSizeUSDT;
+    if (stratMargin !== undefined && stratMargin !== null && !isNaN(Number(stratMargin)) && Number(stratMargin) > 0) {
+      setAllocatedUsdt(Number(stratMargin));
+    }
+    setLeverage('default');
+    setMarginType('CROSSED');
   };
 
   // Estrategia actualmente seleccionada y apalancamiento efectivo
@@ -1484,7 +1506,7 @@ export default function UserBotPanel({
                       return (
                         <div
                           key={strat.id || strat.name}
-                          onClick={() => setSelectedStrategy(strat.name)}
+                          onClick={() => handleSelectStrategy(strat)}
                           className={`cursor-pointer rounded-2xl p-5 border transition-all relative flex flex-col justify-between overflow-hidden ${
                             isSelected
                               ? 'bg-gradient-to-b from-indigo-950/60 via-slate-900 to-slate-950 border-indigo-500 shadow-xl shadow-indigo-500/10 ring-2 ring-indigo-500/50'
@@ -1547,7 +1569,7 @@ export default function UserBotPanel({
                     {/* Margen por Orden (USDT) */}
                     <div>
                       <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
-                        Margen por Orden (USDT):
+                        Tamaño de Inversión / Margen por Orden (USDT):
                       </label>
                       <div className="relative">
                         <input
@@ -1562,7 +1584,7 @@ export default function UserBotPanel({
                         <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">USDT</span>
                       </div>
                       <div className="text-[11px] text-slate-400 mt-1.5 font-light leading-tight space-y-0.5">
-                        <div>💼 Margen: <strong className="text-cyan-300 font-mono font-medium">${Number(allocatedUsdt || 0).toFixed(2)} USDT</strong></div>
+                        <div>💼 Inversión Real (Margen): <strong className="text-cyan-300 font-mono font-medium">${Number(allocatedUsdt || 0).toFixed(2)} USDT</strong></div>
                         <div>⚡ Valor Nominal (Nocional): <strong className="text-amber-300 font-mono font-medium">${(Number(allocatedUsdt || 0) * effectiveLeverage).toFixed(2)} USDT</strong> <span className="text-slate-400">({effectiveLeverage}x {leverage === 'default' || !leverage ? 'por defecto' : 'personalizado'})</span></div>
                         <div className="text-[10px] text-slate-500 pt-0.5">Saldo libre en Binance: ${balance.toFixed(2)} USDT</div>
                       </div>
@@ -1603,11 +1625,13 @@ export default function UserBotPanel({
                         onChange={(e) => setMarginType(e.target.value)}
                         className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white outline-none focus:border-amber-400"
                       >
-                        <option value="ISOLATED">ISOLATED (Margen Aislado - Recomendado)</option>
-                        <option value="CROSSED">CROSSED (Margen Cruzado)</option>
+                        <option value="CROSSED">CROSSED (Margen Cruzado - Recomendado)</option>
+                        <option value="ISOLATED">ISOLATED (Margen Aislado)</option>
                       </select>
                       <span className="text-[10px] text-slate-500 mt-1 block">
-                        Aislado limita el riesgo exclusivamente a la orden.
+                        {marginType === 'CROSSED' 
+                          ? 'Cruzado comparte el balance para mayor resistencia y protección contra liquidaciones.' 
+                          : 'Aislado limita el riesgo exclusivamente a la orden individual.'}
                       </span>
                     </div>
                   </div>
