@@ -1673,9 +1673,27 @@ def user_bot_status_endpoint():
             metrics['total_commission'] = reconciled_comm
             metrics['total_funding'] = reconciled_funding
 
+        total_active_sec = float(settings.get('total_active_seconds') or 0.0) if settings else 0.0
+        is_bot_running = bool(settings.get('is_running', False)) if settings else False
+        last_started_at_str = settings.get('last_started_at') if settings else None
+
+        if is_bot_running and last_started_at_str:
+            try:
+                from datetime import datetime as dt_cls
+                dt_started = dt_cls.strptime(str(last_started_at_str).split('.')[0].replace('T', ' '), '%Y-%m-%d %H:%M:%S')
+                cur_block_sec = max(0.0, (datetime.now() - dt_started).total_seconds())
+                total_active_sec += cur_block_sec
+            except Exception:
+                pass
+
+        if settings:
+            settings['total_active_seconds'] = round(total_active_sec, 1)
+
         return jsonify({
             "status": "success",
             "bot_settings": settings,
+            "active_runtime_seconds": round(total_active_sec, 1),
+            "active_runtime_ms": int(total_active_sec * 1000),
             "has_valid_keys": True if is_target_admin else bool(keys and keys.get('is_valid')),
             "is_testnet": True if is_target_admin else bool(keys.get('is_testnet', False)) if keys else False,
             "api_key_masked": "🏛️ Sistema Maestro Binance" if is_target_admin else (keys.get('api_key_masked') if keys else None),
@@ -1783,6 +1801,17 @@ def user_bot_toggle_endpoint():
             api_logger.info(f"Usuario {user_id} ({request.current_user['username']}) ENCENDIÓ su bot en modo {mode_label}.")
             msg = f"¡Bot activado en modo {mode_label}! El sistema operará según tus preferencias."
         else:
+            prev_started = settings.get('last_started_at')
+            accumulated = float(settings.get('total_active_seconds') or 0.0)
+            if prev_started:
+                try:
+                    from datetime import datetime as dt_cls
+                    dt_start = dt_cls.strptime(str(prev_started).split('.')[0].replace('T', ' '), '%Y-%m-%d %H:%M:%S')
+                    elapsed = max(0.0, (datetime.now() - dt_start).total_seconds())
+                    accumulated += elapsed
+                except Exception as e_accum:
+                    api_logger.debug(f"Aviso al calcular tiempo acumulado: {e_accum}")
+            toggle_kwargs['total_active_seconds'] = round(accumulated, 1)
             toggle_kwargs['last_stopped_at'] = now_str
             ok = update_user_bot_settings(user_id=user_id, **toggle_kwargs)
             if not ok:

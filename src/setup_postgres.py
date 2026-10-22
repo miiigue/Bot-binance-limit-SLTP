@@ -257,7 +257,8 @@ def init_postgres_schema(pg_url: str):
             "ALTER TABLE user_api_keys ADD COLUMN IF NOT EXISTS api_base_url VARCHAR(255) DEFAULT NULL;",
             "ALTER TABLE user_trades ADD COLUMN IF NOT EXISTS is_testnet BOOLEAN DEFAULT FALSE;",
             "ALTER TABLE user_bot_settings ADD COLUMN IF NOT EXISTS error_message TEXT;",
-            "ALTER TABLE user_bot_settings ADD COLUMN IF NOT EXISTS operating_mode VARCHAR(32) DEFAULT 'COPY_TRADING';"
+            "ALTER TABLE user_bot_settings ADD COLUMN IF NOT EXISTS operating_mode VARCHAR(32) DEFAULT 'COPY_TRADING';",
+            "ALTER TABLE user_bot_settings ADD COLUMN IF NOT EXISTS total_active_seconds DOUBLE PRECISION DEFAULT 0.0;"
         ]
         for mig in migrations:
             try:

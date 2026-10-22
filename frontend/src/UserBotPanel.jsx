@@ -45,6 +45,21 @@ export default function UserBotPanel({
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [activeTradeInspector, setActiveTradeInspector] = useState(null);
   const [userCoinSortOrder, setUserCoinSortOrder] = useState('PNL_DESC');
+  const [activeRuntimeSec, setActiveRuntimeSec] = useState(0);
+
+  useEffect(() => {
+    if (botData?.active_runtime_seconds !== undefined) {
+      setActiveRuntimeSec(Number(botData.active_runtime_seconds) || 0);
+    }
+  }, [botData?.active_runtime_seconds]);
+
+  useEffect(() => {
+    if (!isPersonalBotActive) return;
+    const timer = setInterval(() => {
+      setActiveRuntimeSec(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isPersonalBotActive]);
 
   // Estados del Formulario de API Keys
   const [apiKey, setApiKey] = useState('');
@@ -1056,9 +1071,17 @@ export default function UserBotPanel({
                 {currentSubTab === 'my_bot' ? (
                   <>
                     <span className={`w-3 h-3 rounded-full ${isPersonalBotActive ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'}`}></span>
-                    <span className={`text-xs font-bold ${isPersonalBotActive ? 'text-emerald-400' : 'text-slate-400'}`}>
-                      {isPersonalBotActive ? 'OPERACIÓN EN VIVO' : (isCopyTradingActive ? 'PAUSADO (Copy-Trading Activo)' : 'PAUSADO')}
-                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs font-bold ${isPersonalBotActive ? 'text-emerald-400' : 'text-slate-400'}`}>
+                        {isPersonalBotActive ? 'OPERANDO' : (isCopyTradingActive ? 'PAUSADO (Copy-Trading Activo)' : 'PAUSADO')}
+                      </span>
+                      {activeRuntimeSec > 0 && (
+                        <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-900 border border-slate-700/80 text-emerald-300 flex items-center gap-1 shadow-sm">
+                          <span>⏱️</span> {formatDurationStr(activeRuntimeSec * 1000)}
+                          {!isPersonalBotActive && <span className="text-[10px] text-slate-500 font-sans font-normal">(pausado)</span>}
+                        </span>
+                      )}
+                    </div>
                   </>
                 ) : (
                   <>
@@ -1108,7 +1131,7 @@ export default function UserBotPanel({
                   </span>
                 </div>
                 <div className="text-xs">
-                  <span className="text-slate-500 block uppercase font-semibold">Capital Asignado:</span>
+                  <span className="text-slate-500 block uppercase font-semibold">Capital por Posición:</span>
                   <span className="font-extrabold text-emerald-400 font-mono text-sm block mt-0.5">
                     ${allocatedUsdt} USDT
                   </span>
@@ -1312,7 +1335,7 @@ export default function UserBotPanel({
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-bold text-amber-300 font-sans flex items-center gap-1.5">
-                            <span>🔒</span> Margen en Operaciones (Garantía Retenida)
+                            <span>🔒</span> Invertido en Posiciones
                           </span>
                           <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/30">
                             {marginPct.toFixed(1)}% del saldo
@@ -1953,106 +1976,6 @@ export default function UserBotPanel({
                 </div>
               </div>
 
-              {/* Barra de Ajuste y Zoom Interactivo */}
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                    🔍 Zoom / Vista:
-                  </span>
-                  <div className="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
-                    {[
-                      { key: 'ALL', label: 'Todo' },
-                      { key: '50', label: 'Últimos 50' },
-                      { key: '20', label: 'Últimos 20' },
-                      { key: '10', label: 'Últimos 10' }
-                    ].map(opt => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => {
-                          setEquityZoomRange(opt.key);
-                          setSelectedEquityPointIndex(null);
-                        }}
-                        className={`px-2.5 py-1 text-xs font-mono font-bold rounded-md transition-all ${
-                          equityZoomRange === opt.key
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {equityZoomRange !== 'ALL' && (
-                  <span className="text-[11px] text-sky-400 font-mono bg-sky-950/40 border border-sky-800/40 px-2 py-0.5 rounded">
-                    Mostrando últimos {points.length - 1} trades del historial
-                  </span>
-                )}
-              </div>
-
-              {/* Tarjeta de Inspección Detallada del Punto / Trade Seleccionado */}
-              {inspectedPt && (
-                <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-700/80 shadow-inner">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2 mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${
-                        inspectedPt.isPuntoCero
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                          : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                      }`}>
-                        {inspectedPt.isPuntoCero ? '🎯 PUNTO CERO' : `📍 TRADE #${inspectedPt.id}`}
-                      </span>
-                      <span className="text-xs font-bold text-white font-mono">
-                        {inspectedPt.isPuntoCero ? 'Inicio de Operaciones de la Cuenta' : `${inspectedPt.symbol} (${inspectedPt.type})`}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="text-slate-300 font-mono text-[11px]">📅 {inspectedPt.fullDateTime}</span>
-                      <span className="bg-slate-800 text-amber-300 px-2 py-0.5 rounded font-mono font-bold text-[11px] border border-slate-700">
-                        ⏱️ {inspectedPt.elapsedStr}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                    <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
-                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block">PnL del Trade</span>
-                      <span className={`text-sm font-black ${inspectedPt.isPuntoCero ? 'text-slate-400' : (inspectedPt.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400')}`}>
-                        {inspectedPt.isPuntoCero ? '0.0000 USDT' : `${inspectedPt.pnl >= 0 ? '+' : ''}${inspectedPt.pnl.toFixed(4)} USDT`}
-                      </span>
-                    </div>
-
-                    <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
-                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Capital Acumulado</span>
-                      <span className={`text-sm font-black ${inspectedPt.cumulative >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {inspectedPt.cumulative >= 0 ? '+' : ''}${inspectedPt.cumulative.toFixed(4)} USDT
-                      </span>
-                    </div>
-
-                    <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
-                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Hora de Cierre</span>
-                      <span className="text-sm font-bold text-slate-200">
-                        {inspectedPt.time}
-                      </span>
-                    </div>
-
-                    <div className="p-2 bg-slate-950/70 rounded-lg border border-slate-800/80">
-                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block">% Rendimiento vs Anterior</span>
-                      {inspectedPt.isPuntoCero ? (
-                        <span className="text-xs text-slate-400 font-bold">Punto 0.00%</span>
-                      ) : (
-                        <span className={`text-sm font-black ${inspectedPt.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {inspectedPt.pnl >= 0 ? '+' : ''}{inspectedPt.diffPercent.toFixed(2)}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Contenedor del Gráfico SVG con Ejes X/Y */}
               <div className="w-full overflow-x-auto pt-1">
                 <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-auto max-h-56 select-none">
@@ -2329,11 +2252,10 @@ export default function UserBotPanel({
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-900/90 text-slate-400 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-800">
               <tr>
-                <th className="p-3.5 sm:px-4">ID Trade</th>
-                <th className="p-3.5">Fecha / Hora</th>
-                <th className="p-3.5">Moneda / Par</th>
-                <th className="p-3.5">Lado</th>
+                <th className="p-3.5 sm:px-4">Fecha y Hora</th>
+                <th className="p-3.5">Moneda</th>
                 <th className="p-3.5">PnL Realizado</th>
+                <th className="p-3.5">Lado</th>
                 <th className="p-3.5">Precio Entrada</th>
                 <th className="p-3.5">Precio Salida</th>
                 <th className="p-3.5">Cantidad</th>
@@ -2362,39 +2284,26 @@ export default function UserBotPanel({
 
                   return (
                     <tr key={t.id || tradeId} className="hover:bg-slate-900/50 transition font-sans">
-                      {/* 1. ID Trade */}
-                      <td className="p-3.5 sm:px-4 font-bold font-mono text-amber-400 whitespace-nowrap">#{tradeId}</td>
-
-                      {/* 2. Fecha / Hora */}
-                      <td className="p-3.5 text-slate-300 font-mono text-[11px] whitespace-nowrap">
+                      {/* 1. Fecha y Hora (Cierre y Apertura sin palabra Fin) */}
+                      <td className="p-3.5 sm:px-4 text-slate-300 font-mono text-[11px] whitespace-nowrap">
                         <div className="flex flex-col">
-                          <span className="text-white font-medium">{formatShortDate(t.open_timestamp, user?.country) || t.open_time_short}</span>
                           {isClosed && (
-                            <span className="text-[10px] text-slate-500">
-                              Fin: {formatShortDate(t.close_timestamp, user?.country) || t.close_time_short}
+                            <span className="text-white font-medium">
+                              {formatShortDate(t.close_timestamp, user?.country) || t.close_time_short}
                             </span>
                           )}
+                          <span className={isClosed ? "text-[10px] text-slate-400" : "text-white font-medium"}>
+                            {formatShortDate(t.open_timestamp, user?.country) || t.open_time_short}
+                          </span>
                         </div>
                       </td>
 
-                      {/* 3. Moneda / Par */}
-                      <td className="p-3.5 font-bold font-mono text-white">
-                        <div className="flex items-center gap-1.5">
-                          <span>{t.symbol}</span>
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-cyan-300 border border-slate-700/80 font-mono">Perp</span>
-                        </div>
+                      {/* 2. Moneda */}
+                      <td className="p-3.5 font-bold font-mono text-white text-xs">
+                        {t.symbol}
                       </td>
 
-                      {/* 4. Lado */}
-                      <td className="p-3.5">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                          side === 'LONG' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
-                        }`}>
-                          {side}
-                        </span>
-                      </td>
-
-                      {/* 5. PnL Realizado / Flotante */}
+                      {/* 3. PnL Realizado / Flotante */}
                       <td className={`p-3.5 font-bold font-mono text-xs whitespace-nowrap ${isClosed ? (isWin ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-400'}`}>
                         {isClosed ? (
                           `${isWin ? '+' : ''}$${pnl.toFixed(4)} USDT`
@@ -2408,6 +2317,15 @@ export default function UserBotPanel({
                         ) : (
                           <span className="text-amber-400/90 text-xs font-sans">En curso</span>
                         )}
+                      </td>
+
+                      {/* 4. Lado (a la derecha de PnL Realizado) */}
+                      <td className="p-3.5">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                          side === 'LONG' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                        }`}>
+                          {side}
+                        </span>
                       </td>
 
                       {/* 6. Precio Entrada */}

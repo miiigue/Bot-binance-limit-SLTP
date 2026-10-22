@@ -572,11 +572,18 @@ def init_db_schema():
             last_started_at DATETIME,
             last_stopped_at DATETIME,
             error_message TEXT,
+            total_active_seconds REAL DEFAULT 0.0,
             updated_at DATETIME,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
         """)
         conn.commit()
+
+        try:
+            cursor.execute("ALTER TABLE user_bot_settings ADD COLUMN total_active_seconds REAL DEFAULT 0.0")
+            conn.commit()
+        except Exception:
+            pass
 
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_trades (
@@ -2862,7 +2869,8 @@ def update_user_bot_settings(user_id: int, **kwargs) -> bool:
         allowed_fields = [
             'is_running', 'allocated_usdt', 'leverage', 'margin_type',
             'symbols_to_trade', 'strategy_name', 'operating_mode',
-            'last_started_at', 'last_stopped_at', 'error_message'
+            'last_started_at', 'last_stopped_at', 'error_message',
+            'total_active_seconds'
         ]
 
         updates = []
@@ -3131,9 +3139,9 @@ def clear_user_trades(user_id: int, stop_bot: bool = False) -> bool:
         cursor.execute("DELETE FROM user_trades WHERE user_id = ?", (user_id,))
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if stop_bot:
-            cursor.execute("UPDATE user_bot_settings SET last_started_at = ?, is_running = FALSE WHERE user_id = ?", (now_str, user_id))
+            cursor.execute("UPDATE user_bot_settings SET last_started_at = ?, total_active_seconds = 0.0, is_running = FALSE WHERE user_id = ?", (now_str, user_id))
         else:
-            cursor.execute("UPDATE user_bot_settings SET last_started_at = ? WHERE user_id = ?", (now_str, user_id))
+            cursor.execute("UPDATE user_bot_settings SET last_started_at = ?, total_active_seconds = 0.0 WHERE user_id = ?", (now_str, user_id))
         conn.commit()
         return True
     except Exception as e:
