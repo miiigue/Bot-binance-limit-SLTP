@@ -850,11 +850,7 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
       <div className="mt-2.5 pt-2 border-t border-gray-200 dark:border-gray-800/80">
         
         {/* Leyenda superior y contador */}
-        <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] text-gray-500 dark:text-gray-400 mb-1.5 px-1 font-mono">
-          <span className="text-[10px] text-slate-400 font-semibold">
-            {tradesList.length} {tradesList.length === 1 ? 'trade cerrado' : 'trades cerrados'} (cronológico ➔)
-          </span>
-        </div>
+        
 
         {/* Contenedor del Gráfico SVG con Eje Cero Matemático y Tooltip Dinámico */}
         <div className="relative w-full bg-gray-100 dark:bg-slate-950/90 rounded-xl p-2 border border-gray-200 dark:border-slate-800 shadow-inner min-h-[160px]">
@@ -1618,10 +1614,7 @@ function PnLPerformanceChart({ symbolsList = [], readOnly = false }) {
                 </h3>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                {rankingViewMode === 'STRATEGIES'
-                  ? 'Compara el desempeño entre estrategias para descubrir cuál es la más rentable y consistente en Binance Testnet.'
-                  : 'Compara qué monedas son las más rentables y cuáles generan pérdidas para optimizar tu cesta de trading.'
-                }
+                {rankingViewMode === 'STRATEGIES' ? 'Compara el desempeño entre estrategias para descubrir cuál es la más rentable y consistente en Binance Testnet.' : ''}
               </p>
             </div>
           </div>

@@ -2960,7 +2960,8 @@ def close_user_trade_record(
     trade_type: str = None,
     quantity: float = 0.0,
     open_price: float = 0.0,
-    position_size_usdt: float = 0.0
+    position_size_usdt: float = 0.0,
+    open_timestamp=None
 ) -> bool:
     """
     Actualiza la operación abierta más reciente de un símbolo y lado para ese usuario con sus datos de cierre definitivos.
@@ -3035,6 +3036,12 @@ def close_user_trade_record(
             final_open = float(open_price) if (open_price and float(open_price) > 0) else float(close_price)
             final_pos = float(position_size_usdt) if (position_size_usdt and float(position_size_usdt) > 0) else round(final_qty * final_open, 2)
 
+            open_ts_val = open_timestamp if open_timestamp else now_str
+            if isinstance(open_ts_val, datetime):
+                open_ts_val = open_ts_val.strftime('%Y-%m-%d %H:%M:%S')
+            elif hasattr(open_ts_val, 'isoformat'):
+                open_ts_val = str(open_ts_val)
+
             cursor.execute("""
                 INSERT INTO user_trades (
                     user_id, symbol, trade_type, open_timestamp, close_timestamp,
@@ -3042,7 +3049,7 @@ def close_user_trade_record(
                     pnl_usdt, close_reason, binance_trade_id
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                user_id, symbol.upper(), clean_side, now_str, now_str,
+                user_id, symbol.upper(), clean_side, open_ts_val, now_str,
                 final_open, float(close_price), final_qty, final_pos,
                 float(pnl_usdt), close_reason, exit_order_id
             ))

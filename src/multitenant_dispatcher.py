@@ -407,7 +407,7 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
     return False
 
 
-def close_user_position(client, user: dict, symbol: str, pos_amt: float, current_price: float, unrealized_pnl: float, exit_reason: str, entry_price: float = 0.0, position_side: str = None) -> bool:
+def close_user_position(client, user: dict, symbol: str, pos_amt: float, current_price: float, unrealized_pnl: float, exit_reason: str, entry_price: float = 0.0, position_side: str = None, open_timestamp=None) -> bool:
     """Cierra una posición abierta en la cuenta de Binance del usuario y registra el resultado."""
     logger = get_logger()
     user_id = user['user_id']
@@ -473,7 +473,8 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
             trade_type=actual_side,
             quantity=qty,
             open_price=eff_entry_p,
-            position_size_usdt=eff_notional
+            position_size_usdt=eff_notional,
+            open_timestamp=open_timestamp
         )
         logger.info(f"🛑 [PersonalBot - {username} (ID: {user_id})] POSICIÓN CERRADA en {clean_sym} ({actual_side} {qty}, PnL: ${unrealized_pnl:+.2f} USDT). Razón: {exit_reason}")
         # Limpiar peak de trailing stop y contador de DCA
@@ -640,6 +641,15 @@ def run_personal_bot_cycle():
             raw_side = str(p.get('positionSide', 'BOTH')).upper()
             pos_side = ('LONG' if pos_amt > 0 else 'SHORT') if raw_side == 'BOTH' else raw_side
 
+            # Obtener timestamp de apertura real desde Binance updateTime
+            pos_update_ms = p.get('updateTime')
+            pos_open_ts = None
+            if pos_update_ms and float(pos_update_ms) > 0:
+                try:
+                    pos_open_ts = datetime.fromtimestamp(float(pos_update_ms) / 1000.0)
+                except Exception:
+                    pos_open_ts = None
+
             # 1. Take Profit (prioridad por PnL en USDT; porcentaje solo como fallback si TP en USDT es 0)
             tp_usdt_base = float(params.get('take_profit_usdt', params.get('takeProfitUSDT', 50.0)) or 50.0)
             tp_usdt = tp_usdt_base * scale_factor
@@ -658,7 +668,7 @@ def run_personal_bot_cycle():
                         is_tp_triggered = True
 
             if is_tp_triggered:
-                close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Take Profit (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
+                close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Take Profit (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side, open_timestamp=pos_open_ts)
                 continue
 
             # 2. Stop Loss (prioridad por PnL en USDT; porcentaje solo como fallback si SL en USDT es 0)
@@ -679,7 +689,7 @@ def run_personal_bot_cycle():
                         is_sl_triggered = True
 
             if is_sl_triggered:
-                close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Stop Loss ({unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
+                close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Stop Loss ({unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side, open_timestamp=pos_open_ts)
                 continue
 
             # 3. Trailing Stop PnL (proporcional al capital del usuario)
@@ -696,7 +706,7 @@ def run_personal_bot_cycle():
                     _user_peak_pnl[peak_key] = unrealized_pnl
                     curr_peak = unrealized_pnl
                 if curr_peak >= act_usdt and (curr_peak - unrealized_pnl) >= drop_usdt:
-                    close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Trailing Stop Asegurado (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side)
+                    close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Trailing Stop Asegurado (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side, open_timestamp=pos_open_ts)
                     continue
 
             # 4. Evaluación de Re-entradas DCA Autónomas para el Bot Personal

@@ -318,11 +318,7 @@ export default function UserBotPanel({
 
     return (
       <div className="mt-2.5 pt-2 border-t border-slate-800/80">
-        <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] text-slate-400 mb-1.5 px-1 font-mono">
-          <span className="text-[10px] text-slate-400 font-semibold">
-            {tradesList.length} {tradesList.length === 1 ? 'trade cerrado' : 'trades cerrados'} (cronológico ➔)
-          </span>
-        </div>
+        
 
         <div className="relative w-full bg-slate-950/90 rounded-xl p-2 border border-slate-800 shadow-inner min-h-[160px]">
           <div className="relative w-full overflow-x-auto no-scrollbar">
@@ -1146,8 +1142,7 @@ export default function UserBotPanel({
               </div>
 
               {/* Consejo Amigable de Gestión Prudente de Capital */}
-              <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-200/90 flex items-start gap-2.5 mb-4 leading-relaxed">
-                <span className="text-base select-none shrink-0 mt-0.5">🌱</span>
+              <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-200/90 mb-4 leading-relaxed">
                 <div>
                   <span className="font-bold text-amber-300 tracking-wide block uppercase text-[11px] mb-0.5">
                     Empieza con paso firme y cabeza fría:
@@ -1322,11 +1317,9 @@ export default function UserBotPanel({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-800/60 pb-2.5">
                     <span className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-sky-400 text-slate-950 text-[11px] font-black flex items-center justify-center">2</span>
-                      Distribución en Vivo: ¿Dónde está tu dinero ahora mismo?
+                      ¿Dónde está tu dinero ahora mismo?
                     </span>
-                    <span className="text-[11px] font-mono text-slate-400 font-semibold">
-                      Saldo en Billetera (${currentWalletBalance.toFixed(2)}) = Margen Comprometido + Saldo Libre
-                    </span>
+                    
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1 font-mono text-xs">
@@ -2136,9 +2129,7 @@ export default function UserBotPanel({
                       ({sortedUserCoinPerformance.length} pares)
                     </span>
                   </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Compara qué monedas son las más rentables y cuáles generan pérdidas para optimizar tu cesta de trading.
-                  </p>
+                  
                 </div>
               </div>
 
