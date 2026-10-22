@@ -14,6 +14,8 @@ function StrategyRadar({ config }) {
   const leverage = Number(config?.leverage) || 20;
   const marginUSDT = Number(config?.positionSizeUSDT) || 50;
   const notionalUSDT = marginUSDT * leverage;
+  const positionSizeUSDT = marginUSDT;
+  const estimatedMargin = marginUSDT;
   const rsiInterval = config?.rsiInterval || '5m';
   const rsiPeriod = Number(config?.rsiPeriod) || 14;
   const symbols = config?.symbolsToTrade ? config.symbolsToTrade.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -352,11 +354,11 @@ function StrategyRadar({ config }) {
                   <div className="flex items-center space-x-2">
                     <span className="text-emerald-400 font-extrabold text-sm">⚡ ACCIÓN:</span>
                     <span className="text-gray-100">
-                      Abre orden <strong className="text-white">LIMIT BUY</strong> por un tamaño de posición de <strong className="text-emerald-300 font-bold text-sm">${positionSizeUSDT.toLocaleString()} USDT</strong> en contratos
+                      Abre orden <strong className="text-white">LIMIT BUY</strong> con inversión de margen de <strong className="text-emerald-300 font-bold text-sm">${marginUSDT.toLocaleString()} USDT</strong>
                     </span>
                   </div>
                   <div className="flex items-center space-x-1.5 text-[11.5px] bg-black/50 px-2.5 py-1 rounded border border-emerald-800/50 text-gray-300">
-                    <span>Margen Billetera: <strong className="text-emerald-400">${estimatedMargin.toFixed(2)} USDT</strong></span>
+                    <span>Nocional: <strong className="text-amber-300">${notionalUSDT.toFixed(2)} USDT</strong></span>
                     <span className="text-gray-500">•</span>
                     <span>Apalancamiento: <strong className="text-amber-400">{leverage}x</strong></span>
                   </div>
@@ -457,14 +459,14 @@ function StrategyRadar({ config }) {
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
               
-              {/* TAMAÑO POSICIÓN / MARGEN */}
+              {/* TAMAÑO INVERSIÓN / MARGEN */}
               <div className="bg-gray-900/80 p-2.5 rounded border border-gray-800">
-                <div className="text-[11px] text-gray-400 font-medium">💵 Posición / Margen</div>
+                <div className="text-[11px] text-gray-400 font-medium">💵 Inversión / Margen</div>
                 <div className="text-sm font-bold text-white mt-0.5">
-                  <span className="text-emerald-400">${positionSizeUSDT} USDT</span> <span className="text-[10.5px] text-amber-400 font-normal">({leverage}x)</span>
+                  <span className="text-emerald-400">${marginUSDT.toFixed(2)} USDT</span> <span className="text-[10.5px] text-amber-400 font-normal">({leverage}x)</span>
                 </div>
                 <div className="text-[10px] text-gray-300 mt-0.5">
-                  Margen: <strong className="text-emerald-400">${estimatedMargin.toFixed(2)} USDT</strong> ({simulation.contractUnits.toFixed(2)} uds)
+                  Nocional: <strong className="text-amber-300">${notionalUSDT.toFixed(2)} USDT</strong> ({simulation.contractUnits.toFixed(2)} uds)
                 </div>
               </div>
 
