@@ -47,20 +47,6 @@ export default function UserBotPanel({
   const [userCoinSortOrder, setUserCoinSortOrder] = useState('PNL_DESC');
   const [activeRuntimeSec, setActiveRuntimeSec] = useState(0);
 
-  useEffect(() => {
-    if (botData?.active_runtime_seconds !== undefined) {
-      setActiveRuntimeSec(Number(botData.active_runtime_seconds) || 0);
-    }
-  }, [botData?.active_runtime_seconds]);
-
-  useEffect(() => {
-    if (!isPersonalBotActive) return;
-    const timer = setInterval(() => {
-      setActiveRuntimeSec(prev => prev + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [isPersonalBotActive]);
-
   // Estados del Formulario de API Keys
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
@@ -906,6 +892,21 @@ export default function UserBotPanel({
 
   const isCopyTradingActive = rawIsRunning && operatingMode === 'COPY_TRADING';
   const isPersonalBotActive = rawIsRunning && operatingMode === 'PERSONAL_BOT';
+  const isAnyBotActive = isPersonalBotActive || isCopyTradingActive;
+
+  useEffect(() => {
+    if (botData?.active_runtime_seconds !== undefined) {
+      setActiveRuntimeSec(Number(botData.active_runtime_seconds) || 0);
+    }
+  }, [botData?.active_runtime_seconds]);
+
+  useEffect(() => {
+    if (!isAnyBotActive) return;
+    const timer = setInterval(() => {
+      setActiveRuntimeSec(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isAnyBotActive]);
 
   const hasKeys = Boolean(botData?.has_valid_keys);
   const balance = Number(botData?.balance_usdt || 0);
