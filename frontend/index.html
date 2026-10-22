@@ -21,11 +21,12 @@
         window.dispatchEvent(new CustomEvent('wtn-install-ready'));
       });
 
-      // 3. Registrar Service Worker de inmediato
+      // 3. Registrar Service Worker de inmediato y forzar verificacion de actualizacion
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js', { scope: '/' })
           .then(function (reg) {
             console.log('[WTN] Service Worker activo:', reg.scope);
+            try { reg.update(); } catch (e) {}
           })
           .catch(function (err) {
             console.warn('[WTN] Service Worker error:', err);

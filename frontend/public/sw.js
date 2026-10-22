@@ -1,14 +1,12 @@
-const CACHE_NAME = 'wtn-trading-cache-v1';
+const CACHE_NAME = 'wtn-trading-cache-v3';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json',
   '/favicon.ico',
   '/icon-192.png',
   '/icon-512.png'
 ];
 
-// Install event - precache app shell
+// Install event - precache static branding assets only
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -17,13 +15,14 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate event - cleanup old caches
+// Activate event - cleanup all older caches immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
+            console.log('[SW] Deleting old cache:', key);
             return caches.delete(key);
           }
         })
@@ -36,7 +35,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Always bypass cache for API calls, WebSockets, or non-GET requests
+  // Always bypass cache for API calls, WebSockets, auth, or non-GET requests
   if (
     event.request.method !== 'GET' ||
     url.pathname.startsWith('/api') ||
@@ -47,7 +46,23 @@ self.addEventListener('fetch', (event) => {
     return; // default browser network handling
   }
 
-  // Stale-while-revalidate for navigation and static assets
+  // Network-First for HTML navigations and root index so user always gets the latest deployed code
+  if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request).then((res) => res || caches.match('/index.html')))
+    );
+    return;
+  }
+
+  // Stale-while-revalidate for static assets
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       const fetchPromise = fetch(event.request)
@@ -60,12 +75,7 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => {
-          // If offline and request is HTML navigation, fallback to root /index.html
-          if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
-          }
-        });
+        .catch(() => cachedResponse);
 
       return cachedResponse || fetchPromise;
     })
