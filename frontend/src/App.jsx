@@ -13,6 +13,7 @@ import MarketExplorer from './MarketExplorer';
 import BotControls from './BotControls';
 import ToastContainer from './ToastContainer';
 import BacktestLab from './BacktestLab';
+import AdminMarketLab from './AdminMarketLab';
 import UserDropdown from './UserDropdown';
 import ApiUsageWidget from './ApiUsageWidget';
 import FloatingNotesModal from './FloatingNotesModal';
@@ -952,11 +953,11 @@ function MainDashboard() {
                       setIsUsersMenuOpen(false);
                     }}
                     className={`px-3 py-1.5 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center gap-1.5 border shadow-sm ${
-                      activeTab === 'config' || activeTab === 'backtest' || isConfigMenuOpen
+                      activeTab === 'config' || activeTab === 'backtest' || activeTab === 'market_lab' || isConfigMenuOpen
                         ? 'bg-amber-400 text-slate-950 border-amber-400 ring-2 ring-amber-400/40 shadow-md font-black'
                         : 'text-slate-200 hover:text-white hover:bg-slate-800 border-slate-700/70'
                     }`}
-                    title="Configuración (Parámetros, Backtesting)"
+                    title="Configuración (Parámetros, Backtesting, Laboratorio)"
                   >
                     <span>⚙️</span> Configuración
                     <span className="text-[9px] ml-0.5 opacity-80">{isConfigMenuOpen ? '▲' : '▼'}</span>
@@ -1001,6 +1002,23 @@ function MainDashboard() {
                           <span>🧪</span> Backtesting
                         </div>
                         {activeTab === 'backtest' && <span className="text-[10px]">●</span>}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('market_lab');
+                          setIsConfigMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                          activeTab === 'market_lab'
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>🔬</span> Laboratorio de Caídas & SL
+                        </div>
+                        {activeTab === 'market_lab' && <span className="text-[10px]">●</span>}
                       </button>
                     </div>
                   )}
@@ -1330,6 +1348,14 @@ function MainDashboard() {
                 activeConfig={config}
                 addToast={addToast}
                 onApplyStrategyToConfig={handleApplyStrategyToConfig}
+              />
+            )}
+
+            {/* PESTAÑA: Laboratorio Cuantitativo de Caídas & SL Antirruido (Solo Admin) */}
+            {activeTab === 'market_lab' && isAdmin && (
+              <AdminMarketLab
+                activeConfig={config}
+                addToast={addToast}
               />
             )}
           </>

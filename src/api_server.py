@@ -2424,6 +2424,56 @@ def admin_user_bot_toggle_endpoint():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/admin/analysis/dip-bounce', methods=['POST'])
+@admin_required
+def admin_analysis_dip_bounce_endpoint():
+    """
+    Laboratorio Cuantitativo de Pruebas:
+    Calcula el promedio y percentiles de caídas y rebotes para una o varias monedas,
+    determinando el Stop Loss Antirruido (P95) y Take Profit óptimo.
+    """
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+        symbols_input = body.get('symbols', ['ETHUSDT'])
+        if isinstance(symbols_input, str):
+            symbols = [s.strip().upper() for s in symbols_input.split(',') if s.strip()]
+        elif isinstance(symbols_input, list):
+            symbols = [str(s).strip().upper() for s in symbols_input if str(s).strip()]
+        else:
+            symbols = ['ETHUSDT']
+
+        if not symbols:
+            symbols = ['ETHUSDT']
+
+        interval = str(body.get('interval', '15m')).strip()
+        limit = min(1500, max(50, int(body.get('limit', 500))))
+        min_swing_pct = max(0.2, min(10.0, float(body.get('min_swing_pct', 1.0))))
+        margin_usdt = max(5.0, float(body.get('margin_usdt', 50.0)))
+        leverage = max(1, min(125, int(body.get('leverage', 10))))
+
+        start_time = body.get('start_time')
+        end_time = body.get('end_time')
+
+        from src.market_lab_analyzer import analyze_market_basket
+        res = analyze_market_basket(
+            symbols=symbols,
+            interval=interval,
+            limit=limit,
+            start_time=start_time,
+            end_time=end_time,
+            min_swing_pct=min_swing_pct,
+            margin_usdt=margin_usdt,
+            leverage=leverage
+        )
+
+        return jsonify({
+            "status": "success",
+            "data": res
+        })
+    except Exception as e:
+        api_logger.error(f"Error en admin_analysis_dip_bounce_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route('/api/config', methods=['GET'])
 def get_config_endpoint():

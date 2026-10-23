@@ -460,9 +460,10 @@ def verify_user_binance_credentials(api_key: str, api_secret: str, is_testnet: b
     logger.warning(f"Fallo en verificación de claves API: {err_msg} | Intentos: {all_errors}")
     return {"valid": False, "error": err_msg, "code": getattr(last_client_error, 'error_code', -1)}
 
-def get_historical_klines(symbol: str, interval: str, limit: int = 500):
+def get_historical_klines(symbol: str, interval: str, limit: int = 500, start_time=None, end_time=None):
     """
     Obtiene datos históricos de velas (klines) para un símbolo y un intervalo dados.
+    Permite opcionalmente especificar rango de fechas con start_time y end_time.
     Intenta obtener Open Interest de markPriceKlines si es posible, aunque para 1m no es estándar.
     El volumen se toma de las klines estándar.
     """
@@ -472,13 +473,34 @@ def get_historical_klines(symbol: str, interval: str, limit: int = 500):
         logger.error("No se pudo obtener el cliente UMFutures para buscar klines.")
         return None
 
-    logger.info(f"Obteniendo {limit} klines históricos para {symbol} en intervalo {interval}...")
+    logger.info(f"Obteniendo {limit} klines históricos para {symbol} en intervalo {interval} (start={start_time}, end={end_time})...")
     klines_data = None
     klines_df = pd.DataFrame()
 
     try:
         # Obtener klines estándar PRIMERO para asegurar datos OHLCV correctos
-        standard_klines_raw = client.klines(symbol=symbol, interval=interval, limit=limit)
+        kline_params = {'symbol': symbol, 'interval': interval, 'limit': limit}
+        if start_time is not None:
+            try:
+                if isinstance(start_time, str):
+                    st_dt = pd.to_datetime(start_time)
+                    kline_params['startTime'] = int(st_dt.timestamp() * 1000)
+                else:
+                    kline_params['startTime'] = int(start_time)
+            except Exception as e_st:
+                logger.debug(f"Aviso convirtiendo start_time para klines: {e_st}")
+
+        if end_time is not None:
+            try:
+                if isinstance(end_time, str):
+                    et_dt = pd.to_datetime(end_time)
+                    kline_params['endTime'] = int(et_dt.timestamp() * 1000)
+                else:
+                    kline_params['endTime'] = int(end_time)
+            except Exception as e_et:
+                logger.debug(f"Aviso convirtiendo end_time para klines: {e_et}")
+
+        standard_klines_raw = client.klines(**kline_params)
         if not standard_klines_raw:
             logger.warning(f"[{symbol}] No se recibieron datos de klines estándar.")
             return None
