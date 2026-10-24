@@ -149,7 +149,7 @@ function MainDashboard() {
       return found?.name || name;
     }
     if (activeStrategyDisplayName) return activeStrategyDisplayName;
-    return '22_AGRESIVA_TOLERANTE_30S';
+    return config?.activeStrategyName || config?.active_strategy_name || (availableStrategies?.[0]?.name) || '23_VETERANA_AMPLIA8x';
   }, [inspectingUser, isInvestor, activeTab, userBotHeader, activeStrategyDisplayName, config?.activeStrategyName, config?.active_strategy_name, availableStrategies]);
 
   const [chartSelectedSymbol, setChartSelectedSymbol] = useState('SOLUSDT');
@@ -1355,6 +1355,8 @@ function MainDashboard() {
             {activeTab === 'market_lab' && isAdmin && (
               <AdminMarketLab
                 activeConfig={config}
+                availableStrategies={availableStrategies}
+                onRefreshStrategies={fetchAvailableStrategies}
                 addToast={addToast}
               />
             )}

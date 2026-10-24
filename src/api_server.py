@@ -3890,7 +3890,7 @@ def list_strategies():
                 config_data['is_public'] = db_meta.get('is_public', False)
                 config_data['risk_level'] = db_meta.get('risk_level', 'MODERADO')
                 config_data['min_capital_usdt'] = db_meta.get('min_capital_usdt', 50.0)
-                config_data['display_name'] = db_meta.get('display_name', strategy_name)
+                config_data['display_name'] = strategy_name
                 config_data['description'] = db_meta.get('description', '')
 
             ot = str(config_data.get('entryOrderType') or config_data.get('entry_order_type') or 'MARKET').upper().strip()
@@ -3925,6 +3925,10 @@ def get_strategies_catalog_endpoint():
     if not catalog:
         _seed_strategies_catalog_from_files()
         catalog = get_strategies_catalog(only_public=only_public)
+
+    # ESTANDARIZACIÓN UNIVERSAL: Garantizar que display_name coincida siempre con el nombre oficial
+    for s in catalog:
+        s['display_name'] = s.get('name', '')
 
     return jsonify({
         "success": True,

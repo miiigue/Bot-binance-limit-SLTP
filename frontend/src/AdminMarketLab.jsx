@@ -9,6 +9,7 @@ const PRESET_COINS = [
 
 const TIMEFRAMES = [
   { value: '1m', label: '1 Minuto' },
+  { value: '3m', label: '3 Minutos' },
   { value: '5m', label: '5 Minutos' },
   { value: '15m', label: '15 Minutos (Recomendado)' },
   { value: '1h', label: '1 Hora' },
@@ -16,7 +17,23 @@ const TIMEFRAMES = [
   { value: '1d', label: '1 Día' }
 ];
 
-export default function AdminMarketLab({ activeConfig, addToast }) {
+// Helper de normalización para asegurar estándar absoluto de nombres
+const normalizeStrategy = (item) => {
+  if (!item) return null;
+  const name = item.name || item.strategy_name || item.id || '';
+  if (!name) return null;
+  const params = item.config || item.parameters || {};
+  return {
+    name,
+    display_name: name, // Estándar: display_name siempre es igual al nombre canónico
+    risk_level: params.risk_level || item.risk_level || 'MODERADO',
+    min_capital_usdt: params.min_capital_usdt || item.min_capital_usdt || 50.0,
+    is_public: Boolean(item.is_public ?? params.is_public ?? true),
+    parameters: params
+  };
+};
+
+export default function AdminMarketLab({ activeConfig, availableStrategies, onRefreshStrategies, addToast }) {
   const { authFetch } = useAuth();
 
   // Modo de Trabajo: 'STRATEGY' (Optimizar Estrategia) o 'FREE' (Explorador Libre de Monedas)
@@ -70,21 +87,70 @@ export default function AdminMarketLab({ activeConfig, addToast }) {
   const fetchStrategies = useCallback(async () => {
     setIsLoadingStrategies(true);
     try {
-      const res = await authFetch('/api/strategies/catalog');
-      if (res.ok) {
-        const data = await res.json();
-        const strats = data.strategies || [];
-        setStrategiesList(strats);
-        if (strats.length > 0 && !selectedStrategyName) {
-          applyStrategySelection(strats[0], strats);
+      let strats = [];
+      // 1. Cargar desde el endpoint estándar /api/strategies (lee archivos de disco y DB)
+      try {
+        const res = await authFetch('/api/strategies');
+        if (res.ok) {
+          const data = await res.json();
+          const rawList = Array.isArray(data) ? data : (data?.strategies || []);
+          strats = rawList.map(normalizeStrategy).filter(Boolean);
+        }
+      } catch (errApi) {
+        console.warn("Aviso consultando /api/strategies:", errApi);
+      }
+
+      // 2. Si falló la red, usar availableStrategies pasadas como prop
+      if (strats.length === 0 && availableStrategies && availableStrategies.length > 0) {
+        strats = availableStrategies.map(normalizeStrategy).filter(Boolean);
+      }
+
+      // 3. Respaldo terciario en /api/strategies/catalog
+      if (strats.length === 0) {
+        try {
+          const catRes = await authFetch('/api/strategies/catalog');
+          if (catRes.ok) {
+            const catData = await catRes.json();
+            strats = (catData.strategies || []).map(normalizeStrategy).filter(Boolean);
+          }
+        } catch (errCat) {
+          console.warn("Aviso consultando /api/strategies/catalog:", errCat);
         }
       }
+
+      // Deduplicar por nombre canónico
+      const seenNames = new Set();
+      strats = strats.filter(s => {
+        if (!s.name || seenNames.has(s.name)) return false;
+        seenNames.add(s.name);
+        return true;
+      });
+
+      // Ordenar: Poner la estrategia activa del bot primero
+      const activeBotStrat = (activeConfig?.activeStrategyName || activeConfig?.active_strategy_name || '').trim();
+      if (activeBotStrat) {
+        strats.sort((a, b) => {
+          if (a.name === activeBotStrat) return -1;
+          if (b.name === activeBotStrat) return 1;
+          return a.name.localeCompare(b.name);
+        });
+      } else {
+        strats.sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      setStrategiesList(strats);
+
+      // Auto-seleccionar la estrategia activa del bot por defecto
+      const targetStrat = (activeBotStrat && strats.find(s => s.name === activeBotStrat)) || strats[0];
+      if (targetStrat) {
+        applyStrategySelection(targetStrat, strats);
+      }
     } catch (err) {
-      console.error("Error al cargar estrategias:", err);
+      console.error("Error al cargar estrategias en el laboratorio:", err);
     } finally {
       setIsLoadingStrategies(false);
     }
-  }, [authFetch, selectedStrategyName]);
+  }, [authFetch, activeConfig, availableStrategies]);
 
   useEffect(() => {
     fetchStrategies();
@@ -93,10 +159,11 @@ export default function AdminMarketLab({ activeConfig, addToast }) {
   // Aplicar datos de una estrategia seleccionada
   const applyStrategySelection = (strat, catalogList = strategiesList) => {
     if (!strat) return;
-    setSelectedStrategyName(strat.name);
+    const stratName = strat.name || strat.strategy_name;
+    setSelectedStrategyName(stratName);
     setSelectedStrategyObj(strat);
 
-    const params = strat.parameters || {};
+    const params = strat.parameters || strat.config || {};
 
     // 1. Monedas de la estrategia
     const symsRaw = params.symbols_to_trade || params.symbolsToTrade || params.symbols || '';
@@ -112,7 +179,7 @@ export default function AdminMarketLab({ activeConfig, addToast }) {
 
     // 2. Temporalidad
     const tf = params.rsi_interval || params.rsiInterval || params.kline_interval || params.klineInterval;
-    if (tf && ['1m', '5m', '15m', '1h', '4h', '1d'].includes(tf)) {
+    if (tf && ['1m', '3m', '5m', '15m', '1h', '4h', '1d'].includes(tf)) {
       setInterval(tf);
     }
 
@@ -124,9 +191,9 @@ export default function AdminMarketLab({ activeConfig, addToast }) {
     setLeverage(Number(lev) || 10);
 
     // Preparar nombres por defecto para modal de guardado
-    setSaveStrategyName(`${strat.name}_Optimizada`);
-    setSaveDisplayName(`${strat.display_name || strat.name} (Optimizada Antirruido)`);
-    setSaveDescription(`Versión optimizada con SL/TP calibrados matemáticamente para absorber el ruido de mercado y proteger capital.`);
+    setSaveStrategyName(`${stratName}_Optimizada`);
+    setSaveDisplayName(`${stratName}_Optimizada`);
+    setSaveDescription(`Versión optimizada de ${stratName} con SL/TP antirruido calibrados matemáticamente.`);
     setSaveRiskLevel(strat.risk_level || 'MODERADO');
   };
 
@@ -377,7 +444,7 @@ export default function AdminMarketLab({ activeConfig, addToast }) {
 
       const payload = {
         name: saveStrategyName.trim(),
-        display_name: saveDisplayName.trim() || saveStrategyName.trim(),
+        display_name: saveStrategyName.trim(),
         description: saveDescription.trim(),
         risk_level: saveRiskLevel,
         is_public: selectedStrategyObj ? selectedStrategyObj.is_public : true,
@@ -397,6 +464,7 @@ export default function AdminMarketLab({ activeConfig, addToast }) {
       }
 
       setIsSaveModalOpen(false);
+      if (onRefreshStrategies) onRefreshStrategies();
       await fetchStrategies();
 
       if (addToast) {
@@ -551,11 +619,14 @@ pnl_trailing_stop_drop_usdt = ${coin.recommended_trailing.drop_usdt}`;
                 disabled={isLoadingStrategies}
                 className="w-full bg-slate-950 border border-amber-500/40 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-amber-400 font-bold"
               >
-                {strategiesList.map(st => (
-                  <option key={st.name} value={st.name}>
-                    {st.display_name || st.name} ({st.risk_level || 'Estrategia'})
-                  </option>
-                ))}
+                {strategiesList.map(st => {
+                  const isActiveBot = st.name === (activeConfig?.activeStrategyName || activeConfig?.active_strategy_name);
+                  return (
+                    <option key={st.name} value={st.name}>
+                      {isActiveBot ? `⭐ ${st.name} (ACTUAL EN EL BOT)` : st.name}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
@@ -779,7 +850,7 @@ pnl_trailing_stop_drop_usdt = ${coin.recommended_trailing.drop_usdt}`;
                 </span>
                 {analysisMode === 'STRATEGY' && selectedStrategyObj && (
                   <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40">
-                    {selectedStrategyObj.display_name || selectedStrategyObj.name}
+                    {selectedStrategyObj.name}
                   </span>
                 )}
               </div>
@@ -1480,26 +1551,17 @@ pnl_trailing_stop_drop_usdt = ${coin.recommended_trailing.drop_usdt}`;
             <div className="space-y-3 text-xs">
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Identificador / Clave de Estrategia
+                  Nombre de la Estrategia (Estándar Canónico)
                 </label>
                 <input
                   type="text"
                   value={saveStrategyName}
-                  onChange={(e) => setSaveStrategyName(e.target.value)}
+                  onChange={(e) => {
+                    setSaveStrategyName(e.target.value);
+                    setSaveDisplayName(e.target.value);
+                  }}
                   disabled={saveMode === 'OVERWRITE'}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-amber-400 disabled:opacity-60"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Nombre Visible (Display Name)
-                </label>
-                <input
-                  type="text"
-                  value={saveDisplayName}
-                  onChange={(e) => setSaveDisplayName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-amber-400"
                 />
               </div>
 

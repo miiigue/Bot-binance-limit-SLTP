@@ -1545,9 +1545,9 @@ export default function UserBotPanel({
                             {/* Título sanitizado con break-words para evitar desbordamientos visuales */}
                             <h4 
                               className="text-sm font-black text-white mb-2 leading-snug break-all tracking-tight"
-                              title={strat.display_name || strat.name}
+                              title={strat.name || strat.display_name}
                             >
-                              {strat.display_name || strat.name}
+                              {strat.name || strat.display_name}
                             </h4>
 
                             <p className="text-xs text-slate-400 mb-4 leading-relaxed line-clamp-3">
