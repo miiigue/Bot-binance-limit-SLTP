@@ -176,18 +176,16 @@ def load_strategy_params(strategy_name: str) -> dict:
 
 def resolve_short_delta_threshold(params: dict, thresh_up: float) -> float:
     """
-    Resuelve de forma matemáticamente coherente el umbral de Delta RSI para la ENTRADA en SHORT.
-    El campo 'rsi_threshold_down' en la UI corresponde al Trailing RSI Stop de salida (cierre de posición).
-    Por tanto:
-      1. Si se define un umbral explícito para short ('rsi_short_threshold_down'), se utiliza ese valor.
-      2. Si 'rsi_threshold_down' es mayor a 25.0 (por ejemplo 53.0 de Trailing Stop), NUNCA debe usarse
-         como filtro de apertura, derivándose simétricamente desde thresh_up (igual que bot.py y derive_short_params).
-      3. Si auto_mirror_short está activo y no hay delta explícito, se deriva simétricamente desde thresh_up.
-      4. Si existe un valor válido de delta (0.1 a 25.0, ej: 20.0 en Estrategia 22 o 2.0 estándar), se respeta.
+    Resuelve el umbral de Delta RSI para la ENTRADA en SHORT.
+    El parámetro de entrada es 'rsi_threshold_up' (en la UI: 'Umbral Cambio RSI (Delta)'),
+    el cual se aplica simétricamente como caída (Delta <= -thresh_up) para abrir SHORT.
+    'rsi_threshold_down' (en la UI: 'Caída RSI desde Pico (Trailing)') es EXCLUSIVAMENTE
+    una condición de SALIDA/CIERRE (Trailing Stop RSI) y NUNCA se utiliza para abrir posiciones.
     """
     if not isinstance(params, dict):
         return round(thresh_up if thresh_up > 0 else 2.0, 2)
 
+    # Si existiera un umbral de apertura explícito exclusivo para short:
     for k in ('rsi_short_threshold_down', 'rsiShortThresholdDown'):
         if k in params and params[k] is not None and str(params[k]).strip() != '':
             try:
@@ -197,20 +195,7 @@ def resolve_short_delta_threshold(params: dict, thresh_up: float) -> float:
             except (ValueError, TypeError):
                 pass
 
-    raw_down = params.get('rsi_threshold_down', params.get('rsiThresholdDown'))
-    try:
-        val_down = float(raw_down) if raw_down is not None and str(raw_down).strip() != '' else None
-    except (ValueError, TypeError):
-        val_down = None
-
-    # Si val_down es > 25.0 (ej. 53.0 de Trailing Stop), NUNCA usarlo para entrada
-    if val_down is not None and val_down > 25.0:
-        return round(thresh_up if thresh_up > 0 else 2.0, 2)
-
-    # Si val_down está en un rango válido de delta de 1 vela (0.1 a 25.0, como 20.0 de Estrategia 22)
-    if val_down is not None and 0.1 <= val_down <= 25.0:
-        return round(val_down, 2)
-
+    # En el sistema simétrico del bot, la entrada SHORT es siempre el espejo exacto de thresh_up
     return round(thresh_up if thresh_up > 0 else 2.0, 2)
 
 
