@@ -174,6 +174,46 @@ def load_strategy_params(strategy_name: str) -> dict:
     })
 
 
+def resolve_short_delta_threshold(params: dict, thresh_up: float) -> float:
+    """
+    Resuelve de forma matemáticamente coherente el umbral de Delta RSI para la ENTRADA en SHORT.
+    El campo 'rsi_threshold_down' en la UI corresponde al Trailing RSI Stop de salida (cierre de posición).
+    Por tanto:
+      1. Si se define un umbral explícito para short ('rsi_short_threshold_down'), se utiliza ese valor.
+      2. Si 'rsi_threshold_down' es mayor a 25.0 (por ejemplo 53.0 de Trailing Stop), NUNCA debe usarse
+         como filtro de apertura, derivándose simétricamente desde thresh_up (igual que bot.py y derive_short_params).
+      3. Si auto_mirror_short está activo y no hay delta explícito, se deriva simétricamente desde thresh_up.
+      4. Si existe un valor válido de delta (0.1 a 25.0, ej: 20.0 en Estrategia 22 o 2.0 estándar), se respeta.
+    """
+    if not isinstance(params, dict):
+        return round(thresh_up if thresh_up > 0 else 2.0, 2)
+
+    for k in ('rsi_short_threshold_down', 'rsiShortThresholdDown'):
+        if k in params and params[k] is not None and str(params[k]).strip() != '':
+            try:
+                v = float(params[k])
+                if 0.1 <= v <= 30.0:
+                    return round(v, 2)
+            except (ValueError, TypeError):
+                pass
+
+    raw_down = params.get('rsi_threshold_down', params.get('rsiThresholdDown'))
+    try:
+        val_down = float(raw_down) if raw_down is not None and str(raw_down).strip() != '' else None
+    except (ValueError, TypeError):
+        val_down = None
+
+    # Si val_down es > 25.0 (ej. 53.0 de Trailing Stop), NUNCA usarlo para entrada
+    if val_down is not None and val_down > 25.0:
+        return round(thresh_up if thresh_up > 0 else 2.0, 2)
+
+    # Si val_down está en un rango válido de delta de 1 vela (0.1 a 25.0, como 20.0 de Estrategia 22)
+    if val_down is not None and 0.1 <= val_down <= 25.0:
+        return round(val_down, 2)
+
+    return round(thresh_up if thresh_up > 0 else 2.0, 2)
+
+
 def evaluate_strategy_signal(symbol: str, klines_df: pd.DataFrame, params: dict, check_side: str = None) -> str | None:
     """
     Evalúa las condiciones cuantitativas de la estrategia sobre el DataFrame de velas.
@@ -244,12 +284,26 @@ def evaluate_strategy_signal(symbol: str, klines_df: pd.DataFrame, params: dict,
             short_ok = True
             low_short = float(params.get('rsi_short_entry_level_low', params.get('rsiShortEntryLevelLow', 55)) or 55)
             high_short = float(params.get('rsi_short_entry_level_high', params.get('rsiShortEntryLevelHigh', 70)) or 70)
-            thresh_down = float(params.get('rsi_threshold_down', params.get('rsiThresholdDown', 2.5)) or 2.5)
+            thresh_down = resolve_short_delta_threshold(params, thresh_up)
 
             if eval_range and not (low_short <= curr_rsi <= high_short):
                 short_ok = False
             if eval_delta and delta_rsi > -abs(thresh_down):
                 short_ok = False
+
+            # Filtro de volumen opcional
+            eval_vol = str(params.get('evaluate_volume_filter', params.get('evaluateVolumeFilter', False))).lower() == 'true'
+            if short_ok and eval_vol:
+                v_period = int(params.get('volume_sma_period', 20) or 20)
+                v_factor = float(params.get('volume_factor', 1.0) or 1.0)
+                if len(klines_df['volume']) >= v_period + 1:
+                    vol_series = pd.to_numeric(klines_df['volume'], errors='coerce')
+                    v_sma = float(vol_series.rolling(v_period).mean().iloc[-2])
+                    vol_completed = float(vol_series.iloc[-2])
+                    vol_forming = float(vol_series.iloc[-1])
+                    c_vol = max(vol_completed, vol_forming)
+                    if c_vol < v_factor * v_sma:
+                        short_ok = False
 
             # Filtro de vela bajista
             eval_trend = str(params.get('evaluate_required_uptrend', params.get('evaluateRequiredUptrend', False))).lower() == 'true'
@@ -1365,7 +1419,7 @@ def get_user_monitor_status(user_id: int) -> dict:
 
     low_short = float(params.get('rsi_short_entry_level_low', 55) or 55)
     high_short = float(params.get('rsi_short_entry_level_high', 70) or 70)
-    thresh_down = float(params.get('rsi_threshold_down', 2.5) or 2.5)
+    thresh_down = resolve_short_delta_threshold(params, thresh_up)
 
     v_period = int(params.get('volume_sma_period', 20) or 20)
     v_factor = float(params.get('volume_factor', 1.0) or 1.0)
@@ -1525,10 +1579,10 @@ def get_user_monitor_status(user_id: int) -> dict:
         long_cond5 = dir_allows_long and not cd_long
 
         long_conditions = [
-            {'id': 'rsi_range', 'name': 'RSI en Rango', 'desc': f'RSI [{low_long}-{high_long}]', 'value': f'{curr_rsi}', 'passed': bool(long_cond1)},
-            {'id': 'rsi_delta', 'name': 'Delta RSI', 'desc': f'Delta >= +{thresh_up}', 'value': f'{delta_rsi:+}', 'passed': bool(long_cond2)},
+            {'id': 'rsi_range', 'name': 'RSI en Rango', 'desc': f'RSI [{low_long:g}-{high_long:g}]', 'value': f'{curr_rsi}', 'passed': bool(long_cond1)},
+            {'id': 'rsi_delta', 'name': 'Delta RSI', 'desc': f'Delta >= +{thresh_up:g}', 'value': f'{delta_rsi:+}', 'passed': bool(long_cond2)},
             {'id': 'candle_trend', 'name': 'Vela Alcista', 'desc': 'Cierre >= Apertura', 'value': 'Verde' if is_green else 'Roja', 'passed': bool(long_cond3)},
-            {'id': 'volume_filter', 'name': 'Filtro Volumen', 'desc': f'Vol >= {v_factor}x SMA', 'value': 'OK' if vol_ok else 'Bajo', 'passed': bool(long_cond4)},
+            {'id': 'volume_filter', 'name': 'Filtro Volumen', 'desc': f'Vol >= {v_factor:g}x SMA', 'value': 'OK' if vol_ok else 'Bajo', 'passed': bool(long_cond4)},
             {'id': 'direction', 'name': 'Dirección & Cooldown', 'desc': 'Permitido y sin cooldown', 'value': 'OK' if long_cond5 else 'Bloqueado', 'passed': bool(long_cond5)}
         ]
         long_met_count = sum(1 for c in long_conditions if c['passed'])
@@ -1540,10 +1594,10 @@ def get_user_monitor_status(user_id: int) -> dict:
         short_cond5 = dir_allows_short and not cd_short
 
         short_conditions = [
-            {'id': 'rsi_range', 'name': 'RSI en Rango', 'desc': f'RSI [{low_short}-{high_short}]', 'value': f'{curr_rsi}', 'passed': bool(short_cond1)},
-            {'id': 'rsi_delta', 'name': 'Delta RSI', 'desc': f'Delta <= -{thresh_down}', 'value': f'{delta_rsi:+}', 'passed': bool(short_cond2)},
+            {'id': 'rsi_range', 'name': 'RSI en Rango', 'desc': f'RSI [{low_short:g}-{high_short:g}]', 'value': f'{curr_rsi}', 'passed': bool(short_cond1)},
+            {'id': 'rsi_delta', 'name': 'Delta RSI', 'desc': f'Delta <= -{thresh_down:g}', 'value': f'{delta_rsi:+}', 'passed': bool(short_cond2)},
             {'id': 'candle_trend', 'name': 'Vela Bajista', 'desc': 'Cierre <= Apertura', 'value': 'Roja' if not is_green else 'Verde', 'passed': bool(short_cond3)},
-            {'id': 'volume_filter', 'name': 'Filtro Volumen', 'desc': f'Vol >= {v_factor}x SMA', 'value': 'OK' if vol_ok else 'Bajo', 'passed': bool(short_cond4)},
+            {'id': 'volume_filter', 'name': 'Filtro Volumen', 'desc': f'Vol >= {v_factor:g}x SMA', 'value': 'OK' if vol_ok else 'Bajo', 'passed': bool(short_cond4)},
             {'id': 'direction', 'name': 'Dirección & Cooldown', 'desc': 'Permitido y sin cooldown', 'value': 'OK' if short_cond5 else 'Bloqueado', 'passed': bool(short_cond5)}
         ]
         short_met_count = sum(1 for c in short_conditions if c['passed'])
