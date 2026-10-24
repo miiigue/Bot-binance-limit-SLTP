@@ -42,6 +42,7 @@ _user_reentries_done = {}     # { (user_id, symbol, pos_side): int } -> Conteo d
 _user_dca_cooldown = {}       # { (user_id, symbol, pos_side): float } -> Cooldown entre DCAs (30s)
 _user_last_cycle = {}         # { user_id: float } -> Timestamp del último ciclo ejecutado por usuario
 _user_pos_cache = {}          # { user_id: { "positions": list, "timestamp": float } } -> Caché de posiciones
+_ghost_positions = {}         # { (user_id, symbol, pos_side): dict } -> Circuit Breaker para posiciones fantasma (-2022)
 _engine_started = False
 _engine_lock = threading.Lock()
 _last_heartbeat_time = 0
@@ -419,18 +420,20 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
         raw_qty = abs(pos_amt)
         qty = adjust_quantity_for_symbol(clean_sym, raw_qty) or raw_qty
 
-        is_hedge = False
-        try:
-            pos_mode = client.get_position_mode()
-            if isinstance(pos_mode, dict):
-                is_hedge = bool(pos_mode.get('dualSidePosition', False))
-        except Exception:
-            is_hedge = False
-
-        if is_hedge:
-            pos_side = position_side if position_side in ('LONG', 'SHORT') else ('LONG' if pos_amt > 0 else 'SHORT')
+        # Si position_side ya es 'LONG' o 'SHORT', la cuenta está estrictamente en Modo Cobertura (Hedge Mode).
+        # Evitamos llamadas de red redundantes y nunca degradamos a BOTH.
+        if position_side in ('LONG', 'SHORT'):
+            is_hedge = True
+            pos_side = position_side
         else:
-            pos_side = 'BOTH'
+            is_hedge = False
+            try:
+                pos_mode = client.get_position_mode()
+                if isinstance(pos_mode, dict):
+                    is_hedge = bool(pos_mode.get('dualSidePosition', False))
+            except Exception:
+                is_hedge = False
+            pos_side = ('LONG' if pos_amt > 0 else 'SHORT') if is_hedge else 'BOTH'
 
         order_params = {
             'symbol': clean_sym,
@@ -445,6 +448,10 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
         order_res = client.new_order(**order_params)
         order_id = str(order_res.get('orderId', '')) if isinstance(order_res, dict) else ''
         strat_name = str(user.get('strategy_name') or '').strip()
+
+        # Si el cierre tuvo éxito en Binance, limpiar de _ghost_positions si estaba registrada
+        ghost_key = (user_id, clean_sym, pos_side)
+        _ghost_positions.pop(ghost_key, None)
 
         # Determinar el lado real de la operación (LONG o SHORT)
         if position_side in ('LONG', 'SHORT'):
@@ -486,7 +493,55 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
         return True
 
     except Exception as e:
-        logger.warning(f"Aviso al cerrar posición en {clean_sym} para {username}: {e}")
+        err_str = str(e)
+        logger.warning(f"Aviso al cerrar posición en {clean_sym} para {username}: {err_str}")
+
+        # DETECCIÓN Y AISLAMIENTO DE POSICIÓN FANTASMA (-2022 ReduceOnly Order is rejected):
+        # En Binance Futures (especialmente en Testnet/Demo), si el matching engine tiene saldo 0 en el libro 
+        # pero la API de snapshot sigue reportando saldo residual, cualquier orden contraria es rechazada con -2022.
+        if '-2022' in err_str or 'ReduceOnly Order is rejected' in err_str:
+            ghost_ps = position_side if position_side in ('LONG', 'SHORT') else ('LONG' if pos_amt > 0 else 'SHORT')
+            ghost_key = (user_id, clean_sym, ghost_ps)
+            prev_ghost = _ghost_positions.get(ghost_key, {})
+            att = prev_ghost.get('attempts', 0) + 1
+            _ghost_positions[ghost_key] = {
+                'pos_amt': pos_amt,
+                'failed_at': time.time(),
+                'attempts': att
+            }
+            logger.warning(
+                f"👻 [PersonalBot - {username}] Posición fantasma detectada en Binance para {clean_sym} "
+                f"({ghost_ps}, amt: {pos_amt}). Binance rechazó el cierre (-2022 ReduceOnly, intento #{att}). "
+                f"Se aísla la posición para proteger el Rate Limiter."
+            )
+
+            # Reconciliar en base de datos si quedó registro abierto en user_trades
+            try:
+                from src.database import get_db_connection
+                conn_ghost = get_db_connection()
+                if conn_ghost:
+                    cur_ghost = conn_ghost.cursor()
+                    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    cur_ghost.execute("""
+                        UPDATE user_trades 
+                        SET close_timestamp = ?, 
+                            close_price = ?, 
+                            pnl_usdt = 0.0, 
+                            close_reason = 'Cerrada en Binance (-2022 Reconciliada)'
+                        WHERE user_id = ? AND symbol = ? AND close_timestamp IS NULL
+                    """, (now_str, current_price or entry_price, user_id, clean_sym))
+                    conn_ghost.commit()
+                    conn_ghost.close()
+            except Exception as e_gh_db:
+                logger.debug(f"Aviso al reconciliar trade fantasma en BD: {e_gh_db}")
+
+            # Limpiar trackers en memoria
+            _user_peak_pnl.pop((user_id, clean_sym, ghost_ps), None)
+            _user_peak_pnl.pop((user_id, clean_sym), None)
+            _user_reentries_done.pop((user_id, clean_sym, ghost_ps), None)
+            _user_reentries_done.pop((user_id, clean_sym), None)
+            _user_dca_cooldown.pop((user_id, clean_sym, ghost_ps), None)
+
         return False
 
 
@@ -640,6 +695,19 @@ def run_personal_bot_cycle():
             unrealized_pnl = float(p.get('unRealizedProfit', 0.0) or 0.0)
             raw_side = str(p.get('positionSide', 'BOTH')).upper()
             pos_side = ('LONG' if pos_amt > 0 else 'SHORT') if raw_side == 'BOTH' else raw_side
+
+            # CIRCUIT BREAKER PARA POSICIONES FANTASMA (-2022):
+            # Si esta posición ya fue rechazada con -2022 y la cantidad no ha cambiado,
+            # no saturar la API reintentando cada ciclo.
+            ghost_key = (user_id, sym, pos_side)
+            ghost_info = _ghost_positions.get(ghost_key)
+            if ghost_info:
+                last_failed = ghost_info.get('failed_at', 0.0)
+                cached_amt = ghost_info.get('pos_amt', 0.0)
+                if abs(cached_amt - pos_amt) < 1e-6 and (now_ts - last_failed < 7200.0):
+                    continue
+                elif abs(cached_amt - pos_amt) >= 1e-6:
+                    _ghost_positions.pop(ghost_key, None)
 
             # Obtener timestamp de apertura real desde Binance updateTime
             pos_update_ms = p.get('updateTime')
@@ -1158,6 +1226,14 @@ def get_user_monitor_status(user_id: int) -> dict:
                         if abs(amt) > 1e-6:
                             sym_p = p.get('symbol')
                             raw_ps = str(p.get('positionSide', 'BOTH')).upper()
+                            pos_side_det = ('LONG' if amt > 0 else 'SHORT') if raw_ps == 'BOTH' else raw_ps
+
+                            # Si fue rechazada con -2022 y la cantidad es la misma, es un fantasma de Binance Demo; no mostrar en monitor
+                            ghost_key = (user_id, sym_p, pos_side_det)
+                            ghost_info = _ghost_positions.get(ghost_key)
+                            if ghost_info and abs(ghost_info.get('pos_amt', 0.0) - amt) < 1e-6:
+                                continue
+
                             if raw_ps == 'LONG' or (raw_ps == 'BOTH' and amt > 0):
                                 open_positions_long[sym_p] = p
                             elif raw_ps == 'SHORT' or (raw_ps == 'BOTH' and amt < 0):
@@ -1189,6 +1265,14 @@ def get_user_monitor_status(user_id: int) -> dict:
                         if abs(amt) > 1e-6:
                             sym_p = p.get('symbol')
                             raw_ps = str(p.get('positionSide', 'BOTH')).upper()
+                            pos_side_det = ('LONG' if amt > 0 else 'SHORT') if raw_ps == 'BOTH' else raw_ps
+
+                            # Si fue rechazada con -2022 y la cantidad es la misma, es un fantasma de Binance Demo; no mostrar en monitor
+                            ghost_key = (user_id, sym_p, pos_side_det)
+                            ghost_info = _ghost_positions.get(ghost_key)
+                            if ghost_info and abs(ghost_info.get('pos_amt', 0.0) - amt) < 1e-6:
+                                continue
+
                             if raw_ps == 'LONG' or (raw_ps == 'BOTH' and amt > 0):
                                 open_positions_long[sym_p] = p
                             elif raw_ps == 'SHORT' or (raw_ps == 'BOTH' and amt < 0):
@@ -1524,3 +1608,15 @@ def get_user_monitor_status(user_id: int) -> dict:
         },
         'symbols': symbols_data
     }
+
+
+def clear_user_ghost_positions(user_id: int = None):
+    """Limpia la caché de posiciones fantasma para un usuario específico o para todos si user_id es None."""
+    global _ghost_positions
+    if user_id is None:
+        _ghost_positions.clear()
+    else:
+        keys_to_remove = [k for k in _ghost_positions.keys() if k[0] == user_id]
+        for k in keys_to_remove:
+            _ghost_positions.pop(k, None)
+

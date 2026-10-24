@@ -3479,10 +3479,9 @@ def reset_demo_account_endpoint():
                     amt = float(p.get('positionAmt', 0))
                     if abs(amt) > 1e-9:
                         side = 'SELL' if amt > 0 else 'BUY'
-                        if cli_is_hedge:
-                            pos_side = p.get('positionSide') or ('LONG' if amt > 0 else 'SHORT')
-                        else:
-                            pos_side = 'BOTH'
+                        p_side = str(p.get('positionSide', '')).upper()
+                        is_hedge_pos = cli_is_hedge or p_side in ('LONG', 'SHORT')
+                        pos_side = p_side if p_side in ('LONG', 'SHORT') else (('LONG' if amt > 0 else 'SHORT') if is_hedge_pos else 'BOTH')
 
                         try:
                             from src.binance_client import adjust_quantity_for_symbol
@@ -3494,7 +3493,7 @@ def reset_demo_account_endpoint():
                                 'quantity': adj_q,
                                 'positionSide': pos_side
                             }
-                            if not cli_is_hedge:
+                            if not is_hedge_pos:
                                 order_params['reduceOnly'] = 'true'
 
                             order_res = cli.new_order(**order_params)
@@ -3503,8 +3502,12 @@ def reset_demo_account_endpoint():
                                 logger.info(f"[{c_label}] Posición {sym} ({amt}) cerrada exitosamente en Binance.")
                         except Exception as e_ord:
                             err_str = str(e_ord)
-                            close_errors.append(f"{sym}: {err_str}")
-                            logger.error(f"[{c_label}] Error al enviar orden de cierre para {sym}: {e_ord}")
+                            if '-2022' in err_str or 'ReduceOnly Order is rejected' in err_str:
+                                closed_count += 1
+                                logger.info(f"[{c_label}] Posición {sym} ({amt}) es fantasma en Binance (-2022). Se marca como liquidada.")
+                            else:
+                                close_errors.append(f"{sym}: {err_str}")
+                                logger.error(f"[{c_label}] Error al enviar orden de cierre para {sym}: {e_ord}")
 
                 # 3. Tras cerrar posiciones, consultar balance real actualizado en Binance
                 try:
@@ -3523,6 +3526,13 @@ def reset_demo_account_endpoint():
             except Exception as e_cli:
                 logger.warning(f"Aviso al consultar posiciones para cliente {c_label}: {e_cli}")
                 close_errors.append(f"Conexión Binance: {str(e_cli)}")
+
+        # Limpiar posiciones fantasma en memoria del dispatcher
+        try:
+            from src.multitenant_dispatcher import clear_user_ghost_positions
+            clear_user_ghost_positions(None if is_admin else user_id)
+        except Exception:
+            pass
 
         # 4. Aislamiento estricto de base de datos:
         if is_admin:
