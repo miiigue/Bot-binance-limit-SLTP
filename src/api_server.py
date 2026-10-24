@@ -1560,6 +1560,26 @@ def user_bot_status_endpoint():
             except Exception as e_live:
                 api_logger.debug(f"Aviso al consultar desglose de cuenta para usuario {user_id}: {e_live}")
 
+        # SINCRONIZACIÓN SOBERANA DE FLOTANTE Y POSICIONES:
+        # Garantizar que el PnL flotante, margen en juego y conteo de posiciones en la cabecera
+        # coincidan de forma 100% matemática con el monitor de posiciones reales del usuario,
+        # excluyendo cualquier posición fantasma o inconsistencia de libro en Binance Demo.
+        try:
+            from src.multitenant_dispatcher import get_user_monitor_status
+            mon_status = get_user_monitor_status(user_id)
+            if mon_status and isinstance(mon_status, dict):
+                mon_sum = mon_status.get('summary', {})
+                if 'total_unrealized_pnl' in mon_sum:
+                    unrealized_pnl = round(float(mon_sum['total_unrealized_pnl'] or 0.0), 2)
+                if 'total_positions' in mon_sum:
+                    open_positions_count = int(mon_sum['total_positions'] or 0)
+                if 'total_margin_usdt' in mon_sum and float(mon_sum['total_margin_usdt'] or 0.0) > 0:
+                    initial_margin = round(float(mon_sum['total_margin_usdt']), 2)
+                available_balance = max(0.0, round(wallet_balance - initial_margin, 2))
+                equity = round(wallet_balance + unrealized_pnl, 2)
+        except Exception as e_mon:
+            api_logger.debug(f"Aviso al sincronizar métricas de monitor en user_bot: {e_mon}")
+
         # Determinar Capital Inicial / Depósito Base para conciliar PnL de cartera (Balance - Capital Inicial)
         user_init_key = float(keys.get('initial_balance', 0.0) or 0.0) if keys else 0.0
         target_balance = float(wallet_balance if wallet_balance > 0 else (live_balance or 0.0))
@@ -2376,6 +2396,25 @@ def admin_users_overview_endpoint():
                             user_data['open_positions_count'] = pos_count
                 except Exception as e_live:
                     api_logger.debug(f"Aviso al consultar balance en vivo para usuario {u_id} en overview de admin: {e_live}")
+
+            # Sincronización soberana con el monitor en vivo para reflejar exactamente posiciones reales
+            try:
+                from src.multitenant_dispatcher import get_user_monitor_status
+                mon_status = get_user_monitor_status(u_id)
+                if mon_status and isinstance(mon_status, dict):
+                    mon_sum = mon_status.get('summary', {})
+                    if 'total_unrealized_pnl' in mon_sum:
+                        user_data['unrealized_pnl'] = round(float(mon_sum['total_unrealized_pnl'] or 0.0), 2)
+                    if 'total_positions' in mon_sum:
+                        user_data['open_positions_count'] = int(mon_sum['total_positions'] or 0)
+                    if 'total_margin_usdt' in mon_sum and float(mon_sum['total_margin_usdt'] or 0.0) > 0:
+                        user_data['margin_in_positions'] = round(float(mon_sum['total_margin_usdt']), 2)
+                    wb = float(user_data.get('wallet_balance') or 0.0)
+                    if wb > 0:
+                        user_data['available_balance'] = max(0.0, round(wb - float(user_data.get('margin_in_positions', 0.0)), 2))
+                        user_data['equity'] = round(wb + float(user_data.get('unrealized_pnl', 0.0)), 2)
+            except Exception as e_umon:
+                pass
 
         return jsonify({
             "status": "success",

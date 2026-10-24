@@ -604,13 +604,17 @@ function MainDashboard() {
   const userUnrealizedPnl = Number(
     userBotHeader?.wallet_breakdown?.unrealized_pnl !== undefined
       ? userBotHeader.wallet_breakdown.unrealized_pnl
-      : (inspectingUser?.floating_pnl || 0)
+      : (inspectingUser?.unrealized_pnl !== undefined 
+          ? inspectingUser.unrealized_pnl 
+          : (inspectingUser?.floating_pnl || 0))
   );
 
   const userOpenPositionsCount = Number(
     userBotHeader?.wallet_breakdown?.open_positions_count !== undefined
       ? userBotHeader.wallet_breakdown.open_positions_count
-      : (inspectingUser?.open_positions || 0)
+      : (inspectingUser?.open_positions_count !== undefined 
+          ? inspectingUser.open_positions_count 
+          : (inspectingUser?.open_positions || 0))
   );
 
   const isUserBotRunningRaw = Boolean(userBotHeader?.bot_settings?.is_running !== undefined ? userBotHeader.bot_settings.is_running : inspectingUser?.is_running);
