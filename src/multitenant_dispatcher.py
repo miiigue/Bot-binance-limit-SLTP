@@ -452,8 +452,10 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
                     'opened_at': time.time(),
                     'trigger': hedge_reason
                 }
+                _ghost_positions.pop((user_id, clean_sym, signal_side.upper()), None)
                 logger.warning(f"🛡️ [PersonalBot Resguardo - {username} (ID: {user_id})] ORDEN RESGUARDO {signal_side} EJECUTADA en {clean_sym} (Qty={qty}, Ref=${executed_price:.4f}, Margen=${order_margin:.2f})")
             else:
+                _ghost_positions.pop((user_id, clean_sym, signal_side.upper()), None)
                 logger.info(f"🚀 [PersonalBot - {username} (ID: {user_id})] ORDEN ENTRADA {signal_side} EJECUTADA en {clean_sym} (Qty={qty}, Ref=${executed_price:.4f}, Notional=${notional:,.2f})")
             return True
 
@@ -984,7 +986,8 @@ def run_personal_bot_cycle():
             enable_hedge = str(params.get('enable_hedge_protection', params.get('enableHedgeProtection', False))).lower() == 'true'
             if enable_hedge and is_hedge and not is_this_pos_hedge:
                 opp_side = 'SHORT' if pos_side == 'LONG' else 'LONG'
-                opp_is_open = (sym in open_positions_short) if pos_side == 'LONG' else (sym in open_positions_long)
+                opp_ghost = _ghost_positions.get((user_id, sym, opp_side))
+                opp_is_open = ((sym in open_positions_short) if pos_side == 'LONG' else (sym in open_positions_long)) and not opp_ghost
 
                 if not opp_is_open:
                     hedge_cd_key = (user_id, sym)
