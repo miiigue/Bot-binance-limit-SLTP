@@ -1059,7 +1059,15 @@ def run_personal_bot_cycle():
                                 except Exception:
                                     pass
 
-                                if user_avail >= hedge_margin:
+                                # Si el saldo disponible en Binance no alcanza para la cobertura simétrica completa,
+                                # pero hay suficiente saldo para abrir un resguardo defensivo (mínimo $5 USDT),
+                                # ajustamos el tamaño de cobertura al saldo disponible seguro (95%) para no dejar la posición desprotegida.
+                                if user_avail < hedge_margin and user_avail >= 5.0:
+                                    safe_margin = round(user_avail * 0.95, 2)
+                                    logger.info(f"🛡️ [PersonalBot Resguardo - {username}] Saldo disponible (${user_avail:.2f}) menor que cobertura ideal (${hedge_margin:.2f}). Ajustando resguardo al saldo disponible (${safe_margin:.2f}).")
+                                    hedge_margin = safe_margin
+
+                                if user_avail >= hedge_margin and hedge_margin >= 5.0:
                                     logger.warning(f"🛡️ [PersonalBot Resguardo - {username}] 🚨 DISPARADOR DE RESGUARDO ACTIVADO en {sym} ({trigger_msg}). Abriendo {opp_side} con margen ${hedge_margin:.2f}...")
                                     success = execute_user_entry(
                                         client, user, sym, opp_side, mark_p, params,
