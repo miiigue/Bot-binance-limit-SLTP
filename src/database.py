@@ -469,7 +469,10 @@ def init_db_schema():
                 cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
                 conn.commit()
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS referral_terms_acceptances (
@@ -616,7 +619,10 @@ def init_db_schema():
                 cursor.execute(f"ALTER TABLE user_trades ADD COLUMN {col_name} {col_type}")
                 conn.commit()
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
         try:
             cursor.execute("""
@@ -1424,7 +1430,10 @@ def get_strategies_catalog(only_public: bool = False) -> list[dict]:
                 if isinstance(params, dict):
                     params = normalize_strategy_dict(params)
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
             result.append({
                 "id": strat_id,
@@ -1492,7 +1501,10 @@ def upsert_strategy_catalog(
                 from src.config_loader import normalize_strategy_dict
                 clean_params = normalize_strategy_dict(clean_params)
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             final_p_json = json.dumps(clean_params)
         elif existing_p_json:
             # Preservar exactamente los parámetros existentes en la base de datos
@@ -1808,7 +1820,10 @@ def clear_trade_history() -> bool:
             try:
                 cursor.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
         # NOTA DE AISLAMIENTO MULTI-INQUILINO (TENANT ISOLATION):
         # clear_trade_history() corresponde EXCLUSIVAMENTE al bot institucional/maestro (tabla 'trades').
         # NUNCA debe tocar 'user_trades', ya que las operaciones de los inversores/usuarios son privadas,
@@ -1888,14 +1903,20 @@ def clear_trade_history() -> bool:
             try:
                 conn.rollback()
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
         return False
     finally:
         if conn:
             try:
                 conn.close()
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
 # =====================================================================
 # --- GESTIÓN DE USUARIOS, AUTENTICACIÓN Y CAPITAL DE INVERSIONISTAS ---
@@ -2622,7 +2643,10 @@ def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: 
             try:
                 conn.rollback()
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
         try:
             cursor.execute("ALTER TABLE user_api_keys ADD COLUMN initial_balance double precision DEFAULT 0.0")
@@ -2631,7 +2655,10 @@ def save_user_api_keys(user_id: int, api_key: str, api_secret: str, is_testnet: 
             try:
                 conn.rollback()
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
         # Verificar si ya existe registro para este usuario y exchange/red
         cursor.execute("SELECT id, initial_balance FROM user_api_keys WHERE user_id = ? AND exchange = 'binance' AND is_testnet = ?", (user_id, bool(is_testnet)))
@@ -2811,7 +2838,10 @@ def get_user_bot_settings(user_id: int) -> dict:
                 cfg = load_config()
                 default_strat = cfg.get('STRATEGY_INFO', 'active_strategy_name', fallback='').strip()
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
         default_margin = 100.0
         default_leverage = 8
@@ -2830,7 +2860,10 @@ def get_user_bot_settings(user_id: int) -> dict:
                         if lev_val:
                             default_leverage = int(lev_val)
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
         cursor.execute("""
             INSERT INTO user_bot_settings (
