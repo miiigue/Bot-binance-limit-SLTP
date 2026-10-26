@@ -376,7 +376,7 @@ function PositionTpSlBar({ position }) {
   }
 
   return (
-    <div className={`flex flex-col gap-1.5 w-full py-1 bg-slate-950/85 p-2.5 rounded-xl border ${isResguardo ? 'border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.2)]' : 'border-slate-800/80 shadow-inner'}`}>
+    <div className="flex flex-col gap-1.5 w-full py-1 bg-slate-950/85 p-2.5 rounded-xl border border-slate-800/80 shadow-inner">
       {isProfit ? (
         /* GANANDO (PnL >= 0): SOLO MOSTRAR TAKE PROFIT O TRAILING STOP (OCULTAR STOP LOSS) */
         ts?.armed ? (
@@ -388,11 +388,6 @@ function PositionTpSlBar({ position }) {
                   Ganancia asegurada +{Number(ts.floor_value !== undefined && ts.floor_value !== null ? ts.floor_value : Math.max(0, (ts.peak_value || 0) - (ts.drop_usdt || 0))).toFixed(2)} USDT
                 </span>
               </span>
-              {isResguardo && (
-                <span className="text-[10px] font-black tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                  🛡️ RESGUARDO
-                </span>
-              )}
             </div>
             <div className="relative w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-sky-800 shadow-inner flex items-center justify-center">
               <div
@@ -400,8 +395,8 @@ function PositionTpSlBar({ position }) {
                 style={{ width: '100%' }}
               />
               {isResguardo && (
-                <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black tracking-widest text-amber-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] z-20 pointer-events-none uppercase">
-                  🛡️ RESGUARDO
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] z-10 pointer-events-none uppercase">
+                  RESGUARDO
                 </span>
               )}
             </div>
@@ -417,11 +412,6 @@ function PositionTpSlBar({ position }) {
                 {pnlUsdt > 0 && (
                   <span className="text-[10px] font-mono font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
                     +{pnlUsdt.toFixed(2)} USDT
-                  </span>
-                )}
-                {isResguardo && (
-                  <span className="text-[10px] font-black tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                    🛡️ RESGUARDO
                   </span>
                 )}
               </div>
@@ -443,8 +433,8 @@ function PositionTpSlBar({ position }) {
                 style={{ width: `${tpProgress}%` }}
               />
               {isResguardo && (
-                <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black tracking-widest text-amber-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] z-20 pointer-events-none uppercase">
-                  🛡️ RESGUARDO
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] z-10 pointer-events-none uppercase">
+                  RESGUARDO
                 </span>
               )}
             </div>
@@ -462,11 +452,6 @@ function PositionTpSlBar({ position }) {
               <span className="text-[10px] font-mono font-black text-rose-300 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/40">
                 {pnlUsdt.toFixed(2)} USDT
               </span>
-              {isResguardo && (
-                <span className="text-[10px] font-black tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                  🛡️ RESGUARDO
-                </span>
-              )}
             </div>
             <div className="flex items-center gap-1.5 text-[10px]">
               <span className="font-mono font-medium text-slate-200">+{Number(sl?.distance_usdt || 0).toFixed(2)}</span>
@@ -483,8 +468,8 @@ function PositionTpSlBar({ position }) {
               style={{ width: `${Math.min(100, Math.max(slFillPct > 0 ? 3 : 0, slFillPct))}%` }}
             />
             {isResguardo && (
-              <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black tracking-widest text-amber-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] z-20 pointer-events-none uppercase">
-                🛡️ RESGUARDO
+              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] z-10 pointer-events-none uppercase">
+                RESGUARDO
               </span>
             )}
           </div>

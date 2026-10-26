@@ -166,8 +166,8 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
                 style={{ width: `${Math.min(100, Math.max(5, ts.tolerance_pct !== null && ts.tolerance_pct !== undefined ? ts.tolerance_pct : 100))}%` }}
               />
               {isResguardo && (
-                <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black tracking-widest text-amber-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] z-20 pointer-events-none uppercase">
-                  🛡️ RESGUARDO
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] z-10 pointer-events-none uppercase">
+                  RESGUARDO
                 </span>
               )}
             </div>
@@ -180,11 +180,6 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
                   <span>🎯 TP:</span>
                   <span className="font-mono font-medium text-emerald-200">+{Number(tp.target_usdt).toFixed(2)} USDT</span>
                 </span>
-                {isResguardo && (
-                  <span className="text-[10px] font-black tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                    🛡️ RESGUARDO
-                  </span>
-                )}
                 {hasTs && (
                   tsArmThreshold ? (
                     <span className="text-[10px] text-sky-400 font-mono font-medium hidden sm:inline" title={`Trailing Stop se armará al alcanzar +${tsArmThreshold.toFixed(2)} USDT`}>
@@ -221,8 +216,8 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
                 style={{ width: `${tpProgress}%` }}
               />
               {isResguardo && (
-                <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black tracking-widest text-amber-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] z-20 pointer-events-none uppercase">
-                  🛡️ RESGUARDO
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] z-10 pointer-events-none uppercase">
+                  RESGUARDO
                 </span>
               )}
             </div>
@@ -242,11 +237,6 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
                 <span>🛑 SL:</span>
                 <span className="font-mono font-medium text-rose-200">{Number(slTarget).toFixed(2)} USDT</span>
               </span>
-              {isResguardo && (
-                <span className="text-[10px] font-black tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                  🛡️ RESGUARDO
-                </span>
-              )}
               <div className="flex items-center gap-1.5 text-[10px]">
                 <span className="font-mono font-medium text-slate-300">+{slDist !== null && slDist !== undefined ? Number(slDist).toFixed(2) : '0.00'}</span>
                 <span className="font-mono font-bold text-rose-400 animate-pulse">
@@ -264,8 +254,8 @@ function renderSinglePositionDiag(pos, tradeSide, pnlVal) {
                 style={{ width: `${Math.min(100, Math.max(slFillPct > 0 ? 3 : 0, slFillPct))}%` }}
               />
               {isResguardo && (
-                <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black tracking-widest text-amber-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] z-20 pointer-events-none uppercase">
-                  🛡️ RESGUARDO
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] z-10 pointer-events-none uppercase">
+                  RESGUARDO
                 </span>
               )}
             </div>

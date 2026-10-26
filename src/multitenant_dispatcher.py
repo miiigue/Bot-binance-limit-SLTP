@@ -1613,8 +1613,8 @@ def get_user_monitor_status(user_id: int) -> dict:
         is_long_resguardo = bool((user_id, sym, 'LONG') in _user_hedge_positions)
         is_short_resguardo = bool((user_id, sym, 'SHORT') in _user_hedge_positions)
 
-        # Si no están registrados en memoria pero la posición existe en DB o ambas están abiertas
-        if (pos_long_raw or pos_short_raw) and not is_long_resguardo and not is_short_resguardo:
+        # Si no está en memoria, verificar si en DB el trade abierto se registró como Resguardo
+        if not is_long_resguardo and not is_short_resguardo:
             try:
                 from src.database import get_db_connection
                 conn_chk = get_db_connection()
@@ -1628,28 +1628,16 @@ def get_user_monitor_status(user_id: int) -> dict:
                     """, (user_id, sym))
                     active_db_trades = cur_chk.fetchall()
                     for adt in active_db_trades:
-                        c_reason = str(adt.get('close_reason') or '')
+                        c_reason = str(adt.get('close_reason') or '').upper()
                         t_type = str(adt.get('trade_type') or '').upper()
-                        if 'RESGUARDO' in c_reason.upper() or 'COBERTURA' in c_reason.upper():
+                        if 'RESGUARDO' in c_reason:
                             if t_type == 'LONG':
                                 is_long_resguardo = True
-                                _user_hedge_positions[(user_id, sym, 'LONG')] = {'is_hedge': True}
                             elif t_type == 'SHORT':
                                 is_short_resguardo = True
-                                _user_hedge_positions[(user_id, sym, 'SHORT')] = {'is_hedge': True}
                     conn_chk.close()
             except Exception:
                 pass
-
-        if pos_long_raw and pos_short_raw and not is_long_resguardo and not is_short_resguardo:
-            up_l = float(pos_long_raw.get('updateTime', 0) or 0)
-            up_s = float(pos_short_raw.get('updateTime', 0) or 0)
-            if up_s > up_l:
-                is_short_resguardo = True
-                _user_hedge_positions[(user_id, sym, 'SHORT')] = {'is_hedge': True}
-            elif up_l > up_s:
-                is_long_resguardo = True
-                _user_hedge_positions[(user_id, sym, 'LONG')] = {'is_hedge': True}
 
         if pos_long_raw:
             amt_l = float(pos_long_raw.get('positionAmt', 0.0) or 0.0)
