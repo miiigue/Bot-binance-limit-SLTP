@@ -2538,7 +2538,7 @@ class SingleSideTradingBot:
             avail_balance = get_account_balance_usdt() or Decimal('0')
             if avail_balance > Decimal('0') and avail_balance < order_margin_usdt:
                 if avail_balance >= Decimal('5.0'):
-                    scaled_margin = round(avail_balance * Decimal('0.85'), 2)
+                    scaled_margin = round(avail_balance * Decimal('0.95'), 2)
                     self.logger.warning(
                         f"[{self.symbol}][{self.trade_side}] Saldo disponible ({avail_balance:.2f} USDT) menor al margen óptimo ({order_margin_usdt:.2f} USDT). "
                         f"Ajustando tamaño adaptativo de resguardo a {scaled_margin:.2f} USDT para garantizar cobertura inmediata."
@@ -2664,8 +2664,15 @@ class SingleSideTradingBot:
             position_side=pos_side
         )
 
-        if not order_resp:
-            self.logger.error(f"[{self.symbol}] Falló la orden de mercado para cerrar la posición.")
+        if not order_resp or (isinstance(order_resp, dict) and order_resp.get('error')):
+            err_code = order_resp.get('code') if isinstance(order_resp, dict) else None
+            err_msg = str(order_resp.get('msg', '')) if isinstance(order_resp, dict) else ''
+            if err_code == -2022 or 'ReduceOnly' in err_msg:
+                self.logger.warning(f"[{self.symbol}][{self.trade_side}] 👻 Posición fantasma detectada en Binance (-2022 ReduceOnly). Se fuerza reseteo y reconciliación a IDLE.")
+                self._reset_state()
+                self._update_state(BotState.IDLE)
+                return True
+            self.logger.error(f"[{self.symbol}] Falló la orden de mercado para cerrar la posición: {err_msg}")
             return False
 
         self.logger.info(f"[{self.symbol}] Posición cerrada a mercado exitosamente en Binance: {order_resp.get('orderId')}")
@@ -5349,6 +5356,32 @@ class TradingBot:
             if self.short_bot and self.short_bot.in_position:
                 res = self.short_bot.close_position_now(reason) and res
             return res
+
+    def _check_hedge_recovery_candles(self, klines_df, side_to_protect: str) -> tuple[bool, int, int]:
+        """
+        Evalúa si las velas recientes muestran un rebote o recuperación en contra de la cobertura.
+        """
+        window = _safe_int(getattr(self, 'hedge_recovery_candles_window', 4), 4)
+        threshold = _safe_int(getattr(self, 'hedge_recovery_candles_threshold', 3), 3)
+
+        if klines_df is None or getattr(klines_df, 'empty', True) or len(klines_df) < window:
+            return False, 0, window
+
+        recent = klines_df.tail(window)
+        recovery_count = 0
+
+        for _, row in recent.iterrows():
+            o = float(row.get('open', 0) or 0)
+            c = float(row.get('close', 0) or 0)
+            if side_to_protect == 'LONG':
+                if c >= o:
+                    recovery_count += 1
+            else:
+                if c <= o:
+                    recovery_count += 1
+
+        is_recovering = (recovery_count >= threshold)
+        return is_recovering, recovery_count, window
 
     def _evaluate_smart_hedge(self):
         """

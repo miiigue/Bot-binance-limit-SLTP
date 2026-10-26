@@ -2463,6 +2463,192 @@ def admin_user_bot_toggle_endpoint():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/admin/users/<int:target_user_id>/logs', methods=['GET'])
+@admin_required
+def admin_user_bot_logs_endpoint(target_user_id):
+    """
+    Retorna el flujo de logs y actividades recientes del bot de un usuario específico.
+    Solo accesible para el Administrador.
+    """
+    try:
+        from src.database import get_user_by_id, get_user_bot_settings, get_db_connection
+        user = get_user_by_id(target_user_id)
+        if not user:
+            return jsonify({"status": "error", "message": "Usuario no encontrado."}), 404
+
+        username = str(user.get('username') or '')
+        email = str(user.get('email') or '')
+        bot_settings = get_user_bot_settings(target_user_id) or {}
+
+        limit = min(int(request.args.get('limit', 200) or 200), 500)
+        level_filter = str(request.args.get('level', 'ALL')).upper().strip()
+        search_query = str(request.args.get('search', '')).strip().lower()
+
+        # Patrones para filtrar logs pertenecientes a este usuario
+        user_patterns = []
+        if username:
+            user_patterns.extend([
+                f"- {username}",
+                f"[{username}]",
+                f" {username} ",
+                f"({username})",
+                f"para {username}",
+            ])
+        if email:
+            user_patterns.append(email)
+        user_patterns.extend([
+            f"(ID: {target_user_id})",
+            f"ID: {target_user_id}",
+            f"user_id={target_user_id}",
+            f"user_id: {target_user_id}",
+            f"usuario {target_user_id}",
+            f"user_{target_user_id}"
+        ])
+
+        # Buscar en archivos de logs disponibles
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(base_dir)
+        possible_log_files = [
+            os.path.join(parent_dir, 'api.log'),
+            os.path.join(parent_dir, 'server.log'),
+            os.path.join(parent_dir, 'app.log'),
+            os.path.join(parent_dir, 'api.log.1'),
+            os.path.join(base_dir, 'api.log'),
+            os.path.join(base_dir, 'server.log'),
+            os.path.join(base_dir, 'app.log'),
+            'api.log',
+            'server.log',
+            'app.log'
+        ]
+
+        existing_log_files = []
+        seen_paths = set()
+        for p in possible_log_files:
+            if os.path.exists(p) and os.path.isfile(p):
+                norm = os.path.realpath(p)
+                if norm not in seen_paths:
+                    seen_paths.add(norm)
+                    existing_log_files.append(norm)
+
+        matched_lines = []
+        import re
+
+        log_re = re.compile(r'^(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s*-\s*[^-\n]+\s*-\s*(INFO|WARNING|ERROR|DEBUG|CRITICAL)\s*-\s*(.*)$')
+        is_admin_user = (user.get('role') == 'admin')
+
+        for fpath in existing_log_files:
+            try:
+                with open(fpath, 'r', encoding='utf-8', errors='replace') as lf:
+                    lines = lf.readlines()
+                    for line in reversed(lines):
+                        line_str = line.strip()
+                        if not line_str:
+                            continue
+
+                        matches_user = any(pat.lower() in line_str.lower() for pat in user_patterns)
+                        if not matches_user and is_admin_user and ('[PersonalBot' in line_str or '[HEDGE]' in line_str or 'TradingBot' in line_str):
+                            matches_user = True
+
+                        if matches_user:
+                            m = log_re.match(line_str)
+                            if m:
+                                ts_str, lvl, msg = m.groups()
+                            else:
+                                ts_str = ""
+                                lvl = "INFO"
+                                if "WARNING" in line_str:
+                                    lvl = "WARNING"
+                                elif "ERROR" in line_str:
+                                    lvl = "ERROR"
+                                msg = line_str
+
+                            if level_filter != 'ALL' and lvl != level_filter:
+                                continue
+
+                            if search_query and search_query not in msg.lower():
+                                continue
+
+                            matched_lines.append({
+                                "timestamp": ts_str,
+                                "level": lvl,
+                                "message": msg,
+                                "raw": line_str
+                            })
+
+                            if len(matched_lines) >= limit:
+                                break
+                if len(matched_lines) >= limit:
+                    break
+            except Exception as e_rf:
+                api_logger.debug(f"Aviso leyendo log {fpath}: {e_rf}")
+
+        # Si hay pocos logs en archivos (por rotación o inicio reciente), complementar con trades de la base de datos
+        if len(matched_lines) < 20:
+            try:
+                conn_db = get_db_connection()
+                if conn_db:
+                    cur_db = conn_db.cursor()
+                    cur_db.execute("""
+                        SELECT id, symbol, trade_type, quantity, open_price, close_price, 
+                               pnl_usdt, close_reason, open_timestamp, close_timestamp, strategy_name
+                        FROM user_trades
+                        WHERE user_id = ?
+                        ORDER BY id DESC
+                        LIMIT 15
+                    """, (target_user_id,))
+                    db_trades = cur_db.fetchall()
+                    conn_db.close()
+                    for t in db_trades:
+                        t_sym = t.get('symbol') or ''
+                        t_side = t.get('trade_type') or ''
+                        t_open_ts = t.get('open_timestamp') or ''
+                        t_close_ts = t.get('close_timestamp')
+                        t_pnl = float(t.get('pnl_usdt') or 0.0)
+                        t_reason = t.get('close_reason') or ''
+                        t_strat = t.get('strategy_name') or ''
+
+                        if t_close_ts:
+                            msg_trade = f"🛑 [{t_sym}] Posición {t_side} CERRADA (PnL: {t_pnl:+.2f} USDT). Razón: {t_reason}"
+                            ts_trade = str(t_close_ts)
+                            lvl_trade = "INFO" if t_pnl >= 0 else "WARNING"
+                        else:
+                            is_h = "RESGUARDO" in t_reason.upper()
+                            prefix = "🛡️ [RESGUARDO]" if is_h else "🚀 [ENTRADA]"
+                            msg_trade = f"{prefix} [{t_sym}] Posición {t_side} ABIERTA (Precio: ${float(t.get('open_price') or 0):.4f}, Estrategia: '{t_strat}')"
+                            ts_trade = str(t_open_ts)
+                            lvl_trade = "INFO"
+
+                        # Evitar duplicados si ya está en matched_lines
+                        if not any(ts_trade in m.get('timestamp', '') and t_sym in m.get('message', '') for m in matched_lines):
+                            if (level_filter == 'ALL' or lvl_trade == level_filter) and (not search_query or search_query in msg_trade.lower()):
+                                matched_lines.append({
+                                    "timestamp": ts_trade,
+                                    "level": lvl_trade,
+                                    "message": msg_trade,
+                                    "raw": f"{ts_trade} - db - {lvl_trade} - {msg_trade}"
+                                })
+            except Exception as e_db:
+                api_logger.debug(f"Aviso leyendo trades de BD para logs: {e_db}")
+
+        # Ordenar por timestamp descendente
+        matched_lines.sort(key=lambda x: str(x.get('timestamp') or ''), reverse=True)
+
+        return jsonify({
+            "status": "success",
+            "user_id": target_user_id,
+            "username": username,
+            "operating_mode": bot_settings.get('operating_mode', 'PERSONAL_BOT'),
+            "is_running": bool(bot_settings.get('is_running', False)),
+            "strategy_name": bot_settings.get('strategy_name', ''),
+            "count": len(matched_lines),
+            "logs": matched_lines
+        }), 200
+
+    except Exception as e:
+        api_logger.error(f"Error en admin_user_bot_logs_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route('/api/admin/analysis/dip-bounce', methods=['POST'])
 @admin_required
 def admin_analysis_dip_bounce_endpoint():

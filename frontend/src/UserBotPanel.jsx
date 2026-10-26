@@ -3,6 +3,7 @@ import { useAuth } from './AuthContext';
 import ConfirmModal from './ConfirmModal';
 import PasswordConfirmModal from './PasswordConfirmModal';
 import UserBotMonitorTable from './UserBotMonitorTable';
+import UserBotLogsSection from './UserBotLogsSection';
 
 import { formatShortDate, formatFullDateTime, getCountryTimezone } from './dateUtils';
 
@@ -1010,13 +1011,26 @@ export default function UserBotPanel({
       {readOnly && (
         <div className="bg-slate-900 border-2 border-indigo-500/60 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fadeIn">
           <div className="flex items-center gap-3.5">
-            <button
-              type="button"
-              onClick={onBackToUsersList}
-              className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs sm:text-sm flex items-center gap-2 transition shadow-lg active:scale-95 cursor-pointer"
-            >
-              <span>⬅</span> Volver a Usuarios & Bots
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={onBackToUsersList}
+                className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs sm:text-sm flex items-center gap-2 transition shadow-lg active:scale-95 cursor-pointer"
+              >
+                <span>⬅</span> Volver a Usuarios & Bots
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('admin-user-bot-logs');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="px-3 py-2 bg-slate-950 hover:bg-slate-800 text-amber-300 hover:text-white border border-amber-500/40 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow active:scale-95 cursor-pointer"
+                title="Desplazarse a la sección de logs de este usuario"
+              >
+                <span>📋</span> Ver Logs del Bot
+              </button>
+            </div>
             <div>
               <div className="text-white font-black text-sm sm:text-base flex flex-wrap items-center gap-2">
                 <span>👁️</span> 
@@ -1479,6 +1493,15 @@ export default function UserBotPanel({
             targetUserId={inspectionUserId}
             readOnly={readOnly}
           />
+
+          {/* SECCIÓN EXCLUSIVA DE AUDITORÍA Y LOGS EN VIVO PARA EL ADMINISTRADOR */}
+          {inspectionUserId && (user?.role === 'admin' || readOnly) && (
+            <UserBotLogsSection 
+              targetUserId={inspectionUserId}
+              username={inspectionUser?.username || botData?.target_user?.username}
+              authFetch={authFetch}
+            />
+          )}
 
           {/* Catálogo de Estrategias Públicas Curadas (Oculto en modo solo lectura) */}
           {!readOnly && (
