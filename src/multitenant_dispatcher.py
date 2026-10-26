@@ -802,15 +802,13 @@ def run_personal_bot_cycle():
             raw_side = str(p.get('positionSide', 'BOTH')).upper()
             pos_side = ('LONG' if pos_amt > 0 else 'SHORT') if raw_side == 'BOTH' else raw_side
 
-            # CIRCUIT BREAKER PARA POSICIONES FANTASMA (-2022):
-            # Si esta posición ya fue rechazada con -2022 y la cantidad no ha cambiado,
-            # no saturar la API reintentando cada ciclo.
+            # Cooldown de protección temporal tras rechazo (-2022)
             ghost_key = (user_id, sym, pos_side)
             ghost_info = _ghost_positions.get(ghost_key)
             if ghost_info:
                 last_failed = ghost_info.get('failed_at', 0.0)
                 cached_amt = ghost_info.get('pos_amt', 0.0)
-                if abs(cached_amt - pos_amt) < 1e-6 and (now_ts - last_failed < 7200.0):
+                if abs(cached_amt - pos_amt) < 1e-6 and (now_ts - last_failed < 60.0):
                     continue
                 elif abs(cached_amt - pos_amt) >= 1e-6:
                     _ghost_positions.pop(ghost_key, None)
@@ -1451,12 +1449,6 @@ def get_user_monitor_status(user_id: int) -> dict:
                             raw_ps = str(p.get('positionSide', 'BOTH')).upper()
                             pos_side_det = ('LONG' if amt > 0 else 'SHORT') if raw_ps == 'BOTH' else raw_ps
 
-                            # Si fue rechazada con -2022 y la cantidad es la misma, es un fantasma de Binance Demo; no mostrar en monitor
-                            ghost_key = (user_id, sym_p, pos_side_det)
-                            ghost_info = _ghost_positions.get(ghost_key)
-                            if ghost_info and abs(ghost_info.get('pos_amt', 0.0) - amt) < 1e-6:
-                                continue
-
                             if raw_ps == 'LONG' or (raw_ps == 'BOTH' and amt > 0):
                                 open_positions_long[sym_p] = p
                             elif raw_ps == 'SHORT' or (raw_ps == 'BOTH' and amt < 0):
@@ -1489,12 +1481,6 @@ def get_user_monitor_status(user_id: int) -> dict:
                             sym_p = p.get('symbol')
                             raw_ps = str(p.get('positionSide', 'BOTH')).upper()
                             pos_side_det = ('LONG' if amt > 0 else 'SHORT') if raw_ps == 'BOTH' else raw_ps
-
-                            # Si fue rechazada con -2022 y la cantidad es la misma, es un fantasma de Binance Demo; no mostrar en monitor
-                            ghost_key = (user_id, sym_p, pos_side_det)
-                            ghost_info = _ghost_positions.get(ghost_key)
-                            if ghost_info and abs(ghost_info.get('pos_amt', 0.0) - amt) < 1e-6:
-                                continue
 
                             if raw_ps == 'LONG' or (raw_ps == 'BOTH' and amt > 0):
                                 open_positions_long[sym_p] = p

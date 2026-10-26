@@ -389,7 +389,7 @@ function PositionTpSlBar({ position }) {
                 </span>
               </span>
             </div>
-            <div className="relative w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-sky-800 shadow-inner flex items-center justify-center">
+            <div className="relative w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-sky-800 shadow-inner">
               <div
                 className="h-full rounded-none bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 animate-pulse shadow-sm shadow-sky-500/50"
                 style={{ width: '100%' }}
@@ -421,7 +421,7 @@ function PositionTpSlBar({ position }) {
                 </span>
               </div>
             </div>
-            <div className="relative w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-slate-700/80 shadow-inner flex items-center justify-center">
+            <div className="relative w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-slate-700/80 shadow-inner">
               <div
                 className={`h-full rounded-none transition-all duration-500 ${
                   tpProgress >= 100 
@@ -458,7 +458,7 @@ function PositionTpSlBar({ position }) {
               {riskBadge}
             </div>
           </div>
-          <div className="relative w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-slate-700/80 shadow-inner flex items-center justify-center">
+          <div className="relative w-full bg-slate-900 rounded-none h-6 overflow-hidden border border-slate-700/80 shadow-inner">
             <div
               className={`h-full rounded-none transition-all duration-500 ${
                 slFillPct >= 75
