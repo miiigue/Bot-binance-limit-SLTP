@@ -450,12 +450,12 @@ def execute_user_entry(client, user: dict, symbol: str, signal_side: str, entry_
                 _user_hedge_positions[(user_id, clean_sym, signal_side.upper())] = {
                     'is_hedge': True,
                     'opened_at': time.time(),
+                    'entry_price': executed_price if executed_price > 0 else entry_price,
+                    'quantity': qty,
                     'trigger': hedge_reason
                 }
-                _ghost_positions.pop((user_id, clean_sym, signal_side.upper()), None)
                 logger.warning(f"🛡️ [PersonalBot Resguardo - {username} (ID: {user_id})] ORDEN RESGUARDO {signal_side} EJECUTADA en {clean_sym} (Qty={qty}, Ref=${executed_price:.4f}, Margen=${order_margin:.2f})")
             else:
-                _ghost_positions.pop((user_id, clean_sym, signal_side.upper()), None)
                 logger.info(f"🚀 [PersonalBot - {username} (ID: {user_id})] ORDEN ENTRADA {signal_side} EJECUTADA en {clean_sym} (Qty={qty}, Ref=${executed_price:.4f}, Notional=${notional:,.2f})")
             return True
 
@@ -509,9 +509,13 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
         order_id = str(order_res.get('orderId', '')) if isinstance(order_res, dict) else ''
         strat_name = str(user.get('strategy_name') or '').strip()
 
-        # Si el cierre tuvo éxito en Binance, limpiar de _ghost_positions si estaba registrada
+        executed_qty = float(order_res.get('executedQty', 0.0) or 0.0) if isinstance(order_res, dict) else 0.0
+        actual_qty = executed_qty if executed_qty > 0 else qty
+
+        # Solo limpiar de _ghost_positions si la orden cerró completamente la posición total reportada en Binance
         ghost_key = (user_id, clean_sym, pos_side)
-        _ghost_positions.pop(ghost_key, None)
+        if abs(abs(pos_amt) - actual_qty) < 1e-6:
+            _ghost_positions.pop(ghost_key, None)
 
         # Determinar el lado real de la operación (LONG o SHORT)
         if position_side in ('LONG', 'SHORT'):
@@ -524,7 +528,7 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
         eff_entry_p = float(entry_price or 0.0)
         if eff_entry_p <= 0:
             eff_entry_p = float(current_price or 0.0)
-        eff_notional = round(qty * eff_entry_p, 2)
+        eff_notional = round(actual_qty * eff_entry_p, 2)
 
         op_mode = str(user.get('operating_mode', '')).upper()
         mode_suffix = " (Bot Personal)" if ('PERSONAL' in op_mode or 'MY_BOT' in op_mode) else (" (Copy Trading)" if 'COPY' in op_mode else "")
@@ -538,7 +542,7 @@ def close_user_position(client, user: dict, symbol: str, pos_amt: float, current
             close_reason=final_reason,
             exit_order_id=order_id,
             trade_type=actual_side,
-            quantity=qty,
+            quantity=actual_qty,
             open_price=eff_entry_p,
             position_size_usdt=eff_notional,
             open_timestamp=open_timestamp
@@ -761,10 +765,44 @@ def run_personal_bot_cycle():
         closed_in_basket = set()
         common_symbols = set(open_positions_long.keys()).intersection(set(open_positions_short.keys()))
         for sym_c in common_symbols:
+            # Si alguna de las dos patas es una posición fantasma no reducible en Binance, omitir cesta sintética
+            if (user_id, sym_c, 'LONG') in _ghost_positions and (user_id, sym_c, 'LONG') not in _user_hedge_positions:
+                continue
+            if (user_id, sym_c, 'SHORT') in _ghost_positions and (user_id, sym_c, 'SHORT') not in _user_hedge_positions:
+                continue
+
             p_l = open_positions_long[sym_c]
             p_s = open_positions_short[sym_c]
-            pnl_l = float(p_l.get('unRealizedProfit', 0.0) or 0.0)
-            pnl_s = float(p_s.get('unRealizedProfit', 0.0) or 0.0)
+
+            # Calcular PnL y cantidad de cada pata de forma aislada si alguna es cobertura
+            hedge_l = _user_hedge_positions.get((user_id, sym_c, 'LONG'))
+            if hedge_l and float(hedge_l.get('quantity', 0.0) or 0.0) > 0 and float(hedge_l.get('entry_price', 0.0) or 0.0) > 0:
+                h_l_qty = float(hedge_l['quantity'])
+                h_l_entry = float(hedge_l['entry_price'])
+                mark_l = float(p_l.get('markPrice', 0.0) or h_l_entry)
+                pnl_l = (mark_l - h_l_entry) * h_l_qty
+                amt_l = h_l_qty
+                entry_l = h_l_entry
+            else:
+                pnl_l = float(p_l.get('unRealizedProfit', 0.0) or 0.0)
+                amt_l = float(p_l.get('positionAmt', 0.0) or 0.0)
+                entry_l = float(p_l.get('entryPrice', 0.0) or 0.0)
+                mark_l = float(p_l.get('markPrice', 0.0) or entry_l)
+
+            hedge_s = _user_hedge_positions.get((user_id, sym_c, 'SHORT'))
+            if hedge_s and float(hedge_s.get('quantity', 0.0) or 0.0) > 0 and float(hedge_s.get('entry_price', 0.0) or 0.0) > 0:
+                h_s_qty = float(hedge_s['quantity'])
+                h_s_entry = float(hedge_s['entry_price'])
+                mark_s = float(p_s.get('markPrice', 0.0) or h_s_entry)
+                pnl_s = (h_s_entry - mark_s) * h_s_qty
+                amt_s = -h_s_qty
+                entry_s = h_s_entry
+            else:
+                pnl_s = float(p_s.get('unRealizedProfit', 0.0) or 0.0)
+                amt_s = float(p_s.get('positionAmt', 0.0) or 0.0)
+                entry_s = float(p_s.get('entryPrice', 0.0) or 0.0)
+                mark_s = float(p_s.get('markPrice', 0.0) or entry_s)
+
             net_basket_pnl = pnl_l + pnl_s
 
             if enable_basket and net_basket_pnl >= scaled_basket_target:
@@ -773,15 +811,9 @@ def run_personal_bot_cycle():
                     f"Net Basket PnL = {net_basket_pnl:+.2f} USDT >= Objetivo ({scaled_basket_target:+.2f} USDT). "
                     f"[LONG: {pnl_l:+.2f}, SHORT: {pnl_s:+.2f}]. Cerrando AMBAS posiciones al mercado..."
                 )
-                amt_l = float(p_l.get('positionAmt', 0.0) or 0.0)
-                entry_l = float(p_l.get('entryPrice', 0.0) or 0.0)
-                mark_l = float(p_l.get('markPrice', 0.0) or entry_l)
                 pos_open_ts_l = datetime.fromtimestamp(float(p_l['updateTime']) / 1000.0) if p_l.get('updateTime') else None
                 close_user_position(client, user, sym_c, amt_l, mark_l, pnl_l, f"Cierre Cesta Neta (+{net_basket_pnl:.2f} USDT)", entry_price=entry_l, position_side='LONG', open_timestamp=pos_open_ts_l)
 
-                amt_s = float(p_s.get('positionAmt', 0.0) or 0.0)
-                entry_s = float(p_s.get('entryPrice', 0.0) or 0.0)
-                mark_s = float(p_s.get('markPrice', 0.0) or entry_s)
                 pos_open_ts_s = datetime.fromtimestamp(float(p_s['updateTime']) / 1000.0) if p_s.get('updateTime') else None
                 close_user_position(client, user, sym_c, amt_s, mark_s, pnl_s, f"Cierre Cesta Neta (+{net_basket_pnl:.2f} USDT)", entry_price=entry_s, position_side='SHORT', open_timestamp=pos_open_ts_s)
 
@@ -804,16 +836,18 @@ def run_personal_bot_cycle():
             raw_side = str(p.get('positionSide', 'BOTH')).upper()
             pos_side = ('LONG' if pos_amt > 0 else 'SHORT') if raw_side == 'BOTH' else raw_side
 
-            # Cooldown de protección temporal tras rechazo (-2022)
+            is_this_pos_hedge = bool((user_id, sym, pos_side) in _user_hedge_positions)
+
+            # Circuit breaker para posiciones fantasma (-2022 ReduceOnly)
             ghost_key = (user_id, sym, pos_side)
             ghost_info = _ghost_positions.get(ghost_key)
             if ghost_info:
-                last_failed = ghost_info.get('failed_at', 0.0)
-                cached_amt = ghost_info.get('pos_amt', 0.0)
-                if abs(cached_amt - pos_amt) < 1e-6 and (now_ts - last_failed < 60.0):
-                    continue
-                elif abs(cached_amt - pos_amt) >= 1e-6:
+                if abs(pos_amt) < 1e-6:
                     _ghost_positions.pop(ghost_key, None)
+                elif not is_this_pos_hedge:
+                    # Posición fantasma pura (sin cobertura activa). Está bloqueada/irreducible en Binance (-2022).
+                    # Se aísla completamente para no saturar la API ni disparar falsos TP/SL.
+                    continue
 
             # Obtener timestamp de apertura real desde Binance updateTime
             pos_update_ms = p.get('updateTime')
@@ -823,6 +857,45 @@ def run_personal_bot_cycle():
                     pos_open_ts = datetime.fromtimestamp(float(pos_update_ms) / 1000.0)
                 except Exception:
                     pos_open_ts = None
+
+            # Si la posición es un Resguardo Cobertura activo, evaluar EXCLUSIVAMENTE su Trailing Stop específico
+            if is_this_pos_hedge:
+                enable_hedge_ts = str(params.get('enable_hedge_trailing_stop', params.get('enableHedgeTrailingStop', True))).lower() == 'true'
+                if enable_hedge_ts:
+                    hedge_info = _user_hedge_positions.get((user_id, sym, pos_side), {})
+                    hedge_qty = float(hedge_info.get('quantity', 0.0) or 0.0)
+                    hedge_entry = float(hedge_info.get('entry_price', 0.0) or entry_p)
+
+                    # Cálculo aislado de PnL para la cobertura real (sin contaminar con residuales o fantasmas)
+                    if hedge_qty > 0 and hedge_entry > 0:
+                        if pos_side == 'SHORT':
+                            hedge_pnl = (hedge_entry - mark_p) * hedge_qty
+                        else:
+                            hedge_pnl = (mark_p - hedge_entry) * hedge_qty
+                        hedge_close_amt = -hedge_qty if pos_side == 'SHORT' else hedge_qty
+                    else:
+                        hedge_pnl = unrealized_pnl
+                        hedge_close_amt = pos_amt
+
+                    act_hedge_base = float(params.get('hedge_trailing_activation_usdt', params.get('hedgeTrailingActivationUSDT', 0.20)) or 0.20)
+                    drop_hedge_base = float(params.get('hedge_trailing_drop_usdt', params.get('hedgeTrailingDropUSDT', 0.30)) or 0.30)
+                    act_usdt = act_hedge_base * scale_factor
+                    drop_usdt = drop_hedge_base * scale_factor
+
+                    hedge_peak_key = (user_id, sym, pos_side)
+                    curr_peak = _user_hedge_trailing_peak.get(hedge_peak_key, 0.0)
+                    if hedge_pnl > curr_peak:
+                        _user_hedge_trailing_peak[hedge_peak_key] = hedge_pnl
+                        curr_peak = hedge_pnl
+                    if curr_peak >= act_usdt and (curr_peak - hedge_pnl) >= drop_usdt:
+                        close_user_position(
+                            client, user, sym, hedge_close_amt, mark_p, hedge_pnl,
+                            f"Trailing Stop Resguardo Asegurado (+{hedge_pnl:.2f} USDT)",
+                            entry_price=hedge_entry, position_side=pos_side, open_timestamp=pos_open_ts
+                        )
+                        continue
+                # Las posiciones de cobertura se gestionan exclusivamente por su Trailing Stop o Cesta Neta
+                continue
 
             # 1. Take Profit (prioridad por PnL en USDT; porcentaje solo como fallback si TP en USDT es 0)
             tp_usdt_base = float(params.get('take_profit_usdt', params.get('takeProfitUSDT', 50.0)) or 50.0)
@@ -866,41 +939,22 @@ def run_personal_bot_cycle():
                 close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Stop Loss ({unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side, open_timestamp=pos_open_ts)
                 continue
 
-            # 3. Trailing Stop PnL (proporcional al capital del usuario, con soporte prioritario para Coberturas)
-            is_this_pos_hedge = bool((user_id, sym, pos_side) in _user_hedge_positions)
-            enable_hedge_ts = str(params.get('enable_hedge_trailing_stop', params.get('enableHedgeTrailingStop', True))).lower() == 'true'
+            # 3. Trailing Stop PnL (proporcional al capital del usuario)
+            enable_trail = str(params.get('enable_pnl_trailing_stop', params.get('enablePnlTrailingStop', True))).lower() == 'true'
+            if enable_trail:
+                act_usdt_base = float(params.get('pnl_trailing_stop_activation_usdt', params.get('pnlTrailingStopActivationUSDT', 3.5)) or 3.5)
+                drop_usdt_base = float(params.get('pnl_trailing_stop_drop_usdt', params.get('pnlTrailingStopDropUSDT', 1.5)) or 1.5)
+                act_usdt = act_usdt_base * scale_factor
+                drop_usdt = drop_usdt_base * scale_factor
 
-            if is_this_pos_hedge and enable_hedge_ts:
-                # Trailing Stop específico para la posición de Cobertura / Resguardo
-                act_hedge_base = float(params.get('hedge_trailing_activation_usdt', params.get('hedgeTrailingActivationUSDT', 0.20)) or 0.20)
-                drop_hedge_base = float(params.get('hedge_trailing_drop_usdt', params.get('hedgeTrailingDropUSDT', 0.30)) or 0.30)
-                act_usdt = act_hedge_base * scale_factor
-                drop_usdt = drop_hedge_base * scale_factor
-
-                hedge_peak_key = (user_id, sym, pos_side)
-                curr_peak = _user_hedge_trailing_peak.get(hedge_peak_key, 0.0)
+                peak_key = (user_id, sym, pos_side)
+                curr_peak = _user_peak_pnl.get(peak_key, 0.0)
                 if unrealized_pnl > curr_peak:
-                    _user_hedge_trailing_peak[hedge_peak_key] = unrealized_pnl
+                    _user_peak_pnl[peak_key] = unrealized_pnl
                     curr_peak = unrealized_pnl
                 if curr_peak >= act_usdt and (curr_peak - unrealized_pnl) >= drop_usdt:
-                    close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Trailing Stop Resguardo Asegurado (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side, open_timestamp=pos_open_ts)
+                    close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Trailing Stop Asegurado (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side, open_timestamp=pos_open_ts)
                     continue
-            else:
-                enable_trail = str(params.get('enable_pnl_trailing_stop', params.get('enablePnlTrailingStop', True))).lower() == 'true'
-                if enable_trail:
-                    act_usdt_base = float(params.get('pnl_trailing_stop_activation_usdt', params.get('pnlTrailingStopActivationUSDT', 3.5)) or 3.5)
-                    drop_usdt_base = float(params.get('pnl_trailing_stop_drop_usdt', params.get('pnlTrailingStopDropUSDT', 1.5)) or 1.5)
-                    act_usdt = act_usdt_base * scale_factor
-                    drop_usdt = drop_usdt_base * scale_factor
-
-                    peak_key = (user_id, sym, pos_side)
-                    curr_peak = _user_peak_pnl.get(peak_key, 0.0)
-                    if unrealized_pnl > curr_peak:
-                        _user_peak_pnl[peak_key] = unrealized_pnl
-                        curr_peak = unrealized_pnl
-                    if curr_peak >= act_usdt and (curr_peak - unrealized_pnl) >= drop_usdt:
-                        close_user_position(client, user, sym, pos_amt, mark_p, unrealized_pnl, f"Trailing Stop Asegurado (+{unrealized_pnl:.2f} USDT)", entry_price=entry_p, position_side=pos_side, open_timestamp=pos_open_ts)
-                        continue
 
             # 4. Evaluación de Re-entradas DCA Autónomas para el Bot Personal
             enable_dca = str(params.get('enable_dca_reentry', params.get('enableDcaReentry', False))).lower() == 'true'
@@ -987,7 +1041,9 @@ def run_personal_bot_cycle():
             if enable_hedge and is_hedge and not is_this_pos_hedge:
                 opp_side = 'SHORT' if pos_side == 'LONG' else 'LONG'
                 opp_ghost = _ghost_positions.get((user_id, sym, opp_side))
-                opp_is_open = ((sym in open_positions_short) if pos_side == 'LONG' else (sym in open_positions_long)) and not opp_ghost
+                opp_is_hedge = bool((user_id, sym, opp_side) in _user_hedge_positions)
+                opp_has_pos = (sym in open_positions_short) if pos_side == 'LONG' else (sym in open_positions_long)
+                opp_is_open = (opp_has_pos and not opp_ghost) or opp_is_hedge
 
                 if not opp_is_open:
                     hedge_cd_key = (user_id, sym)
@@ -1074,12 +1130,14 @@ def run_personal_bot_cycle():
                                         is_hedge_order=True, hedge_margin=hedge_margin, hedge_reason=trigger_msg
                                     )
                                     if success:
-                                        _user_hedge_positions[(user_id, sym, opp_side)] = {
+                                        curr_hedge = _user_hedge_positions.get((user_id, sym, opp_side), {})
+                                        curr_hedge.update({
                                             'is_hedge': True,
                                             'protecting_side': pos_side,
                                             'trigger': trigger_msg,
                                             'opened_at': now_ts
-                                        }
+                                        })
+                                        _user_hedge_positions[(user_id, sym, opp_side)] = curr_hedge
                                         _user_hedge_cooldown[hedge_cd_key] = now_ts
                                         if opp_side == 'LONG':
                                             open_positions_long[sym] = True
