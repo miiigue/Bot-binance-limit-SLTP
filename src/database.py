@@ -652,6 +652,25 @@ def init_db_schema():
         """)
         conn.commit()
 
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admin_user_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            admin_id INTEGER NOT NULL,
+            admin_username TEXT NOT NULL,
+            note TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """)
+        try:
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_user_notes_user_id ON admin_user_notes(user_id, created_at DESC)")
+        except Exception:
+            pass
+        conn.commit()
+
         # 1. Limpieza y purga automática robusta de trades duplicados
         purge_duplicate_trades()
 
@@ -3699,6 +3718,141 @@ def process_trade_referral_commission(trade_user_id: int, pnl_usdt: float, trade
         return True
     except Exception as e:
         get_logger().error(f"Error procesando comisión de referidos para trade de usuario {trade_user_id}: {e}", exc_info=True)
+        return False
+    finally:
+        conn.close()
+
+# =====================================================================
+# BITÁCORA DE OBSERVACIONES Y ACOTES DE USUARIOS (SOLO ADMINISTRADOR)
+# =====================================================================
+
+def get_admin_user_notes(target_user_id: int) -> list:
+    """
+    Retorna la lista de observaciones y acotes internos registrados para un usuario,
+    ordenados de forma cronológica descendente (el más reciente primero).
+    Exclusivo para uso del Administrador.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return []
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, user_id, admin_id, admin_username, note, created_at, updated_at
+            FROM admin_user_notes
+            WHERE user_id = ?
+            ORDER BY created_at DESC, id DESC
+        """, (target_user_id,))
+        rows = cur.fetchall()
+        notes = []
+        for r in rows:
+            if isinstance(r, dict):
+                c_at = r.get('created_at')
+                u_at = r.get('updated_at')
+                notes.append({
+                    'id': r['id'],
+                    'user_id': r['user_id'],
+                    'admin_id': r['admin_id'],
+                    'admin_username': r['admin_username'],
+                    'note': r['note'],
+                    'created_at': c_at.strftime('%Y-%m-%d %H:%M:%S') if hasattr(c_at, 'strftime') else str(c_at or ''),
+                    'updated_at': u_at.strftime('%Y-%m-%d %H:%M:%S') if hasattr(u_at, 'strftime') else str(u_at or '')
+                })
+            else:
+                c_at = r[5]
+                u_at = r[6]
+                notes.append({
+                    'id': r[0],
+                    'user_id': r[1],
+                    'admin_id': r[2],
+                    'admin_username': r[3],
+                    'note': r[4],
+                    'created_at': c_at.strftime('%Y-%m-%d %H:%M:%S') if hasattr(c_at, 'strftime') else str(c_at or ''),
+                    'updated_at': u_at.strftime('%Y-%m-%d %H:%M:%S') if hasattr(u_at, 'strftime') else str(u_at or '')
+                })
+        return notes
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error al consultar notas internas para usuario {target_user_id}: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+    finally:
+        conn.close()
+
+
+def add_admin_user_note(target_user_id: int, admin_id: int, admin_username: str, note: str) -> dict | None:
+    """
+    Inserta una nueva observación confidencial para un usuario.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        cur = conn.cursor()
+        now_dt = datetime.now()
+        clean_note = note.strip()
+        cur.execute("""
+            INSERT INTO admin_user_notes (user_id, admin_id, admin_username, note, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (target_user_id, admin_id, admin_username, clean_note, now_dt, now_dt))
+        conn.commit()
+
+        note_id = getattr(cur, 'lastrowid', None)
+        if not note_id:
+            try:
+                cur.execute("""
+                    SELECT id FROM admin_user_notes 
+                    WHERE user_id = ? AND admin_id = ? 
+                    ORDER BY id DESC LIMIT 1
+                """, (target_user_id, admin_id))
+                r = cur.fetchone()
+                note_id = r[0] if not isinstance(r, dict) else r.get('id')
+            except Exception:
+                note_id = 0
+
+        return {
+            'id': note_id,
+            'user_id': target_user_id,
+            'admin_id': admin_id,
+            'admin_username': admin_username,
+            'note': clean_note,
+            'created_at': now_dt.strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_at': now_dt.strftime('%Y-%m-%d %H:%M:%S')
+        }
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error al registrar observación para usuario {target_user_id}: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+    finally:
+        conn.close()
+
+
+def delete_admin_user_note(note_id: int) -> bool:
+    """
+    Elimina permanentemente una observación de la base de datos.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM admin_user_notes WHERE id = ?", (note_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger = get_logger()
+        logger.error(f"Error al eliminar observación #{note_id}: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return False
     finally:
         conn.close()

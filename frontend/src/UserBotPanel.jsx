@@ -4,6 +4,7 @@ import ConfirmModal from './ConfirmModal';
 import PasswordConfirmModal from './PasswordConfirmModal';
 import UserBotMonitorTable from './UserBotMonitorTable';
 import UserBotLogsSection from './UserBotLogsSection';
+import AdminUserNotesSection from './AdminUserNotesSection';
 
 import { formatShortDate, formatFullDateTime, getCountryTimezone } from './dateUtils';
 
@@ -1030,6 +1031,17 @@ export default function UserBotPanel({
               >
                 <span>📋</span> Ver Logs del Bot
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('admin-user-notes-section');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="px-3 py-2 bg-slate-950 hover:bg-slate-800 text-amber-300 hover:text-white border border-amber-500/40 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow active:scale-95 cursor-pointer"
+                title="Desplazarse a la bitácora de observaciones del administrador"
+              >
+                <span>📝</span> Bitácora Admin
+              </button>
             </div>
             <div>
               <div className="text-white font-black text-sm sm:text-base flex flex-wrap items-center gap-2">
@@ -1493,6 +1505,15 @@ export default function UserBotPanel({
             targetUserId={inspectionUserId}
             readOnly={readOnly}
           />
+
+          {/* SECCIÓN CONFIDENCIAL DE OBSERVACIONES Y NOTAS DEL ADMINISTRADOR */}
+          {inspectionUserId && (user?.role === 'admin' || readOnly) && (
+            <AdminUserNotesSection 
+              targetUserId={inspectionUserId}
+              username={inspectionUser?.username || botData?.target_user?.username}
+              authFetch={authFetch}
+            />
+          )}
 
           {/* SECCIÓN EXCLUSIVA DE AUDITORÍA Y LOGS EN VIVO PARA EL ADMINISTRADOR */}
           {inspectionUserId && (user?.role === 'admin' || readOnly) && (

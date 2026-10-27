@@ -193,7 +193,19 @@ CREATE TABLE IF NOT EXISTS strategies_catalog (
     updated_at TIMESTAMP
 );
 
+-- Bitácora interna de observaciones y acotes sobre usuarios (Exclusivo Administrador)
+CREATE TABLE IF NOT EXISTS admin_user_notes (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    admin_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    admin_username VARCHAR(100) NOT NULL,
+    note TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Índices de Alto Rendimiento para Búsquedas Frecuentes
+CREATE INDEX IF NOT EXISTS idx_admin_user_notes_user_id ON admin_user_notes(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_trades_user_id ON user_trades(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_trades_symbol ON user_trades(symbol);
 CREATE INDEX IF NOT EXISTS idx_user_trades_close_ts ON user_trades(close_timestamp);

@@ -2649,6 +2649,97 @@ def admin_user_bot_logs_endpoint(target_user_id):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# =====================================================================
+# BITÁCORA DE OBSERVACIONES INTERNAS DE USUARIOS (SOLO ADMINISTRADOR)
+# =====================================================================
+
+@app.route('/api/admin/users/<int:target_user_id>/notes', methods=['GET'])
+@admin_required
+def admin_get_user_notes_endpoint(target_user_id):
+    """
+    Retorna el historial de observaciones y notas internas de un usuario específico.
+    Exclusivo para el Administrador (no visible para el usuario).
+    """
+    try:
+        from src.database import get_user_by_id, get_admin_user_notes
+        target_user = get_user_by_id(target_user_id)
+        if not target_user:
+            return jsonify({"status": "error", "message": "Usuario no encontrado."}), 404
+
+        notes = get_admin_user_notes(target_user_id)
+        return jsonify({
+            "status": "success",
+            "user_id": target_user_id,
+            "username": target_user.get('username'),
+            "notes": notes,
+            "count": len(notes)
+        }), 200
+    except Exception as e:
+        api_logger.error(f"Error en admin_get_user_notes_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/users/<int:target_user_id>/notes', methods=['POST'])
+@admin_required
+def admin_add_user_note_endpoint(target_user_id):
+    """
+    Registra una nueva observación interna para el usuario inspeccionado.
+    """
+    try:
+        from src.database import get_user_by_id, add_admin_user_note
+        target_user = get_user_by_id(target_user_id)
+        if not target_user:
+            return jsonify({"status": "error", "message": "Usuario no encontrado."}), 404
+
+        body = request.get_json(force=True, silent=True) or {}
+        note_text = str(body.get('note') or '').strip()
+        if not note_text:
+            return jsonify({"status": "error", "message": "El texto de la observación no puede estar vacío."}), 400
+
+        admin_user = getattr(request, 'current_user', {})
+        admin_id = admin_user.get('id') or admin_user.get('user_id') or 1
+        admin_username = str(admin_user.get('username') or 'Admin')
+
+        new_note = add_admin_user_note(
+            target_user_id=target_user_id,
+            admin_id=admin_id,
+            admin_username=admin_username,
+            note=note_text
+        )
+        if not new_note:
+            return jsonify({"status": "error", "message": "No se pudo guardar la observación en la base de datos."}), 500
+
+        return jsonify({
+            "status": "success",
+            "message": "Observación guardada correctamente.",
+            "note": new_note
+        }), 201
+    except Exception as e:
+        api_logger.error(f"Error en admin_add_user_note_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/users/<int:target_user_id>/notes/<int:note_id>', methods=['DELETE'])
+@admin_required
+def admin_delete_user_note_endpoint(target_user_id, note_id):
+    """
+    Elimina una observación de la bitácora interna.
+    """
+    try:
+        from src.database import delete_admin_user_note
+        success = delete_admin_user_note(note_id)
+        if not success:
+            return jsonify({"status": "error", "message": "No se pudo eliminar la observación."}), 500
+
+        return jsonify({
+            "status": "success",
+            "message": "Observación eliminada con éxito."
+        }), 200
+    except Exception as e:
+        api_logger.error(f"Error en admin_delete_user_note_endpoint: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route('/api/admin/analysis/dip-bounce', methods=['POST'])
 @admin_required
 def admin_analysis_dip_bounce_endpoint():
